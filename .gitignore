@@ -4,3 +4,4 @@ coverage/
 data/*.db
 data/*.db-*
 .env
+.cache/
