@@ -1,0 +1,31 @@
+{
+  "name": "session-gateway",
+  "version": "0.1.0",
+  "description": "RAG data source for a legislative session, served over MCP",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "ingest": "tsx src/bin/ingest.ts",
+    "ingest:sample": "tsx src/bin/ingest.ts test/fixtures/sample-session.jsonl",
+    "dev:stdio": "tsx src/bin/stdio.ts",
+    "dev:http": "tsx watch src/bin/http.ts",
+    "start": "node dist/bin/http.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}
