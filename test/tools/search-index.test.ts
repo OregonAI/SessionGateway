@@ -60,19 +60,24 @@ describe("identical Testimony", () => {
     expect(second.keyword_only_passages).toBe(0);
   }, 60_000);
 
-  it("embeds nothing when a pull finds nothing new: an unchanged passage is never embedded again", async () => {
-    const system = await start(firstPull);
-    const model = searchIndexOf(system).model;
+  // Reuse is by the text of a passage, not by the bytes of the file. SB 69's Proposed Amendment -1 was posted to SLB's
+  // meeting of 2025-01-21 (CommitteeProposedAmendments row 26284, created 2025-01-17 16:39 Pacific) and again to the
+  // meeting of 2025-01-28 (row 26285, created 2025-01-23 16:27:27.553). The two files differ (sha256 c58e10ef... and
+  // 6c7919c7..., 63,245 and 61,123 bytes) and read the same: `pdftotext -raw` prints identical text for both. Row 26286
+  // (Proposed Amendment -2) is created 77 ms later, so the second clock leaves it out and the pull stores 26285 alone.
+  it("is embedded once when the same text comes in a file with other bytes: a posted-again amendment", async () => {
+    const system = await start("2025-01-24T00:27:00Z"); // 2025-01-23 16:27:00 Pacific: row 26285 is not in the feed yet
+    const first = searchIndexOf(system);
+    expect(first.embedded).toBeGreaterThan(0);
 
+    system.clock.set("2025-01-24T00:27:27.600Z"); // 16:27:27.600 Pacific: row 26285 is in the feed, row 26286 is not
     await system.pullAgain();
 
-    expect(searchIndexOf(system)).toEqual({
-      model,
-      passages: 0,
-      keyword_only_passages: 0,
-      embedded: 0,
-      reused: 0,
-    });
+    const second = searchIndexOf(system);
+    expect(second.passages).toBeGreaterThan(0);
+    expect(second.embedded).toBe(0);
+    expect(second.reused).toBe(second.passages);
+    expect(second.keyword_only_passages).toBe(0);
   }, 60_000);
 
   it("is still found by meaning, each letter by its own id, and the server sees the second letter once the pull has stored it", async () => {
