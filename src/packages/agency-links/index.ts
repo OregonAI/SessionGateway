@@ -3,7 +3,8 @@
 // the network or the clock, and nothing calls OregonAI (ADR-0004).
 
 import { readFiscalImpactUnits } from "./lib/fiscal-impact.ts";
-import type { FiscalImpactResult, RegistryAgency } from "./lib/types.ts";
+import { findNamedAgencies } from "./lib/text-names.ts";
+import type { AgencyLink, FiscalImpactResult, RegistryAgency } from "./lib/types.ts";
 
 export type {
   AgencyEvidence,
@@ -17,4 +18,9 @@ export type {
 /** Reads a Fiscal Impact Statement's "Government Unit(s) Affected:" list against the registry. */
 export function fiscalImpactAgencyLinks(text: string, registry: readonly RegistryAgency[]): FiscalImpactResult {
   return readFiscalImpactUnits(text, registry);
+}
+
+/** Finds the registry names and aliases that Version or Proposed Amendment text uses. */
+export function textAgencyLinks(text: string, registry: readonly RegistryAgency[]): AgencyLink[] {
+  return findNamedAgencies(text, registry);
 }

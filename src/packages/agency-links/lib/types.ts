@@ -9,11 +9,17 @@ export type RegistryAgency = {
 };
 
 /** Why an Agency Link exists (GLOSSARY.md, "Agency Link"). The fourth kind, derived through a Statute Link, comes with the chapter-to-agency table. */
-export type AgencyEvidence = {
-  kind: "fiscal-impact-statement";
-  /** The unit as the statement lists it. */
-  unit: string;
-};
+export type AgencyEvidence =
+  | {
+      kind: "fiscal-impact-statement";
+      /** The unit as the statement lists it. */
+      unit: string;
+    }
+  | {
+      kind: "named-in-text";
+      /** The registry names and aliases found in the text, each once, in the order they first appear. */
+      terms: string[];
+    };
 
 /** A connection to one Agency, with the evidence that makes it. */
 export type AgencyLink = {
