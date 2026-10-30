@@ -143,28 +143,13 @@ describe("history the feed sends out of order", () => {
   });
 });
 
-describe("votes the feed sends out of order, and committee votes that share a meeting", () => {
+describe("votes the feed sends out of order", () => {
   // Two floor entries for SB 69 sent highest id first, on a date before every real floor vote
   // (2025-01-03) though their ids are above the real ones: the feed's order is the id order, so "Sen
   // Hayden" (9000011) comes before "Sen Pham" (9000012).
-  // A second SLB vote on 2025-01-30 at the same agenda item as the real one (CommitteeAgendaItemId 202165,
-  // CommitteeReportId 37391), a report of its own (900002): one committee can vote twice at one meeting
-  // (209 of the cache's 1,947 agenda items with votes have more than one report), and each is a vote.
   const floorEntries = [
     floorVoteRow(9000012, "Sen Pham", "Nay", { historyId: 900001, actionDate: "2025-01-03T10:00:00" }),
     floorVoteRow(9000011, "Sen Hayden", "Aye", { historyId: 900001, actionDate: "2025-01-03T10:00:00" }),
-  ];
-  const secondSlbVote = [
-    committeeVoteRow(900022, "Sen Taylor", "Nay", {
-      reportId: 900002,
-      agendaItemId: 202165,
-      meetingDate: "2025-01-30T08:00:00",
-    }),
-    committeeVoteRow(900021, "Sen Bonham", "Aye", {
-      reportId: 900002,
-      agendaItemId: 202165,
-      meetingDate: "2025-01-30T08:00:00",
-    }),
   ];
 
   it("lists floor votes by when they were taken and entries in the feed's id order", async () => {
@@ -180,38 +165,61 @@ describe("votes the feed sends out of order, and committee votes that share a me
       ["Sen Pham", "Nay", "legislator-2025r1-pham", "Khanh Pham"],
     ]);
   });
+});
 
-  it("keeps a second committee vote at the same meeting a vote of its own, so no member votes twice in one", async () => {
-    const outcome = await getMeasure(
-      { clockAt: afterTheSession, olis: { strayRows: { CommitteeVotes: secondSlbVote } } },
-      "SB 69",
-    );
+describe("committee votes that share a meeting", () => {
+  // SB 69's real SLB vote is CommitteeAgendaItemId 202165, CommitteeReportId 37391: five rows, all created
+  // 2025-01-23T07:44:41. Both cases add rows for the same agenda item under a report of their own (900002).
+  const slbRollAgain = [
+    committeeVoteRow(900021, "Sen Bonham", "Aye", slbAgain()),
+    committeeVoteRow(900022, "Sen Hayden", "Aye", slbAgain()),
+    committeeVoteRow(900023, "Sen Pham", "Aye", slbAgain()),
+    committeeVoteRow(900024, "Sen Taylor", "Aye", slbAgain()),
+    committeeVoteRow(900025, "Sen Woods", "Excused", slbAgain()),
+  ];
+  const slbAnotherRoll = [
+    committeeVoteRow(900032, "Sen Taylor", "Nay", slbAgain()),
+    committeeVoteRow(900031, "Sen Bonham", "Aye", slbAgain()),
+  ];
 
-    const listed = committeeVotesOf(outcome)?.map((vote) => [
+  function slbAgain() {
+    return {
+      reportId: 900002,
+      agendaItemId: 202165,
+      meetingDate: "2025-01-30T08:00:00",
+      createdDate: "2025-01-23T07:44:41",
+    };
+  }
+
+  const slbVote = [
+    ["Sen Bonham", "Aye"],
+    ["Sen Hayden", "Aye"],
+    ["Sen Pham", "Aye"],
+    ["Sen Taylor", "Aye"],
+    ["Sen Woods", "Excused"],
+  ];
+
+  function listedOf(outcome: ToolOutcome): unknown {
+    return committeeVotesOf(outcome)?.map((vote) => [
       vote.committee_code,
       vote.meeting_date,
       vote.votes.map((cast) => [cast.legislator_code, cast.vote]),
     ]);
-    expect(listed).toEqual([
-      [
-        "SLB",
-        "2025-01-30T08:00:00-08:00",
-        [
-          ["Sen Bonham", "Aye"],
-          ["Sen Hayden", "Aye"],
-          ["Sen Pham", "Aye"],
-          ["Sen Taylor", "Aye"],
-          ["Sen Woods", "Excused"],
-        ],
-      ],
-      [
-        "SLB",
-        "2025-01-30T08:00:00-08:00",
-        [
-          ["Sen Bonham", "Aye"],
-          ["Sen Taylor", "Nay"],
-        ],
-      ],
+  }
+
+  // The cache has 209 agenda items (of its 1,947 with votes) that the feed gives two reports, and in each
+  // the two reports hold one and the same roll, created together: HB 2232's JCT item 204180 (reports
+  // 37557 and 37689) is twelve Aye rows twice, all created 2025-02-10T15:02:49. The committees are
+  // joint ones (191 JWM, 14 JCT, 1 JLAUD, 1 JLCIMT and two conference committees); the fixture holds none, so
+  // this case gives SB 69's SLB roll a second report of the same shape.
+  it("lists a roll the feed reports under two reports once", async () => {
+    const outcome = await getMeasure(
+      { clockAt: afterTheSession, olis: { strayRows: { CommitteeVotes: slbRollAgain } } },
+      "SB 69",
+    );
+
+    expect(listedOf(outcome)).toEqual([
+      ["SLB", "2025-01-30T08:00:00-08:00", slbVote],
       [
         "HLWS",
         "2025-04-28T15:00:00-07:00",
@@ -226,6 +234,28 @@ describe("votes the feed sends out of order, and committee votes that share a me
         ],
       ],
     ]);
+  });
+
+  // No such case is in the cache (none of the 209 has two different rolls). The case is made up to show
+  // that two rolls that differ are never merged into one and none of a report's rows is dropped.
+  it("keeps two different rolls of one committee at one meeting as two votes, so no member votes twice in one", async () => {
+    const outcome = await getMeasure(
+      { clockAt: afterTheSession, olis: { strayRows: { CommitteeVotes: slbAnotherRoll } } },
+      "SB 69",
+    );
+
+    expect((listedOf(outcome) as unknown[]).slice(0, 2)).toEqual([
+      ["SLB", "2025-01-30T08:00:00-08:00", slbVote],
+      [
+        "SLB",
+        "2025-01-30T08:00:00-08:00",
+        [
+          ["Sen Bonham", "Aye"],
+          ["Sen Taylor", "Nay"],
+        ],
+      ],
+    ]);
+    expect(committeeVotesOf(outcome)).toHaveLength(3);
   });
 });
 

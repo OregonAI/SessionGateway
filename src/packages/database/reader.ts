@@ -74,6 +74,12 @@ const sponsorRow = z.object({
   legislator_name: z.string().nullable(),
 });
 
+/** A committee vote's committee, meeting and who voted what, whatever order the feed lists the members in. */
+function rollOf(vote: CommitteeVote): string {
+  const cast = vote.votes.map((entry) => `${entry.legislatorCode}\u0000${entry.vote}`).sort();
+  return JSON.stringify([vote.committeeCode, vote.meetingDate, cast]);
+}
+
 export function openIndexReader(path: string): IndexReader {
   const database = openReadConnection(path);
   const selectMeasure = database.prepare(
@@ -197,20 +203,20 @@ export function openIndexReader(path: string): IndexReader {
       return votes;
     },
     findCommitteeVotes(key) {
-      const votes: CommitteeVote[] = [];
+      const reports: CommitteeVote[] = [];
       let currentReport: number | undefined;
       for (const row of selectCommitteeVotes.all(key.session, key.prefix, key.number)) {
         const stored = committeeVoteRow.parse(row);
         // The rows come ordered by meeting and report, so a new report id starts a new committee vote.
-        if (stored.report_id !== currentReport || votes.length === 0) {
-          votes.push({
+        if (stored.report_id !== currentReport || reports.length === 0) {
+          reports.push({
             committeeCode: stored.committee_code,
             meetingDate: stored.meeting_date as Timestamp,
             votes: [],
           });
           currentReport = stored.report_id;
         }
-        votes[votes.length - 1]?.votes.push({
+        reports[reports.length - 1]?.votes.push({
           legislatorCode: stored.legislator_code,
           legislator:
             stored.legislator_id === null || stored.legislator_name === null
@@ -219,7 +225,15 @@ export function openIndexReader(path: string): IndexReader {
           vote: stored.vote,
         });
       }
-      return votes;
+      // The cache gives every agenda item that has two reports the same roll twice (docs/research/olis-votes.md
+      // §3), so a roll the feed gives under two reports is listed once. Rolls that differ are never merged.
+      const listed = new Set<string>();
+      return reports.filter((vote) => {
+        const roll = rollOf(vote);
+        if (listed.has(roll)) return false;
+        listed.add(roll);
+        return true;
+      });
     },
     asOf(session) {
       const row = selectAsOf.get(session);

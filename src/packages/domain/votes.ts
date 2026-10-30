@@ -18,8 +18,8 @@ type EntryFields = {
 
 /**
  * One member's entry in a committee vote, as a CommitteeVotes row records it. The rows of one
- * committee vote share a `CommitteeReportId`: a committee can vote more than once on one Measure at
- * one meeting, and each of those is a vote of its own.
+ * report share a `CommitteeReportId`. The feed can give one roll under two reports (a joint
+ * committee's, in the cache), and the reader lists it once.
  */
 export type CommitteeVoteEntry = EntryFields & {
   reportId: number;

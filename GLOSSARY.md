@@ -102,14 +102,14 @@ A committee that sponsors a Measure, from a MeasureSponsors row of type Committe
 The text of a MeasureSponsors row of type Presession, as OLIS publishes it: "(Presession filed.)", or for SB 69 the Senate Interim Rule 213.28 notice its document opens with. A Measure can have none, one or (13 in 2025R1) two. The row names no Legislator.
 
 **Vote**:
-One Legislator's answer in a floor vote or a committee vote, in the feed's own word. Committee votes have "Aye", "Nay" and "Excused"; floor votes add "Excused for Business" and "Absent" (counts in the 2025R1 cache, checked 2026-10-30: Aye 56,651, Nay 7,984, Excused 6,519, Excused for Business 1,538, Absent 60 on the floor; Aye 18,322, Nay 2,013, Excused 1,624 in committee). The voter is named by a Legislator Code, so it resolves to a Legislator like a Sponsor does.
+One Legislator's answer in a floor vote or a committee vote, in the feed's own word. Committee votes have "Aye", "Nay" and "Excused"; floor votes add "Excused for Business" and "Absent" (`docs/research/olis-votes.md` §2 has the counts). The voter is named by a Legislator Code, so it resolves to a Legislator like a Sponsor does.
 
 **Floor vote**:
 One chamber's roll call on a Measure, taken at one action of its History: the feed's MeasureVotes rows that share a `MeasureHistoryId`, with the chamber, when it voted and the action's text ("Third reading.  Carried by Bonham.  Passed."). `get_measure` lists a Measure's floor votes in the order they were taken, each with every Legislator's Vote in the feed's order.
 _Avoid_: roll call, when the chamber matters
 
 **Committee vote**:
-One committee's roll call on a Measure at one meeting: the feed's CommitteeVotes rows that share a `CommitteeReportId`, with the committee's code and when it met. A committee can vote more than once on a Measure at one meeting (209 of the cache's 1,947 agenda items that have votes), and each is a Committee vote of its own. The feed creates the rows before the meeting (all 21,959 rows of the 2025R1 cache have a `CreatedDate` earlier than their `MeetingDate`, checked 2026-10-30), so a committee vote's meeting can be later than the As of time. Committee names wait for the ticket that reads Committees, as for the Committee sponsor.
+One committee's roll call on a Measure at one meeting: the feed's CommitteeVotes rows that share a `CommitteeReportId`, with the committee's code and when it met. The feed gives some rolls under two reports with the same rows in each (in the cache, 209 agenda items, all of joint or conference committees: `docs/research/olis-votes.md` §3), and `get_measure` lists such a roll once. The feed creates the rows before the meeting (§4), so a committee vote's meeting can be later than the As of time. Committee names wait for the ticket that reads Committees, as for the Committee sponsor.
 
 ### Statutes and agencies
 
