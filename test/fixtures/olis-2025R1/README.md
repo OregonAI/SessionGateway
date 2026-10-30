@@ -42,11 +42,18 @@ point at, and every document they link.
   Legislator Codes with that reason, and fails on any other reference, on an entry with another
   target or reason, and on an entry that matches no reference. A new gap is added to
   `scripts/fixture/schema.ts` by a person, with the evidence.
-- **Alias coverage.** No Fiscal Impact Statement in the slice spells "ODHS" in its "Government
-  Unit(s) Affected:" line. HB 3795's says "Department of Human Services", its Testimony row 209256
-  gives the Organization as "ODHS", and SB 921's statement uses "OBDD" for the Agency its unit line
-  calls "Oregon Business Development Department". Whether those count as the registry aliases the
-  spec means can only be settled against the OregonAI agency registry.
+- **Alias coverage: not met as the ticket words it.** The ticket asks for a Fiscal Impact
+  Statement that names an alias ("ODHS"). No Fiscal Impact Statement in the slice spells "ODHS" in
+  its "Government Unit(s) Affected:" line, and none of the 19 statements among the cached samples
+  does either (`pdftotext` over `documents-sample-1/` and `-2/`), so choosing from the samples,
+  as the brief says, could not meet it. What the slice does hold: Staff Measure Summaries 90799
+  (SB 64) and 92329 (HB 3795) write "Oregon Department of Human Services (ODHS)"; HB 3795's
+  Testimony row 209256 gives the Organization as "ODHS"; HB 3795's statements say "Department of
+  Human Services" in the unit line; and SB 921's statement uses "OBDD" for the Agency its unit
+  line calls "Oregon Business Development Department". Whether those count as the registry
+  aliases the spec means can only be settled against the OregonAI agency registry. Meeting the
+  ticket's wording needs one more Measure, found by reading Fiscal Impact Statements outside the
+  samples, and so one more download run: that is the owner's call.
 
 ## How it was produced
 

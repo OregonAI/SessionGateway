@@ -5,7 +5,7 @@
 
 # Named by spec #1 and ticket #3.
 SB 69    # Spec #1 cases (b), (c), (e), (f): SB 69-2 adopted by SLB on 2025-01-30; Versions Introduced, A-Engrossed, Enrolled and "Senate Amendments to Introduced"; -1 posted to three meetings. Its Fiscal Impact Statement (analysis 85414) names four Agencies: "Government Unit(s) Affected: Bureau of Labor and Industries, Employment Department, Judicial Department, Department of Justice".
-HB 3795  # Spec #1 cases (b), (e), (f): a DHS measure, vetoed, with -A3 amending ORS 409.711 and 418.808. Alias: its Fiscal Impact Statements (analyses 89095 and 92069) say "Government Unit(s) Affected: Department of Human Services", and its Testimony 209256 gives Organization "ODHS". No Fiscal Impact Statement in the fixture spells "ODHS" in its unit line; see README.md.
+HB 3795  # Spec #1 cases (b), (e), (f): a DHS measure, vetoed, with -A3 amending ORS 409.711 and 418.808. Alias: its Fiscal Impact Statements (analyses 89095 and 92069) say "Government Unit(s) Affected: Department of Human Services", its Staff Measure Summary 92329 writes "Oregon Department of Human Services (ODHS)", and its Testimony 209256 gives Organization "ODHS". No Fiscal Impact Statement in the fixture spells "ODHS" in its unit line; see README.md.
 HB 3131  # Spec #1 cases (d), (e): 42 Testimony rows, 41 support and 1 oppose; Fiscal and Revenue Impact Statements for the Introduced Version (analyses 85869 and 85719). "Government Unit(s) Affected: Oregon Watershed Enhancement Board".
 
 # Measures whose Fiscal Impact Statements name Agencies. Each was chosen by reading a statement in
