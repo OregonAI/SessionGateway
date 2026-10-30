@@ -19,7 +19,7 @@ import {
   sb69Slb,
 } from "../support/expected-votes.ts";
 import { liveStatusOf } from "../support/live-status.ts";
-import type { FakeOlisBehavior } from "../support/fake-olis.ts";
+import type { FakeOlis, FakeOlisBehavior } from "../support/fake-olis.ts";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";
 import { committeeVotesOf, floorVotesOf, tuplesOf } from "../support/votes.ts";
@@ -200,12 +200,20 @@ describe("the schedule with OLIS answering", () => {
 // Acceptance case (f): sponsors, location and committee votes for SB 69 and HB 3795, with the live lookup
 // faked both answering and failing. The sponsor rows are the fixture's MeasureSponsors rows (SB 69's one row
 // is a presession filing and HB 3795's a committee sponsor, HECHS: get-measure-sponsors.test.ts has the
-// documents that print them), the locations its Measures rows' CurrentLocation, and the rolls its
+// documents that print them), the cached locations its Measures rows' CurrentLocation, and the rolls its
 // CommitteeVotes rows. "Ahead" is what OLIS has on 2025-12-15; "cached" is what the cache pulled on
 // 2025-04-10 holds.
+//
+// The fixture keeps each Measures row's final state, and both rows were created before the pull, so the
+// fake would answer with the same location the cache holds. A location that tells OLIS from the cache is
+// therefore made up for the case: `olisMovesTo` is where each fake row is moved after the pull (the
+// committee codes are ones the fixture's agenda items for the Measure use, HLWS and SHS; the places are
+// made up), the way get-measure-live-feed.test.ts moves SB 69's.
 const caseF = [
   {
     measure: "SB 69",
+    prefix: "SB",
+    number: 69,
     sponsorLine: {
       sponsors: [],
       committee_sponsors: [],
@@ -214,21 +222,35 @@ const caseF = [
       ],
     },
     location: { current: "Chapter Number Assigned", committee_code: null },
+    olisMovesTo: { current: "In House Committee", committee_code: "HLWS" },
     liveRolls: [sb69Slb, sb69Hlws],
     cachedRolls: [sb69Slb],
   },
   {
     measure: "HB 3795",
+    prefix: "HB",
+    number: 3795,
     sponsorLine: {
       sponsors: [],
       committee_sponsors: [{ committee_code: "HECHS" }],
       presession_messages: [],
     },
     location: { current: "House Desk - Vetoed", committee_code: null },
+    olisMovesTo: { current: "In Senate Committee", committee_code: "SHS" },
     liveRolls: [hb3795Hechs, hb3795Shs],
     cachedRolls: [hb3795Hechs],
   },
 ] as const;
+
+/** Moves both Measures' locations at the fake OLIS to `olisMovesTo`, after the pull, so OLIS and the cache disagree. */
+function moveLocationsAtOlis(olis: FakeOlis): void {
+  for (const { prefix, number, olisMovesTo } of caseF) {
+    olis.amendRows("Measures", (row) => row["MeasurePrefix"] === prefix && row["MeasureNumber"] === number, {
+      CurrentLocation: olisMovesTo.current,
+      CurrentCommitteeCode: olisMovesTo.committee_code,
+    });
+  }
+}
 
 function sponsorLineOf(outcome: ToolOutcome): Record<string, unknown> {
   return {
@@ -244,6 +266,7 @@ describe("acceptance case (f) with OLIS answering", () => {
   beforeAll(async () => {
     system = await startSystem({ clockAt: pulledAt });
     system.clock.set(readAt);
+    moveLocationsAtOlis(system.olis);
   });
 
   afterAll(async () => {
@@ -269,8 +292,10 @@ describe("acceptance case (f) with OLIS answering", () => {
         expect(outcome.isError).toBe(false);
         expect(sponsorLineOf(outcome)).toEqual(expected.sponsorLine);
         const live = liveStatusOf(outcome);
-        expect(live).toMatchObject({ source: "olis", lookup_failed: false, location: expected.location });
+        expect(live).toMatchObject({ source: "olis", lookup_failed: false, location: expected.olisMovesTo });
         expect(live?.committee_votes.map((vote) => tuplesOf(vote.votes))).toEqual(expected.liveRolls);
+        // The cache's own location, from the pull, is the fixture's.
+        expect(outcome.structured?.["location"]).toEqual(expected.location);
       },
     );
   });
@@ -295,6 +320,7 @@ describe.for(failures)("the live status when OLIS %s", ([, behavior, timeoutMs, 
       ...(timeoutMs === undefined ? {} : { serverEnv: { OLIS_LIVE_TIMEOUT_MS: timeoutMs } }),
     });
     system.clock.set(readAt);
+    moveLocationsAtOlis(system.olis);
     system.olis.behave(behavior);
   });
 
@@ -328,9 +354,11 @@ describe.for(failures)("the live status when OLIS %s", ([, behavior, timeoutMs, 
       expect(live?.notice).toMatch(/live lookup of OLIS failed/i);
       expect(live?.notice).toMatch(reason);
       expect(live?.notice).toContain("come from the cache, as of 2025-04-10T10:00:00-07:00");
-      // Case (f): the values are the cache's, which differ from what OLIS would say.
+      // Case (f): the values are the cache's, which differ from what OLIS would say (the fake has moved the
+      // Measure since the pull, as `moveLocationsAtOlis` says, and the votes it would send are `liveRolls`).
       expect(sponsorLineOf(outcome)).toEqual(expected.sponsorLine);
       expect(live?.location).toEqual(expected.location);
+      expect(live?.location).not.toEqual(expected.olisMovesTo);
       expect(live?.committee_votes.map((vote) => tuplesOf(vote.votes))).toEqual(expected.cachedRolls);
     });
 
