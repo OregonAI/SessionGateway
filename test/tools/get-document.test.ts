@@ -463,6 +463,27 @@ describe.for(eras)("get_document for a %s client", (era) => {
     });
   });
 
+  describe("a ligature in the text layer", () => {
+    // Served as the file's text layer holds it (ADR-0002): U+FB01, one character, not "fi". Each row's
+    // source is outside the code. Testimony 117165's own ToUnicode map says `<010E> <FB01>` for the glyph
+    // before "nancial"; `pdftotext -raw` on Testimony 209270 prints "de-identi\uFB01ed" with the same
+    // character. (pdftotext splits the ligature in the other three files that have one, which is why the
+    // rows are these two and not all five.)
+    it.for([
+      ["Testimony 117165 on HB 3131", "testimony-2025r1-117165", "technical assistance and \uFB01nancial\nincentives"],
+      [
+        "Testimony 209270 on HB 3795",
+        "testimony-2025r1-209270",
+        "CIRT\nreports are de-identi\uFB01ed and publicly-available.",
+      ],
+    ] as const)("is kept as one character, not split into letters: %s", async ([, id, quoted]) => {
+      const outcome = await callTool(connected, "get_document", { id });
+
+      expect(outcome.isError).toBe(false);
+      expect(String(outcome.structured?.["text"])).toContain(quoted);
+    });
+  });
+
   describe("a document with no text layer", () => {
     // The fixture has three, none of which `pdftotext` finds a character in (test/fixtures/olis-2025R1/
     // README.md): Exhibit 288141 (SB 64, a 2-page scan) and the photographs behind SB 921's Testimony 148731
