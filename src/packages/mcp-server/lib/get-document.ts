@@ -15,7 +15,7 @@ const related = z.object({
   relation: z
     .enum(relations)
     .describe(
-      "How it points at it: the Measure, committee or meeting a document belongs to, the meeting a Proposed Amendment was posted to, or the amendment a posting is of.",
+      "How it points at it: the Measure, committee or meeting a document belongs to, the Version an analysis is of or a Printed Amendment amends, the meeting a Proposed Amendment was posted to, or the amendment a posting is of.",
     ),
   meaning: z
     .string()

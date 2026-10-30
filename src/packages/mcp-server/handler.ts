@@ -80,7 +80,7 @@ function buildServer(reader: IndexReader, config: ServerConfig, limiter: RateLim
     {
       title: "Get a document",
       description:
-        "Returns the text of one document of the Session exactly as the Legislature published it, in parts, with where and when it was fetched, the ids of the Measure, meeting and committee it belongs to, and whether it has a text layer at all. It is not the official record.",
+        "Returns the text of one document of the Session exactly as the Legislature published it, in parts, with where and when it was fetched, the ids of the Measure, Version, meeting and committee it belongs to, and whether it has a text layer at all. It is not the official record.",
       inputSchema: getDocumentInput,
       outputSchema: getDocumentOutput,
       annotations: { readOnlyHint: true, openWorldHint: false },

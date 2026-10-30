@@ -18,8 +18,12 @@ export const documentKinds = [
 ] as const;
 export type DocumentKind = (typeof documentKinds)[number];
 
-/** How a document points at a node: the Measure, committee or meeting it belongs to, the meeting a posting was posted to, the amendment a posting is of. */
-export const relations = ["measure", "committee", "meeting", "posted_to", "amendment"] as const;
+/**
+ * How a document points at a node: the Measure, committee or meeting it belongs to, the Version an
+ * analysis is of or a Printed Amendment amends, the meeting a posting was posted to, the amendment a
+ * posting is of.
+ */
+export const relations = ["measure", "committee", "meeting", "version", "posted_to", "amendment"] as const;
 export type Relation = (typeof relations)[number];
 
 /** The id of a document the store holds: what `get_document` takes. */
@@ -29,8 +33,8 @@ export type AmendmentId = string & { readonly brand: "AmendmentId" };
 export type CommitteeId = string & { readonly brand: "CommitteeId" };
 export type MeetingId = string & { readonly brand: "MeetingId" };
 
-/** A node a document can point at. */
-export type NodeId = MeasureId | AmendmentId | CommitteeId | MeetingId;
+/** A node a document can point at. A Version is a document, so its id is a DocumentId. */
+export type NodeId = MeasureId | AmendmentId | CommitteeId | MeetingId | DocumentId;
 
 /** Lower case, with every run of other characters as one hyphen: "A-Engrossed" is "a-engrossed". */
 function slug(text: string): string {
@@ -51,6 +55,15 @@ function measureSlug(key: MeasureKey): string {
  */
 export function isPrintedAmendment(versionDescription: string): boolean {
   return /\bamendments\b/i.test(versionDescription);
+}
+
+/**
+ * The description of the Version a Printed Amendment amends, which its own description names:
+ * "Senate Amendments to A-Engrossed" amends "A-Engrossed". Undefined when the description names none.
+ */
+export function amendedVersionDescriptionOf(printedAmendmentDescription: string): string | undefined {
+  const named = /\bamendments\s+to\s+(.+)$/i.exec(printedAmendmentDescription.trim())?.[1]?.trim();
+  return named === undefined || named === "" ? undefined : named;
 }
 
 /** The id of a Version (`version-2025r1-sb69-a-engrossed`) or of a Printed Amendment, by the feed's description. */

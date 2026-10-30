@@ -154,6 +154,10 @@ describe("rows the fixture does not have", () => {
   const recordingLogUrl = `${olisRoot}/CommitteeMeetingDocument/900001`;
   const corruptUrl = `${olisRoot}/MeasureDocument/SB69/Corrupt`;
   const revisedUrl = `${olisRoot}/ProposedAmendment/900002`;
+  // Analysis documents whose Version label names no Version SB 69 has: "MRA" is a label olis-odata.md
+  // gotcha 9 lists that no description maps to with certainty, and SB 69 has no C-Engrossed.
+  const minorityLabelUrl = `${olisRoot}/MeasureAnalysisDocument/900003`;
+  const missingVersionUrl = `${olisRoot}/MeasureAnalysisDocument/900004`;
   let system: System;
 
   beforeAll(async () => {
@@ -172,6 +176,30 @@ describe("rows the fixture does not have", () => {
               MeasurePrefix: null,
               MeasureNumber: null,
               DocumentUrl: recordingLogUrl,
+            },
+          ],
+          MeasureAnalysisDocuments: [
+            {
+              SessionKey: "2025R1",
+              MeasureAnalysisId: "900003",
+              CommittteCode: "SLB",
+              DocumentType: "Fiscal Impact Statement",
+              MeasurePrefix: "SB",
+              MeasureNumber: 69,
+              Version: "MRA",
+              IsMinority: false,
+              DocumentUrl: minorityLabelUrl,
+            },
+            {
+              SessionKey: "2025R1",
+              MeasureAnalysisId: "900004",
+              CommittteCode: "SLB",
+              DocumentType: "Fiscal Impact Statement",
+              MeasurePrefix: "SB",
+              MeasureNumber: 69,
+              Version: "C",
+              IsMinority: false,
+              DocumentUrl: missingVersionUrl,
             },
           ],
           MeasureDocuments: [
@@ -204,6 +232,9 @@ describe("rows the fixture does not have", () => {
           [new URL(corruptUrl).pathname]: "../measures.txt",
           // SB 69-2's file, standing in for a -1 that was revised and posted again.
           [new URL(revisedUrl).pathname]: "proposed-amendments/26286.pdf",
+          // SB 69's Fiscal Impact Statement, standing in for the two analysis documents.
+          [new URL(minorityLabelUrl).pathname]: "measure-analysis-documents/85414.pdf",
+          [new URL(missingVersionUrl).pathname]: "measure-analysis-documents/85414.pdf",
         },
       },
     });
@@ -223,6 +254,24 @@ describe("rows the fixture does not have", () => {
       source_url: recordingLogUrl,
     });
     expect((await getDocument(system, "exhibit-2025r1-900001")).isError).toBe(true);
+  });
+
+  it.for([
+    ["a label no description maps to with certainty (MRA)", "analysis-2025r1-900003"],
+    ["a label whose Version the Measure does not have (C, with no C-Engrossed)", "analysis-2025r1-900004"],
+  ] as const)("points an analysis document at no Version when its Version is %s", async ([, id]) => {
+    const outcome = await getDocument(system, id);
+
+    expect(outcome.isError).toBe(false);
+    const related = (outcome.structured?.["related"] as { id: string; relation: string }[]).map(
+      (node) => [node.relation, node.id] as const,
+    );
+    expect(related.toSorted()).toEqual(
+      [
+        ["measure", "measure-2025r1-sb69"],
+        ["committee", "committee-2025r1-slb"],
+      ].toSorted(),
+    );
   });
 
   it("reports a file that is not a PDF instead of failing the pull", async () => {

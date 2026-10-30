@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { measureIdOf, type MeasureKey, type SessionKey } from "#/packages/domain/index.ts";
 import {
+  amendedVersionDescriptionOf,
   amendmentIdOf,
   analysisIdOf,
   committeeIdOf,
@@ -13,6 +14,7 @@ import {
   recordingLogIdOf,
   testimonyIdOf,
   versionIdOf,
+  type DocumentId,
   type DocumentLink,
   type DocumentRelation,
 } from "#/packages/domain/documents.ts";
@@ -62,6 +64,10 @@ function measureRelation(key: MeasureKey, provenance: string): DocumentRelation 
   return { relation: "measure", to: measureIdOf(key), meaning: null, provenance };
 }
 
+function versionRelation(version: DocumentId, provenance: string): DocumentRelation {
+  return { relation: "version", to: version, meaning: null, provenance };
+}
+
 function committeeRelation(session: SessionKey, committeeCode: string, provenance: string): DocumentRelation {
   return { relation: "committee", to: committeeIdOf(session, committeeCode), meaning: null, provenance };
 }
@@ -109,10 +115,26 @@ async function readVersions(
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
   const rows = await readSessionRows(options, "MeasureDocuments", session, measureDocumentRow, signal);
+  // A Printed Amendment points at the Version its description names, but only at one the feed lists.
+  const versions = new Set(
+    rows
+      .filter((row) => !isPrintedAmendment(row.VersionDescription))
+      .map((row) =>
+        versionIdOf({ session, prefix: row.MeasurePrefix, number: row.MeasureNumber }, row.VersionDescription),
+      ),
+  );
   return rows.map((row) => {
     const key = { session, prefix: row.MeasurePrefix, number: row.MeasureNumber };
     const id = versionIdOf(key, row.VersionDescription);
     const provenance = `MeasureDocuments ${row.MeasurePrefix}${row.MeasureNumber} ${row.VersionDescription}`;
+    const relations = [measureRelation(key, provenance)];
+    const amended = isPrintedAmendment(row.VersionDescription)
+      ? amendedVersionDescriptionOf(row.VersionDescription)
+      : undefined;
+    if (amended !== undefined) {
+      const amendedId = versionIdOf(key, amended);
+      if (versions.has(amendedId)) relations.push(versionRelation(amendedId, provenance));
+    }
     return {
       id,
       nodeId: id,
@@ -120,7 +142,7 @@ async function readVersions(
       label: row.VersionDescription,
       sourceUrl: sourceUrlOf(row.DocumentUrl),
       postedAt: null,
-      relations: [measureRelation(key, provenance)],
+      relations,
     };
   });
 }
@@ -134,12 +156,26 @@ const analysisRow = z.looseObject({
   DocumentType: z.string(),
   MeasurePrefix: z.string(),
   MeasureNumber: z.number().int(),
+  // "INTRO", "A", "B", ...; blank on most rows (olis-odata.md gotcha 9).
+  Version: z.string().nullish(),
   DocumentUrl: z.string(),
 });
+
+/**
+ * The description of the Version an analysis document is of, from the feed's `Version` label: "INTRO"
+ * is "Introduced" and a single letter is that letter's Engrossed Version ("A" is "A-Engrossed"). A
+ * label that is blank, or that more than one description could answer ("B*", "MRA"), names no Version.
+ */
+function versionDescriptionOfAnalysisLabel(label: string | null | undefined): string | undefined {
+  if (label === "INTRO") return "Introduced";
+  if (label !== null && label !== undefined && /^[A-Z]$/.test(label)) return `${label}-Engrossed`;
+  return undefined;
+}
 
 async function readAnalyses(
   options: OlisClientOptions,
   session: SessionKey,
+  versions: ReadonlySet<DocumentId>,
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
   const rows = await readSessionRows(options, "MeasureAnalysisDocuments", session, analysisRow, signal);
@@ -147,6 +183,11 @@ async function readAnalyses(
     const key = { session, prefix: row.MeasurePrefix, number: row.MeasureNumber };
     const id = analysisIdOf(session, row.MeasureAnalysisId);
     const provenance = `MeasureAnalysisDocuments ${row.MeasureAnalysisId}`;
+    const relations = [measureRelation(key, provenance), committeeRelation(session, row.CommittteCode, provenance)];
+    // Only a Version the feed lists for the Measure: a label that names a Version it lacks points nowhere.
+    const described = versionDescriptionOfAnalysisLabel(row.Version);
+    const version = described === undefined ? undefined : versionIdOf(key, described);
+    if (version !== undefined && versions.has(version)) relations.push(versionRelation(version, provenance));
     return {
       id,
       nodeId: id,
@@ -154,7 +195,7 @@ async function readAnalyses(
       label: row.DocumentType,
       sourceUrl: sourceUrlOf(row.DocumentUrl),
       postedAt: null,
-      relations: [measureRelation(key, provenance), committeeRelation(session, row.CommittteCode, provenance)],
+      relations,
     };
   });
 }
@@ -283,7 +324,8 @@ export async function readDocumentLinks(
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
   const versions = await readVersions(options, session, signal);
-  const analyses = await readAnalyses(options, session, signal);
+  const versionIds = new Set(versions.filter((link) => link.kind === "version").map((link) => link.id));
+  const analyses = await readAnalyses(options, session, versionIds, signal);
   const exhibits = await readExhibits(options, session, signal);
   const postings = await readPostings(options, session, signal);
   const testimony = await readTestimony(options, session, signal);

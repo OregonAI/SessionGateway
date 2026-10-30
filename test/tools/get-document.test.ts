@@ -85,10 +85,15 @@ describe.for(eras)("get_document for a %s client", (era) => {
       // The feed writes the spaces raw; the link a person can follow has them percent-encoded.
       sourceUrl:
         "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/HB3795/Senate%20Amendments%20to%20A-Engrossed",
-      related: [["measure", "measure-2025r1-hb3795"]],
+      // Its description names the Version it amends: "Senate Amendments to A-Engrossed".
+      related: [
+        ["measure", "measure-2025r1-hb3795"],
+        ["version", "version-2025r1-hb3795-a-engrossed"],
+      ],
     },
     {
       // The row spells the committee property `CommittteCode` and the key `MeasureAnalysisId` as a string.
+      // Its Version is "A", which is SB 69's A-Engrossed (olis-odata.md gotcha 9: "INTRO", "A", "B", ...).
       document: "MeasureAnalysisDocuments row 85414, SB 69's Fiscal Impact Statement",
       id: "analysis-2025r1-85414",
       kind: "analysis",
@@ -97,6 +102,7 @@ describe.for(eras)("get_document for a %s client", (era) => {
       related: [
         ["measure", "measure-2025r1-sb69"],
         ["committee", "committee-2025r1-slb"],
+        ["version", "version-2025r1-sb69-a-engrossed"],
       ],
     },
     {
@@ -148,7 +154,10 @@ describe.for(eras)("get_document for a %s client", (era) => {
       label: "House Amendments to Introduced",
       sourceUrl:
         "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/HB3795/House%20Amendments%20to%20Introduced",
-      related: [["measure", "measure-2025r1-hb3795"]],
+      related: [
+        ["measure", "measure-2025r1-hb3795"],
+        ["version", "version-2025r1-hb3795-introduced"],
+      ],
     },
     {
       document: "MeasureDocuments row for SB 69, Senate Amendments to Introduced (a Printed Amendment)",
@@ -157,9 +166,13 @@ describe.for(eras)("get_document for a %s client", (era) => {
       label: "Senate Amendments to Introduced",
       sourceUrl:
         "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/Senate%20Amendments%20to%20Introduced",
-      related: [["measure", "measure-2025r1-sb69"]],
+      related: [
+        ["measure", "measure-2025r1-sb69"],
+        ["version", "version-2025r1-sb69-introduced"],
+      ],
     },
     {
+      // The row's Version is "INTRO": HB 3131's Introduced Version.
       document: "MeasureAnalysisDocuments row 85719, HB 3131's Revenue Impact Statement",
       id: "analysis-2025r1-85719",
       kind: "analysis",
@@ -168,6 +181,7 @@ describe.for(eras)("get_document for a %s client", (era) => {
       related: [
         ["measure", "measure-2025r1-hb3131"],
         ["committee", "committee-2025r1-halnrw"],
+        ["version", "version-2025r1-hb3131-introduced"],
       ],
     },
     {
