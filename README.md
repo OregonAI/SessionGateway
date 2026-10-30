@@ -31,7 +31,9 @@ Two entry scripts, run by Node 26 straight from the `.ts` source, share one SQLi
 their configuration from the environment and fail at start-up, naming the variable, if it is wrong.
 
 ```
+npm run model:fetch   # once: the embedding model (about 34 MB) into .cache/models/
 export SESSION_KEY=2025R1 DATABASE_PATH=data/index.db OLIS_BASE_URL=https://api.oregonlegislature.gov/odata/odataservice.svc
+export MODEL_PATH=.cache/models/Xenova--bge-small-en-v1.5/ea104dacec62c0de699686887e3f920caeb4f3e3
 SNAPSHOT_PATH=data/snapshot.json node src/bin/ingest.ts   # one full pull, then exit
 node src/bin/server.ts   # serves it at http://127.0.0.1:3000/mcp
 ```
@@ -41,6 +43,8 @@ node src/bin/server.ts   # serves it at http://127.0.0.1:3000/mcp
 | `SESSION_KEY` | both | none | The one Session this deployment serves (ADR-0003), such as `2025R1`. |
 | `DATABASE_PATH` | both | none | The SQLite file. The worker writes it and the server reads it. |
 | `SNAPSHOT_PATH` | worker | none | The OregonAI snapshot file the build uses (see "Building the OregonAI snapshot"). The worker reads it before it reads OLIS and stores its version with the full pull; the server never reads it. |
+| `MODEL_PATH` | both | none | The directory that holds the pinned embedding model's files, which `npm run model:fetch` downloads and `npm run model:verify` checks (ADR-0026). The worker embeds each new passage with it and the server embeds each question; either stops at start-up, naming the missing file, if it is not there. |
+| `MODEL_THREADS` | worker | `1` | How many threads one run of the model may use (1 to 64). The server always uses one: the deploy box has two cores shared with seven corpora. |
 | `OLIS_BASE_URL` | both | none | The OLIS OData service root, such as `https://api.oregonlegislature.gov/odata/odataservice.svc` (a trailing slash is added if it is missing). The worker pulls from it, and the server reads one Measure from it when `get_measure` is called. |
 | `OLIS_LIVE_TIMEOUT_MS` | server | `5000` | How long one live lookup may take, its five requests together, before `get_measure` answers from the cache and says the lookup failed. A whole number of milliseconds from 1 to 30000 (half what an MCP client waits for a tool by default); another value stops the start-up. |
 | `OLIS_DOCUMENT_ORIGIN` | worker | `https://olis.oregonlegislature.gov` | Where the worker fetches the documents the feed links. They are not on the feed's host. Only a test sets it. |
@@ -60,7 +64,8 @@ values and says the lookup failed.
 
 A full pull also fetches every document the feed links that the database does not hold yet, once each,
 and writes `build-report.json` beside the database: the documents that are scans with no text layer, and
-the ones it could not get or read (ADR-0011).
+the ones it could not get or read (ADR-0011), and how many passages it embedded and how many it reused because
+the same text already had a vector (ADR-0025).
 
 A full pull against the live feed is allowed only between 5 pm and 6 am Pacific (ADR-0005). Nothing
 schedules it yet, so run it by hand inside that window.
