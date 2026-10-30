@@ -34,6 +34,46 @@ afterAll(async () => {
 const proposedAmendmentUrl = (id: number): string =>
   `https://olis.oregonlegislature.gov/liz/2025R1/Downloads/ProposedAmendment/${id}`;
 
+/** What an agent sees of one Statute Link. */
+type Link = {
+  kind: string;
+  target_id: string;
+  target_type: "section" | "chapter";
+  resolvable_on_oregonai: boolean;
+  measure_section: string | null;
+};
+
+/** An ORS section: OregonAI has its page. */
+const section = (kind: string, id: string, measureSection: string): Link => ({
+  kind,
+  target_id: id,
+  target_type: "section",
+  resolvable_on_oregonai: true,
+  measure_section: measureSection,
+});
+
+/** An ORS chapter: OregonAI has no id for it, and the link says so (spec #1, story 27). */
+const chapter = (kind: string, id: string, measureSection: string): Link => ({
+  kind,
+  target_id: id,
+  target_type: "chapter",
+  resolvable_on_oregonai: false,
+  measure_section: measureSection,
+});
+
+type File = {
+  posting_ids: string[];
+  text_read: boolean;
+  not_read_reason: string | null;
+  statute_links: Link[];
+  relating_clause_edits: {
+    deleted: string | null;
+    deleted_lines: string[];
+    inserted: string | null;
+    inserted_sections: string[];
+  }[];
+};
+
 describe.for(eras)("compare_amendment for a %s client", (era) => {
   let connected: ConnectedClient;
 
@@ -135,6 +175,119 @@ describe.for(eras)("compare_amendment for a %s client", (era) => {
         label: "Introduced",
         source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/Introduced",
       });
+    });
+  });
+
+  // SB 69-2 as `pdftotext proposed-amendments/26286.pdf` prints it. Its sections (the "SECTION n." lines): 1 adds
+  // section 2 of the Act to ORS chapter 657B; 3 amends ORS 657B.070, 4 amends 659A.159 ("as amended by section 8,
+  // chapter 20, Oregon Laws 2024"), 5 amends 659A.165, 6 amends 657B.400, 7 amends 657B.060, 8 amends 653.616, 9 amends
+  // 653.626 and 10 amends 659A.156. The Statutes Affected Table for SB 69 (artables2025R1.pdf; olis-odata.md §5)
+  // gives 653.616 (A, section 8), chapter 657B (Add, section 1) and 659A.159 (A, section 4).
+  describe("the amendment's own Statute Links", () => {
+    async function filesOf(reference: string): Promise<File[]> {
+      const outcome = await callTool(connected, "compare_amendment", { amendment: reference });
+      expect(outcome.isError).toBe(false);
+      return outcome.structured?.["files"] as File[];
+    }
+
+    it("has the three links the Statutes Affected Table gives for SB 69", async () => {
+      const [file, ...others] = await filesOf("SB 69-2");
+
+      expect(others).toEqual([]);
+      expect(file?.statute_links).toEqual(
+        expect.arrayContaining([
+          section("amends", "ors-653.616", "8"),
+          chapter("adds-to", "ors-chapter-657b", "1"),
+          section("amends", "ors-659a.159", "4"),
+        ]),
+      );
+    });
+
+    it("lists the sections it amends and the chapter it adds to first, by kind and then by measure section", async () => {
+      const [file] = await filesOf("SB 69-2");
+
+      const links = file?.statute_links ?? [];
+      expect(links.slice(0, 9)).toEqual([
+        section("amends", "ors-657b.070", "3"),
+        section("amends", "ors-659a.159", "4"),
+        section("amends", "ors-659a.165", "5"),
+        section("amends", "ors-657b.400", "6"),
+        section("amends", "ors-657b.060", "7"),
+        section("amends", "ors-653.616", "8"),
+        section("amends", "ors-653.626", "9"),
+        section("amends", "ors-659a.156", "10"),
+        chapter("adds-to", "ors-chapter-657b", "1"),
+      ]);
+      expect(links.slice(9).every((link) => link.kind === "cites")).toBe(true);
+    });
+
+    it("shows a passing mention as a citation, not as an amendment", async () => {
+      const [file] = await filesOf("SB 69-2");
+
+      // Section 2 says "the requirements under ORS 657B.060, and the provisions of ORS 657B.070"; section 3
+      // opens "(a) Violate ORS 657B.060" and refers to ORS 659A.885 and 659A.820 and to appeals under ORS 657B.410 and 657B.420.
+      const links = file?.statute_links ?? [];
+      expect(links).toEqual(
+        expect.arrayContaining([
+          section("cites", "ors-657b.060", "2"),
+          section("cites", "ors-657b.070", "2"),
+          section("cites", "ors-657b.060", "3"),
+          section("cites", "ors-659a.885", "3"),
+          section("cites", "ors-659a.820", "3"),
+          section("cites", "ors-657b.410", "3"),
+          section("cites", "ors-657b.420", "3"),
+        ]),
+      );
+      // ORS 657B.410 and 657B.420 are named, and nothing is amended there.
+      expect(links.filter((link) => link.kind === "amends").map((link) => link.target_id)).not.toContain(
+        "ors-657b.410",
+      );
+    });
+
+    it("carries the amendment's edit to the relating clause", async () => {
+      const [file] = await filesOf("SB 69-2");
+
+      // Page 1, as pdftotext prints it: In line 2 of the printed bill, before the period insert "; creating new pro- /
+      // visions; amending ORS 653.616, 653.626, 657B.060, 657B.070, 657B.400, / 659A.156, 659A.159 and 659A.165; and
+      // prescribing an effective date".
+      expect(file?.relating_clause_edits).toEqual([
+        {
+          deleted: null,
+          deleted_lines: [],
+          inserted:
+            "; creating new provisions; amending ORS 653.616, 653.626, 657B.060, 657B.070, 657B.400, 659A.156, 659A.159 and 659A.165; and prescribing an effective date",
+          inserted_sections: [
+            "ors-653.616",
+            "ors-653.626",
+            "ors-657b.060",
+            "ors-657b.070",
+            "ors-657b.400",
+            "ors-659a.156",
+            "ors-659a.159",
+            "ors-659a.165",
+          ],
+        },
+      ]);
+    });
+
+    it("lists the two postings that share one file as one file", async () => {
+      // 26286 and 26288 are byte-identical (sha256 7aa13015...; the lead checked with sha256sum), so the
+      // amendment has one file, posted twice.
+      const files = await filesOf("SB 69-2");
+
+      expect(files.map((file) => file.posting_ids)).toEqual([["posting-2025r1-26286", "posting-2025r1-26288"]]);
+      expect(files[0]?.text_read).toBe(true);
+      expect(files[0]?.not_read_reason).toBeNull();
+    });
+  });
+
+  describe("what the comparison covers", () => {
+    it("carries the note that what the amendment deletes was not evaluated", async () => {
+      const outcome = await callTool(connected, "compare_amendment", { amendment: "SB 69-2" });
+
+      expect(outcome.structured?.["deletions_note"]).toBe(
+        "What this amendment deletes from the Version it amends was not evaluated: only the Statute Links in the sections the amendment inserts and its edits to the relating clause are read, so a link of the Version that the amendment does not mention is not shown as removed.",
+      );
     });
   });
 });

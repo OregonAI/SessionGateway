@@ -5,6 +5,17 @@ import { parseAmendmentReference, placeAmendment } from "#/packages/domain/docum
 import { parseMeasureReference, type MeasureKey, type SessionKey } from "#/packages/domain/index.ts";
 import type { StoredAmendment, StoredVersion } from "#/packages/domain/statute-links.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
+import {
+  notReadReasonOf,
+  relatingClauseEditOutput,
+  relatingClauseEditShown,
+  statuteLinkOutput,
+  statuteLinksShown,
+} from "./statute-links.ts";
+
+/** The one sentence that says what the comparison does not cover (ADR-0001). Every result carries it. */
+export const DELETIONS_NOT_EVALUATED_NOTE =
+  "What this amendment deletes from the Version it amends was not evaluated: only the Statute Links in the sections the amendment inserts and its edits to the relating clause are read, so a link of the Version that the amendment does not mention is not shown as removed.";
 
 export const compareAmendmentInput = z.object({
   amendment: z
@@ -52,6 +63,30 @@ const amendedVersionOutput = z.object({
   reason: z.string().describe("How the Version was read, or why it is not known."),
 });
 
+const fileOutput = z.object({
+  posting_ids: z
+    .array(z.string())
+    .describe(
+      "The postings (ids that get_document resolves) at which this exact file was posted. Postings of one amendment usually share one file; when a committee posted a revised file, each distinct file is listed on its own.",
+    ),
+  text_read: z
+    .boolean()
+    .describe(
+      "True when this index read the file's text for Statute Links. False when it did not (no text layer, or not read yet): statute_links is then empty, and that does not mean the amendment has none.",
+    ),
+  not_read_reason: z.string().nullable().describe("Why the file was not read. Null when text_read is true."),
+  statute_links: z
+    .array(statuteLinkOutput)
+    .describe(
+      "The Statute Links in the sections the amendment inserts, by kind (amends, repeals, adds-to, cites) and then by measure section. A link of the Version that the amendment deletes is not among them.",
+    ),
+  relating_clause_edits: z
+    .array(relatingClauseEditOutput)
+    .describe(
+      "The amendment's edits to the Measure's relating clause (the words after \"Relating to\"), as the amendment states them, not the clause after the edit.",
+    ),
+});
+
 export const compareAmendmentOutput = z.object({
   amendment: z
     .object({
@@ -70,6 +105,10 @@ export const compareAmendmentOutput = z.object({
   amended_version: amendedVersionOutput.describe(
     "The Version the amendment amends, read from the amendment's own header and checked against the letter in its number.",
   ),
+  files: z
+    .array(fileOutput)
+    .describe("The distinct files posted for the amendment that this index holds, each with what was read of it."),
+  deletions_note: z.string().describe("What this comparison does not cover: what the amendment deletes."),
   as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
   notice: z.string().describe("A reminder that this is not the official record."),
 });
@@ -150,6 +189,14 @@ export function compareAmendment(
     comparison: {
       amendment: amendmentShown(amendment),
       amended_version: amendedVersionShown(amendment, measure, reader.findMeasureVersions(measure)),
+      files: amendment.files.map((file) => ({
+        posting_ids: file.postingIds,
+        text_read: file.parse.textRead,
+        not_read_reason: notReadReasonOf(file.parse),
+        statute_links: statuteLinksShown(file.parse.links),
+        relating_clause_edits: file.parse.relatingClauseEdits.map(relatingClauseEditShown),
+      })),
+      deletions_note: DELETIONS_NOT_EVALUATED_NOTE,
       as_of: asOf,
       notice: NON_OFFICIAL_NOTICE,
     },
