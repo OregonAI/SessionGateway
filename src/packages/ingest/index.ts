@@ -1,7 +1,8 @@
 // The ingest worker. A full pull reads the deployment's Session from OLIS (its Measures, committees,
 // meetings and the documents they link) and stores the feed with the time the pull started as the
-// index's "as of" time. It then fetches every linked document the store does not hold yet, once each,
-// keeps its text, and writes the build report (docs/adr/0011-an-amendment-is-a-node-and-its-postings-are-documents.md).
+// index's "as of" time. It refreshes what the feed says about the documents it already holds, fetches
+// every linked document the store does not hold yet, once each, keeps its text, and writes the build
+// report (docs/adr/0011-an-amendment-is-a-node-and-its-postings-are-documents.md).
 import { createHash } from "node:crypto";
 import type { IngestConfig } from "#/packages/config/index.ts";
 import { openIndexWriter } from "#/packages/database/writer.ts";
@@ -97,6 +98,12 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     writer.recordFullPull(config.session, measures, asOf);
     writer.recordMeetings(config.session, committees, meetings);
     const stored = writer.storedDocumentIds(config.session);
+    // A fetched file is unchanging (ADR-0005) but its feed row is not: OLIS changes a posting's Meaning,
+    // a Testimony's Measure. What the row says about a stored document is refreshed without fetching it.
+    writer.refreshDocuments(
+      config.session,
+      links.filter((link) => stored.has(link.id)),
+    );
     for (const link of links) {
       if (stored.has(link.id)) continue;
       const fetched = await fetchAndRead(olis, link, deps.signal);

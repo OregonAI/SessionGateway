@@ -36,7 +36,8 @@ export type FakeOlisOptions = {
   pageSize?: number;
   /**
    * Rows served whatever `$filter` says, as if the feed ignored the Session filter (by entity
-   * set). They are counted too. A test adds them here, never to the committed fixture.
+   * set). They are counted too. A test adds them here, never to the committed fixture. They are read at
+   * every request, so a test may change a row between two pulls to show a row OLIS changed.
    */
   strayRows?: Record<string, Row[]>;
   /**

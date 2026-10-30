@@ -1,7 +1,7 @@
 // The ingest worker's side of the database. The server has no way to reach this file's functions:
 // it imports reader.ts only.
 import { z } from "zod";
-import type { Committee, DocumentId, Meeting, StoredDocument } from "#/packages/domain/documents.ts";
+import type { Committee, DocumentId, DocumentLink, Meeting, StoredDocument } from "#/packages/domain/documents.ts";
 import type { Measure, SessionKey } from "#/packages/domain/index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openWriteConnection } from "./lib/connection.ts";
@@ -13,6 +13,13 @@ export type IndexWriter = {
   recordMeetings(session: SessionKey, committees: readonly Committee[], meetings: readonly Meeting[]): void;
   /** The ids of the documents already stored for the Session: a stored document is never fetched again. */
   storedDocumentIds(session: SessionKey): Set<DocumentId>;
+  /**
+   * Brings what the feed says about documents already stored up to date, in one transaction: each one's
+   * label, the node it belongs to, when it was posted and the nodes it points at. A fetched file is
+   * unchanging (ADR-0005), so its text, hash and retrieval time are left alone. A link whose document is
+   * not stored is ignored.
+   */
+  refreshDocuments(session: SessionKey, links: readonly DocumentLink[]): void;
   /** Every stored document of the Session whose file has no text layer, by id. */
   documentsWithoutTextLayer(session: SessionKey): { id: DocumentId; sourceUrl: string }[];
   /** Keeps one fetched document, its text and the nodes it points at, in one transaction. */
@@ -89,6 +96,30 @@ export function openIndexWriter(path: string): IndexWriter {
         const stored = scanRow.parse(row);
         return { id: stored.id as DocumentId, sourceUrl: stored.source_url };
       });
+    },
+    refreshDocuments(session, links) {
+      const updateDocument = database.prepare(
+        "UPDATE document SET node_id = ?, label = ?, posted_at = ? WHERE id = ? AND session_key = ?",
+      );
+      const deleteRelations = database.prepare("DELETE FROM document_relation WHERE document_id = ?");
+      const insertRelation = database.prepare(
+        `INSERT INTO document_relation (document_id, relation, to_id, meaning, provenance) VALUES (?, ?, ?, ?, ?)`,
+      );
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        for (const link of links) {
+          const updated = updateDocument.run(link.nodeId, link.label, link.postedAt, link.id, session);
+          if (updated.changes === 0) continue;
+          deleteRelations.run(link.id);
+          for (const relation of link.relations) {
+            insertRelation.run(link.id, relation.relation, relation.to, relation.meaning, relation.provenance);
+          }
+        }
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
     },
     storeDocument(session, document) {
       const insertDocument = database.prepare(

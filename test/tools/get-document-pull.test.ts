@@ -93,6 +93,105 @@ describe("a transient failure", () => {
   });
 });
 
+describe("a row OLIS changes after its file was fetched", () => {
+  // The file is unchanging (ADR-0005); its feed row is not: 12 of the fixture's 15 CommitteeProposedAmendments
+  // rows and 71 of its 86 CommitteeMeetingDocuments rows carry a ModifiedDate, and SB 69-2's row 26288 was
+  // created Proposed and is Adopted now. The fixture holds each row's final state, so the rows here are
+  // added to the fake and changed between two pulls: the fake reads `strayRows` at every request.
+  const clockAt = "2025-01-29T17:00:00Z";
+  const olisRoot = "https://olis.oregonlegislature.gov/liz/2025R1";
+  const postingUrl = `${olisRoot}/Downloads/ProposedAmendment/900005`;
+  const testimonyUrl = `${olisRoot}/Downloads/PublicTestimonyDocument/900006`;
+
+  /** The feed row of a posting of SB 69's -3 to SLB's meeting of 2025-01-28, which the committee only proposed. */
+  function postingRow(): Record<string, unknown> {
+    return {
+      SessionKey: "2025R1",
+      ProposedAmendmentId: 900005,
+      CommitteeCode: "SLB",
+      MeetingDate: "2025-01-28T08:00:00",
+      MeasurePrefix: "SB",
+      MeasureNumber: 69,
+      AmendmentNumber: "-3",
+      Meaning: "Proposed",
+      ProposedAmendmentUrl: postingUrl,
+    };
+  }
+
+  /** The feed row of a piece of Testimony on SB 69 to the same meeting. */
+  function testimonyRow(): Record<string, unknown> {
+    return {
+      SessionKey: "2025R1",
+      CommTestId: 900006,
+      CommitteeCode: "SLB",
+      MeetingDate: "2025-01-28T08:00:00",
+      DocumentDescription: "Testimony",
+      MeasurePrefix: "SB",
+      MeasureNumber: 69,
+      DocumentUrl: olisRoot,
+    };
+  }
+
+  function related(outcome: Awaited<ReturnType<typeof getDocument>>): [string, string, string | null][] {
+    return (outcome.structured?.["related"] as { relation: string; id: string; meaning: string | null }[]).map(
+      (node) => [node.relation, node.id, node.meaning],
+    );
+  }
+
+  it("shows what the committee did at the meeting once the row says Adopted, without fetching the file again", async () => {
+    const posting = postingRow();
+    const system = await start({
+      clockAt,
+      documents: true,
+      olis: {
+        strayRows: { CommitteeProposedAmendments: [posting] },
+        strayDocuments: { [new URL(postingUrl).pathname]: "proposed-amendments/26286.pdf" },
+      },
+    });
+    expect(related(await getDocument(system, "amendment-2025r1-sb69-3"))).toContainEqual([
+      "posted_to",
+      "meeting-2025r1-slb-2025-01-28-0800",
+      "Proposed",
+    ]);
+
+    posting["Meaning"] = "Adopted";
+    await system.pullAgain();
+
+    const outcome = await getDocument(system, "amendment-2025r1-sb69-3");
+    expect(related(outcome)).toContainEqual(["posted_to", "meeting-2025r1-slb-2025-01-28-0800", "Adopted"]);
+    expect(related(outcome)).not.toContainEqual(["posted_to", "meeting-2025r1-slb-2025-01-28-0800", "Proposed"]);
+    expect(system.olis.documentRequests().filter((path) => path === new URL(postingUrl).pathname)).toHaveLength(1);
+  });
+
+  it("shows the label and the Measure a row names now, without fetching the file again", async () => {
+    const testimony = testimonyRow();
+    const system = await start({
+      clockAt,
+      documents: true,
+      olis: {
+        strayRows: { CommitteePublicTestimonies: [testimony] },
+        strayDocuments: { [new URL(testimonyUrl).pathname]: "testimony/117165.pdf" },
+      },
+    });
+    expect(await getDocument(system, "testimony-2025r1-900006")).toMatchObject({
+      structured: { label: "Testimony" },
+    });
+
+    testimony["DocumentDescription"] = "Letter";
+    testimony["MeasureNumber"] = 64;
+    await system.pullAgain();
+
+    const outcome = await getDocument(system, "testimony-2025r1-900006");
+    expect(outcome.structured).toMatchObject({ label: "Letter" });
+    expect(related(outcome).map(([relation, id]) => [relation, id])).toContainEqual(["measure", "measure-2025r1-sb64"]);
+    expect(related(outcome).map(([relation, id]) => [relation, id])).not.toContainEqual([
+      "measure",
+      "measure-2025r1-sb69",
+    ]);
+    expect(system.olis.documentRequests().filter((path) => path === new URL(testimonyUrl).pathname)).toHaveLength(1);
+  });
+});
+
 describe("a document that cannot be had", () => {
   const clockAt = "2025-01-29T17:00:00Z";
   const sb69Introduced = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/Introduced";
