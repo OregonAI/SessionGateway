@@ -16,8 +16,8 @@ import { startSystem, type System } from "../support/system.ts";
 let system: System;
 
 beforeAll(async () => {
-  // The real model: these are the tests of how well search ranks. About 140,000 characters are embedded,
-  // which takes about ten seconds on one core.
+  // The real model: these are the tests of how well search ranks. About 106,000 characters (53 passages) are
+  // embedded, which takes about six seconds on one core.
   system = await startSystem({
     clockAt: "2025-01-18T02:00:00Z",
     documents: true,

@@ -214,7 +214,7 @@ const schema = `
     measure_id TEXT NOT NULL
   ) STRICT;
   CREATE INDEX IF NOT EXISTS analysis_listing_measure ON analysis_listing (measure_id);
-  -- Search (docs/adr/0025). What search files each stored document under, written in the same transaction as
+  -- Search (ADR-0025). What search files each stored document under, written in the same transaction as
   -- the document. node_id is the id a hit carries: the document's, or a posting's Proposed Amendment.
   CREATE TABLE IF NOT EXISTS search_document (
     document_id TEXT NOT NULL PRIMARY KEY,

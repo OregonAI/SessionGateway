@@ -1,6 +1,6 @@
 /**
  * Each component of a unit-length vector times 127, rounded: the int8 vector that is stored and scanned
- * (spec #1 module 10; docs/adr/0025). A component of a unit vector is at most 1 in size, so it fits.
+ * (spec #1 module 10; ADR-0025). A component of a unit vector is at most 1 in size, so it fits.
  */
 export function quantizeUnitVector(vector: Float32Array): Int8Array {
   const quantized = new Int8Array(vector.length);
