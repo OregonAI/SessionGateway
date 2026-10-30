@@ -9,6 +9,35 @@ import { startSystem, type System } from "../support/system.ts";
 let system: System;
 let server: RunningServer;
 
+/** A legacy client's first request, which a server that lets the request through answers with 200. */
+const initializeRequest = JSON.stringify({
+  jsonrpc: "2.0",
+  id: 1,
+  method: "initialize",
+  params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "guard-test", version: "0.0.0" } },
+});
+
+/** Posts an initialize request to the mount path with exactly these headers (fetch would not let a test choose Host). */
+function postInitialize(port: number, headers: Record<string, string>): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(
+      {
+        host: "127.0.0.1",
+        port,
+        path: "/session-gateway/mcp",
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers },
+      },
+      (response) => {
+        response.resume();
+        resolve(response.statusCode ?? 0);
+      },
+    );
+    request.once("error", reject);
+    request.end(initializeRequest);
+  });
+}
+
 /** An error the server reports is a failure of the test. */
 function rethrow(error: Error): never {
   throw error;
@@ -51,32 +80,52 @@ describe("get_measure over HTTP", () => {
 });
 
 describe("the Host and Origin guards", () => {
-  /** Posts to the mount path with exactly these headers (fetch would not let a test choose Host). */
-  function post(headers: Record<string, string>): Promise<number> {
-    return new Promise((resolve, reject) => {
-      const request = httpRequest(
-        {
-          host: "127.0.0.1",
-          port: server.port,
-          path: "/session-gateway/mcp",
-          method: "POST",
-          headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers },
-        },
-        (response) => {
-          response.resume();
-          resolve(response.statusCode ?? 0);
-        },
-      );
-      request.once("error", reject);
-      request.end("{}");
-    });
-  }
-
   it("refuses a request addressed to a host that is not on the list (DNS rebinding)", async () => {
-    expect(await post({ host: "rebinding.example" })).toBe(403);
+    expect(await postInitialize(server.port, { host: "rebinding.example" })).toBe(403);
   });
 
   it("refuses a request from a browser origin that is not on the list", async () => {
-    expect(await post({ origin: "https://evil.example" })).toBe(403);
+    expect(await postInitialize(server.port, { origin: "https://evil.example" })).toBe(403);
+  });
+});
+
+describe("the Host and Origin lists set in the environment", () => {
+  // MCP_ALLOWED_HOSTS and MCP_ALLOWED_ORIGINS are comma-separated, with spaces allowed around each entry.
+  let configured: System;
+  let configuredServer: RunningServer;
+
+  beforeAll(async () => {
+    configured = await startSystem({
+      clockAt: "2025-01-29T17:00:00Z",
+      serverEnv: {
+        MCP_HOST: "127.0.0.1",
+        MCP_PORT: "0",
+        MCP_PATH: "/session-gateway/mcp",
+        MCP_ALLOWED_HOSTS: " gateway.example.org , 127.0.0.1 ",
+        MCP_ALLOWED_ORIGINS: "claude.ai, app.example.org",
+      },
+    });
+    configuredServer = await serveMcp(configured.handler, configured.serverConfig, { onError: rethrow });
+  });
+
+  afterAll(async () => {
+    await configuredServer.close();
+    await configured.stop();
+  });
+
+  it.for(["https://claude.ai", "https://app.example.org"])("answers a browser request from %s", async (origin) => {
+    expect(await postInitialize(configuredServer.port, { origin })).toBe(200);
+  });
+
+  it("still refuses an origin the list leaves out", async () => {
+    expect(await postInitialize(configuredServer.port, { origin: "https://evil.example" })).toBe(403);
+  });
+
+  it("answers a request addressed to a host the list names", async () => {
+    expect(await postInitialize(configuredServer.port, { host: "gateway.example.org:8443" })).toBe(200);
+  });
+
+  it("refuses a host the list replaced, localhost among them", async () => {
+    expect(await postInitialize(configuredServer.port, { host: "localhost" })).toBe(403);
   });
 });
