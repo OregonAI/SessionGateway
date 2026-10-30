@@ -2,7 +2,7 @@
 
 An MCP server holding a cited, searchable copy of one Oregon legislative Session. Spec #1 says what to build, and its sub-issues #3–#25 are the tickets. `docs/adr/` says why; `GLOSSARY.md` gives the words.
 
-Each top-level folder has its own CLAUDE.md with the rules for that area: `src/` (production code), `test/` (seam 1 and the shared harness), `test/fixtures/`, `docs/` and `.github/`. Read the one for a folder before planning work in it. Explore and Plan subagents load no CLAUDE.md, so when you delegate to one, paste the rules it needs into its prompt.
+Each top-level folder has its own CLAUDE.md with the rules for that area: `src/` (production code), `test/` (seam 1 and the shared harness), `test/fixtures/`, `docs/` and `.github/`. Read the one for a folder before planning work in it. Packages are deep modules: see `src/packages/README.md` before adding or importing one. Explore and Plan subagents load no CLAUDE.md, so when you delegate to one, paste the rules it needs into its prompt.
 
 ## Building a ticket
 
