@@ -24,7 +24,7 @@ import {
   unknownCommitteeMessage,
 } from "./lib/meetings.ts";
 import { sessionOverview, sessionOverviewInput, sessionOverviewOutput } from "./lib/session-overview.ts";
-import { testimony, testimonyInput, testimonyOutput } from "./lib/testimony.ts";
+import { noSuchPageMessage, testimony, testimonyInput, testimonyOutput } from "./lib/testimony.ts";
 import { createRateLimiter, rateLimitMessage, type RateLimiter } from "./lib/rate-limit.ts";
 
 export type HandlerDeps = {
@@ -199,6 +199,11 @@ function buildServer(
           return {
             isError: true,
             content: [{ type: "text", text: unknownMeasureMessage(result.reference, result.session) }],
+          };
+        case "no_such_page":
+          return {
+            isError: true,
+            content: [{ type: "text", text: noSuchPageMessage(result.measureId, result.page, result.pageCount) }],
           };
         default:
           return result satisfies never;

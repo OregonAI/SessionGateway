@@ -1,11 +1,17 @@
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
 import type { DocumentId, TestimonyEntry } from "#/packages/domain/documents.ts";
-import { measureIdOf, parseMeasureReference, type SessionKey } from "#/packages/domain/index.ts";
+import { measureIdOf, parseMeasureReference, type MeasureId, type SessionKey } from "#/packages/domain/index.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 
 export const testimonyInput = z.object({
   measure: z.string().describe('A Measure\'s id, such as "measure-2025r1-hb3131", or its citation, such as "HB 3131".'),
+  page: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe("Which page of the Measure's Testimony to return, from 1. The first by default."),
 });
 
 /**
@@ -20,6 +26,15 @@ const listedPositions = [
 ] as const;
 
 const UNLISTED_POSITION_LABEL = "unlisted position";
+
+/**
+ * How many Testimony rows one page lists. The 2025R1 feed has Measures with 14,223 rows (SB 210) and 4,204 (HB 2025),
+ * and 17 with more than 1,000 (counted over the full local cache on 2026-10-30), so a Measure's whole Testimony would
+ * overflow an agent's context. An item is about 525 characters of JSON (HB 3131's 42 items are 22,045 characters, and a
+ * page of 100 made-up rows is 48,347), so a page is about 50,000 characters, two and a half `get_document` parts
+ * (20,000 characters each) and the same again when the client reads the structured copy as well as the text.
+ */
+const PAGE_SIZE = 100;
 
 /**
  * The most ids one set of identical letters lists. A form letter can run to hundreds of rows on one Measure,
@@ -147,14 +162,24 @@ export const testimonyOutput = z.object({
     .describe(
       "The Measure's rows by position: the four listed positions in the order support, oppose, neutral, unknown, each with its count (0 when none), then any other position id found, in numeric order.",
     ),
+  organization_groups: z
+    .number()
+    .describe(
+      "How many organization groups the Measure's Testimony has, on every page, counting an organization once for each position it appears under.",
+    ),
   identical_letters: z
     .array(identicalLetterOutput)
     .describe(
       "Each text that two or more of the Measure's rows share, listed once, on every page. The rows stay one item each, so who testified is not lost and the counts add up to total. Texts are compared as stored, exactly. A file with no text layer is never the same as another.",
     ),
+  page: z.number().describe("Which page this is, from 1."),
+  page_count: z.number().describe("How many pages the Measure's Testimony has: page N of page_count."),
+  page_size: z.number().describe("How many rows a page lists at the most."),
   positions: z
     .array(positionOutput)
-    .describe("The rows on this page, by position in the order of position_counts, then by organization."),
+    .describe(
+      "This page's rows, by position in the order of position_counts, then by organization group in alphabetical order (no organization given last), then by CommTestId. A group that runs across a page break is on both pages, with the same count.",
+    ),
   as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
   notice: z.string().describe("A reminder that this is not the official record."),
 });
@@ -163,7 +188,9 @@ export type TestimonyOutput = z.infer<typeof testimonyOutput>;
 
 /** An unknown Measure is an expected outcome, so it is a value; the MCP edge decides it is a tool error. */
 export type TestimonyResult =
-  { kind: "found"; testimony: TestimonyOutput } | { kind: "unknown_measure"; reference: string; session: SessionKey };
+  | { kind: "found"; testimony: TestimonyOutput }
+  | { kind: "unknown_measure"; reference: string; session: SessionKey }
+  | { kind: "no_such_page"; measureId: MeasureId; page: number; pageCount: number };
 
 /**
  * What makes two Organization values one group: trimmed, every run of white space one space, capitals
@@ -202,24 +229,79 @@ function itemOf(entry: TestimonyEntry, sameLetterAs: ReadonlyMap<DocumentId, Doc
 }
 
 type Group = TestimonyOutput["positions"][number]["organizations"][number];
+type Position = TestimonyOutput["positions"][number];
 
-/** The entries of one position (already in CommTestId order) as organization groups, in alphabetical order. */
-function groupsOf(entries: readonly TestimonyEntry[], sameLetterAs: ReadonlyMap<DocumentId, DocumentId>): Group[] {
-  const byKey = new Map<string, Group>();
-  for (const entry of entries) {
-    const key = organizationKey(entry.organization);
-    let group = byKey.get(key);
+/** What a group is, whatever page its rows are on. */
+type GroupFacts = { organization: string | null; spellings: string[]; count: number };
+
+/** One row in the order the tool lists them, with the group it is in. */
+type Placed = { entry: TestimonyEntry; groupKey: string };
+
+/**
+ * The Measure's rows in the order the pages list them: by position (the listed ones first), then by organization
+ * group in alphabetical order, then by CommTestId; and the facts of each (position, group), taken over all the rows
+ * so a group split across a page break says the same on both pages.
+ */
+function placeEntries(entries: readonly TestimonyEntry[]): { ordered: Placed[]; groups: Map<string, GroupFacts> } {
+  const groups = new Map<string, GroupFacts>();
+  const placed = entries.map((entry): Placed => {
+    const organizationKeyOfEntry = organizationKey(entry.organization);
+    const groupKey = `${entry.positionId} ${organizationKeyOfEntry}`;
+    let facts = groups.get(groupKey);
+    if (facts === undefined) {
+      facts = {
+        organization: organizationKeyOfEntry === "" ? null : entry.organization,
+        spellings: [],
+        count: 0,
+      };
+      groups.set(groupKey, facts);
+    }
+    if (entry.organization !== null && organizationKeyOfEntry !== "" && !facts.spellings.includes(entry.organization)) {
+      facts.spellings.push(entry.organization);
+    }
+    facts.count += 1;
+    return { entry, groupKey };
+  });
+  const ordered = placed.toSorted(
+    (a, b) =>
+      comparePositions(a.entry.positionId, b.entry.positionId) ||
+      compareGroupKeys(organizationKey(a.entry.organization), organizationKey(b.entry.organization)) ||
+      a.entry.commTestId - b.entry.commTestId,
+  );
+  return { ordered, groups };
+}
+
+/** The rows of one page as positions of organization groups, each group with its facts and the rows on this page. */
+function positionsOf(
+  page: readonly Placed[],
+  groups: ReadonlyMap<string, GroupFacts>,
+  countByPosition: ReadonlyMap<number, number>,
+  sameLetterAs: ReadonlyMap<DocumentId, DocumentId>,
+): Position[] {
+  const positions: Position[] = [];
+  const groupsOnPage = new Map<string, Group>();
+  for (const { entry, groupKey } of page) {
+    let position = positions.at(-1);
+    if (position?.position_id !== entry.positionId) {
+      position = {
+        position_id: entry.positionId,
+        position: positionLabelOf(entry.positionId),
+        count: countByPosition.get(entry.positionId) ?? 0,
+        organizations: [],
+      };
+      positions.push(position);
+    }
+    let group = groupsOnPage.get(groupKey);
     if (group === undefined) {
-      group = { organization: key === "" ? null : entry.organization, spellings: [], count: 0, items: [] };
-      byKey.set(key, group);
+      const facts = groups.get(groupKey);
+      if (facts === undefined) throw new Error(`The group ${groupKey} of ${entry.id} has no facts`);
+      group = { ...facts, spellings: [...facts.spellings], items: [] };
+      groupsOnPage.set(groupKey, group);
+      position.organizations.push(group);
     }
-    if (entry.organization !== null && key !== "" && !group.spellings.includes(entry.organization)) {
-      group.spellings.push(entry.organization);
-    }
-    group.count += 1;
     group.items.push(itemOf(entry, sameLetterAs));
   }
-  return [...byKey.entries()].sort(([a], [b]) => compareGroupKeys(a, b)).map(([, group]) => group);
+  return positions;
 }
 
 type IdenticalLetter = TestimonyOutput["identical_letters"][number];
@@ -236,7 +318,9 @@ function identicalLettersOf(entries: readonly TestimonyEntry[]): {
   const byText = new Map<string, DocumentId[]>();
   for (const entry of entries) {
     if (entry.hasTextLayer !== true || entry.textHash === null) continue;
-    byText.set(entry.textHash, [...(byText.get(entry.textHash) ?? []), entry.id]);
+    const ids = byText.get(entry.textHash);
+    if (ids === undefined) byText.set(entry.textHash, [entry.id]);
+    else ids.push(entry.id);
   }
   const letters: IdenticalLetter[] = [];
   const sameLetterAs = new Map<DocumentId, DocumentId>();
@@ -264,29 +348,41 @@ export function testimony(
     throw new Error(`The index holds Testimony of ${session} but no completed full pull to date it by`);
   }
   const entries = reader.findTestimony(key);
+  const pageCount = Math.max(1, Math.ceil(entries.length / PAGE_SIZE));
+  const page = input.page ?? 1;
+  const measureId = measureIdOf(key);
+  if (page > pageCount) return { kind: "no_such_page", measureId, page, pageCount };
   const identical = identicalLettersOf(entries);
+  const { ordered, groups } = placeEntries(entries);
   const countByPosition = new Map<number, number>();
   for (const entry of entries) countByPosition.set(entry.positionId, (countByPosition.get(entry.positionId) ?? 0) + 1);
   return {
     kind: "found",
     testimony: {
-      measure_id: measureIdOf(key),
+      measure_id: measureId,
       total: entries.length,
       position_counts: [...new Set([...listedPositions.map((position) => position.id), ...countByPosition.keys()])]
         .sort(comparePositions)
         .map((id) => ({ position_id: id, position: positionLabelOf(id), count: countByPosition.get(id) ?? 0 })),
+      organization_groups: groups.size,
       identical_letters: identical.letters,
-      positions: [...countByPosition.keys()].sort(comparePositions).map((id) => ({
-        position_id: id,
-        position: positionLabelOf(id),
-        count: countByPosition.get(id) ?? 0,
-        organizations: groupsOf(
-          entries.filter((entry) => entry.positionId === id),
-          identical.sameLetterAs,
-        ),
-      })),
+      page,
+      page_count: pageCount,
+      page_size: PAGE_SIZE,
+      positions: positionsOf(
+        ordered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+        groups,
+        countByPosition,
+        identical.sameLetterAs,
+      ),
       as_of: asOf,
       notice: NON_OFFICIAL_NOTICE,
     },
   };
+}
+
+/** What an agent is told when it asks for a page past the last one. */
+export function noSuchPageMessage(measureId: MeasureId, page: number, pageCount: number): string {
+  const pages = pageCount === 1 ? "1 page" : `${pageCount} pages`;
+  return `The Testimony on ${measureId} has ${pages}, so there is no page ${page}. Ask for a page from 1 to ${pageCount}.`;
 }
