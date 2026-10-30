@@ -9,7 +9,7 @@ import {
 } from "#/packages/database/search.ts";
 import { findCitations, type Citation } from "#/packages/domain/citations.ts";
 import { documentKinds, type AmendmentId, type DocumentId } from "#/packages/domain/documents.ts";
-import { measureIdOf, parseMeasureReference, type SessionKey } from "#/packages/domain/index.ts";
+import { measureIdOf, type SessionKey } from "#/packages/domain/index.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
 import { reciprocalRankFusion } from "#/packages/search/ranking.ts";
 import {
@@ -21,6 +21,7 @@ import {
   termsOf,
 } from "#/packages/search/text.ts";
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
+import { checkFilters, type FilterFault } from "./filters.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 import type { VectorCache } from "./vector-cache.ts";
 
@@ -139,11 +140,7 @@ export type SearchDeps = {
 };
 
 /** An unknown Measure is an expected outcome, so it is a value; the MCP edge decides it is a tool error. */
-export type SearchResult =
-  | { kind: "found"; search: SearchOutput }
-  | { kind: "unknown_measure"; reference: string; session: SessionKey }
-  | { kind: "unknown_committee"; reference: string; session: SessionKey }
-  | { kind: "backwards_range"; from: string; to: string };
+export type SearchResult = { kind: "found"; search: SearchOutput } | FilterFault;
 
 type FoundBy = "citation" | "keyword" | "embedding";
 /** The order `found_by` lists how a hit was found in. */
@@ -188,17 +185,9 @@ function filterOf(
   input: z.infer<typeof searchInput>,
   citations: readonly Citation[],
 ): { kind: "filter"; filter: SearchFilter } | Exclude<SearchResult, { kind: "found" }> {
-  const measure = input.measure === undefined ? undefined : parseMeasureReference(input.measure, session);
-  if (input.measure !== undefined && (measure === undefined || deps.reader.findMeasure(measure) === undefined)) {
-    return { kind: "unknown_measure", reference: input.measure, session };
-  }
-  const committee = input.committee === undefined ? undefined : deps.reader.findCommittee(session, input.committee);
-  if (input.committee !== undefined && committee === undefined) {
-    return { kind: "unknown_committee", reference: input.committee, session };
-  }
-  if (input.from !== undefined && input.to !== undefined && input.from > input.to) {
-    return { kind: "backwards_range", from: input.from, to: input.to };
-  }
+  const checked = checkFilters(deps.reader, session, input);
+  if (checked.kind !== "ok") return checked;
+  const { measure, committee } = checked;
   return {
     kind: "filter",
     filter: {
