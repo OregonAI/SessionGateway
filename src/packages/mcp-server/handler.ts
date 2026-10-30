@@ -24,6 +24,7 @@ import {
   unknownCommitteeMessage,
 } from "./lib/meetings.ts";
 import { sessionOverview, sessionOverviewInput, sessionOverviewOutput } from "./lib/session-overview.ts";
+import { testimony, testimonyInput, testimonyOutput } from "./lib/testimony.ts";
 import { createRateLimiter, rateLimitMessage, type RateLimiter } from "./lib/rate-limit.ts";
 
 export type HandlerDeps = {
@@ -169,6 +170,36 @@ function buildServer(
           return { isError: true, content: [{ type: "text", text: NO_FILTER_MESSAGE }] };
         case "backwards_range":
           return { isError: true, content: [{ type: "text", text: backwardsRangeMessage(result.from, result.to) }] };
+        default:
+          return result satisfies never;
+      }
+    },
+  );
+  server.registerTool(
+    "testimony",
+    {
+      title: "Testimony on a Measure",
+      description:
+        "Lists the Testimony submitted on one Measure of the Session, by its id or citation. It is not the official record.",
+      inputSchema: testimonyInput,
+      outputSchema: testimonyOutput,
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    (input) => {
+      const refused = refuseOverRateLimit(limiter, config);
+      if (refused !== undefined) return refused;
+      const result = testimony(reader, config.session, input);
+      switch (result.kind) {
+        case "found":
+          return {
+            content: [{ type: "text", text: JSON.stringify(result.testimony) }],
+            structuredContent: result.testimony,
+          };
+        case "unknown_measure":
+          return {
+            isError: true,
+            content: [{ type: "text", text: unknownMeasureMessage(result.reference, result.session) }],
+          };
         default:
           return result satisfies never;
       }

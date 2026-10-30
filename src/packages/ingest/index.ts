@@ -13,6 +13,7 @@ import {
   type CommitteeVoteRecord,
   type FloorVoteRecord,
   type SponsorRecord,
+  type TestimonyRecord,
 } from "#/packages/database/writer.ts";
 import type { DocumentLink } from "#/packages/domain/documents.ts";
 import type { LegislatorId, Sponsorship } from "#/packages/domain/legislators.ts";
@@ -145,6 +146,17 @@ function committeeVoteRecordOf(entry: CommitteeVoteEntry, resolver: LegislatorRe
   return { ...entry, legislatorId: legislatorIdOfResolution(resolver.resolve("CommitteeVotes", entry.legislatorCode)) };
 }
 
+/** The Testimony rows among the links, as the writer stores them. */
+function testimonyRecordsOf(links: readonly DocumentLink[]): TestimonyRecord[] {
+  const records: TestimonyRecord[] = [];
+  for (const link of links) {
+    const details = link.testimony;
+    if (details === undefined) continue;
+    records.push({ link: { ...link, testimony: details }, agencyId: null });
+  }
+  return records;
+}
+
 export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promise<FullPullResult> {
   // The snapshot is read before OLIS is: a build with no usable snapshot fails at once, naming the file.
   const snapshot = await loadSnapshot(config.snapshotPath);
@@ -203,6 +215,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       meetings,
       agendaItems,
       documentLinks: links,
+      testimony: testimonyRecordsOf(links),
     });
     const stored = writer.storedDocumentIds(config.session);
     // A fetched file is unchanging (ADR-0005) but its feed row is not: OLIS changes a posting's Meaning,
