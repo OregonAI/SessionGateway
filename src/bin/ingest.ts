@@ -1,11 +1,12 @@
 // The ingest worker's entry script: one full pull of the deployment's Session into the database.
 // Everything it needs comes from the environment (src/packages/config) and is created here, once,
 // and passed down: the configuration, `fetch`, the clock, the pause between attempts, the alias file's
-// entries and the shutdown signal.
+// entries, the embedding model and the shutdown signal.
 import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { loadIngestConfig } from "#/packages/config/index.ts";
+import { loadOnnxEmbedder } from "#/packages/embedder/onnx.ts";
 import { runFullPull } from "#/packages/ingest/index.ts";
 import { committedAliasFilePath, readLegislatorAliases } from "#/packages/legislators/aliases.ts";
 import { systemClock } from "#/packages/time/clock.ts";
@@ -24,6 +25,7 @@ const pull = await runFullPull(config, {
   signal: shutdown.signal,
   pause: (milliseconds, signal) => sleep(milliseconds, undefined, { signal }),
   legislatorAliases: readLegislatorAliases(committedAliasFilePath),
+  embedder: await loadOnnxEmbedder({ modelPath: config.modelPath, intraOpThreads: config.modelThreads }),
 });
 
 // The build report of Legislator Codes (spec #1, story 54), beside the database it describes. It is

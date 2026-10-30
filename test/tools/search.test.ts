@@ -1,0 +1,59 @@
+// Seam 1 (test/CLAUDE.md): `search` as an agent sees it, with the whole system behind it. A fake OLIS
+// serves the committed fixture and its documents as the feed stood early in the 2025R1 Session, the
+// ingest worker pulls and indexes them, and an MCP client calls the tool in-process. One database
+// serves every case in this file because none of them changes it.
+//
+// The clock is 2025-01-17 18:00 Pacific. Every document the feed had created by then is in: the
+// Introduced Versions of six Measures, four agendas, SB 69's Exhibit 287879 and Proposed Amendment -1,
+// and three of HB 3131's letters. A later clock would include SB 64's Testimony 117281 (395,000
+// characters) and take half a minute to embed with the real model.
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
+import { startSystem, type System } from "../support/system.ts";
+
+let system: System;
+
+beforeAll(async () => {
+  system = await startSystem({ clockAt: "2025-01-18T02:00:00Z", documents: true });
+}, 60_000);
+
+afterAll(async () => {
+  await system.stop();
+});
+
+describe.for(eras)("search for a %s client", (era) => {
+  let connected: ConnectedClient;
+
+  beforeAll(async () => {
+    connected = await connectClient(era, system.handler);
+  });
+
+  afterAll(async () => {
+    await connected.close();
+  });
+
+  // Expected values are literals from outside the code. The words are SB 64's Introduced Version as
+  // `pdftotext -raw` prints it (test/fixtures/olis-2025R1/documents/measure-documents/SB64/Introduced.pdf);
+  // the date is the CreatedDate of its MeasureDocuments row ("2025-01-10T13:20:18.827", Pacific); the link
+  // is that row's DocumentUrl; the as-of time is the simulated clock's.
+  it("finds a Version by words in its text, with everything an agent needs to cite it", async () => {
+    const outcome = await callTool(connected, "search", {
+      query: "waive supplemental nutrition assistance dependent care tax credit",
+    });
+
+    expect(outcome.isError).toBe(false);
+    const first = (outcome.structured?.["results"] as Record<string, unknown>[])[0];
+    expect(first).toMatchObject({
+      id: "version-2025r1-sb64-introduced",
+      kind: "version",
+      title: "SB 64 Introduced",
+      measure: "measure-2025r1-sb64",
+      date: "2025-01-10T13:20:18.827-08:00",
+      source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB64/Introduced",
+    });
+    expect(String(first?.["snippet"])).toContain("Supplemental Nutrition");
+    expect(String(first?.["snippet"]).length).toBeLessThanOrEqual(320);
+    expect(outcome.structured?.["as_of"]).toBe("2025-01-17T18:00:00-08:00");
+    expect(outcome.structured?.["notice"]).toMatch(/not the official record/i);
+  });
+});

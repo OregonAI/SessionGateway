@@ -50,6 +50,7 @@ export async function readMeetings(
               label: "Agenda",
               sourceUrl: sourceUrlOf(row.AgendaUrl),
               postedAt: null,
+              date: row.MeetingDate,
               relations: [
                 { relation: "meeting", to: id, meaning: null, provenance },
                 { relation: "committee", to: committeeId, meaning: null, provenance },

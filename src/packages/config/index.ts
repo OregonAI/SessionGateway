@@ -15,6 +15,10 @@ export type IngestConfig = {
   databasePath: string;
   /** The OregonAI snapshot file the worker copies into the build (scripts/snapshot/build.ts writes it). */
   snapshotPath: string;
+  /** The directory that holds the pinned embedding model's files (`npm run model:fetch`). */
+  modelPath: string;
+  /** How many threads one run of the embedding model may use. */
+  modelThreads: number;
 };
 
 export type ServerConfig = {
@@ -24,6 +28,8 @@ export type ServerConfig = {
   /** How long one live lookup may take, all its requests together, before the cache answers instead. */
   olisLiveTimeoutMs: number;
   databasePath: string;
+  /** The directory that holds the pinned embedding model's files, which embeds each question. */
+  modelPath: string;
   /** Where the MCP endpoint is mounted, such as /session-gateway/mcp. */
   mcpPath: string;
   host: string;
@@ -68,6 +74,15 @@ const ingestSchema = z.object({
     .transform((text) => new URL(text).origin),
   DATABASE_PATH: z.string().min(1),
   SNAPSHOT_PATH: z.string().min(1),
+  MODEL_PATH: z.string().min(1),
+  // One thread by default: the worker on the deploy box shares two cores with seven corpora (ADR-0007).
+  // The backfill on the GPU desktop sets more.
+  MODEL_THREADS: z
+    .string()
+    .regex(/^\d+$/, "must be a whole number")
+    .transform(Number)
+    .pipe(z.number().min(1, "must be at least 1").max(64, "must be at most 64"))
+    .default(1),
 });
 
 const list = (text: string): string[] =>
@@ -110,6 +125,7 @@ const serverSchema = z.object({
     )
     .default(5000),
   DATABASE_PATH: z.string().min(1),
+  MODEL_PATH: z.string().min(1),
   MCP_PATH: z
     .string()
     .regex(/^\/\S*$/, "must start with /")
@@ -144,6 +160,8 @@ export function loadIngestConfig(env: Environment): IngestConfig {
     olisDocumentOrigin: parsed.OLIS_DOCUMENT_ORIGIN,
     databasePath: parsed.DATABASE_PATH,
     snapshotPath: parsed.SNAPSHOT_PATH,
+    modelPath: parsed.MODEL_PATH,
+    modelThreads: parsed.MODEL_THREADS,
   };
 }
 
@@ -154,6 +172,7 @@ export function loadServerConfig(env: Environment): ServerConfig {
     olisBaseUrl: parsed.OLIS_BASE_URL,
     olisLiveTimeoutMs: parsed.OLIS_LIVE_TIMEOUT_MS,
     databasePath: parsed.DATABASE_PATH,
+    modelPath: parsed.MODEL_PATH,
     mcpPath: parsed.MCP_PATH,
     host: parsed.MCP_HOST,
     port: parsed.MCP_PORT,

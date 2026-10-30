@@ -12,6 +12,7 @@ import { callTool, connectClientToUrl } from "../support/mcp-clients.ts";
 import { memberSponsorRow } from "../support/sponsors.ts";
 import { createTempDatabase, type TempDatabase } from "../support/temp-database.ts";
 import { snapshotFixturePath } from "../support/oregonai-snapshot.ts";
+import { modelPath } from "../support/real-embedder.ts";
 
 type Finished = { code: number | null; stdout: string; stderr: string };
 
@@ -97,6 +98,7 @@ async function fakeOlisAndDatabase(
 function workerEnvironment(olis: FakeOlis, databasePath: string): Record<string, string> {
   return {
     SNAPSHOT_PATH: snapshotFixturePath,
+    MODEL_PATH: modelPath(),
     SESSION_KEY: "2025R1",
     OLIS_BASE_URL: olis.baseUrl,
     OLIS_DOCUMENT_ORIGIN: olis.origin,

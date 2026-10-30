@@ -94,6 +94,7 @@ const measureDocumentRow = z.looseObject({
   MeasureNumber: z.number().int(),
   VersionDescription: z.string(),
   DocumentUrl: z.string(),
+  CreatedDate: feedTimestamp.nullish(),
 });
 
 async function readVersions(
@@ -129,6 +130,7 @@ async function readVersions(
       label: row.VersionDescription,
       sourceUrl: sourceUrlOf(row.DocumentUrl),
       postedAt: null,
+      date: row.CreatedDate ?? null,
       relations,
     };
   });
@@ -148,6 +150,7 @@ const analysisRow = z.looseObject({
   // True for the 18 rows of the 2025R1 cache that are a minority report's (docs/adr/0013).
   IsMinority: z.boolean(),
   DocumentUrl: z.string(),
+  CreatedDate: feedTimestamp.nullish(),
 });
 
 async function readAnalyses(
@@ -183,6 +186,7 @@ async function readAnalyses(
       label: row.DocumentType,
       sourceUrl: sourceUrlOf(row.DocumentUrl),
       postedAt: null,
+      date: row.CreatedDate ?? null,
       versionLabel,
       isMinority,
       relations,
@@ -222,6 +226,7 @@ async function readExhibits(
       label: row.DocumentType,
       sourceUrl: sourceUrlOf(row.DocumentUrl),
       postedAt: null,
+      date: row.MeetingDate,
       ...(row.ExhibitTitle === null || row.ExhibitTitle === undefined ? {} : { title: row.ExhibitTitle }),
       relations: meetingBoundRelations(session, row, `CommitteeMeetingDocuments ${row.CommitteeMeetingDocumentId}`),
     };
@@ -274,6 +279,7 @@ async function readTestimony(
         committeeCode: row.CommitteeCode,
         meetingAt: row.MeetingDate,
       },
+      date: row.MeetingDate,
       relations: meetingBoundRelations(session, row, `CommitteePublicTestimonies ${row.CommTestId}`),
     };
   });
@@ -312,6 +318,7 @@ async function readPostings(
       label: amendmentNumber,
       sourceUrl: sourceUrlOf(row.ProposedAmendmentUrl),
       postedAt: row.MeetingDate,
+      date: row.MeetingDate,
       relations: [
         measureRelation(key, provenance),
         committeeRelation(session, row.CommitteeCode, provenance),

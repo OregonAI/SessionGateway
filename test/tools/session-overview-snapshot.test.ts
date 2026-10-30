@@ -8,6 +8,7 @@ import { loadIngestConfig } from "#/packages/config/index.ts";
 import { runFullPull } from "#/packages/ingest/index.ts";
 import { committedAliasFilePath, readLegislatorAliases } from "#/packages/legislators/aliases.ts";
 import { createSimulatedClock } from "../support/clock.ts";
+import { createFakeEmbedder } from "../support/fake-embedder.ts";
 import { startFakeOlis } from "../support/fake-olis.ts";
 import { callTool, connectClient, eras } from "../support/mcp-clients.ts";
 import { createMadeUpSnapshot, type MadeUpSnapshot } from "../support/made-up-snapshot.ts";
@@ -149,6 +150,7 @@ describe("a build whose snapshot cannot be used", () => {
       DATABASE_PATH: database.path,
       OLIS_DOCUMENT_ORIGIN: olis.origin,
       SNAPSHOT_PATH: "/nonexistent/snapshot.json",
+      MODEL_PATH: "/nonexistent/model",
     });
 
     await expect(
@@ -158,6 +160,7 @@ describe("a build whose snapshot cannot be used", () => {
         signal: AbortSignal.timeout(30_000),
         pause: () => Promise.resolve(),
         legislatorAliases: readLegislatorAliases(committedAliasFilePath),
+        embedder: createFakeEmbedder(),
       }),
     ).rejects.toThrow('Could not read the OregonAI snapshot at "/nonexistent/snapshot.json"');
 

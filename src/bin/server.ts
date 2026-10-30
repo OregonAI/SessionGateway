@@ -1,8 +1,10 @@
 // The MCP server's entry script: serves the database the ingest worker writes, read-only, over
 // stateless Streamable HTTP. Everything it needs comes from the environment (src/packages/config)
-// and is created here, once, and passed down: the configuration, the clock and the logger's callback.
+// and is created here, once, and passed down: the configuration, the clock, the embedding model and the
+// logger's callback.
 import { pino } from "pino";
 import { loadServerConfig } from "#/packages/config/index.ts";
+import { loadOnnxEmbedder } from "#/packages/embedder/onnx.ts";
 import { createSessionGatewayHandler } from "#/packages/mcp-server/handler.ts";
 import { serveMcp } from "#/packages/mcp-server/http.ts";
 import { systemClock } from "#/packages/time/clock.ts";
@@ -25,8 +27,12 @@ const stopRequested = new Promise<void>((resolve) => {
 const shutdown = new AbortController();
 
 const config = loadServerConfig(process.env);
+// The server holds the model for the life of the process and runs it on one thread: the deploy box has two
+// cores shared with seven corpora (ADR-0007). A start-up that cannot load it fails here, naming the file.
+const embedder = await loadOnnxEmbedder({ modelPath: config.modelPath, intraOpThreads: 1 });
 const handler = createSessionGatewayHandler(config, {
   clock: systemClock,
+  embedder,
   fetch,
   signal: shutdown.signal,
   onLiveLookupFailed: ({ measure, error }) => {

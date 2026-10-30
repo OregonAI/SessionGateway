@@ -3,6 +3,8 @@
 import { createMcpHandler, McpServer, type McpHttpHandler } from "@modelcontextprotocol/server";
 import type { ServerConfig } from "#/packages/config/index.ts";
 import { openIndexReader, type IndexReader } from "#/packages/database/reader.ts";
+import { openSearchReader } from "#/packages/database/search.ts";
+import type { Embedder } from "#/packages/embedder/index.ts";
 import { createOlisClient } from "#/packages/olis-client/index.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import {
@@ -30,6 +32,7 @@ import {
   NO_FILTER_MESSAGE,
   unknownCommitteeMessage,
 } from "./lib/meetings.ts";
+import { search, searchInput, searchOutput, type SearchDeps } from "./lib/search.ts";
 import { sessionOverview, sessionOverviewInput, sessionOverviewOutput } from "./lib/session-overview.ts";
 import {
   noSuchPageMessage,
@@ -53,6 +56,8 @@ export type HandlerDeps = {
   signal: AbortSignal;
   /** Told of each live lookup that failed, so the deployment can log it; the call itself still answers from the cache. */
   onLiveLookupFailed: (failure: LiveLookupFailure) => void;
+  /** Embeds each question that `search` is asked. Created in the entry script, like the clock. */
+  embedder: Embedder;
 };
 
 export type SessionGatewayHandler = {
@@ -80,6 +85,7 @@ function refuseOverRateLimit(
 
 function buildServer(
   reader: IndexReader,
+  searchDeps: SearchDeps,
   liveStatus: LiveStatusReader,
   config: ServerConfig,
   limiter: RateLimiter,
@@ -259,6 +265,23 @@ function buildServer(
     },
   );
   server.registerTool(
+    "search",
+    {
+      title: "Search the Session",
+      description:
+        "Searches every document of the Session at once, by the words in it and by the meaning of its passages, and returns the best hits first. Each hit has its id (give it to get_document), kind, title, Measure, date, a snippet of the passage that matched, the link to the document and how it was found. It is not the official record.",
+      inputSchema: searchInput,
+      outputSchema: searchOutput,
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    (input) => {
+      const refused = refuseOverRateLimit(limiter, config);
+      if (refused !== undefined) return refused;
+      const result = search(searchDeps, config.session, input);
+      return { content: [{ type: "text", text: JSON.stringify(result.search) }], structuredContent: result.search };
+    },
+  );
+  server.registerTool(
     "session_overview",
     {
       title: "Overview of the Session",
@@ -280,6 +303,7 @@ function buildServer(
 
 export function createSessionGatewayHandler(config: ServerConfig, deps: HandlerDeps): SessionGatewayHandler {
   const reader = openIndexReader(config.databasePath);
+  const searchIndex = openSearchReader(config.databasePath);
   // One limiter for the process: createMcpHandler builds a server for each request, so the limiter
   // cannot live inside buildServer.
   const limiter = createRateLimiter({
@@ -295,11 +319,13 @@ export function createSessionGatewayHandler(config: ServerConfig, deps: HandlerD
     signal: deps.signal,
     onFailure: deps.onLiveLookupFailed,
   });
-  const handler = createMcpHandler(() => buildServer(reader, liveStatus, config, limiter, deps.clock));
+  const searchDeps: SearchDeps = { reader, searchIndex };
+  const handler = createMcpHandler(() => buildServer(reader, searchDeps, liveStatus, config, limiter, deps.clock));
   return {
     fetch: handler.fetch,
     close: async () => {
       await handler.close();
+      searchIndex.close();
       reader.close();
     },
   };
