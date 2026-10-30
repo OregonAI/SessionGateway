@@ -119,13 +119,18 @@ function readMeasures(path: string): Chosen[] {
 type Selection = { included: Map<string, number[]>; unresolved: Unresolved[] };
 
 function loadFeed(feedDir: string): Map<string, Row[]> {
+  // unresolved.json says which references the FULL cache cannot resolve. That is only true if the
+  // cache is full: a missing file would turn every reference into that entity set into a false gap.
+  const lacking = Object.keys(entitySets).filter((entitySet) => !existsSync(join(feedDir, `${entitySet}.json`)));
+  if (lacking.length > 0) {
+    throw new BuildError(
+      `the feed cache ${feedDir} lacks ${lacking.map((entitySet) => `${entitySet}.json`).join(", ")}. ` +
+        `The build needs the full ${SESSION} feed, because a missing file would make every reference into it look like a gap of the full cache.`,
+    );
+  }
   const feed = new Map<string, Row[]>();
   for (const entitySet of Object.keys(entitySets)) {
     const path = join(feedDir, `${entitySet}.json`);
-    if (!existsSync(path)) {
-      feed.set(entitySet, []);
-      continue;
-    }
     const rows: unknown = JSON.parse(readFileSync(path, "utf8"));
     if (!Array.isArray(rows)) throw new BuildError(`${path}: expected a JSON array`);
     feed.set(entitySet, rows as Row[]);
