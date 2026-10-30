@@ -7,8 +7,10 @@
 // much rather than too little:
 //   - an ORS chapter is touched when any document, or any text of a Measure's row, cites an ORS section
 //     in it ("ORS 659A.159", "ORS 418.806 to 418.816", "ORS 409.711 and 418.808") or the chapter itself
-//     ("ORS chapter 657B"). This is not the Statute Link parser (ticket #6): it does not tell amends from
-//     cites, and it need not.
+//     ("ORS chapter 657B"), or writes a section number alone in parentheses ("(318.031)"), which is how
+//     a table under an "ORS" column header writes a second section ("315.154-156 (318.031)"; exhibit
+//     295037 of the fixture). This is not the Statute Link parser (ticket #6): it does not tell amends
+//     from cites, and it need not.
 //   - an Agency is touched when a rule of its implements a section of a touched chapter (the table), or
 //     when its name or one of its aliases is written in a document, a Measure's text or a Testimony's
 //     Organization.
@@ -61,6 +63,14 @@ const chapterCitation = new RegExp(
   "g",
 );
 
+/**
+ * "(318.031)": a section number alone in parentheses, with no ORS before it. A table whose column is headed
+ * "ORS" writes its citations like this ("315.154-156 (318.031)"), and the heading is far from the number.
+ * Other bare numbers are not read: the whole-Session Statutes Affected Table lists most chapters of the
+ * ORS, and a bare "1.425" is a Tax Expenditure number.
+ */
+const parenthesizedSection = new RegExp(String.raw`\(\s*(${chapter})\.\d{3}[A-Z]?\s*\)`, "g");
+
 /** The ORS chapters the texts cite, as chapter ids, in order. */
 export function citedOrsChapters(texts: readonly string[]): string[] {
   const chapters = new Set<string>();
@@ -75,6 +85,7 @@ export function citedOrsChapters(texts: readonly string[]): string[] {
     for (const match of text.matchAll(chapterCitation)) {
       for (const number of (match[1] ?? "").matchAll(/\d{1,3}[A-Z]?/g)) add(number[0]);
     }
+    for (const match of text.matchAll(parenthesizedSection)) add(match[1] ?? "");
   }
   return [...chapters].sort(compare);
 }

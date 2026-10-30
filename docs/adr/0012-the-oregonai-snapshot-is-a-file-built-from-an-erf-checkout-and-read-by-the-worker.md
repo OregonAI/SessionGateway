@@ -25,7 +25,7 @@ Two checks on the data, run on 2026-10-30 against ERF at commit 58e1839, support
 
 What the checks cannot see: a module name built at run time (`import("node:" + name)`), `process.binding`, and what a package in `dependencies` does inside `node_modules`, which `dependency-cruiser` does not follow. The last is a review matter when a dependency is added (`CLAUDE.md`, "Dependencies"). The server is built with no `fetch` today (`createSessionGatewayHandler(config, { clock })`); the ticket that gives it one for the live lookup passes it to code that calls OLIS alone, and a `fetch` that an entry script hands over is outside what any import or global rule can see.
 
-**The trimmed fixture.** `test/fixtures/oregonai-snapshot/` holds the snapshot cut down to what the 2025R1 fixture touches, made by the same script (`--trim-to`), with a record of what it kept (`test/fixtures/oregonai-snapshot/README.md`). It keeps 114 of 190 Agencies, 4,383 of 37,534 sections and 38 of 439 table rows. `scripts/snapshot/verify.ts` checks it in `npm run check` without a checkout, and fails when a Measure added to the 2025R1 fixture cites a chapter the snapshot fixture lacks.
+**The trimmed fixture.** `test/fixtures/oregonai-snapshot/` holds the snapshot cut down to what the 2025R1 fixture touches, made by the same script (`--trim-to`), with a record of what it kept (`test/fixtures/oregonai-snapshot/README.md`). It keeps 114 of 190 Agencies, 4,392 of 37,534 sections and 39 of 439 table rows. `scripts/snapshot/verify.ts` checks it in `npm run check` without a checkout, and fails when a Measure added to the 2025R1 fixture cites a chapter the snapshot fixture lacks.
 
 ## Considered Options
 

@@ -2440,6 +2440,15 @@
     "ors-317.930",
     "ors-317.950",
     "ors-317.991",
+    "ors-318.010",
+    "ors-318.020",
+    "ors-318.031",
+    "ors-318.040",
+    "ors-318.060",
+    "ors-318.070",
+    "ors-318.074",
+    "ors-318.106",
+    "ors-318.130",
     "ors-319.010",
     "ors-319.020",
     "ors-319.023",
@@ -5381,6 +5390,9 @@
       "department-of-revenue",
       "oregon-business-development-department",
       "oregon-housing-and-community-services-department"
+    ],
+    "ors-chapter-318": [
+      "department-of-revenue"
     ],
     "ors-chapter-319": [
       "department-of-transportation",

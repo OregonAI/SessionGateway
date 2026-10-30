@@ -14,12 +14,13 @@ OregonAI's repository. It is made by the same script that builds the whole snaps
 Taken from the checkout at commit `58e1839d441addf3ac1e1748c91ce3de78d3f342` (2026-09-13, behind
 `origin/main`):
 
-- 38 ORS chapters, of 531 with a section: every chapter that a document or a Measure of the 2025R1
-  fixture cites. Each keeps all its sections (4,383 of 37,534), so a range can be expanded inside it.
+- 39 ORS chapters, of 531 with a section: every chapter that a document or a Measure of the 2025R1
+  fixture cites in one of the forms listed under "How the list was taken". Each keeps all its sections
+  (4,392 of 37,534), so a range can be expanded inside it.
 - 114 Agencies, of 190 registry rows: the 28 whose name or alias the fixture's texts contain, and every
   Agency a rule of which implements a section of a kept chapter. The second kind is most of them: chapter
   192 (public records) alone has 57, because many agencies' rules implement it.
-- The chapter table's rows for the kept chapters: each of the 38 has one (38 of 439 rows in all).
+- The chapter table's rows for the kept chapters: each of the 39 has one (39 of 439 rows in all).
 
 `snapshot.json` is about 120 KB; the whole snapshot is about 850 KB.
 
@@ -31,9 +32,14 @@ too much rather than too little:
 1. **ORS chapters.** The text of every document in `../olis-2025R1/manifest.json` (extracted by the
    `pdf-text` package) and every text value of `feed/Measures.json` is scanned for an ORS citation: `ORS`
    followed by a section number and the sections listed after it ("ORS 409.711 and 418.808", "ORS 418.806 to
-   418.816", "ORS 659A.159, as amended by ...") or `ORS chapter(s)` and a chapter ("ORS chapter 657B"). A
-   bare number such as "1,234.567" is not a citation. This is not the Statute Link parser (ticket #6): it
-   does not tell amends from cites. A cited chapter of which ERF holds no section is listed in
+   418.816", "ORS 659A.159, as amended by ...") or `ORS chapter(s)` and a chapter ("ORS chapter 657B"), or a
+   section number alone in parentheses ("(318.031)"), which is how a table under an "ORS" column header
+   writes a second section: exhibit 295037 (SB 121's Tax Credit Report) has "315.154-156 (318.031)", and
+   chapter 318 is cited nowhere else. Any other bare number is not a citation: "1,234.567" is not, and nor is
+   the "1.425" of a Tax Expenditure Report, and the whole-Session Statutes Affected Table (a document of
+   the fixture) lists most chapters of the ORS without writing ORS before any of them, so reading its bare
+   numbers would keep nearly everything. A citation written in a table in some other way is missed. This is
+   not the Statute Link parser (ticket #6): it does not tell amends from cites. A cited chapter of which ERF holds no section is listed in
    `trim.json` under `orsChaptersNotInSnapshot`; this time there is none.
 2. **Agencies.** An Agency is kept when its `name` or one of its `aliases` is written, as whole words and
    without regard to case, in any of those texts or in the `Organization` of a Testimony row, or when the

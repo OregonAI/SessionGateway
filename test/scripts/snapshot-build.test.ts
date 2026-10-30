@@ -326,4 +326,47 @@ describe("the snapshot build script with --trim-to the 2025R1 fixture", () => {
     // The SHA-256 of the output file, as `sha256sum` prints it for it.
     expect(recorded["snapshotSha256"]).toBe("6a682be3815e8bebdbc8af5d8e2e590aa44e29b8314f198ce1ad3dd38c396415");
   }, 30_000);
+
+  it("keeps a chapter that the fixture cites only in a table, where no ORS stands before the section number", () => {
+    // Exhibit 295037 of the fixture (SB 121's "Tax Credit Report 2025", LRO) lists "1.431 Crop Donations
+    // 315.154-156 (318.031)" under a column headed "ORS". Nothing else in the fixture cites chapter 318.
+    // The made-up checkout holds a section of chapter 318 and a rule of its revenue agency that implements it.
+    const sections = ["ors-318.031", "ors-999.001"];
+    const graph: MadeUpGraph = {
+      note: "MADE UP for a test.",
+      nodes: [
+        ...sections.map((id) => ({
+          id,
+          title: `Made up ${id}`,
+          doc_type: "statute",
+          status: "current",
+          path: `statutes/${id}.md`,
+        })),
+        {
+          id: "oar-150-318-0010",
+          title: "Made up oar-150-318-0010",
+          doc_type: "rule",
+          status: "current",
+          path: "rules/150/318/oar-150-318-0010.md",
+        },
+      ],
+      edges: [{ from: "oar-150-318-0010", to: "ors-318.031", type: "implements" }],
+    };
+    const agenciesYaml = `organizations:
+- slug: made-up-revenue
+  name: Made-Up Revenue Office
+  oar_chapter: '150'
+`;
+    const erf = madeUpErf({ graph, agenciesYaml });
+    const out = outputFile();
+    const record = join(dirname(out), "trim.json");
+
+    const finished = build(["--erf", erf.path, "--out", out, "--trim-to", fixture, "--trim-record", record]);
+
+    expect(finished.status, finished.stderr).toBe(0);
+    const trimmed = readJson(out) as Record<string, unknown>;
+    expect(trimmed["orsSections"]).toEqual(["ors-318.031"]);
+    expect(trimmed["chapterAgencies"]).toEqual({ "ors-chapter-318": ["made-up-revenue"] });
+    expect((readJson(record) as Record<string, unknown>)["orsChaptersCited"]).toContain("ors-chapter-318");
+  }, 30_000);
 });
