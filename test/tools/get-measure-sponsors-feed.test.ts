@@ -9,7 +9,8 @@
 // PrintOrder and CreatedDate as the cache has them and only its Measure changed to SB 69, so that
 // the fixture holds the Measure it names; the comment beside it names the Measure it came from. A
 // MeasureSponsorId of 900000 or more is made up for the test, and carries a Legislator Code in a form
-// the feed does use.
+// the feed does use. A stray Legislators row (legislatorRow) is made up too: it has the feed's shape,
+// and its code and names are the ones the case says.
 import { afterEach, describe, expect, it } from "vitest";
 import { createTempAliasFile, type TempAliasFile } from "../support/alias-file.ts";
 import { callTool, connectClient, type ToolOutcome } from "../support/mcp-clients.ts";
