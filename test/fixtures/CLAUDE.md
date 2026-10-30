@@ -10,4 +10,4 @@ A trimmed slice of the 2025R1 Session, committed so CI can replay it (ticket #3)
 
 ## The OregonAI snapshot fixture
 
-`oregonai-snapshot/` is the OregonAI snapshot (ADR-0012) cut down to what the 2025R1 fixture touches, made by `scripts/snapshot/build.ts` from a local checkout of OregonAI's repository, and never edited by hand. Its README says what it kept, how the list was taken and how to rebuild it. `scripts/snapshot/verify.ts` checks it in `npm run check` without the checkout (`fixture:verify`), and fails when a Measure added above cites a chapter it lacks: rebuild it then.
+`oregonai-snapshot/` is the OregonAI snapshot (ADR-0012) cut down to what the 2025R1 fixture touches, made by `scripts/snapshot/build.ts` from a local checkout of OregonAI's repository, and never edited by hand. Its README says what it kept, how the list was taken and how to rebuild it. `scripts/snapshot/verify.ts` checks it in `npm run check` without the checkout (`snapshot:verify`, a step of its own, so a failure of `fixture:verify` does not hide it), and fails when a Measure added above cites a chapter it lacks: rebuild it then.

@@ -61,7 +61,7 @@ The same checkout gives the same bytes. A newer checkout gives a new `version` a
 commit the result, and the tests that name the version change with it. Adding a Measure to the 2025R1
 fixture that cites a chapter this one lacks fails `verify.ts` until the snapshot is rebuilt.
 
-`verify.ts` needs no checkout and runs in `npm run check` (`fixture:verify`). It checks that
+`verify.ts` needs no checkout and runs in `npm run check` (`snapshot:verify`, a step of its own after `fixture:verify`, so that the summary says whether this fixture is sound when the 2025R1 one is not). It checks that
 `snapshot.json` is the file `trim.json` hashed, that it parses, that the chapters the 2025R1 fixture cites
 are the recorded ones, and that the snapshot holds the sections of exactly those chapters and the
 Agencies the fixture names or the table lists. It cannot see whether the trim kept every section ERF has

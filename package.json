@@ -11,14 +11,15 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "check": "node scripts/check.ts format:check lint typecheck guard:tsc lint:boundaries fixture:verify test",
+    "check": "node scripts/check.ts format:check lint typecheck guard:tsc lint:boundaries fixture:verify snapshot:verify test",
     "format:check": "prettier --check \"{src,test,scripts}/**/*.ts\" vitest.config.ts",
     "format": "prettier --write \"{src,test,scripts}/**/*.ts\" vitest.config.ts",
     "lint": "eslint \"{src,test,scripts}/**/*.ts\" vitest.config.ts",
     "typecheck": "tsc --noEmit",
     "guard:tsc": "node scripts/guard.ts tsc-version",
     "lint:boundaries": "node scripts/guard.ts boundaries",
-    "fixture:verify": "node scripts/fixture/verify.ts && node scripts/snapshot/verify.ts",
+    "fixture:verify": "node scripts/fixture/verify.ts",
+    "snapshot:verify": "node scripts/snapshot/verify.ts",
     "test": "vitest run",
     "license:check": "node scripts/license-check.ts"
   },
