@@ -127,7 +127,7 @@ export function openIndexReader(path: string): IndexReader {
           versionLabel: stored.analysis_version_label,
           sourceUrl: stored.source_url,
           committeeId: (related.find((node) => node.relation === "committee")?.to as CommitteeId | undefined) ?? null,
-          versionIds: related.filter((node) => node.relation === "version").map((node) => node.to as DocumentId),
+          placedVersionId: (related.find((node) => node.relation === "version")?.to as DocumentId | undefined) ?? null,
         };
       });
     },

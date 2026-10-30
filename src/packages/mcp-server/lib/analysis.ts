@@ -79,9 +79,10 @@ export function analysisDocumentsOf(key: MeasureKey, stored: readonly StoredAnal
   const groups = new Map<string, { order: number; version: string; documents: StoredAnalysis[] }>();
   const unmapped: AnalysisDocumentsOutput["unmapped"] = [];
   for (const analysis of stored.toSorted(compareEntries)) {
-    // The Versions a stored document points at are the Versions the feed listed for the Measure, so
-    // they stand for "listed" here exactly as the feed's list did when the worker wrote them.
-    const placement = placeAnalysis(key, analysis.versionLabel, (version) => analysis.versionIds.includes(version));
+    // The worker pointed the document at a Version only when its label named one the feed lists for the
+    // Measure. So the Version it is pointed at is the one "listed" Version here, and the others are not:
+    // this replays the worker's placement from what it stored, and cannot disagree with it.
+    const placement = placeAnalysis(key, analysis.versionLabel, (version) => version === analysis.placedVersionId);
     switch (placement.kind) {
       case "version": {
         const group = groups.get(placement.versionId) ?? {

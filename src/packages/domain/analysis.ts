@@ -74,6 +74,10 @@ export type StoredAnalysis = {
   sourceUrl: string;
   /** The committee that issued it, when the feed names one. */
   committeeId: CommitteeId | null;
-  /** The Versions the document points at, which are the Versions the feed listed for its Measure. */
-  versionIds: DocumentId[];
+  /**
+   * The Version the worker placed the document on: the one `version` edge it wrote, or null when the
+   * label placed it on none. The worker wrote the edge only to a Version the feed lists for the
+   * Measure, so this is not the Measure's list of Versions.
+   */
+  placedVersionId: DocumentId | null;
 };

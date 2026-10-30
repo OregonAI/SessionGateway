@@ -25,7 +25,7 @@ All nine labels of the full 2025R1 cache (`.cache/olis-2025R1/feed/MeasureAnalys
 - **Read `B*` as B-Engrossed, and `MRA` as the minority-report Version when the Measure lists one.** This would place 7 more rows, and 16 and 14 more where the Measure has the Version. It is a reading of codes the feed does not define, and it already fails for 4 of 20 `MRA` rows, for 8 of 22 `MRB` rows and for all of `MRC`. The labels stay unmapped until OLIS says what they mean; a mapping then adds a line to `placeAnalysis` and a row to its test.
 - **Place a blank-label document by its dates or its committee.** A Staff Measure Summary posted between two Versions is not of either by that fact.
 - **List only the placed documents.** The ticket asks that an unplaceable document be listed, and an agent that reads "no revenue impact statement" where there is one with an unreadable label is misled.
-- **Store the placement and have `get_measure` read it back.** The edge the worker writes already says which Versions the feed listed, so `get_measure` runs the same function over the edges, and the stored label is the only new column.
+- **Store the placement and have `get_measure` read it back.** The `version` edge the worker writes is already the stored placement of a document that has one: the worker wrote it only to a Version the feed lists for the Measure. So `get_measure` runs the same function over that edge, which stands for "the feed lists this Version" for the one Version the document is on and for no other, and the stored label is the only new column. The edge is not the Measure's list of Versions.
 
 ## Consequences
 
