@@ -49,7 +49,7 @@ export function downloadUrlOf(sourceUrl: string, documentOrigin: string): URL {
  * The rows of one entity set that belong to the Session. The `$filter` asks the feed for them; the
  * check that follows keeps a row of another Session out even from a feed that ignored the filter.
  */
-async function readSessionRows<Row extends { SessionKey: string }>(
+export async function readSessionRows<Row extends { SessionKey: string }>(
   options: OlisClientOptions,
   entitySet: string,
   session: SessionKey,
@@ -208,6 +208,7 @@ const exhibitRow = z.looseObject({
   CommitteeCode: z.string(),
   MeetingDate: feedTimestamp,
   DocumentType: z.string(),
+  ExhibitTitle: z.string().nullish(),
   MeasurePrefix: z.string().nullable(),
   MeasureNumber: z.number().int().nullable(),
   DocumentUrl: z.string(),
@@ -231,6 +232,7 @@ async function readExhibits(
       label: row.DocumentType,
       sourceUrl: sourceUrlOf(row.DocumentUrl),
       postedAt: null,
+      ...(row.ExhibitTitle === null || row.ExhibitTitle === undefined ? {} : { title: row.ExhibitTitle }),
       relations: meetingBoundRelations(session, row, `CommitteeMeetingDocuments ${row.CommitteeMeetingDocumentId}`),
     };
   });

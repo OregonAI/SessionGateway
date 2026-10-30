@@ -89,6 +89,13 @@ One sitting of a Committee, identified by the Committee and its start time in Pa
 **Agenda**:
 A Meeting's published agenda, a Document of its own.
 
+**Agenda item**:
+One line of a Meeting's agenda: a Measure the Committee takes up (a Public Hearing, a Work Session) or another item, such as an executive appointment. The feed's `CommitteeAgendaItems` rows give them, and the Action says what the Committee did with each.
+_Avoid_: agenda entry
+
+**Meeting status**:
+What the feed's `MeetingStatus` says of a Meeting: Scheduled, Cancelled or No Meeting Scheduled. It is shown as the feed writes it.
+
 **Recording Log**:
 A committee's timecoded index of one meeting's recording: agenda items, motions, votes and each speaker.
 _Avoid_: minutes

@@ -18,6 +18,14 @@ export const documentKinds = [
 ] as const;
 export type DocumentKind = (typeof documentKinds)[number];
 
+/** The kinds of document a meeting lists: its agenda, Exhibits, Recording Logs and the postings of Proposed Amendments. */
+export const meetingDocumentKinds = [
+  "agenda",
+  "exhibit",
+  "recording_log",
+  "proposed_amendment",
+] as const satisfies readonly DocumentKind[];
+
 /**
  * How a document points at a node: the Measure, committee or meeting it belongs to, the Version an
  * analysis is of or a Printed Amendment amends, the meeting a posting was posted to, the amendment a
@@ -135,6 +143,16 @@ export function meetingIdOf(session: SessionKey, committeeCode: string, at: Time
   return `meeting-${session.toLowerCase()}-${slug(committeeCode)}-${meetingKey(at)}` as MeetingId;
 }
 
+/**
+ * The meeting's page on OLIS, built from its committee code and its start time: the form is
+ * `/liz/{session}/Committees/{CommitteeCode}/{yyyy-MM-dd-HH-mm}/Agenda`
+ * (docs/research/hearing-video.md section 2). It is linked and never fetched (spec #1, "Out of Scope").
+ */
+export function olisMeetingPageUrlOf(session: SessionKey, committeeCode: string, at: Timestamp): string {
+  const time = `${at.slice(0, 10)}-${at.slice(11, 13)}-${at.slice(14, 16)}`;
+  return `https://olis.oregonlegislature.gov/liz/${session}/Committees/${committeeCode}/${time}/Agenda`;
+}
+
 /** A meeting's agenda is a document of its own. */
 export function agendaIdOf(session: SessionKey, committeeCode: string, at: Timestamp): DocumentId {
   return `agenda-${session.toLowerCase()}-${slug(committeeCode)}-${meetingKey(at)}` as DocumentId;
@@ -165,6 +183,8 @@ export type DocumentLink = {
   sourceUrl: string;
   /** When it was posted to a meeting, for a posting. */
   postedAt: Timestamp | null;
+  /** For an Exhibit: the feed's `ExhibitTitle`, which tells one Exhibit from another. Absent when the feed gives none. */
+  title?: string;
   relations: DocumentRelation[];
 };
 
@@ -202,8 +222,85 @@ export type Meeting = {
   id: MeetingId;
   committeeId: CommitteeId;
   at: Timestamp;
+  /** What the feed's `MeetingStatus` says, as it writes it: "Scheduled", "Cancelled", "No Meeting Scheduled". */
+  status: string;
   /** The meeting's agenda, when the feed links one. */
   agenda: DocumentLink | null;
+};
+
+/** A meeting as a list shows it: when, whose and what the feed says of its status, without its contents. */
+export type MeetingHeader = {
+  id: MeetingId;
+  committee: { id: CommitteeId; code: string; name: string };
+  at: Timestamp;
+  status: string;
+};
+
+/** A Proposed Amendment posted to a meeting: the node, and the posting with the text posted there. */
+export type PostedAmendment = {
+  id: AmendmentId;
+  /** The amendment's number as the feed writes it, trimmed: "-1", "-A3". */
+  number: string;
+  measureId: MeasureId;
+  /** What the committee did with it at that meeting: Proposed, Adopted... */
+  meaning: string | null;
+  /** The posting: the document with the file posted to this meeting. */
+  documentId: DocumentId;
+  sourceUrl: string;
+  /** Whether the store holds the posting's file. The feed lists the posting either way. */
+  fetched: boolean;
+};
+
+/** A document the feed lists for a meeting, by what the feed calls it. */
+export type MeetingDocument = {
+  id: DocumentId;
+  /** The feed's type for it: "Meeting Material", "Preliminary SMS", "Witness Registration"... */
+  label: string;
+  sourceUrl: string;
+  /** The Measure the feed files it under, when it names one. */
+  measureId: MeasureId | null;
+  /** The feed's title for it, as published, when it gives one (an Exhibit has one). */
+  title: string | null;
+  /** Whether the store holds the file. The feed lists the document either way. */
+  fetched: boolean;
+};
+
+/**
+ * What the feed lists for a meeting: its agenda document, its agenda items in print order, the Proposed
+ * Amendments posted to it by Measure and number, its Exhibits and its Recording Logs. The feed has a
+ * Recording Log for most meetings and more than one for a few. A document is listed whether or not its
+ * file has been fetched (`fetched`): the feed is read before the files are (ADR-0011, "Order of a pull"),
+ * and a fetch can fail.
+ */
+export type MeetingContents = {
+  /** The agenda document, when the feed links one. */
+  agenda: MeetingDocument | null;
+  agendaItems: AgendaItem[];
+  amendments: PostedAmendment[];
+  exhibits: MeetingDocument[];
+  recordingLogs: MeetingDocument[];
+};
+
+/**
+ * One line of a meeting's agenda: a Measure heard, or something else the committee did (an
+ * appointment, an introduction). Every text is as the feed publishes it; `comments` can hold HTML.
+ */
+export type AgendaItem = {
+  /** The feed's `CommitteeAgendaItemId`. */
+  itemId: number;
+  meetingId: MeetingId;
+  /** The Measure the item is about, when it is about one. */
+  measure: MeasureKey | null;
+  /** "Public Hearing", "Work Session", "Public Hearing and Work Session"... */
+  meetingType: string | null;
+  /** What the committee did: "Heard", "Heard and Reported Out with Amendments"... Null until it has. */
+  action: string | null;
+  /** The item's place on the agenda, as the feed writes it ("1", "10"). */
+  printOrder: string | null;
+  comments: string | null;
+  /** For an executive appointment: the board and the appointee. */
+  boardName: string | null;
+  executiveAppointee: string | null;
 };
 
 export type Committee = {
