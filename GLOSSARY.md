@@ -109,7 +109,7 @@ One chamber's roll call on a Measure, taken at one action of its History: the fe
 _Avoid_: roll call, when the chamber matters
 
 **Committee vote**:
-One committee's roll call on a Measure at one meeting: the feed's CommitteeVotes rows that share a `CommitteeReportId`, with the committee's code and when it met. The feed gives some rolls under two reports with the same rows in each (in the cache, 209 agenda items, all of joint or conference committees: `docs/research/olis-votes.md` §3), and `get_measure` lists such a roll once. The feed creates the rows before the meeting (§4), so a committee vote's meeting can be later than the As of time. Committee names wait for the ticket that reads Committees, as for the Committee sponsor.
+One committee's roll call on a Measure at one meeting: the feed's CommitteeVotes rows that share a `CommitteeReportId`, with the committee's code and when it met. The feed gives some rolls under two reports with the same rows in each (in the cache, 209 agenda items, all of joint or conference committees: `docs/research/olis-votes.md` §3), and `get_measure` lists such a roll once. The feed creates the rows before the meeting (§4), so a committee vote's meeting can be later than the As of time, with answers already listed; the feed does not say whether the vote has been taken. Committee names wait for the ticket that reads Committees, as for the Committee sponsor.
 
 ### Statutes and agencies
 

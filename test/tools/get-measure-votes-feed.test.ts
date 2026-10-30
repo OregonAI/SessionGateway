@@ -71,6 +71,48 @@ describe("the history and votes as the feed stood", () => {
   });
 });
 
+describe("a committee roll the feed lists before its meeting", () => {
+  // The same day, 2025-01-29 09:00 in Oregon. SB 69's SLB roll (CommitteeVotes 324937 to 324941, report 37391)
+  // was created 2025-01-23T07:44:41 and last modified 2025-01-29T09:14:12, for the meeting of 2025-01-30T08:00:00,
+  // so the fake OLIS has it a day early, with the answers the rows carry. The history's last line is still
+  // "Public Hearing held.": the work session has not happened.
+  it("is shown like any other committee vote, with a meeting_date later than as_of", async () => {
+    const outcome = await getMeasure({ clockAt: "2025-01-29T17:00:00Z" }, "SB 69");
+
+    expect(outcome.structured).toMatchObject({ as_of: "2025-01-29T09:00:00-08:00" });
+    expect(historyOf(outcome)?.at(-1)?.text).toBe("Public Hearing held.");
+    expect(committeeVotesOf(outcome)).toEqual([
+      {
+        committee_code: "SLB",
+        meeting_date: "2025-01-30T08:00:00-08:00",
+        votes: [
+          {
+            legislator_code: "Sen Bonham",
+            vote: "Aye",
+            legislator: expect.objectContaining({ name: "Daniel Bonham" }),
+          },
+          {
+            legislator_code: "Sen Hayden",
+            vote: "Aye",
+            legislator: expect.objectContaining({ name: "Cedric Hayden" }),
+          },
+          { legislator_code: "Sen Pham", vote: "Aye", legislator: expect.objectContaining({ name: "Khanh Pham" }) },
+          {
+            legislator_code: "Sen Taylor",
+            vote: "Aye",
+            legislator: expect.objectContaining({ name: "Kathleen Taylor" }),
+          },
+          {
+            legislator_code: "Sen Woods",
+            vote: "Excused",
+            legislator: expect.objectContaining({ name: "Aaron Woods" }),
+          },
+        ],
+      },
+    ]);
+  });
+});
+
 describe("a Measure with no history and no vote", () => {
   // A Measure row made up for the case: HB 9001, created on 2025-02-01 and in no other set.
   const measure = {

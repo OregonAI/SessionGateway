@@ -101,6 +101,14 @@ describe.for(eras)("get_measure for a %s client", (era) => {
     expect(description).not.toMatch(/the committee the Measure is in/i);
   });
 
+  it("tells an agent that a committee vote's meeting can be later than as_of, with answers already listed", async () => {
+    const { tools } = await connected.client.listTools();
+
+    const description = describedAs(tools[0]?.outputSchema, ["committee_votes"]);
+    expect(description).toContain("meeting_date is later than as_of");
+    expect(description).toContain("the feed does not say whether that vote has been taken");
+  });
+
   it("advertises get_measure as the one read-only tool, with an output schema", async () => {
     const { tools } = await connected.client.listTools();
 
