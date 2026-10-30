@@ -28,9 +28,6 @@ const QUESTION_INSTRUCTION = "Represent this sentence for searching relevant pas
 /** The most tokens the model reads, [CLS] and [SEP] included. */
 const MODEL_INPUT_TOKENS = MAX_PASSAGE_TOKENS + 2;
 
-/** Passages are run together a few at a time; more only adds padding and memory (docs/research/embeddings-and-storage.md §1.1). */
-const BATCH_SIZE = 8;
-
 const SEP_TOKEN_ID = 102;
 
 function parseJsonObject(path: string): Record<string, unknown> {
@@ -80,31 +77,25 @@ export async function loadOnnxEmbedder(options: OnnxEmbedderOptions): Promise<Em
     interOpNumThreads: 1,
   });
 
-  /** Runs one batch and returns the unit-length CLS vector of each text. */
-  async function runBatch(idLists: readonly (readonly number[])[]): Promise<Float32Array[]> {
-    const width = Math.max(...idLists.map((ids) => ids.length));
-    const ids = new BigInt64Array(idLists.length * width);
-    const mask = new BigInt64Array(idLists.length * width);
-    idLists.forEach((list, row) => {
-      list.forEach((id, column) => {
-        ids[row * width + column] = BigInt(id);
-        mask[row * width + column] = 1n;
-      });
-    });
-    const shape = [idLists.length, width];
+  /**
+   * Runs the model on one text and returns its unit-length CLS vector. A text is always run alone: the quantized
+   * model scales its activations over the whole tensor it is given, so the vector of a text run with others
+   * differs a little from its vector alone, and a vector that is kept under the hash of its text and reused
+   * (ADR-0025) must be a function of that text and nothing else. On one thread batching gains no speed, and
+   * it raises the peak memory with the padding and the activations of the batch.
+   */
+  async function runModel(ids: readonly number[]): Promise<Float32Array> {
+    const shape = [1, ids.length];
     const output = await session.run({
-      input_ids: new ort.Tensor("int64", ids, shape),
-      attention_mask: new ort.Tensor("int64", mask, shape),
-      token_type_ids: new ort.Tensor("int64", new BigInt64Array(idLists.length * width), shape),
+      input_ids: new ort.Tensor("int64", BigInt64Array.from(ids, BigInt), shape),
+      attention_mask: new ort.Tensor("int64", new BigInt64Array(ids.length).fill(1n), shape),
+      token_type_ids: new ort.Tensor("int64", new BigInt64Array(ids.length), shape),
     });
     const hidden = output["last_hidden_state"];
     if (hidden === undefined || hidden.type !== "float32")
       throw new Error("The model gave no float32 last_hidden_state");
-    const data = hidden.data as Float32Array;
-    // CLS pooling: the vector of each text's first token.
-    return idLists.map((_, row) =>
-      normalized(data.slice(row * width * VECTOR_DIMENSIONS, row * width * VECTOR_DIMENSIONS + VECTOR_DIMENSIONS)),
-    );
+    // CLS pooling: the vector of the first token.
+    return normalized((hidden.data as Float32Array).slice(0, VECTOR_DIMENSIONS));
   }
 
   return {
@@ -112,21 +103,13 @@ export async function loadOnnxEmbedder(options: OnnxEmbedderOptions): Promise<Em
     maxPassageTokens: MAX_PASSAGE_TOKENS,
     countTokens: (text) => tokenizer.encode(text, { add_special_tokens: false }).ids.length,
     async embedPassages(texts) {
-      const encoded = texts.map((text, index) => ({ index, ids: tokenizer.encode(text).ids }));
-      for (const item of encoded) {
-        if (item.ids.length > MODEL_INPUT_TOKENS) {
-          throw new Error(`A passage is ${item.ids.length} tokens; the model reads at most ${MODEL_INPUT_TOKENS}`);
+      const vectors: Float32Array[] = [];
+      for (const text of texts) {
+        const ids = tokenizer.encode(text).ids;
+        if (ids.length > MODEL_INPUT_TOKENS) {
+          throw new Error(`A passage is ${ids.length} tokens; the model reads at most ${MODEL_INPUT_TOKENS}`);
         }
-      }
-      // Texts of a length run together, so that a batch carries little padding; the vectors go back in order.
-      encoded.sort((a, b) => a.ids.length - b.ids.length);
-      const vectors: Float32Array[] = new Array<Float32Array>(texts.length);
-      for (let from = 0; from < encoded.length; from += BATCH_SIZE) {
-        const batch = encoded.slice(from, from + BATCH_SIZE);
-        const results = await runBatch(batch.map((item) => item.ids));
-        batch.forEach((item, row) => {
-          vectors[item.index] = results[row] as Float32Array;
-        });
+        vectors.push(await runModel(ids));
       }
       return vectors;
     },
@@ -134,9 +117,7 @@ export async function loadOnnxEmbedder(options: OnnxEmbedderOptions): Promise<Em
       let ids = tokenizer.encode(`${QUESTION_INSTRUCTION}${text}`).ids;
       // A question longer than the model reads is cut, keeping [SEP] last, rather than refused.
       if (ids.length > MODEL_INPUT_TOKENS) ids = [...ids.slice(0, MODEL_INPUT_TOKENS - 1), SEP_TOKEN_ID];
-      const [vector] = await runBatch([ids]);
-      if (vector === undefined) throw new Error("The model gave no vector for the question");
-      return vector;
+      return runModel(ids);
     },
   };
 }
