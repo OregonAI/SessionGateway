@@ -46,4 +46,17 @@ describe.for(eras)("get_measure for a %s client", (era) => {
     });
     expect.soft(outcome.structured?.["notice"]).toMatch(/not the official record/i);
   });
+
+  it.for([
+    ["a citation", "SB 69", "measure-2025r1-sb69"],
+    ["a citation without the space, in lower case", "sb69", "measure-2025r1-sb69"],
+    ["an id", "measure-2025r1-sb69", "measure-2025r1-sb69"],
+    ["another Measure's citation", "HB 3131", "measure-2025r1-hb3131"],
+    ["another Measure's id", "measure-2025r1-hb3131", "measure-2025r1-hb3131"],
+  ])("finds the Measure from %s (%s)", async ([, reference, id]) => {
+    const outcome = await callTool(connected, "get_measure", { measure: reference });
+
+    expect(outcome.isError).toBe(false);
+    expect(outcome.structured).toMatchObject({ id });
+  });
 });

@@ -34,10 +34,20 @@ export function olisPageUrlOf(key: MeasureKey): string {
 }
 
 const citationPattern = /^([A-Za-z]+)\s*(\d+)$/;
+const measureIdPattern = /^measure-(\d{4}[a-z]\d)-([a-z]+)(\d+)$/i;
 
-/** Reads a citation such as "SB 69" as a Measure of the deployment's Session. */
+/**
+ * Reads a Measure id ("measure-2025r1-sb69") or a citation ("SB 69") as a Measure of the
+ * deployment's Session. An id that names another Session is not a Measure of this deployment.
+ */
 export function parseMeasureReference(text: string, session: SessionKey): MeasureKey | undefined {
-  const citation = citationPattern.exec(text.trim());
+  const trimmed = text.trim();
+  const id = measureIdPattern.exec(trimmed);
+  if (id?.[1] !== undefined && id[2] !== undefined && id[3] !== undefined) {
+    if (id[1].toUpperCase() !== session) return undefined;
+    return { session, prefix: id[2].toUpperCase(), number: Number(id[3]) };
+  }
+  const citation = citationPattern.exec(trimmed);
   if (citation?.[1] === undefined || citation[2] === undefined) return undefined;
   return { session, prefix: citation[1].toUpperCase(), number: Number(citation[2]) };
 }
