@@ -171,6 +171,14 @@ One committee's roll call on a Measure at one meeting: the feed's CommitteeVotes
 A connection from a Version or Proposed Amendment to an ORS section or chapter, of one kind: amends, repeals, adds to, or cites.
 _Avoid_: reference, citation, when the kind matters
 
+**Measure section**:
+A numbered section of a Version or Proposed Amendment, printed "SECTION 8." and written "§8" (or "§21a" for one inserted later). A Statute Link names the measure section it is read in.
+_Avoid_: section, unqualified (an ORS section is another thing)
+
+**Relating clause**:
+The words of a Measure's text that say what it does to the statutes: "Relating to human services; amending ORS 409.711." They start on line 2 of page 1 and can run over several lines (SB 69's A-Engrossed Version has three). A Proposed Amendment can edit them.
+_Avoid_: title
+
 **Statutes Affected Table**:
 Legislative Counsel's official table of the ORS sections each Measure amends, repeals or adds to, published after the Session ("artables").
 
