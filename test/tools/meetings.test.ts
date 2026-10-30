@@ -5,7 +5,7 @@
 // changes it. The cases that need the Session after the fact are in meetings-past.test.ts, and the
 // ones that need a database of their own (another clock, a failed fetch, a row the fixture lacks, such
 // as a Recording Log) are in meetings-pull.test.ts.
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";
 
@@ -279,10 +279,25 @@ describe.for(eras)("meetings for a %s client", (era) => {
   // The URL form is docs/research/hearing-video.md section 2: /liz/{session}/Committees/{CommitteeCode}/
   // {yyyy-MM-dd-HH-mm}/Agenda, "exactly" the feed's CommitteeCode and MeetingDate. The 01-30 agenda link
   // in feed/CommitteeMeetings.json (.../Downloads/CommitteeAgenda/SLB/2025-01-30-08-00) writes the same
-  // date and time. The service links the page and never opens it (spec #1, "Out of Scope"): the fake
-  // OLIS answers every /liz/ request and lists it, and the page is not among them.
+  // date and time. The service links the page and never opens it (spec #1, "Out of Scope"). The link is on
+  // the real OLIS origin, so a request for it would never reach the fake OLIS: the server's side is shown
+  // by watching the global `fetch`, which is the only way the server could make one (the handler is given
+  // no other), and the worker's side by the fake's own record of the document requests it received.
   it("links each meeting's OLIS page, built from its committee code and time, and never fetches it", async () => {
-    const outcome = await callTool(connected, "meetings", { measure: "SB 69" });
+    // A request is refused, not passed on: the suite reaches only localhost (test/CLAUDE.md, "Hermetic").
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("This test reaches nothing but localhost"));
+    let outcome: Awaited<ReturnType<typeof callTool>>;
+    let fetched: string[];
+    try {
+      outcome = await callTool(connected, "meetings", { measure: "SB 69" });
+      fetched = fetchSpy.mock.calls.map(([input]) =>
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+      );
+    } finally {
+      fetchSpy.mockRestore();
+    }
 
     const meetings = outcome.structured?.["meetings"] as { id: string; olis_page_url: string }[];
     expect(meetings.map((meeting) => [meeting.id, meeting.olis_page_url])).toEqual([
@@ -299,6 +314,7 @@ describe.for(eras)("meetings for a %s client", (era) => {
         "https://olis.oregonlegislature.gov/liz/2025R1/Committees/SLB/2025-01-30-08-00/Agenda",
       ],
     ]);
+    expect(fetched).toEqual([]);
     expect(system.olis.documentRequests().filter((path) => path.includes("/Committees/"))).toEqual([]);
   });
 
