@@ -21,7 +21,38 @@ const sponsorRow = z.looseObject({
   PrintOrder: decimalKey,
   // The property name is misspelled in the feed (gotcha 1): LegislatoreCode.
   LegislatoreCode: z.string().nullable(),
+  CommitteeCode: z.string().nullable(),
+  PresessionFiledMessage: z.string().nullable(),
 });
+
+type SponsorRow = z.infer<typeof sponsorRow>;
+
+/** The kind of row it is decides which of its columns the feed fills; a row that lacks its column is a fault. */
+function sponsorshipOf(session: SessionKey, row: SponsorRow): Sponsorship {
+  const common = {
+    id: row.MeasureSponsorId,
+    measure: { session, prefix: row.MeasurePrefix, number: row.MeasureNumber },
+    level: row.SponsorLevel === "Chief" ? ("chief" as const) : ("regular" as const),
+    printOrder: row.PrintOrder,
+  };
+  const lacks = (column: string): Error =>
+    new Error(
+      `OLIS sent a ${row.SponsorType} sponsor row (MeasureSponsorId ${row.MeasureSponsorId}) with no ${column}`,
+    );
+  switch (row.SponsorType) {
+    case "Member":
+      if (row.LegislatoreCode === null) throw lacks("LegislatoreCode");
+      return { ...common, kind: "member", legislatorCode: row.LegislatoreCode };
+    case "Committee":
+      if (row.CommitteeCode === null) throw lacks("CommitteeCode");
+      return { ...common, kind: "committee", committeeCode: row.CommitteeCode };
+    case "Presession":
+      if (row.PresessionFiledMessage === null) throw lacks("PresessionFiledMessage");
+      return { ...common, kind: "presession", message: row.PresessionFiledMessage };
+    default:
+      return row.SponsorType satisfies never;
+  }
+}
 
 export async function readSponsorshipRows(
   options: OlisClientOptions,
@@ -33,22 +64,7 @@ export async function readSponsorshipRows(
   for (const row of rows) {
     // A row of another Session is never taken for this one: measure numbers restart every Session.
     if (row.SessionKey !== session) continue;
-    const common = {
-      id: row.MeasureSponsorId,
-      measure: { session, prefix: row.MeasurePrefix, number: row.MeasureNumber },
-      level: row.SponsorLevel === "Chief" ? ("chief" as const) : ("regular" as const),
-      printOrder: row.PrintOrder,
-    };
-    if (row.SponsorType === "Member") {
-      if (row.LegislatoreCode === null) {
-        throw new Error(
-          `OLIS sent a Member sponsor row (MeasureSponsorId ${row.MeasureSponsorId}) with no LegislatoreCode`,
-        );
-      }
-      sponsorships.push({ ...common, kind: "member", legislatorCode: row.LegislatoreCode });
-    } else {
-      sponsorships.push({ ...common, kind: row.SponsorType === "Committee" ? "committee" : "presession" });
-    }
+    sponsorships.push(sponsorshipOf(session, row));
   }
   return sponsorships;
 }

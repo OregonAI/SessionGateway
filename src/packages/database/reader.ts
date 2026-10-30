@@ -9,6 +9,10 @@ export type IndexReader = {
   findMeasure(key: MeasureKey): Measure | undefined;
   /** A Measure's Member sponsors in print order. */
   findSponsors(key: MeasureKey): Sponsor[];
+  /** The codes of the committees that sponsor a Measure, in print order. */
+  findCommitteeSponsors(key: MeasureKey): string[];
+  /** The messages of a Measure's Presession rows, as the feed gives them, in print order. */
+  findPresessionMessages(key: MeasureKey): string[];
   /** When the last completed full pull started, or undefined if none has completed. */
   asOf(session: SessionKey): Timestamp | undefined;
   close(): void;
@@ -20,6 +24,7 @@ const measureRow = z.object({
   modified_at: z.string().nullable(),
 });
 const stateRow = z.object({ full_pull_as_of: z.string() });
+const textRow = z.object({ text: z.string() });
 const sponsorRow = z.object({
   sponsor_id: z.number(),
   print_order: z.number(),
@@ -39,7 +44,17 @@ export function openIndexReader(path: string): IndexReader {
             sponsor.legislator_id, legislator.name AS legislator_name
      FROM sponsor LEFT JOIN legislator
        ON legislator.session_key = sponsor.session_key AND legislator.id = sponsor.legislator_id
-     WHERE sponsor.session_key = ? AND sponsor.prefix = ? AND sponsor.number = ?`,
+     WHERE sponsor.session_key = ? AND sponsor.prefix = ? AND sponsor.number = ? AND sponsor.kind = 'member'`,
+  );
+  const selectCommittees = database.prepare(
+    `SELECT committee_code AS text FROM sponsor
+     WHERE session_key = ? AND prefix = ? AND number = ? AND kind = 'committee'
+     ORDER BY print_order, sponsor_id`,
+  );
+  const selectPresessionMessages = database.prepare(
+    `SELECT presession_message AS text FROM sponsor
+     WHERE session_key = ? AND prefix = ? AND number = ? AND kind = 'presession'
+     ORDER BY print_order, sponsor_id`,
   );
   const selectAsOf = database.prepare("SELECT full_pull_as_of FROM index_state WHERE session_key = ?");
   return {
@@ -74,6 +89,12 @@ export function openIndexReader(path: string): IndexReader {
             ? null
             : { id: sponsor.legislatorId, name: sponsor.legislatorName },
       }));
+    },
+    findCommitteeSponsors(key) {
+      return selectCommittees.all(key.session, key.prefix, key.number).map((row) => textRow.parse(row).text);
+    },
+    findPresessionMessages(key) {
+      return selectPresessionMessages.all(key.session, key.prefix, key.number).map((row) => textRow.parse(row).text);
     },
     asOf(session) {
       const row = selectAsOf.get(session);

@@ -5,17 +5,24 @@ import type { Legislator, LegislatorId, SponsorLevel } from "#/packages/domain/l
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openWriteConnection } from "./lib/connection.ts";
 
-/** One Member sponsor row of the feed, with the Legislator its code resolved to, if any. */
-export type SponsorRecord = {
+type SponsorRecordFields = {
   id: number;
   measure: MeasureKey;
   level: SponsorLevel;
   printOrder: number;
-  legislatorCode: string;
-  legislatorId: LegislatorId | null;
 };
 
-/** The people a full pull read: the Legislators the resolver can name, and the sponsors that name them. */
+/**
+ * One MeasureSponsors row of the feed. A Member row carries the Legislator its code resolved to, if
+ * any; a Committee row names a committee and a Presession row carries a message, and neither names a
+ * Legislator.
+ */
+export type SponsorRecord =
+  | (SponsorRecordFields & { kind: "member"; legislatorCode: string; legislatorId: LegislatorId | null })
+  | (SponsorRecordFields & { kind: "committee"; committeeCode: string })
+  | (SponsorRecordFields & { kind: "presession"; message: string });
+
+/** The people a full pull read: the Legislators the resolver can name, and the sponsor rows of the Measures. */
 export type PeopleRecord = {
   legislators: readonly Legislator[];
   sponsors: readonly SponsorRecord[];
@@ -41,12 +48,14 @@ export function openIndexWriter(path: string): IndexWriter {
          ON CONFLICT (session_key, id) DO UPDATE SET name = excluded.name`,
       );
       const upsertSponsor = database.prepare(
-        `INSERT INTO sponsor (session_key, sponsor_id, prefix, number, level, print_order, legislator_code, legislator_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO sponsor (session_key, sponsor_id, prefix, number, kind, level, print_order,
+                              legislator_code, legislator_id, committee_code, presession_message)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (session_key, sponsor_id) DO UPDATE SET
-           prefix = excluded.prefix, number = excluded.number, level = excluded.level,
+           prefix = excluded.prefix, number = excluded.number, kind = excluded.kind, level = excluded.level,
            print_order = excluded.print_order, legislator_code = excluded.legislator_code,
-           legislator_id = excluded.legislator_id`,
+           legislator_id = excluded.legislator_id, committee_code = excluded.committee_code,
+           presession_message = excluded.presession_message`,
       );
       const recordAsOf = database.prepare(
         `INSERT INTO index_state (session_key, full_pull_as_of) VALUES (?, ?)
@@ -71,10 +80,13 @@ export function openIndexWriter(path: string): IndexWriter {
             sponsor.id,
             sponsor.measure.prefix,
             sponsor.measure.number,
+            sponsor.kind,
             sponsor.level,
             sponsor.printOrder,
-            sponsor.legislatorCode,
-            sponsor.legislatorId,
+            sponsor.kind === "member" ? sponsor.legislatorCode : null,
+            sponsor.kind === "member" ? sponsor.legislatorId : null,
+            sponsor.kind === "committee" ? sponsor.committeeCode : null,
+            sponsor.kind === "presession" ? sponsor.message : null,
           );
         }
         recordAsOf.run(session, asOf);

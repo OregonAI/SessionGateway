@@ -223,12 +223,26 @@ describe("rows the resolver refuses to build on", () => {
     await expect(pull).rejects.toThrow(message);
   });
 
-  it("stops the pull for a Member sponsor row that names no Legislator Code", async () => {
-    const row = { ...memberSponsorRow("900020", "Rep Helm", "Chief", "1"), LegislatoreCode: null };
-
+  it.for([
+    [
+      "a Member sponsor row that names no Legislator Code",
+      { ...memberSponsorRow("900020", "Rep Helm", "Chief", "1"), LegislatoreCode: null },
+      /MeasureSponsorId 900020/,
+    ],
+    [
+      "a Committee sponsor row that names no committee",
+      { ...memberSponsorRow("900021", "Rep Helm", "Regular", "20"), SponsorType: "Committee", LegislatoreCode: null },
+      /MeasureSponsorId 900021/,
+    ],
+    [
+      "a Presession row that has no message",
+      { ...memberSponsorRow("900022", "Rep Helm", "Regular", "20"), SponsorType: "Presession", LegislatoreCode: null },
+      /MeasureSponsorId 900022/,
+    ],
+  ] as const)("stops the pull for %s", async ([, row, message]) => {
     const pull = startSystem({ clockAt: afterTheSession, olis: { strayRows: { MeasureSponsors: [row] } } });
 
-    await expect(pull).rejects.toThrow(/MeasureSponsorId 900020/);
+    await expect(pull).rejects.toThrow(message);
   });
 });
 

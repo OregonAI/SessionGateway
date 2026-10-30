@@ -136,4 +136,49 @@ describe.for(eras)("get_measure sponsors for a %s client", (era) => {
     expect(outcome.isError).toBe(false);
     expect(sponsorsOf(outcome)).toEqual([]);
   });
+
+  // The rows of MeasureSponsors that name no Legislator, from the fixture, and what the documents print
+  // of them. A Committee row (SponsorType "Committee") names the committee by its CommitteeCode:
+  // HB 3795's row 151277 is HECHS, and its Introduced.pdf opens "Sponsored by COMMITTEE ON EARLY
+  // CHILDHOOD AND HUMAN SERVICES"; SB 983's row 149379 is SED, and its Introduced.pdf opens "Sponsored
+  // by COMMITTEE ON EDUCATION". A Presession row's PresessionFiledMessage is the line the document
+  // prints: HB 3131's row 146503 is "(Presession filed.)", which its Introduced.pdf prints after the
+  // sponsors; SB 69's row 142256 is the Senate Interim Rule 213.28 notice its Introduced.pdf opens with
+  // (the document breaks "presession" across a line as "pre-session").
+  it.for([
+    ["HB 3795", "HECHS"],
+    ["SB 983", "SED"],
+  ] as const)(
+    "shows %s as sponsored by the committee %s, with no Legislator among its sponsors",
+    async ([measure, code]) => {
+      const outcome = await callTool(connected, "get_measure", { measure });
+
+      expect(outcome.isError).toBe(false);
+      expect(sponsorsOf(outcome)).toEqual([]);
+      expect(outcome.structured?.["committee_sponsors"]).toEqual([{ committee_code: code }]);
+      expect(outcome.structured?.["presession_messages"]).toEqual([]);
+    },
+  );
+
+  it.for([
+    [
+      "SB 69",
+      "Printed pursuant to Senate Interim Rule 213.28 by order of the President of the Senate in conformance with presession filing rules, indicating neither advocacy nor opposition on the part of the President.",
+    ],
+    ["HB 3131", "(Presession filed.)"],
+    ["SB 64", "(Presession filed.)"],
+  ] as const)("gives %s's presession message as the feed publishes it", async ([measure, message]) => {
+    const outcome = await callTool(connected, "get_measure", { measure });
+
+    expect(outcome.structured?.["presession_messages"]).toEqual([message]);
+    expect(outcome.structured?.["committee_sponsors"]).toEqual([]);
+  });
+
+  it("shows SB 921, which a Legislator sponsors and which has no other sponsor row, with neither a committee nor a message", async () => {
+    const outcome = await callTool(connected, "get_measure", { measure: "SB 921" });
+
+    expect(sponsorsOf(outcome)?.map((sponsor) => sponsor.legislator_code)).toEqual(["Sen Smith DB", "Sen Anderson"]);
+    expect(outcome.structured?.["committee_sponsors"]).toEqual([]);
+    expect(outcome.structured?.["presession_messages"]).toEqual([]);
+  });
 });

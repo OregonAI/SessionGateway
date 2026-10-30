@@ -3,8 +3,14 @@
 // resolves each sponsor's Legislator Code to a Legislator on the way and reports the codes it could not.
 import type { IngestConfig } from "#/packages/config/index.ts";
 import { openIndexWriter, type SponsorRecord } from "#/packages/database/writer.ts";
+import type { LegislatorId, Sponsorship } from "#/packages/domain/legislators.ts";
 import type { LegislatorAlias } from "#/packages/legislators/aliases.ts";
-import { createLegislatorResolver, type UnresolvedLegislatorCode } from "#/packages/legislators/resolver.ts";
+import {
+  createLegislatorResolver,
+  type LegislatorResolver,
+  type Resolution,
+  type UnresolvedLegislatorCode,
+} from "#/packages/legislators/resolver.ts";
 import { createOlisClient } from "#/packages/olis-client/index.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
@@ -28,6 +34,43 @@ export type FullPullResult = {
   unresolvedLegislatorCodes: UnresolvedLegislatorCode[];
 };
 
+/** The id of the Legislator a code resolved to, or null while it is unresolved. */
+function legislatorIdOfResolution(resolution: Resolution): LegislatorId | null {
+  switch (resolution.kind) {
+    case "resolved":
+      return resolution.legislator.id;
+    case "unresolved":
+      return null;
+    default:
+      return resolution satisfies never;
+  }
+}
+
+/** What the database keeps of one MeasureSponsors row. A Member row names a Legislator by a code the resolver reads. */
+function sponsorRecordOf(sponsorship: Sponsorship, resolver: LegislatorResolver): SponsorRecord {
+  const common = {
+    id: sponsorship.id,
+    measure: sponsorship.measure,
+    level: sponsorship.level,
+    printOrder: sponsorship.printOrder,
+  };
+  switch (sponsorship.kind) {
+    case "member":
+      return {
+        ...common,
+        kind: "member",
+        legislatorCode: sponsorship.legislatorCode,
+        legislatorId: legislatorIdOfResolution(resolver.resolve("MeasureSponsors", sponsorship.legislatorCode)),
+      };
+    case "committee":
+      return { ...common, kind: "committee", committeeCode: sponsorship.committeeCode };
+    case "presession":
+      return { ...common, kind: "presession", message: sponsorship.message };
+    default:
+      return sponsorship satisfies never;
+  }
+}
+
 export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promise<FullPullResult> {
   const asOf = formatPacific(deps.clock.now());
   const olis = createOlisClient({ baseUrl: config.olisBaseUrl, fetch: deps.fetch });
@@ -41,19 +84,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     rows: legislatorRows,
     aliases: deps.legislatorAliases,
   });
-  const sponsors: SponsorRecord[] = [];
-  for (const sponsorship of sponsorships) {
-    if (sponsorship.kind !== "member") continue;
-    const resolution = resolver.resolve("MeasureSponsors", sponsorship.legislatorCode);
-    sponsors.push({
-      id: sponsorship.id,
-      measure: sponsorship.measure,
-      level: sponsorship.level,
-      printOrder: sponsorship.printOrder,
-      legislatorCode: sponsorship.legislatorCode,
-      legislatorId: resolution.kind === "resolved" ? resolution.legislator.id : null,
-    });
-  }
+  const sponsors = sponsorships.map((sponsorship) => sponsorRecordOf(sponsorship, resolver));
 
   const writer = openIndexWriter(config.databasePath);
   try {

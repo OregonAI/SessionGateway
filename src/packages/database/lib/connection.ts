@@ -28,10 +28,13 @@ const schema = `
     sponsor_id INTEGER NOT NULL,
     prefix TEXT NOT NULL,
     number INTEGER NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('member', 'committee', 'presession')),
     level TEXT NOT NULL,
     print_order INTEGER NOT NULL,
-    legislator_code TEXT NOT NULL,
+    legislator_code TEXT,
     legislator_id TEXT,
+    committee_code TEXT,
+    presession_message TEXT,
     PRIMARY KEY (session_key, sponsor_id)
   ) STRICT;
 `;

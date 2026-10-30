@@ -34,13 +34,14 @@ type SponsorshipFields = {
 };
 
 /**
- * One MeasureSponsors row. A Member row names a Legislator by a Legislator Code. A Committee row
- * (a committee sponsors the Measure) and a Presession row (the Measure was filed before the Session)
- * name no Legislator.
+ * One MeasureSponsors row. A Member row names a Legislator by a Legislator Code. A Committee row (a
+ * committee sponsors the Measure) names a committee by its code, and a Presession row carries the
+ * message OLIS prints in the sponsor line ("(Presession filed.)"): neither names a Legislator.
  */
 export type Sponsorship =
   | (SponsorshipFields & { kind: "member"; legislatorCode: string })
-  | (SponsorshipFields & { kind: "committee" | "presession" });
+  | (SponsorshipFields & { kind: "committee"; committeeCode: string })
+  | (SponsorshipFields & { kind: "presession"; message: string });
 
 /** A Measure's sponsor as the server shows it. `legislator` is null while the code is unresolved. */
 export type Sponsor = {
