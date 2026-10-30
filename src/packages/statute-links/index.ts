@@ -10,7 +10,7 @@ export type ParseStatuteLinksInput = {
   documentKind: StatuteLinkDocumentKind;
   /** The document's extracted text, as `pdftotext` prints it. */
   text: string;
-  /** The ORS sections that exist, from the OregonAI snapshot. A range is expanded against it. */
+  /** The ORS sections that exist, from the OregonAI snapshot. A range is expanded against it, and holds only sections of this list. */
   orsSections: readonly OrsSectionId[];
 };
 
