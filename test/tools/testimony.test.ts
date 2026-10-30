@@ -113,7 +113,36 @@ describe.for(eras)("testimony for a %s client", (era) => {
         agency_id: null,
       }),
     ]);
-    expect(Object.keys(oppose?.organizations[0]?.items[0] ?? {})).not.toContain("text");
+  });
+
+  // The brief: "The tool returns no letter text. An agent reads a letter with `get_document`." The proof is the whole
+  // list of an item's fields, written out here: a field added to an item, whatever it is called, fails this test
+  // until someone reads it and adds it to the list. All 42 of HB 3131's items are checked, because an item is built
+  // the same way for every row.
+  it("gives each item exactly these fields, and none of them is a letter's text", async () => {
+    const outcome = await callTool(connected, "testimony", { measure: "HB 3131" });
+
+    const items = (outcome.structured?.["positions"] as Position[])
+      .flatMap((position) => position.organizations)
+      .flatMap((group) => group.items);
+    expect(items).toHaveLength(42);
+    for (const item of items) {
+      expect(Object.keys(item).toSorted(), item.id).toEqual([
+        "agency_id",
+        "behalf_of",
+        "committee_code",
+        "committee_id",
+        "document_description",
+        "fetched",
+        "has_text_layer",
+        "id",
+        "meeting_date",
+        "organization",
+        "same_letter_as",
+        "source_url",
+        "submitter",
+      ]);
+    }
   });
 
   // Names and Organization are free text typed into a web form, and the tool shows them as the feed has them: row
