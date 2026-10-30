@@ -61,6 +61,21 @@ const amendedVersionOutput = z.object({
     .describe('The Version, such as "Introduced" or "A-Engrossed". Null when it is not known.'),
   source_url: z.string().nullable().describe("Where the Legislature publishes the Version. Null when it is not known."),
   reason: z.string().describe("How the Version was read, or why it is not known."),
+  text_read: z
+    .boolean()
+    .nullable()
+    .describe(
+      "True when this index read the Version's text for Statute Links. False when it did not (no text layer, or not read yet): statute_links is then empty, and that does not mean the Version has none. Null when the Version is not known.",
+    ),
+  not_read_reason: z
+    .string()
+    .nullable()
+    .describe("Why the Version's text was not read. Null when text_read is true or null."),
+  statute_links: z
+    .array(statuteLinkOutput)
+    .describe(
+      "The Version's Statute Links, in the same shape and order as the amendment's, so that the two can be read side by side. Empty when the Version is not known: there is then no comparison.",
+    ),
 });
 
 const fileOutput = z.object({
@@ -159,10 +174,22 @@ function amendedVersionShown(
         label: version.label,
         source_url: version.sourceUrl,
         reason: placement.reason,
+        text_read: version.parse.textRead,
+        not_read_reason: notReadReasonOf(version.parse),
+        statute_links: statuteLinksShown(version.parse.links),
       };
     }
     case "unknown":
-      return { known: false, id: null, label: null, source_url: null, reason: placement.reason };
+      return {
+        known: false,
+        id: null,
+        label: null,
+        source_url: null,
+        reason: placement.reason,
+        text_read: null,
+        not_read_reason: null,
+        statute_links: [],
+      };
     default:
       return placement satisfies never;
   }

@@ -244,6 +244,104 @@ describe.for(eras)("compare_amendment for a %s client", (era) => {
       );
     });
 
+    // Spec #1 story 26: a range is expanded into each section, so none in the middle of it is missed. SB 69-2's
+    // section 4 says "Family leave under ORS 659A.150 to 659A.186" and, after it, "as described in ORS 659A.104";
+    // section 6 says "Is exempt from disclosure under ORS 192.311 to 192.478". The lists are the snapshot's own
+    // section ids between the two ends (oregonai-snapshot/snapshot.json, filtered by hand, not through the parser).
+    it("expands the ranges it cites into every section the snapshot holds between the ends", async () => {
+      const [file] = await filesOf("SB 69-2");
+
+      const citedIn = (measureSection: string, prefix: string): string[] =>
+        (file?.statute_links ?? [])
+          .filter(
+            (link) =>
+              link.kind === "cites" && link.measure_section === measureSection && link.target_id.startsWith(prefix),
+          )
+          .map((link) => link.target_id);
+      expect(citedIn("4", "ors-659a.1")).toEqual([
+        "ors-659a.150",
+        "ors-659a.153",
+        "ors-659a.156",
+        "ors-659a.157",
+        "ors-659a.159",
+        "ors-659a.162",
+        "ors-659a.164",
+        "ors-659a.165",
+        "ors-659a.168",
+        "ors-659a.171",
+        "ors-659a.174",
+        "ors-659a.177",
+        "ors-659a.180",
+        "ors-659a.183",
+        "ors-659a.186",
+        "ors-659a.104",
+      ]);
+      expect(citedIn("6", "ors-192.")).toEqual([
+        "ors-192.311",
+        "ors-192.314",
+        "ors-192.318",
+        "ors-192.324",
+        "ors-192.329",
+        "ors-192.335",
+        "ors-192.338",
+        "ors-192.340",
+        "ors-192.345",
+        "ors-192.355",
+        "ors-192.360",
+        "ors-192.363",
+        "ors-192.365",
+        "ors-192.368",
+        "ors-192.371",
+        "ors-192.374",
+        "ors-192.377",
+        "ors-192.380",
+        "ors-192.385",
+        "ors-192.390",
+        "ors-192.395",
+        "ors-192.398",
+        "ors-192.401",
+        "ors-192.407",
+        "ors-192.411",
+        "ors-192.415",
+        "ors-192.418",
+        "ors-192.422",
+        "ors-192.427",
+        "ors-192.431",
+        "ors-192.461",
+        "ors-192.464",
+        "ors-192.468",
+        "ors-192.472",
+        "ors-192.475",
+        "ors-192.476",
+        "ors-192.477",
+        "ors-192.478",
+      ]);
+    });
+
+    // Spec #1 story 27: a link to a whole chapter has no OregonAI id, and says so. SB 69-2 adds to ORS chapter
+    // 657B (section 1) and, in section 6, names "ORS chapter 652, 653 or 659A", "ORS chapters 654, 656 and 731",
+    // "ORS chapter 701", "ORS chapter 319" and "ORS chapter 657".
+    it("marks every chapter it names as not resolvable on OregonAI, and every section as resolvable", async () => {
+      const [file] = await filesOf("SB 69-2");
+
+      const links = file?.statute_links ?? [];
+      expect(links.filter((link) => link.target_type === "chapter")).toEqual([
+        chapter("adds-to", "ors-chapter-657b", "1"),
+        chapter("cites", "ors-chapter-652", "6"),
+        chapter("cites", "ors-chapter-653", "6"),
+        chapter("cites", "ors-chapter-659a", "6"),
+        chapter("cites", "ors-chapter-654", "6"),
+        chapter("cites", "ors-chapter-656", "6"),
+        chapter("cites", "ors-chapter-731", "6"),
+        chapter("cites", "ors-chapter-701", "6"),
+        chapter("cites", "ors-chapter-319", "6"),
+        chapter("cites", "ors-chapter-657", "6"),
+      ]);
+      expect(links.filter((link) => link.target_type === "section").every((link) => link.resolvable_on_oregonai)).toBe(
+        true,
+      );
+    });
+
     it("carries the amendment's edit to the relating clause", async () => {
       const [file] = await filesOf("SB 69-2");
 
@@ -278,6 +376,78 @@ describe.for(eras)("compare_amendment for a %s client", (era) => {
       expect(files.map((file) => file.posting_ids)).toEqual([["posting-2025r1-26286", "posting-2025r1-26288"]]);
       expect(files[0]?.text_read).toBe(true);
       expect(files[0]?.not_read_reason).toBeNull();
+    });
+  });
+
+  // Introduced SB 69 as `pdftotext measure-documents/SB69/Introduced.pdf` prints it: its only reference to the ORS is
+  // in SECTION 1, "the manner provided by ORS 192.245". SECTION 2 repeals section 1 of the Act, which is no ORS section.
+  describe("the amended Version's Statute Links", () => {
+    it("are shown beside the amendment's, in the same shape: the Introduced Version cites ORS 192.245 and changes nothing", async () => {
+      const outcome = await callTool(connected, "compare_amendment", { amendment: "SB 69-2" });
+
+      expect(outcome.isError).toBe(false);
+      expect(outcome.structured?.["amended_version"]).toMatchObject({
+        known: true,
+        text_read: true,
+        not_read_reason: null,
+        statute_links: [section("cites", "ors-192.245", "1")],
+      });
+    });
+  });
+
+  // HB 3795-A3 (Feed/CommitteeProposedAmendments.json 28997, 29108, 29109: SHS, the Senate Committee On Human
+  // Services, 2025-05-15, 2025-05-20 and 2025-05-22; the three files are byte-identical). Its head, from `pdftotext
+  // proposed-amendments/28997.pdf`: "PROPOSED AMENDMENTS TO / A-ENGROSSED HOUSE BILL 3795", "On page 1 of the
+  // printed A-engrossed bill, line 2, before the period insert 'and 418.808'", and "SECTION 2. ORS 418.808 is amended
+  // to read: 418.808. As used in ORS 418.806 to 418.816, ...". The A-Engrossed Version
+  // (measure-documents/HB3795/A-Engrossed.pdf) has "Relating to human services; amending ORS 409.711.", SECTION 1
+  // "ORS 409.711 is amended to read:" and, in subsection (5), "in the manner provided in ORS 192.245". The
+  // snapshot (oregonai-snapshot/snapshot.json) has five sections from 418.806 to 418.816: 418.806, 418.808, 418.811,
+  // 418.813 and 418.816.
+  describe("HB 3795-A3", () => {
+    async function compare(): Promise<Record<string, unknown>> {
+      const outcome = await callTool(connected, "compare_amendment", { amendment: "HB 3795-A3" });
+      expect(outcome.isError).toBe(false);
+      return outcome.structured ?? {};
+    }
+
+    it("names the A-Engrossed Version, because its header and its number both say so", async () => {
+      expect((await compare())["amended_version"]).toMatchObject({
+        known: true,
+        id: "version-2025r1-hb3795-a-engrossed",
+        label: "A-Engrossed",
+        source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/HB3795/A-Engrossed",
+      });
+    });
+
+    it("amends ORS 418.808 and only cites the sections of the range ORS 418.806 to 418.816, which is expanded", async () => {
+      const [file, ...others] = (await compare())["files"] as File[];
+
+      expect(others).toEqual([]);
+      expect(file?.posting_ids).toEqual(["posting-2025r1-28997", "posting-2025r1-29108", "posting-2025r1-29109"]);
+      expect(file?.statute_links).toEqual([
+        section("amends", "ors-418.808", "2"),
+        section("cites", "ors-418.806", "2"),
+        section("cites", "ors-418.808", "2"),
+        section("cites", "ors-418.811", "2"),
+        section("cites", "ors-418.813", "2"),
+        section("cites", "ors-418.816", "2"),
+      ]);
+    });
+
+    it("carries the edit that adds ORS 418.808 to the relating clause", async () => {
+      const [file] = (await compare())["files"] as File[];
+
+      expect(file?.relating_clause_edits).toEqual([
+        { deleted: null, deleted_lines: [], inserted: "and 418.808", inserted_sections: ["ors-418.808"] },
+      ]);
+    });
+
+    it("shows the A-Engrossed Version amending ORS 409.711 and citing ORS 192.245", async () => {
+      expect((await compare())["amended_version"]).toMatchObject({
+        text_read: true,
+        statute_links: [section("amends", "ors-409.711", "1"), section("cites", "ors-192.245", "1")],
+      });
     });
   });
 
