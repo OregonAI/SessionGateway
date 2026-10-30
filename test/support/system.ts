@@ -31,6 +31,8 @@ export type SystemOptions = {
    */
   documents?: boolean;
   olis?: Omit<FakeOlisOptions, "clock" | "documents">;
+  /** How long the worker waits for one attempt to fetch a document; a test that makes one hang sets it short. */
+  documentTimeoutMs?: number;
   /**
    * Rewrites the fake OLIS's service root, ending in a slash, into the OLIS_BASE_URL the worker is
    * given. For writing the root the way docs/research/olis-odata.md does, without the slash.
@@ -71,7 +73,14 @@ export async function startSystem(options: SystemOptions): Promise<System> {
     OLIS_DOCUMENT_ORIGIN: olis.origin,
   };
   const pull = (): Promise<FullPullResult> =>
-    runFullPull(loadIngestConfig(env), { fetch, clock, signal: AbortSignal.timeout(30_000) });
+    runFullPull(loadIngestConfig(env), {
+      fetch,
+      clock,
+      signal: AbortSignal.timeout(30_000),
+      // The worker does not wait between attempts to fetch a document: a test reads how many there were.
+      pause: () => Promise.resolve(),
+      ...(options.documentTimeoutMs === undefined ? {} : { documentTimeoutMs: options.documentTimeoutMs }),
+    });
   try {
     await pull();
     const serverConfig = loadServerConfig({ ...env, ...options.serverEnv });

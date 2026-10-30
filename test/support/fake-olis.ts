@@ -57,6 +57,12 @@ export type FakeOlisOptions = {
    */
   documents?: boolean;
   /**
+   * Failures to give a document before it is served, by `source_url`: each request for the document
+   * takes the next one off its list, and once the list is empty the document is served (see
+   * `failDocumentOnce`).
+   */
+  documentFailures?: Record<string, DocumentFailure[]>;
+  /**
    * Documents served although no fixture row links them, by their path on the fake
    * (`/liz/2025R1/Downloads/...`), each as the bytes of a file under the fixture's `documents/`.
    * A test adds the feed row that links one through `strayRows`.
@@ -175,7 +181,9 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
     documentPaths.set(path, new URL(`documents/${file}`, fixtureDirectory));
   }
   const documentRequests: string[] = [];
-  const failures = new Map<string, DocumentFailure>();
+  const failures = new Map<string, DocumentFailure[]>(
+    Object.entries(options.documentFailures ?? {}).map(([sourceUrl, list]) => [new URL(sourceUrl).pathname, [...list]]),
+  );
   const servesDocuments = options.documents === true;
   const pageSize = options.pageSize ?? 5000;
   let withheldRows = options.withholdLastRows ?? 0;
@@ -206,9 +214,8 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
     // The pathname as the manifest writes it: percent-encoded, as the worker must have sent it.
     const path = url.pathname;
     documentRequests.push(path);
-    const failure = failures.get(path);
+    const failure = failures.get(path)?.shift();
     if (failure !== undefined) {
-      failures.delete(path);
       if (failure === "hang") return; // no answer: the client's timeout ends the request
       sendText(response, failure, "text/plain", `The fake OLIS fails this document with ${failure}.`);
       return;
@@ -304,7 +311,8 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
     origin: `http://127.0.0.1:${port}`,
     documentRequests: () => [...documentRequests],
     failDocumentOnce: (sourceUrl, failure) => {
-      failures.set(new URL(sourceUrl).pathname, failure);
+      const path = new URL(sourceUrl).pathname;
+      failures.set(path, [...(failures.get(path) ?? []), failure]);
     },
     withholdLastRows: (count) => {
       withheldRows = count;

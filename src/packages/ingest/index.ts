@@ -15,7 +15,9 @@ export type IngestDeps = {
   clock: Clock;
   /** Aborts the pull on shutdown. */
   signal: AbortSignal;
-  /** How long one attempt to fetch a document may take, in milliseconds. A day's pull sets 60 seconds. */
+  /** Waits between attempts to fetch a document. Created in the entry script, so a test need not wait. */
+  pause: (milliseconds: number, signal: AbortSignal) => Promise<void>;
+  /** How long one attempt to fetch a document may take, in milliseconds. 60 seconds by default. */
   documentTimeoutMs?: number;
 };
 
@@ -37,6 +39,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     documents: {
       origin: config.olisDocumentOrigin,
       timeoutMs: deps.documentTimeoutMs ?? DEFAULT_DOCUMENT_TIMEOUT_MS,
+      pause: deps.pause,
     },
   });
   const measures = await olis.readMeasures(config.session, deps.signal);

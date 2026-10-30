@@ -314,15 +314,40 @@ export async function readDocumentLinks(
 /** The bytes of one document, or why they could not be had. */
 export type Download = { kind: "fetched"; bytes: Uint8Array } | { kind: "failed"; reason: string };
 
+/**
+ * OLIS downloads are slow and occasionally time out; every one of the six that did in the research
+ * succeeded on retry, in 0.5 to 5.2 seconds (olis-odata.md gotcha 15). A document is tried three
+ * times, with a pause before the second and the third.
+ */
+const PAUSES_BEFORE_RETRY_MS = [2_000, 10_000];
+
+/** An answer that says "try again": a timeout, too many requests, or OLIS having trouble. */
+function isTransientStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
 export async function downloadDocument(
   options: OlisClientOptions,
   link: DocumentLink,
   signal: AbortSignal,
 ): Promise<Download> {
   const url = downloadUrlOf(link.sourceUrl, options.documents.origin);
-  const response = await options.fetch(url, {
-    signal: AbortSignal.any([signal, AbortSignal.timeout(options.documents.timeoutMs)]),
-  });
-  if (!response.ok) return { kind: "failed", reason: `OLIS answered ${response.status} to ${url.pathname}` };
-  return { kind: "fetched", bytes: new Uint8Array(await response.arrayBuffer()) };
+  let reason = "";
+  for (let attempt = 0; attempt <= PAUSES_BEFORE_RETRY_MS.length; attempt += 1) {
+    const pause = PAUSES_BEFORE_RETRY_MS[attempt - 1];
+    if (pause !== undefined) await options.documents.pause(pause, signal);
+    try {
+      const response = await options.fetch(url, {
+        signal: AbortSignal.any([signal, AbortSignal.timeout(options.documents.timeoutMs)]),
+      });
+      if (response.ok) return { kind: "fetched", bytes: new Uint8Array(await response.arrayBuffer()) };
+      reason = `OLIS answered ${response.status} to ${url.pathname}`;
+      if (!isTransientStatus(response.status)) return { kind: "failed", reason };
+    } catch (error) {
+      // A shutdown ends the pull; a request that timed out or broke off is tried again.
+      if (signal.aborted) throw error;
+      reason = `OLIS did not answer ${url.pathname}: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+  return { kind: "failed", reason: `${reason} (${PAUSES_BEFORE_RETRY_MS.length + 1} attempts)` };
 }

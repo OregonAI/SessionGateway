@@ -7,5 +7,7 @@ export type OlisClientOptions = {
     origin: string;
     /** How long one attempt to fetch a document may take. */
     timeoutMs: number;
+    /** Waits between attempts. Passed in, so a test does not wait. */
+    pause: (milliseconds: number, signal: AbortSignal) => Promise<void>;
   };
 };
