@@ -1,3 +1,5 @@
+import type { Citation } from "#/packages/domain/citations.ts";
+
 /** About how many characters a snippet holds (spec #1 story 13; docs/adr/0025). */
 export const SNIPPET_CHARACTERS = 300;
 
@@ -111,4 +113,27 @@ export function snippetOf(passage: string, terms: readonly string[]): string {
     end = space > start + SNIPPET_CHARACTERS / 2 ? space : end;
   }
   return `${start > 0 ? "…" : ""}${flat.slice(start, end)}${end < flat.length ? "…" : ""}`;
+}
+
+/** The words a citation is written with in a document, for the keyword side: "hb 3131", "sb 69 2", "ors 468 130". */
+export function phraseOf(citation: Citation): string {
+  switch (citation.kind) {
+    case "measure":
+      return `${citation.measure.prefix.toLowerCase()} ${citation.measure.number}`;
+    case "amendment":
+      return `${citation.measure.prefix.toLowerCase()} ${citation.measure.number} ${citation.number.toLowerCase()}`;
+    case "ors":
+      return citation.id.replaceAll(/[-.]/g, " ");
+    default:
+      return citation satisfies never;
+  }
+}
+
+/**
+ * A pattern that finds exactly an ORS section's citation in a passage: "ORS 468.130", with any white space
+ * (a line may break after "ORS"), in any case, and not the start of a longer number or word ("ORS 468.1305").
+ */
+export function orsCitationPattern(section: string): RegExp {
+  const number = section.replace(/^ors-/, "").replaceAll(".", String.raw`\.`);
+  return new RegExp(String.raw`(?<![\p{L}\p{N}])ORS\s+${number}(?![\p{L}\p{N}])`, "iu");
 }
