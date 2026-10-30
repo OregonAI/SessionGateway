@@ -412,6 +412,7 @@ describe("the entry scripts", () => {
     // ms), which it would take for 1 ms.
     ["src/bin/server.ts", "OLIS_LIVE_TIMEOUT_MS", "30001"],
     ["src/bin/server.ts", "OLIS_LIVE_TIMEOUT_MS", "3000000000"],
+    ["src/bin/ingest.ts", "MODEL_THREADS", "many"],
     ["src/bin/server.ts", "MCP_PORT", "seventy"],
     ["src/bin/server.ts", "MCP_PATH", "no-leading-slash"],
     ["src/bin/server.ts", "MCP_RATE_LIMIT", "plenty"],
@@ -441,6 +442,36 @@ describe("the entry scripts", () => {
       expect(finished.code).not.toBe(0);
       expect(finished.stderr).toContain(variable);
       expect(finished.stderr).not.toContain(value);
+    },
+  );
+
+  it.for(["src/bin/ingest.ts", "src/bin/server.ts"])(
+    "%s fails at start-up when MODEL_PATH is not set, naming the variable",
+    { timeout: 20_000 },
+    async (script) => {
+      const { olis, database } = await fakeOlisAndDatabase();
+      const withoutModel: Record<string, string> = workerEnvironment(olis, database.path);
+      delete withoutModel["MODEL_PATH"];
+
+      const finished = await run(script, withoutModel);
+
+      expect(finished.code).not.toBe(0);
+      expect(finished.stderr).toContain("MODEL_PATH");
+    },
+  );
+
+  it.for(["src/bin/ingest.ts", "src/bin/server.ts"])(
+    "%s fails at start-up when the model's files are not where MODEL_PATH says, and says how to get them",
+    { timeout: 20_000 },
+    async (script) => {
+      const { olis, database } = await fakeOlisAndDatabase();
+      const env = { ...workerEnvironment(olis, database.path), MODEL_PATH: "/nonexistent/model" };
+
+      const finished = await run(script, env);
+
+      expect(finished.code).not.toBe(0);
+      expect(finished.stderr).toContain("npm run model:fetch");
+      expect(finished.stderr).toContain("/nonexistent/model");
     },
   );
 
