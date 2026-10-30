@@ -99,6 +99,38 @@ describe("Agencies named in Version and Proposed Amendment text", () => {
     ])("$source", expectLinks);
   });
 
+  describe("an alias written beside the full name", () => {
+    // Staff Measure Summaries are not Versions, but they are the fixture's text where ODHS is
+    // written out as "(ODHS)" (the brief for ticket #7 names both).
+    test.for<TextRow>([
+      {
+        source:
+          'measure-analysis-documents/90799.pdf (Staff Measure Summary, SB 64): "Oregon Department of Human Services (ODHS)", then ODHS alone',
+        text: [
+          "populations. The Oregon Department of Human Services (ODHS) is responsible for performing eligibility",
+          "determinations through the Oregon Eligibility Partnership. Federal law allows ODHS to not consider certain types",
+          "of household income when determining eligibility for SNAP, such as cash and medical assistance, but other types",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [{ slug: "department-of-human-services", terms: ["Department of Human Services", "ODHS"] }],
+      },
+      {
+        source:
+          'measure-analysis-documents/92329.pdf (Staff Measure Summary, HB 3795): "(ODHS)", "ODHS administrative rules"',
+        text: [
+          "Tax Infrastructure Grant Program",
+          "In 2022, the Legislative Assembly passed House Bill 4117, which established the Tax Infrastructure Grant Program",
+          "and appropriated $4 million to the Oregon Department of Human Services (ODHS) for the remainder of that",
+          "biennium to provide grants to culturally specific organizations, Tribal governments, and under-resourced rural",
+          "community service organizations that assisted low-income households in filing tax returns. According to ODHS",
+          "administrative rules, the objective of the program is to provide free income tax services and education about",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [{ slug: "department-of-human-services", terms: ["Department of Human Services", "ODHS"] }],
+      },
+    ])("$source", expectLinks);
+  });
+
   describe("Proposed Amendment text", () => {
     test.for<TextRow>([
       {

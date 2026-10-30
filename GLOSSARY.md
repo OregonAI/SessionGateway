@@ -94,3 +94,14 @@ _Avoid_: department, issuing body
 **Agency Link**:
 A connection from a Measure, Version or Proposed Amendment to an Agency, of one kind: named in a Fiscal Impact Statement, named in the text, submitted Testimony, or derived through a Statute Link.
 _Avoid_: affected agency, unqualified
+
+**Agency registry**:
+The OregonAI list of Agencies (slug, name, aliases and more), copied into the build-time snapshot (ADR-0004). The Agency Link extractor takes it as a parameter.
+_Avoid_: agency list
+
+**Agency alias**:
+Another name the registry lists for an Agency, such as "State Treasurer" for Oregon State Treasury.
+
+**Unresolved unit**:
+A government unit that a Fiscal Impact Statement lists under "Government Unit(s) Affected" and that is not an Agency: "Cities", "Counties", "TriMet", and the Legislative Assembly even where the registry has a row for it. It is kept as the statement wrote it, never dropped and never forced onto an Agency.
+_Avoid_: non-agency unit, other unit
