@@ -89,6 +89,12 @@ const meetingOutput = z.object({
           .describe(
             'What kind of Exhibit OLIS says it is: "Meeting Material", "Preliminary SMS", "Witness Registration"...',
           ),
+        title: z
+          .string()
+          .nullable()
+          .describe(
+            'OLIS\'s title for the Exhibit, as published, such as "SB 69  -2 Preliminary SMS": what tells one Exhibit from another.',
+          ),
         measure_id: z.string().nullable().describe("The Measure OLIS files the Exhibit under, when it names one."),
         source_url: z.string().describe("Where the Legislature publishes the file."),
         fetched: z
@@ -252,6 +258,7 @@ export function meetings(
           exhibits: contents.exhibits.map((exhibit) => ({
             id: exhibit.id,
             label: exhibit.label,
+            title: exhibit.title,
             measure_id: exhibit.measureId,
             source_url: exhibit.sourceUrl,
             fetched: exhibit.fetched,

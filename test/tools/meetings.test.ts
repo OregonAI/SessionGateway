@@ -157,10 +157,11 @@ describe.for(eras)("meetings for a %s client", (era) => {
   });
 
   // The Exhibits are the CommitteeMeetingDocuments rows of the three meetings (feed/CommitteeMeetingDocuments.json:
-  // 287879 for 01-21, 288365 and 288569 for 01-28, 288650 for 01-30), with the type the feed gives each
-  // ("DocumentType"). A row created after the clock is not there yet: the 01-30 Witness Registration list (289456)
-  // was created on 02-04. Row 287879 is a report on SB 1515 that the row files under SB 69, so it is the Measure
-  // the row names that the Exhibit carries.
+  // 287879 for 01-21, 288365 and 288569 for 01-28, 288650 for 01-30), with the type ("DocumentType") and the title
+  // ("ExhibitTitle", as published, double spaces included) the feed gives each. A row created after the clock is not
+  // there yet: the 01-30 Witness Registration list (289456) was created on 02-04. Row 287879 is a report on SB 1515
+  // that the row files under SB 69, so it is the Measure the row names that the Exhibit carries, and the title that
+  // tells it from the other Exhibits.
   it("lists the Exhibits posted to each meeting on SB 69, with the type and Measure the feed gives each", async () => {
     const outcome = await callTool(connected, "meetings", { measure: "SB 69" });
 
@@ -172,6 +173,7 @@ describe.for(eras)("meetings for a %s client", (era) => {
           {
             id: "exhibit-2025r1-287879",
             label: "Meeting Material",
+            title: "SB 1515 Report - Josh Nasbe (report)",
             measure_id: "measure-2025r1-sb69",
             source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/287879",
             fetched: true,
@@ -184,6 +186,7 @@ describe.for(eras)("meetings for a %s client", (era) => {
           {
             id: "exhibit-2025r1-288365",
             label: "Preliminary SMS",
+            title: "SB 69  -2 Preliminary SMS",
             measure_id: "measure-2025r1-sb69",
             source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/288365",
             fetched: true,
@@ -191,6 +194,7 @@ describe.for(eras)("meetings for a %s client", (era) => {
           {
             id: "exhibit-2025r1-288569",
             label: "Witness Registration",
+            title: "SB 69 (witness registration)",
             measure_id: "measure-2025r1-sb69",
             source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/288569",
             fetched: true,
@@ -203,6 +207,7 @@ describe.for(eras)("meetings for a %s client", (era) => {
           {
             id: "exhibit-2025r1-288650",
             label: "Preliminary SMS",
+            title: "SB 69  -2 Preliminary SMS",
             measure_id: "measure-2025r1-sb69",
             source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/288650",
             fetched: true,

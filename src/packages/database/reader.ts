@@ -102,6 +102,7 @@ const meetingDocumentRow = z.object({
   kind: z.string(),
   label: z.string(),
   source_url: z.string(),
+  title: z.string().nullable(),
   measure_id: z.string().nullable(),
   meaning: z.string().nullable(),
   fetched: z.number(),
@@ -150,7 +151,7 @@ export function openIndexReader(path: string): IndexReader {
   );
   // What the feed lists for a meeting, and whether the document table holds each file yet.
   const selectMeetingDocuments = database.prepare(
-    `SELECT l.document_id AS id, l.node_id, l.kind, l.label, l.source_url, l.measure_id, l.meaning,
+    `SELECT l.document_id AS id, l.node_id, l.kind, l.label, l.source_url, l.title, l.measure_id, l.meaning,
             EXISTS (SELECT 1 FROM document d WHERE d.id = l.document_id) AS fetched
      FROM meeting_document l WHERE l.meeting_id = ?`,
   );
@@ -296,6 +297,7 @@ export function openIndexReader(path: string): IndexReader {
             label: stored.label,
             sourceUrl: stored.source_url,
             measureId: stored.measure_id as MeasureId | null,
+            title: stored.title,
             fetched: stored.fetched === 1,
           }))
           .sort((a, b) => numbersInOrder.compare(a.id, b.id));

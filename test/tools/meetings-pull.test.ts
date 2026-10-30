@@ -210,7 +210,7 @@ describe.for(eras)("meetings with a database of its own, for a %s client", (era)
       const meetings = (await meetingsOnSb69(connected)) as (MeetingOutput & {
         agenda: { id: string; fetched: boolean } | null;
         proposed_amendments: { number: string; document_id: string; meaning: string; fetched: boolean }[];
-        exhibits: { id: string; label: string; fetched: boolean }[];
+        exhibits: { id: string; label: string; title: string; fetched: boolean }[];
       })[];
 
       expect(
@@ -223,14 +223,14 @@ describe.for(eras)("meetings with a database of its own, for a %s client", (era)
             amendment.meaning,
             amendment.fetched,
           ]),
-          meeting.exhibits.map((exhibit) => [exhibit.id, exhibit.label, exhibit.fetched]),
+          meeting.exhibits.map((exhibit) => [exhibit.id, exhibit.label, exhibit.title, exhibit.fetched]),
         ]),
       ).toEqual([
         [
           "meeting-2025r1-slb-2025-01-21-0800",
           expect.objectContaining({ id: "agenda-2025r1-slb-2025-01-21-0800", fetched: false }),
           [["-1", "posting-2025r1-26284", "Proposed", false]],
-          [["exhibit-2025r1-287879", "Meeting Material", false]],
+          [["exhibit-2025r1-287879", "Meeting Material", "SB 1515 Report - Josh Nasbe (report)", false]],
         ],
         [
           "meeting-2025r1-slb-2025-01-28-0800",
@@ -240,8 +240,8 @@ describe.for(eras)("meetings with a database of its own, for a %s client", (era)
             ["-2", "posting-2025r1-26286", "Proposed", false],
           ],
           [
-            ["exhibit-2025r1-288365", "Preliminary SMS", false],
-            ["exhibit-2025r1-288569", "Witness Registration", false],
+            ["exhibit-2025r1-288365", "Preliminary SMS", "SB 69  -2 Preliminary SMS", false],
+            ["exhibit-2025r1-288569", "Witness Registration", "SB 69 (witness registration)", false],
           ],
         ],
         [
@@ -251,7 +251,7 @@ describe.for(eras)("meetings with a database of its own, for a %s client", (era)
             ["-1", "posting-2025r1-26287", "Proposed", false],
             ["-2", "posting-2025r1-26288", "Adopted", false],
           ],
-          [["exhibit-2025r1-288650", "Preliminary SMS", false]],
+          [["exhibit-2025r1-288650", "Preliminary SMS", "SB 69  -2 Preliminary SMS", false]],
         ],
       ]);
     });

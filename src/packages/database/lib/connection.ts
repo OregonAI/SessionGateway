@@ -57,6 +57,7 @@ const schema = `
     node_id TEXT NOT NULL,
     label TEXT NOT NULL,
     source_url TEXT NOT NULL,
+    title TEXT,
     measure_id TEXT,
     meaning TEXT
   ) STRICT;

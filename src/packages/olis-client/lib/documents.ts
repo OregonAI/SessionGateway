@@ -208,6 +208,7 @@ const exhibitRow = z.looseObject({
   CommitteeCode: z.string(),
   MeetingDate: feedTimestamp,
   DocumentType: z.string(),
+  ExhibitTitle: z.string().nullish(),
   MeasurePrefix: z.string().nullable(),
   MeasureNumber: z.number().int().nullable(),
   DocumentUrl: z.string(),
@@ -231,6 +232,7 @@ async function readExhibits(
       label: row.DocumentType,
       sourceUrl: sourceUrlOf(row.DocumentUrl),
       postedAt: null,
+      ...(row.ExhibitTitle === null || row.ExhibitTitle === undefined ? {} : { title: row.ExhibitTitle }),
       relations: meetingBoundRelations(session, row, `CommitteeMeetingDocuments ${row.CommitteeMeetingDocumentId}`),
     };
   });

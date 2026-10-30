@@ -183,6 +183,8 @@ export type DocumentLink = {
   sourceUrl: string;
   /** When it was posted to a meeting, for a posting. */
   postedAt: Timestamp | null;
+  /** For an Exhibit: the feed's `ExhibitTitle`, which tells one Exhibit from another. Absent when the feed gives none. */
+  title?: string;
   relations: DocumentRelation[];
 };
 
@@ -257,6 +259,8 @@ export type MeetingDocument = {
   sourceUrl: string;
   /** The Measure the feed files it under, when it names one. */
   measureId: MeasureId | null;
+  /** The feed's title for it, as published, when it gives one (an Exhibit has one). */
+  title: string | null;
   /** Whether the store holds the file. The feed lists the document either way. */
   fetched: boolean;
 };

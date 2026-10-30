@@ -151,11 +151,11 @@ export function openIndexWriter(path: string): IndexWriter {
     recordMeetingDocuments(session, links) {
       const upsertListing = database.prepare(
         `INSERT INTO meeting_document (document_id, meeting_id, session_key, kind, node_id, label, source_url,
-                                       measure_id, meaning)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                       title, measure_id, meaning)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (document_id) DO UPDATE SET meeting_id = excluded.meeting_id, kind = excluded.kind,
            node_id = excluded.node_id, label = excluded.label, source_url = excluded.source_url,
-           measure_id = excluded.measure_id, meaning = excluded.meaning`,
+           title = excluded.title, measure_id = excluded.measure_id, meaning = excluded.meaning`,
       );
       database.exec("BEGIN IMMEDIATE");
       try {
@@ -170,6 +170,7 @@ export function openIndexWriter(path: string): IndexWriter {
             link.nodeId,
             link.label,
             link.sourceUrl,
+            link.title ?? null,
             link.relations.find((relation) => relation.relation === "measure")?.to ?? null,
             listing.meaning,
           );
