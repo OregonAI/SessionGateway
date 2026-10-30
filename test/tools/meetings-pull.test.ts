@@ -1,7 +1,7 @@
-// Seam 1 (test/CLAUDE.md): `meetings` where a case needs a row the committed fixture lacks. Each case
-// builds its own system, because the harness serves the made-up row to that one worker, and the
-// committed fixture is never edited by hand (test/fixtures/CLAUDE.md). The shared database of the cases
-// the fixture can show is in meetings.test.ts.
+// Seam 1 (test/CLAUDE.md): `meetings` where a case needs a database of its own: a clock the shared
+// databases of meetings.test.ts and meetings-past.test.ts do not have, or a row the committed fixture
+// lacks. Each case builds its own system, and the harness serves a made-up row to that one worker; the
+// committed fixture is never edited by hand (test/fixtures/CLAUDE.md).
 import { afterEach, describe, expect, it } from "vitest";
 import { callTool, connectClient, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startSystem, type System, type SystemOptions } from "../support/system.ts";
@@ -77,5 +77,24 @@ describe("a Recording Log", () => {
     const served = await callTool(connected, "get_document", { id: "recording-log-2025r1-900101" });
     expect(served.isError).toBe(false);
     expect(served.structured).toMatchObject({ kind: "recording_log", source_url: recordingLogUrl });
+  });
+});
+
+describe("the next meeting", () => {
+  // The clock is noon in Oregon on 2025-02-12. HHED's meeting of 2025-02-13 is ahead of it, and the feed's row
+  // for it says "Cancelled" (feed/CommitteeMeetings.json; the fixture holds each row's final state, so the
+  // row says what it says now). The committee's next meeting is the one on 2025-02-20, which is "Scheduled".
+  it("is not a cancelled meeting, which is still listed as ahead", async () => {
+    const { connected } = await start({ clockAt: "2025-02-12T20:00:00Z", documents: false });
+
+    const outcome = await callTool(connected, "meetings", { committee: "HHED" });
+
+    const meetings = outcome.structured?.["meetings"] as { id: string; status: string; upcoming: boolean }[];
+    expect(meetings.map((meeting) => [meeting.id, meeting.status, meeting.upcoming])).toEqual([
+      ["meeting-2025r1-hhed-2025-02-06-0800", "Scheduled", false],
+      ["meeting-2025r1-hhed-2025-02-13-0800", "Cancelled", true],
+      ["meeting-2025r1-hhed-2025-02-20-0800", "Scheduled", true],
+    ]);
+    expect(outcome.structured?.["next_meeting_id"]).toBe("meeting-2025r1-hhed-2025-02-20-0800");
   });
 });

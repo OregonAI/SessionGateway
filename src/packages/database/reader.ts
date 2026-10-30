@@ -4,6 +4,7 @@ import {
   documentKinds,
   type AgendaItem,
   type AmendmentId,
+  type Committee,
   type DocumentId,
   type DocumentKind,
   type DocumentView,
@@ -25,6 +26,12 @@ import { openReadConnection } from "./lib/connection.ts";
 export type MeetingFilter = {
   /** Meetings with an agenda item about this Measure. */
   measure?: MeasureKey;
+  /** Meetings of the committee with this code, as the feed writes it ("SLB"). */
+  committeeCode?: string;
+  /** Meetings that start on this Pacific date or later: "2025-01-21". */
+  from?: string;
+  /** Meetings that start on this Pacific date or earlier, the whole day included. */
+  to?: string;
 };
 
 export type IndexReader = {
@@ -38,6 +45,8 @@ export type IndexReader = {
   findDocument(id: DocumentId | AmendmentId): DocumentView | undefined;
   /** What the index holds of the Session. */
   counts(session: SessionKey): IndexCounts;
+  /** A committee by its code or its id, in either case. */
+  findCommittee(session: SessionKey, reference: string): Committee | undefined;
   /** The meetings that match, earliest first. */
   findMeetings(session: SessionKey, filter: MeetingFilter): MeetingHeader[];
   /** What one meeting holds. */
@@ -64,6 +73,7 @@ const documentRow = z.object({
   posted_at: z.string().nullable(),
   text: z.string(),
 });
+const committeeRow = z.object({ code: z.string(), id: z.string(), name: z.string() });
 const meetingRow = z.object({
   id: z.string(),
   committee_id: z.string(),
@@ -124,12 +134,18 @@ export function openIndexReader(path: string): IndexReader {
   const selectRelations = database.prepare(
     "SELECT relation, to_id, meaning FROM document_relation WHERE document_id = ? ORDER BY rowid",
   );
+  const selectCommittee = database.prepare(
+    "SELECT code, id, name FROM committee WHERE session_key = ? AND (upper(code) = upper(?) OR id = lower(?))",
+  );
   const selectMeetings = database.prepare(
     `SELECT m.id, m.committee_id, m.committee_code, c.name AS committee_name, m.at, m.status
      FROM meeting m JOIN committee c ON c.session_key = m.session_key AND c.code = m.committee_code
      WHERE m.session_key = ?
        AND (? IS NULL OR EXISTS (SELECT 1 FROM agenda_item a
                                  WHERE a.meeting_id = m.id AND a.measure_prefix = ? AND a.measure_number = ?))
+       AND (? IS NULL OR m.committee_code = ?)
+       AND (? IS NULL OR substr(m.at, 1, 10) >= ?)
+       AND (? IS NULL OR substr(m.at, 1, 10) <= ?)
      ORDER BY m.at, m.committee_code`,
   );
   const selectAgendaItems = database.prepare(
@@ -232,10 +248,30 @@ export function openIndexReader(path: string): IndexReader {
       }
       return { document: latest, related };
     },
+    findCommittee(session, reference) {
+      const row = selectCommittee.get(session, reference.trim(), reference.trim());
+      if (row === undefined) return undefined;
+      const stored = committeeRow.parse(row);
+      return { session, code: stored.code, id: stored.id as CommitteeId, name: stored.name };
+    },
     findMeetings(session, filter) {
       const measure = filter.measure;
+      const committeeCode = filter.committeeCode ?? null;
+      const from = filter.from ?? null;
+      const to = filter.to ?? null;
       return selectMeetings
-        .all(session, measure?.prefix ?? null, measure?.prefix ?? null, measure?.number ?? null)
+        .all(
+          session,
+          measure?.prefix ?? null,
+          measure?.prefix ?? null,
+          measure?.number ?? null,
+          committeeCode,
+          committeeCode,
+          from,
+          from,
+          to,
+          to,
+        )
         .map((row) => {
           const stored = meetingRow.parse(row);
           return {

@@ -12,7 +12,14 @@ import {
   unknownDocumentMessage,
 } from "./lib/get-document.ts";
 import { getMeasure, getMeasureInput, getMeasureOutput, unknownMeasureMessage } from "./lib/get-measure.ts";
-import { meetings, meetingsInput, meetingsOutput } from "./lib/meetings.ts";
+import {
+  backwardsRangeMessage,
+  meetings,
+  meetingsInput,
+  meetingsOutput,
+  NO_FILTER_MESSAGE,
+  unknownCommitteeMessage,
+} from "./lib/meetings.ts";
 import { sessionOverview, sessionOverviewInput, sessionOverviewOutput } from "./lib/session-overview.ts";
 import { createRateLimiter, rateLimitMessage, type RateLimiter } from "./lib/rate-limit.ts";
 
@@ -136,6 +143,15 @@ function buildServer(reader: IndexReader, config: ServerConfig, limiter: RateLim
             isError: true,
             content: [{ type: "text", text: unknownMeasureMessage(result.reference, result.session) }],
           };
+        case "unknown_committee":
+          return {
+            isError: true,
+            content: [{ type: "text", text: unknownCommitteeMessage(result.reference, result.session) }],
+          };
+        case "no_filter":
+          return { isError: true, content: [{ type: "text", text: NO_FILTER_MESSAGE }] };
+        case "backwards_range":
+          return { isError: true, content: [{ type: "text", text: backwardsRangeMessage(result.from, result.to) }] };
         default:
           return result satisfies never;
       }

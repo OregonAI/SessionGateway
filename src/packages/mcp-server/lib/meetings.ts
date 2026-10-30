@@ -6,7 +6,21 @@ import { formatPacific, isAtOrAfter } from "#/packages/time/pacific.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 
 export const meetingsInput = z.object({
-  measure: z.string().describe('A Measure\'s id, such as "measure-2025r1-sb69", or its citation, such as "SB 69".'),
+  measure: z
+    .string()
+    .optional()
+    .describe(
+      'Only meetings with an agenda item about this Measure: its id, such as "measure-2025r1-sb69", or its citation, such as "SB 69".',
+    ),
+  committee: z
+    .string()
+    .optional()
+    .describe('Only meetings of this committee: its code, such as "SLB", or its id, such as "committee-2025r1-slb".'),
+  from: z.iso.date().optional().describe("Only meetings on this date or later, as a Pacific date such as 2025-01-21."),
+  to: z.iso
+    .date()
+    .optional()
+    .describe("Only meetings on this date or earlier, as a Pacific date such as 2025-01-28. The whole day counts."),
 });
 
 const meetingOutput = z.object({
@@ -119,9 +133,13 @@ export const meetingsOutput = z.object({
 
 export type MeetingsOutput = z.infer<typeof meetingsOutput>;
 
-/** Unknown references are expected outcomes, so they are values; the MCP edge decides they are tool errors. */
+/** Unknown references and empty questions are expected outcomes, so they are values; the MCP edge decides they are tool errors. */
 export type MeetingsResult =
-  { kind: "found"; meetings: MeetingsOutput } | { kind: "unknown_measure"; reference: string; session: SessionKey };
+  | { kind: "found"; meetings: MeetingsOutput }
+  | { kind: "unknown_measure"; reference: string; session: SessionKey }
+  | { kind: "unknown_committee"; reference: string; session: SessionKey }
+  | { kind: "no_filter" }
+  | { kind: "backwards_range"; from: string; to: string };
 
 export function meetings(
   reader: IndexReader,
@@ -129,18 +147,40 @@ export function meetings(
   now: Date,
   input: z.infer<typeof meetingsInput>,
 ): MeetingsResult {
-  const measure = parseMeasureReference(input.measure, session);
-  if (measure === undefined || reader.findMeasure(measure) === undefined) {
+  if (
+    input.measure === undefined &&
+    input.committee === undefined &&
+    input.from === undefined &&
+    input.to === undefined
+  ) {
+    return { kind: "no_filter" };
+  }
+  if (input.from !== undefined && input.to !== undefined && input.from > input.to) {
+    return { kind: "backwards_range", from: input.from, to: input.to };
+  }
+  const measure = input.measure === undefined ? undefined : parseMeasureReference(input.measure, session);
+  if (input.measure !== undefined && (measure === undefined || reader.findMeasure(measure) === undefined)) {
     return { kind: "unknown_measure", reference: input.measure, session };
+  }
+  const committee = input.committee === undefined ? undefined : reader.findCommittee(session, input.committee);
+  if (input.committee !== undefined && committee === undefined) {
+    return { kind: "unknown_committee", reference: input.committee, session };
   }
   const asOf = reader.asOf(session);
   if (asOf === undefined) {
     throw new Error(`The index holds meetings of ${session} but no completed full pull to date them by`);
   }
-  const found = reader.findMeetings(session, { measure }).map((meeting) => ({
-    ...meeting,
-    upcoming: isAtOrAfter(meeting.at, now),
-  }));
+  const found = reader
+    .findMeetings(session, {
+      ...(measure === undefined ? {} : { measure }),
+      ...(committee === undefined ? {} : { committeeCode: committee.code }),
+      ...(input.from === undefined ? {} : { from: input.from }),
+      ...(input.to === undefined ? {} : { to: input.to }),
+    })
+    .map((meeting) => ({
+      ...meeting,
+      upcoming: isAtOrAfter(meeting.at, now),
+    }));
   return {
     kind: "found",
     meetings: {
@@ -193,4 +233,18 @@ export function meetings(
       notice: NON_OFFICIAL_NOTICE,
     },
   };
+}
+
+/** What an agent is told when no committee matches, so it can correct the call. */
+export function unknownCommitteeMessage(reference: string, session: SessionKey): string {
+  return `No committee "${reference}" in the ${session} Session. Give a committee code such as SLB or a committee id such as committee-${session.toLowerCase()}-slb.`;
+}
+
+/** What an agent is told when it asks for meetings without saying which. */
+export const NO_FILTER_MESSAGE =
+  "Give a Measure, a committee or a date range (measure, committee, from, to). Without one, the answer would be every meeting of the Session.";
+
+/** What an agent is told when a date range ends before it starts. */
+export function backwardsRangeMessage(from: string, to: string): string {
+  return `The date range runs backwards: from ${from} is after to ${to}. Give a from that is on or before to.`;
 }
