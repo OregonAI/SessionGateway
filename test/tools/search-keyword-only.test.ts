@@ -85,8 +85,10 @@ describe("what is found by words and never by meaning", () => {
   });
 
   it("does not find an agenda from a question about what it says in other words, though nothing else answers it", async () => {
+    // The question says what SB 397 does in words the agenda does not use ("clocking-in", "quarter hour", "reclaimed").
+    // None of its keywords is in the agenda, so only meaning could bring the agenda up, and an agenda has none.
     const question =
-      "Makes clear that staff compensation shortfalls caused by clocking-in practices cannot be claimed in court";
+      "Makes clear that shortfalls in pay caused by punching the clock to the nearest quarter hour cannot be reclaimed through litigation";
 
     const everything = await callTool(connected, "search", { query: question });
     const agendas = await callTool(connected, "search", { query: question, kind: "agenda" });
@@ -119,15 +121,38 @@ describe("what is found by words and never by meaning", () => {
     expect(byId.get("exhibit-2025r1-900004")?.found_by).toEqual(["keyword", "embedding"]);
   });
 
+  it("finds a witness-registration list and a Recording Log from a question that has a word they lack, by the words they have", async () => {
+    // "zzqx" is in no document, so no passage holds every word of either question: the lists have no meaning side to
+    // fall back on, and are found by the words they do have. The Exhibit that has the Recording Log's text is not:
+    // it is found by its meaning, which is the other half of what ADR-0006 says.
+    const list = await callTool(connected, "search", { query: "Karsyn Kendrick Coalition of Oregon Land Trusts zzqx" });
+    const log = await callTool(connected, "search", {
+      query: "grant awards funded conservation easements seven land trust grantees zzqx",
+    });
+
+    const listIds = ["exhibit-2025r1-900001", "exhibit-2025r1-900002"];
+    expect(
+      hitsOf(list)
+        .filter((hit) => listIds.includes(hit.id))
+        .map((hit) => [hit.id, hit.found_by]),
+    ).toEqual([
+      ["exhibit-2025r1-900001", ["keyword"]],
+      ["exhibit-2025r1-900002", ["keyword"]],
+    ]);
+    const byId = new Map(hitsOf(log).map((hit) => [hit.id, hit]));
+    expect(byId.get("recording-log-2025r1-900003")?.found_by).toEqual(["keyword"]);
+    expect(byId.get("exhibit-2025r1-900004")?.found_by).toEqual(["embedding"]);
+  });
+
   it("does not find a Recording Log, a witness-registration list or an agenda from a question in other words", async () => {
     // The text of the Preliminary SMS: "The Oregon Agricultural Heritage Fund (OAHF) was established as part of
     // the Oregon Agricultural Heritage Program (OAHP) in 2017 to help address challenges for farms and ranches
     // associated with farmland fragmentation and conversions, complex regulations, and planning for generational
-    // transfers." The question is that, worded without any of those words. The Exhibit 900004 has the same text
-    // as the Recording Log 900003 and answers it; the Recording Log must not.
+    // transfers." The question is that, worded without any of those words, nor any other word of the text. The
+    // Exhibit 900004 has the same text as the Recording Log 900003 and answers it; the Recording Log must not.
     const outcome = await callTool(connected, "search", {
       query:
-        "A program begun in the late twenty-tens that helps families who till the soil avoid breaking up their holdings, and plan to hand them to the next generation",
+        "A scheme launched in the previous decade that spares those who grow crops and raise cattle from carving up their holdings, and eases handing them down to their children",
     });
 
     const ids = hitsOf(outcome).map((hit) => hit.id);
@@ -136,13 +161,16 @@ describe("what is found by words and never by meaning", () => {
     expect(ids).not.toContain("exhibit-2025r1-900001");
     expect(ids).not.toContain("exhibit-2025r1-900002");
     expect(hitsOf(outcome).filter((hit) => hit.kind === "agenda")).toEqual([]);
-    expect(
-      hitsOf(
-        await callTool(connected, "search", {
-          query: "A list of the people who signed up to speak, with their cities",
-          kind: "exhibit",
-        }),
-      ).map((hit) => hit.id),
-    ).not.toContain("exhibit-2025r1-900001");
+    // The witness-registration lists are Exhibits that list names, positions and cities (documents/committee-meeting-
+    // documents/288487.pdf). A question about who signed up to speak, with none of the words the lists are made of,
+    // finds neither of them.
+    const speakers = await callTool(connected, "search", {
+      query: "Which individuals put themselves forward to speak before the lawmakers, and where do they live?",
+      kind: "exhibit",
+    });
+    const speakerIds = hitsOf(speakers).map((hit) => hit.id);
+    expect(speakerIds).toContain("exhibit-2025r1-900004");
+    expect(speakerIds).not.toContain("exhibit-2025r1-900001");
+    expect(speakerIds).not.toContain("exhibit-2025r1-900002");
   });
 });

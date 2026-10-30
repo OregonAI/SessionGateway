@@ -12,7 +12,14 @@ import { documentKinds, type AmendmentId, type DocumentId } from "#/packages/dom
 import { measureIdOf, parseMeasureReference, type SessionKey } from "#/packages/domain/index.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
 import { reciprocalRankFusion } from "#/packages/search/ranking.ts";
-import { citationTermOf, matchExpressionOf, phraseOf, snippetOf, termsOf } from "#/packages/search/text.ts";
+import {
+  citationTermOf,
+  looseMatchExpressionOf,
+  matchExpressionOf,
+  phraseOf,
+  snippetOf,
+  termsOf,
+} from "#/packages/search/text.ts";
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 import type { VectorCache } from "./vector-cache.ts";
@@ -208,15 +215,16 @@ function citedCandidates(
   return cited;
 }
 
-/** The documents whose passages match the words, best first, each at its best passage. */
+/** The documents whose passages match an expression, best first, each at its best passage. */
 function keywordCandidates(
   index: SearchIndexReader,
   match: string | undefined,
   filter: SearchFilter,
+  keywordOnly: boolean,
 ): Map<HitId, Candidate> {
   const found = new Map<HitId, Candidate>();
   if (match === undefined) return found;
-  for (const passage of index.keyword(match, filter, CANDIDATE_PASSAGES)) {
+  for (const passage of index.keyword(match, filter, CANDIDATE_PASSAGES, keywordOnly)) {
     if (found.has(passage.nodeId)) continue;
     found.set(passage.nodeId, {
       documentId: passage.documentId,
@@ -225,6 +233,26 @@ function keywordCandidates(
     });
   }
   return found;
+}
+
+/**
+ * What the words of the question find (docs/adr/0025, "Keyword side"): the documents with a passage that holds
+ * every keyword, or a citation's phrase, and, as a ranking of their own, the keyword-only documents with a
+ * passage that holds some of the keywords. A keyword-only document is never embedded, so a question with one
+ * word it lacks would never find it; any other document needs all the words, because the meaning of its
+ * passages is looked at too, and a generic word ("power", "program") that a question shares with a long
+ * document is no evidence that it is the answer.
+ */
+function keywordRankings(
+  index: SearchIndexReader,
+  terms: readonly string[],
+  phrases: readonly string[],
+  filter: SearchFilter,
+): { everyWord: Map<HitId, Candidate>; someWords: Map<HitId, Candidate> } {
+  const everyWord = keywordCandidates(index, matchExpressionOf(terms, phrases), filter, false);
+  const someWords = keywordCandidates(index, looseMatchExpressionOf(terms), filter, true);
+  for (const id of everyWord.keys()) someWords.delete(id);
+  return { everyWord, someWords };
 }
 
 /**
@@ -261,18 +289,22 @@ async function embeddingCandidates(
 }
 
 /**
- * The hits in order: what a citation names exactly first, then the keyword and meaning rankings fused by
- * reciprocal rank fusion. A hit's snippet is cut from the passage the words matched, else the one the meaning
- * matched, and it says every way it was found.
+ * The hits in order: what a citation names exactly first, then the three rankings fused by reciprocal rank
+ * fusion: the documents that hold every keyword, the documents nearest the question in meaning, and the
+ * keyword-only documents that hold some of the keywords. Equal scores come in that order, so a keyword-only
+ * document that shares a word with the question does not outrank a document found by meaning at the same rank.
+ * A hit's snippet is cut from the passage the words matched, else the one the meaning matched, and it says every
+ * way it was found.
  */
 function orderedCandidates(
   cited: ReadonlyMap<HitId, Candidate>,
-  byKeyword: ReadonlyMap<HitId, Candidate>,
+  byEveryWord: ReadonlyMap<HitId, Candidate>,
   byEmbedding: ReadonlyMap<HitId, Candidate>,
+  bySomeWords: ReadonlyMap<HitId, Candidate>,
 ): Candidate[] {
   const ranked = new Map<HitId, Candidate>(cited);
-  for (const id of reciprocalRankFusion([[...byKeyword.keys()], [...byEmbedding.keys()]])) {
-    const sides = [byKeyword.get(id), byEmbedding.get(id)].filter(
+  for (const id of reciprocalRankFusion([[...byEveryWord.keys()], [...byEmbedding.keys()], [...bySomeWords.keys()]])) {
+    const sides = [byEveryWord.get(id), byEmbedding.get(id), bySomeWords.get(id)].filter(
       (candidate): candidate is Candidate => candidate !== undefined,
     );
     const already = ranked.get(id);
@@ -308,11 +340,11 @@ export async function search(
   const withoutCitations = citations.reduce((text, citation) => text.replaceAll(citation.text, " "), input.query);
   const terms = termsOf(withoutCitations);
   const cited = citedCandidates(deps.searchIndex, citations, filter);
-  const byKeyword = keywordCandidates(deps.searchIndex, matchExpressionOf(terms, citations.map(phraseOf)), filter);
+  const byWords = keywordRankings(deps.searchIndex, terms, citations.map(phraseOf), filter);
   const byEmbedding = await embeddingCandidates(deps, input.query, terms, filter);
   const citationTerms = citations.map(citationTermOf);
 
-  const results = orderedCandidates(cited, byKeyword, byEmbedding)
+  const results = orderedCandidates(cited, byWords.everyWord, byEmbedding, byWords.someWords)
     .slice(0, input.limit ?? DEFAULT_LIMIT)
     .map((candidate): SearchOutput["results"][number] => {
       const details = deps.searchIndex.details(candidate);
