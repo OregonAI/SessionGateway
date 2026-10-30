@@ -12,7 +12,7 @@ import { documentKinds, type AmendmentId, type DocumentId } from "#/packages/dom
 import { measureIdOf, parseMeasureReference, type SessionKey } from "#/packages/domain/index.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
 import { reciprocalRankFusion } from "#/packages/search/ranking.ts";
-import { matchExpressionOf, phraseOf, snippetOf, termsOf } from "#/packages/search/text.ts";
+import { citationTermOf, matchExpressionOf, phraseOf, snippetOf, termsOf } from "#/packages/search/text.ts";
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 import type { VectorCache } from "./vector-cache.ts";
@@ -111,6 +111,11 @@ const hit = z.object({
 export const searchOutput = z.object({
   query: z.string().describe("The query that was searched."),
   results: z.array(hit).describe("The hits, best first."),
+  notes: z
+    .array(z.string())
+    .describe(
+      'What the search found nothing for, in words: a citation in the query that names nothing the index holds ("SB 69-3" when the amendment was never posted). No hit is then an exact match for it. Empty when there is nothing to say.',
+    ),
   as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
   notice: z.string().describe("A reminder that this is not the official record."),
 });
@@ -144,6 +149,8 @@ type HitId = DocumentId | AmendmentId;
 type Candidate = {
   documentId: DocumentId;
   passageId: number | null;
+  /** Where the citation that named the document starts in its text, when a citation did. */
+  citedAt?: number;
   foundBy: Set<FoundBy>;
 };
 
@@ -193,6 +200,7 @@ function citedCandidates(
       cited.set(found.nodeId, {
         documentId: found.documentId,
         passageId: found.passageId,
+        ...(found.citedAt === undefined ? {} : { citedAt: found.citedAt }),
         foundBy: new Set(["citation"]),
       });
     }
@@ -221,18 +229,17 @@ function keywordCandidates(
 
 /**
  * The documents whose passages are nearest the question in meaning, nearest first, each at its nearest
- * passage. A query that is nothing but citations has no meaning to look for, and an index with no vectors
- * has nothing to look in, so neither embeds the question.
+ * passage. A query with no keywords besides its citations has no meaning to look for, and an index with no
+ * vectors has nothing to look in, so neither embeds the question.
  */
 async function embeddingCandidates(
   deps: SearchDeps,
   query: string,
-  citations: readonly Citation[],
+  terms: readonly string[],
   filter: SearchFilter,
 ): Promise<Map<HitId, Candidate>> {
   const found = new Map<HitId, Candidate>();
-  const withoutCitations = citations.reduce((text, citation) => text.replaceAll(citation.text, " "), query);
-  if (termsOf(withoutCitations).length === 0) return found;
+  if (terms.length === 0) return found;
   const vectors = deps.vectors.current();
   if (vectors.index.size === 0) return found;
   const question = quantizeUnitVector(await deps.embedder.embedQuestion(query));
@@ -296,10 +303,14 @@ export async function search(
   const filter = resolved.filter;
 
   const citations = findCitations(input.query, session);
-  const terms = termsOf(input.query);
+  // A citation's own words and numbers are the citation's, not keywords: "3" of "SB 69-3" matches the margin
+  // numbers of a PDF's lines. The citation is looked for as a whole (exact hits, and its words in order).
+  const withoutCitations = citations.reduce((text, citation) => text.replaceAll(citation.text, " "), input.query);
+  const terms = termsOf(withoutCitations);
   const cited = citedCandidates(deps.searchIndex, citations, filter);
   const byKeyword = keywordCandidates(deps.searchIndex, matchExpressionOf(terms, citations.map(phraseOf)), filter);
-  const byEmbedding = await embeddingCandidates(deps, input.query, citations, filter);
+  const byEmbedding = await embeddingCandidates(deps, input.query, terms, filter);
+  const citationTerms = citations.map(citationTermOf);
 
   const results = orderedCandidates(cited, byKeyword, byEmbedding)
     .slice(0, input.limit ?? DEFAULT_LIMIT)
@@ -312,12 +323,46 @@ export async function search(
         title: details.title,
         measure: details.measureId,
         date: details.date,
-        snippet: snippetOf(details.passageText, terms),
+        // A hit that a citation named is shown round the citation; any other round the words that matched.
+        snippet: snippetOf(details.passageText, candidate.foundBy.has("citation") ? citationTerms : terms),
         source_url: details.sourceUrl,
         found_by: foundByOrder.filter((how) => candidate.foundBy.has(how)),
       };
     });
-  return { kind: "found", search: { query: input.query, results, as_of: asOf, notice: NON_OFFICIAL_NOTICE } };
+  const notes = citations.filter((citation) => !indexHolds(deps, session, citation)).map(unplacedCitationNote);
+  return { kind: "found", search: { query: input.query, results, notes, as_of: asOf, notice: NON_OFFICIAL_NOTICE } };
+}
+
+/**
+ * Whether the index holds the item a citation names, whatever the filters say: the Measure, the Proposed
+ * Amendment (a stored posting of it), or a document whose text names the ORS section.
+ */
+function indexHolds(deps: SearchDeps, session: SessionKey, citation: Citation): boolean {
+  const unfiltered: SearchFilter = { session, withTestimony: true };
+  switch (citation.kind) {
+    case "measure":
+      return deps.reader.findMeasure(citation.measure) !== undefined;
+    case "amendment":
+      return deps.searchIndex.postingOf(citation.id, unfiltered) !== undefined;
+    case "ors":
+      return deps.searchIndex.citing(citation.id, unfiltered, 1).length > 0;
+    default:
+      return citation satisfies never;
+  }
+}
+
+/** What the result says of a citation the index holds nothing for: which one, and that no hit is an exact match. */
+function unplacedCitationNote(citation: Citation): string {
+  switch (citation.kind) {
+    case "measure":
+      return `The index has no Measure "${citation.text}", so no hit is an exact match for it.`;
+    case "amendment":
+      return `The index has no Proposed Amendment "${citation.text}", so no hit is an exact match for it.`;
+    case "ors":
+      return `No document in the index names "${citation.text}", so no hit is an exact match for it.`;
+    default:
+      return citation satisfies never;
+  }
 }
 
 /**

@@ -164,6 +164,51 @@ describe("an exact citation of an ORS section that a passage boundary cuts in tw
   );
 });
 
+// A citation that names nothing the index holds. SB 69's Proposed Amendments are -1 and -2: the feed has no -3 and no
+// -21 (CommitteeProposedAmendments rows 26284-26288), there is no HB 9999 in Measures, and no document of the fixture
+// names ORS 999.999 (`pdftotext -raw` finds none). The result says so and puts nothing first; a citation's own
+// numbers are not loose keywords, so "3" and "21" match nothing on their own (the PDFs' margins number their lines).
+describe("a citation that names nothing the index holds", () => {
+  test.for([
+    { query: "SB 69-3", citation: "SB 69-3" },
+    { query: "SB 69-21", citation: "SB 69-21" },
+    { query: "HB 9999", citation: "HB 9999" },
+    { query: "ORS 999.999", citation: "ORS 999.999" },
+  ])("$citation is said so in a note, and no hit is an exact match or a stray number", async ({ query, citation }) => {
+    const outcome = await callTool(connected, "search", { query });
+
+    expect(outcome.structured?.["notes"]).toEqual([expect.stringContaining(`"${citation}"`)]);
+    expect(hitsOf(outcome)).toEqual([]);
+  });
+
+  it("still finds what the rest of the query finds, and says which citation it could not place", async () => {
+    const outcome = await callTool(connected, "search", { query: "paid family leave SB 69-3" });
+
+    expect(outcome.structured?.["notes"]).toEqual([expect.stringContaining('"SB 69-3"')]);
+    expect(hitsOf(outcome).length).toBeGreaterThan(0);
+    expect(hitsOf(outcome).filter((hit) => hit.found_by.includes("citation"))).toEqual([]);
+  });
+
+  it("has no note when the citation is held but a filter leaves its documents out", async () => {
+    const outcome = await callTool(connected, "search", { query: "HB 3795", kind: "agenda" });
+
+    expect(outcome.structured?.["notes"]).toEqual([]);
+  });
+});
+
+// The snippet of a hit found by an exact citation shows the citation, even where a passage boundary cuts it in two:
+// "ORS" ends HB 3795's Enrolled passage and "192.245" begins the next.
+describe("the snippet of an exact citation", () => {
+  it("holds the citation, in every one of the eight documents that name ORS 192.245", async () => {
+    const outcome = await callTool(connected, "search", { query: "ORS 192.245" });
+
+    const first = hitsOf(outcome).slice(0, 8);
+    expect(
+      first.map((hit) => hit.snippet.replaceAll(/\s+/g, " ")).filter((snippet) => !snippet.includes("ORS 192.245")),
+    ).toEqual([]);
+  });
+});
+
 describe("the size and the contents of an answer", () => {
   it("is twenty hits unless the call asks for fewer or more, and fifty at most", async () => {
     const standard = await callTool(connected, "search", { query: "committee" });
