@@ -1,49 +1,52 @@
-import { MAX_PASSAGE_TOKENS, VECTOR_DIMENSIONS, type Embedder } from "#/packages/embedder/index.ts";
+import { VECTOR_DIMENSIONS, type Embedder, type ModelRunner } from "#/packages/embedder/index.ts";
+import { loadEmbedder } from "#/packages/embedder/load.ts";
+import { modelLockPath } from "#/packages/embedder/lock.ts";
+import { modelPath } from "./real-embedder.ts";
 
-// A test double for the embedder, and labelled as one: its model id says "fake". The vectors are
-// deterministic and unit length, derived from the words of the text (each word adds to one of the 384
-// places, chosen by a hash of the word), so two texts that share words have vectors that point the same
-// way, and the same text always has the same vector. They mean nothing a person would call meaning. Every
-// seam-1 test that is not about how well search ranks uses this embedder: with the real model, every pull
-// of the fixture would embed about 1.9 million characters, about two minutes on one core
-// (test/support/real-embedder.ts is the real one, for the tests of ranking).
+// A test double for the embedder's ONNX session, and labelled as one: its model id says "fake". It replaces
+// that session and nothing else. The tokenizer is the model's own, read from MODEL_PATH, so a document is cut
+// into the same passages here as in production (a different count of tokens would put the cuts, and so the
+// citations a cut passage splits, in other places), and the question's instruction and the one-text-at-a-time
+// rule are the real embedder's. The vectors are deterministic and unit length, derived from the token ids
+// of the text (each token adds to one of the 384 places, chosen by a hash of its id), so two texts that share
+// words point the same way and the same text always has the same vector. They mean nothing a person would
+// call meaning, so the tests that judge meaning use the real model (test/support/real-embedder.ts); the
+// others use this, because the real model would embed about 1.7 million characters (about two minutes on one
+// core) in every pull of the fixture.
 
-/** What the fake counts as a token: a run of letters, a run of digits, or one other mark. */
-const tokenPattern = /\p{L}+|\p{N}+|[^\s\p{L}\p{N}]/gu;
+/** [CLS] and [SEP] are in the ids of every text and say nothing about it. */
+const SPECIAL_TOKEN_IDS: ReadonlySet<number> = new Set([101, 102]);
 
-/** FNV-1a: a small hash that gives the same number for the same word in every process. */
-function hashOf(word: string): number {
-  let hash = 0x811c9dc5;
-  for (const character of word) {
-    hash ^= character.codePointAt(0) ?? 0;
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return hash >>> 0;
+/** A small hash that gives the same place for the same token id in every process. */
+function placeOf(id: number): number {
+  return (Math.imul(id, 0x9e3779b1) >>> 0) % VECTOR_DIMENSIONS;
 }
 
-function vectorOf(text: string): Float32Array {
-  const vector = new Float32Array(VECTOR_DIMENSIONS);
-  for (const match of text.toLowerCase().matchAll(/[\p{L}\p{N}]+/gu)) {
-    const hash = hashOf(match[0]);
-    const place = hash % VECTOR_DIMENSIONS;
-    vector[place] = (vector[place] ?? 0) + 1;
-  }
-  let sum = 0;
-  for (const value of vector) sum += value * value;
-  if (sum === 0) {
-    vector[0] = 1;
-    return vector;
-  }
-  const length = Math.sqrt(sum);
-  return vector.map((value) => value / length);
-}
+const fakeRunner: ModelRunner = {
+  modelId: "fake-hashed-tokens-384",
+  run(ids) {
+    const vector = new Float32Array(VECTOR_DIMENSIONS);
+    for (const id of ids) {
+      if (!SPECIAL_TOKEN_IDS.has(id)) vector[placeOf(id)] = (vector[placeOf(id)] ?? 0) + 1;
+    }
+    let sum = 0;
+    for (const value of vector) sum += value * value;
+    if (sum === 0) {
+      vector[0] = 1;
+      return Promise.resolve(vector);
+    }
+    const length = Math.sqrt(sum);
+    return Promise.resolve(vector.map((value) => value / length));
+  },
+};
 
-export function createFakeEmbedder(): Embedder {
-  return {
-    modelId: "fake-hashed-words-384",
-    maxPassageTokens: MAX_PASSAGE_TOKENS,
-    countTokens: (text) => (text.match(tokenPattern) ?? []).length,
-    embedPassages: (texts) => Promise.resolve(texts.map(vectorOf)),
-    embedQuestion: (text) => Promise.resolve(vectorOf(text)),
-  };
+let shared: Promise<Embedder> | undefined;
+
+/**
+ * The fake embedder: the real tokenizer and a fake session. The tokenizer's files are read once for each test
+ * file. It fails, naming `npm run model:fetch`, when the model's files are missing.
+ */
+export function createFakeEmbedder(): Promise<Embedder> {
+  shared ??= loadEmbedder({ modelPath: modelPath(), lockPath: modelLockPath }, () => Promise.resolve(fakeRunner));
+  return shared;
 }
