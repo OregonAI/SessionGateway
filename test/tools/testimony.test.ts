@@ -235,4 +235,40 @@ describe.for(eras)("testimony for a %s client", (era) => {
       ["testimony-2025r1-148734", "Photo", false, null],
     ]);
   });
+
+  // The ticket's third box: "Testimony from an Agency carries its registry slug". The Organization of three rows
+  // (feed/CommitteePublicTestimonies.json) is the whole of an Agency's name in the committed snapshot's registry
+  // (test/fixtures/oregonai-snapshot/snapshot.json): SB 69's 196915 "Bureau of Labor and Industries" is
+  // `bureau-of-labor-and-industries` and HB 3027's 122570 "Higher Education Coordinating Commission" is
+  // `higher-education-coordinating-commission`. HB 3795's 209256 gives "ODHS", which the registry does not list as an
+  // alias of the Department of Human Services (its aliases are empty there), so it carries no slug: an open question
+  // for the owner, and no alias is added here.
+  it.for([
+    ["SB 69", "testimony-2025r1-196915", "Bureau of Labor and Industries", "bureau-of-labor-and-industries"],
+    [
+      "HB 3027",
+      "testimony-2025r1-122570",
+      "Higher Education Coordinating Commission",
+      "higher-education-coordinating-commission",
+    ],
+    ["HB 3795", "testimony-2025r1-209256", "ODHS", null],
+  ] as const)("marks %s's Testimony %s from %j with the Agency slug %j", async ([citation, id, organization, slug]) => {
+    const outcome = await callTool(connected, "testimony", { measure: citation });
+
+    const items = (outcome.structured?.["positions"] as Position[])
+      .flatMap((position) => position.organizations)
+      .flatMap((group) => group.items);
+    expect(items.find((item) => item.id === id)).toMatchObject({ organization, agency_id: slug });
+  });
+
+  // Nothing else is matched: HB 3131 names no Agency in any Organization, so no item of it carries a slug (the
+  // matching is of the whole Organization against the registry, and cities and groups are not in it).
+  it("marks no item of HB 3131 with an Agency slug", async () => {
+    const outcome = await callTool(connected, "testimony", { measure: "HB 3131" });
+
+    const items = (outcome.structured?.["positions"] as Position[])
+      .flatMap((position) => position.organizations)
+      .flatMap((group) => group.items);
+    expect(items.map((item) => item["agency_id"])).toEqual(Array<null>(42).fill(null));
+  });
 });
