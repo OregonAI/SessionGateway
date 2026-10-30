@@ -62,6 +62,7 @@ describe("amendments the fixture has no row for", () => {
   // SB 69-2 again, posted a third time with the file of SB 921-2 (header "SENATE BILL 921", Introduced).
   // SB 69-4: the file is a scan with no text layer (Exhibit 288141, the fixture's SB 64 scan).
   // SB 69-AB3: SB 69-2's file again, with a number that names no Version.
+  // SB 69-B1: SB 69-2's file again, with a number that names B-Engrossed.
   const madeUp = [
     postingRow(990001, "-A9", `${root}/ProposedAmendment/26286`),
     postingRow(990002, "-3", `${root}/MeasureDocument/SB69/Introduced`),
@@ -69,6 +70,8 @@ describe("amendments the fixture has no row for", () => {
     postingRow(990004, "-4", `${root}/ProposedAmendment/990004`),
     // The number "-AB3" names no Version in either form (digits alone, or one letter and digits).
     postingRow(990005, "-AB3", `${root}/ProposedAmendment/26286`),
+    // SB 69-B1: a number that names B-Engrossed ("-B1", as the brief and Legislative Counsel's numbering have it).
+    postingRow(990006, "-B1", `${root}/ProposedAmendment/26286`),
   ];
   let system: System;
 
@@ -135,6 +138,15 @@ describe("amendments the fixture has no row for", () => {
         'The header of the amendment\'s file (the line after "PROPOSED AMENDMENTS TO") could not be read, so which Version it amends is not known.',
       );
       expect(comparison.amended_version.statute_links).toEqual([]);
+    });
+
+    it("reads the letter in a number as the engrossed Version it amends: -B1 names B-Engrossed", async () => {
+      const comparison = await compare("SB 69-B1");
+
+      expect(comparison.amended_version.known).toBe(false);
+      expect(comparison.amended_version.reason).toBe(
+        "The amendment's header names the Introduced Version but its number -B1 names the B-Engrossed Version, so which Version it amends is not known.",
+      );
     });
 
     it("says the Version is not known when the number names no Version, however the header reads", async () => {
