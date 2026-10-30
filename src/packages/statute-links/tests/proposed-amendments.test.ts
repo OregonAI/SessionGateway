@@ -574,6 +574,99 @@ Page 13
     relatingClauseEdits: [],
   },
   {
+    // The cut at the closing quote keeps the instructions that follow the last inserted section, and the
+    // words they delete, out of it (#6 F6). The section's middle, lines 674-861, is left out of the
+    // quote: the two passages are joined by a blank line.
+    name: "HB 3444-1: the instructions after the last inserted section, one deleting words that cite ORS 338.005, are not read",
+    source:
+      "research cache documents-sample-2/CommitteeProposedAmendments_26.pdf (HB 3444-1, not in the committed fixture), lines 671-673 and 862-937",
+    text: `“SECTION 7. ORS 327.825 is amended to read:
+
+27
+
+“(e) Students who are foster children, as defined in ORS 30.297;
+
+17
+
+“(f) Students who are homeless, as determined under rules adopted by the
+
+18
+
+State Board of Education;
+
+19
+
+“(g) Students who attend an elementary school that:
+
+20
+
+“(A) Is identified for comprehensive support and improvement or for tar-
+
+21
+
+geted support and improvement under the federal Every Student Succeeds
+
+22
+
+Act (P.L. 114-95, 129 Stat. 1802); or
+
+23
+24
+
+“(B) Qualifies for assistance under Title I of the federal Elementary and
+Secondary Education Act of 1965; or
+
+25
+
+“(h) Any other student groups that have historically experienced academic
+
+26
+
+disparities, as determined under rules adopted by the State Board of Educa-
+
+27
+
+tion by rule.”.
+
+28
+
+In line 18, delete “6” and insert “8”.
+
+29
+
+In line 44, delete “7” and insert “9” and after “327.185,” insert “327.195,”
+
+30
+
+and after “327.311,” insert “327.825,”.
+
+HB 3444-1 2/18/25
+Proposed Amendments to HB 3444
+
+Page 8
+
+\f1
+
+In line 45, delete “6” and insert “8”.
+
+2
+
+On page 9, line 3, delete “8” and insert “10”.
+
+3
+
+In line 6, after the second “school” delete the rest of the line.
+
+4
+
+In line 7, delete “charter school, as defined in ORS 338.005, and”.`,
+    links: [
+      ["amends", "ors-327.825", "7"],
+      ["cites", "ors-30.297", "7"],
+    ],
+    relatingClauseEdits: [],
+  },
+  {
     // No fixture Proposed Amendment deletes words of the relating clause. ADR-0001 quotes the form:
     // delete 'amending ORS 468.130' and insert 'amending ORS 468.130 and 468.140'. The lead-in is the
     // one SB 69-1 uses, and the quotes are the curly ones every fixture amendment uses.
