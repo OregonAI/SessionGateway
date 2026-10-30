@@ -56,6 +56,24 @@ type Comparison = {
   deletions_note: string;
 };
 
+/** The part of get_measure's statute_links_by_source that says which amendments are current and which are replaced. */
+type Block = {
+  versions: { label: string }[];
+  proposed_amendments: { id: string; amended_version: { known: boolean; reason: string } }[];
+  superseded_amendments: {
+    id: string;
+    number: string;
+    amended_version: { id: string | null; label: string; source_url: string | null };
+    later_version: { id: string; label: string };
+  }[];
+};
+
+async function blockOf(connected: ConnectedClient, measure: string): Promise<Block> {
+  const outcome = await callTool(connected, "get_measure", { measure });
+  expect(outcome.isError).toBe(false);
+  return outcome.structured?.["statute_links_by_source"] as Block;
+}
+
 describe("amendments the fixture has no row for", () => {
   // SB 69-A9: a number that names A-Engrossed, on SB 69-2's file, whose header names Introduced.
   // SB 69-3: the file is SB 69's Introduced Version, which has no "PROPOSED AMENDMENTS TO" header.
@@ -387,6 +405,25 @@ describe("files that never came", () => {
       );
     });
 
+    // The amendment's header and number name A-Engrossed, which was not fetched, but B-Engrossed and Enrolled are
+    // held: the amendment is replaced by a Version printed after the one it amends, whether or not that one came.
+    it("does not list HB 3795-A3's links as current when B-Engrossed and Enrolled are held, though its own A-Engrossed is not", async () => {
+      const block = await blockOf(connected, "HB 3795");
+
+      expect(block.versions.map((version) => version.label)).toEqual(["Introduced", "B-Engrossed", "Enrolled"]);
+      expect(block.proposed_amendments).toEqual([]);
+      expect(block.superseded_amendments.find((amendment) => amendment.number === "-A3")).toEqual({
+        id: "amendment-2025r1-hb3795-a3",
+        number: "-A3",
+        amended_version: { id: null, label: "A-Engrossed", source_url: null },
+        later_version: {
+          id: "version-2025r1-hb3795-b-engrossed",
+          label: "B-Engrossed",
+          source_url: `${root}/MeasureDocument/HB3795/B-Engrossed`,
+        },
+      });
+    });
+
     it("lists SB 69-2's postings as not fetched and has no file to read, so the Version is not known", async () => {
       const outcome = await callTool(connected, "compare_amendment", { amendment: "SB 69-2" });
 
@@ -402,6 +439,58 @@ describe("files that never came", () => {
         reason:
           "This index holds no file of the amendment, so its header, which names the Version it amends, cannot be read.",
       });
+    });
+  });
+});
+
+describe("files that never came, when no later Version came either", () => {
+  // HB 3795's A-Engrossed, B-Engrossed and Enrolled Versions all answer 404, so the store holds its Introduced Version
+  // only. HB 3795-1 amends Introduced, which is held, and nothing later is held: its links are current. HB 3795-A3
+  // names A-Engrossed, which is not held, and nothing later is held either: it stays listed, labelled "not known".
+  let system: System;
+
+  beforeAll(async () => {
+    system = await startSystem({
+      clockAt,
+      documents: true,
+      serverEnv: { MCP_RATE_LIMIT: "1000" },
+      olis: {
+        documentFailures: {
+          [`${root}/MeasureDocument/HB3795/A-Engrossed`]: [404],
+          [`${root}/MeasureDocument/HB3795/B-Engrossed`]: [404],
+          [`${root}/MeasureDocument/HB3795/Enrolled`]: [404],
+        },
+      },
+    });
+  }, 60_000);
+
+  afterAll(async () => {
+    await system.stop();
+  });
+
+  describe.for(eras)("for a %s client", (era) => {
+    let connected: ConnectedClient;
+
+    beforeAll(async () => {
+      connected = await connectClient(era, system.handler);
+    });
+
+    afterAll(async () => {
+      await connected.close();
+    });
+
+    it("keeps HB 3795-A3 listed, labelled as not known, and keeps -1 listed, because no later Version is held", async () => {
+      const block = await blockOf(connected, "HB 3795");
+
+      expect(block.versions.map((version) => version.label)).toEqual(["Introduced"]);
+      expect(block.superseded_amendments).toEqual([]);
+      expect(block.proposed_amendments.map((amendment) => [amendment.id, amendment.amended_version.known])).toEqual([
+        ["amendment-2025r1-hb3795-1", true],
+        ["amendment-2025r1-hb3795-a3", false],
+      ]);
+      expect(block.proposed_amendments[1]?.amended_version.reason).toBe(
+        "The amendment's header and number both name the A-Engrossed Version of HB 3795, which this index does not hold.",
+      );
     });
   });
 });

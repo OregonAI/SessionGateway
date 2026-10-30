@@ -180,6 +180,7 @@ export function placeStoredAmendment(
         },
       };
     }
+    case "not_held":
     case "unknown":
       return {
         placement,
@@ -235,7 +236,26 @@ const versionEntryOutput = z.object({
     .describe("The Version's Statute Links, by kind (amends, repeals, adds-to, cites) and then by measure section."),
 });
 
-const versionRefOutput = z.object({ id: z.string(), label: z.string() });
+/** A Version named in superseded_amendments: the one the amendment amends (which may not be held), or the one that replaces it. */
+const amendedVersionRefOutput = z.object({
+  id: z
+    .string()
+    .nullable()
+    .describe(
+      "The Version's id, which get_document resolves. Null when this index does not hold the Version the amendment names: its file did not come.",
+    ),
+  label: z.string().describe('The Version as the Legislature describes it: "Introduced", "A-Engrossed"...'),
+  source_url: z
+    .string()
+    .nullable()
+    .describe("Where the Legislature publishes the Version. Null when this index does not hold it."),
+});
+
+const laterVersionRefOutput = z.object({
+  id: z.string().describe("The Version's id, which get_document resolves."),
+  label: z.string().describe('The Version as the Legislature describes it: "B-Engrossed", "Enrolled"...'),
+  source_url: z.string().describe("Where the Legislature publishes the Version."),
+});
 
 export const statuteLinksBySourceOutput = z.object({
   versions: z
@@ -262,15 +282,17 @@ export const statuteLinksBySourceOutput = z.object({
       }),
     )
     .describe(
-      "The Proposed Amendments whose Statute Links apply now: the ones with no later Version held, and the ones whose Version is not known. Ordered by amendment number.",
+      "The Proposed Amendments whose Statute Links apply now: the ones with no Version held later than the one they amend, and the ones whose Version cannot be named. The Version an amendment amends is the one its header and number name, whether or not this index holds it. Ordered by amendment number.",
     ),
   superseded_amendments: z
     .array(
       z.object({
         id: z.string().describe("The amendment's id, which compare_amendment takes."),
         number: z.string().describe("The amendment's number."),
-        amended_version: versionRefOutput.describe("The Version the amendment amends."),
-        later_version: versionRefOutput.describe("The next Version after it that this index holds."),
+        amended_version: amendedVersionRefOutput.describe(
+          "The Version the amendment amends, as its header and number name it, whether or not this index holds it.",
+        ),
+        later_version: laterVersionRefOutput.describe("The next Version after it that this index holds."),
       }),
     )
     .describe(
@@ -283,7 +305,7 @@ export type StatuteLinksBySourceOutput = z.infer<typeof statuteLinksBySourceOutp
 
 /** What `note` says. */
 export const SUPERSEDED_AMENDMENTS_NOTE =
-  "A Proposed Amendment's Statute Links are listed under proposed_amendments only while this index holds no Version later than the one the amendment amends, because the next Version's own Statute Links replace them. The amendments left out are in superseded_amendments, and compare_amendment still answers for each. An amendment whose Version is not known stays in proposed_amendments.";
+  "A Proposed Amendment's Statute Links are listed under proposed_amendments only while this index holds no Version later than the one the amendment amends, because the next Version's own Statute Links replace them. The amendments left out are in superseded_amendments, and compare_amendment still answers for each. An amendment whose Version cannot be named stays in proposed_amendments.";
 
 /** A Version in the order they were printed in; one with no place in that order after the others, by name. */
 function compareVersions(a: StoredVersion, b: StoredVersion): number {
@@ -303,9 +325,28 @@ function nextVersionAfter(rank: number, versions: readonly StoredVersion[]): Sto
 }
 
 /**
+ * The Version an amendment's evidence names, held or not, and where it sits in the order of printing. Undefined
+ * when the evidence names none, or a Version that sits nowhere in that order.
+ */
+function namedVersionOf(placement: AmendmentPlacement): { description: string; rank: number } | undefined {
+  switch (placement.kind) {
+    case "version":
+    case "not_held": {
+      const rank = versionRankOf(placement.description);
+      return rank === undefined ? undefined : { description: placement.description, rank };
+    }
+    case "unknown":
+      return undefined;
+    default:
+      return placement satisfies never;
+  }
+}
+
+/**
  * The Measure's Statute Links by the Version or Proposed Amendment they were read from. A Proposed Amendment's
  * links are listed while the store holds no Version later than the one it amends, and not after: the next
- * Version's own links replace them (ADR-0001, ADR-0015). One whose Version is not known stays listed.
+ * Version's own links replace them (ADR-0001, ADR-0015). The Version an amendment amends is the one its header
+ * and number name, whether or not the store holds that Version's file. One whose Version is not known stays listed.
  */
 export function statuteLinksBySourceOf(
   key: MeasureKey,
@@ -316,14 +357,18 @@ export function statuteLinksBySourceOf(
   const superseded: StatuteLinksBySourceOutput["superseded_amendments"] = [];
   for (const amendment of amendments) {
     const { placement, version, shown } = placeStoredAmendment(amendment, key, versions);
-    const amendedRank = placement.kind === "version" ? versionRankOf(placement.description) : undefined;
-    const later = amendedRank === undefined ? undefined : nextVersionAfter(amendedRank, versions);
-    if (version !== undefined && later !== undefined) {
+    const named = namedVersionOf(placement);
+    const later = named === undefined ? undefined : nextVersionAfter(named.rank, versions);
+    if (named !== undefined && later !== undefined) {
       superseded.push({
         id: amendment.id,
         number: amendment.number,
-        amended_version: { id: version.id, label: version.label },
-        later_version: { id: later.id, label: later.label },
+        amended_version: {
+          id: version?.id ?? null,
+          label: named.description,
+          source_url: version?.sourceUrl ?? null,
+        },
+        later_version: { id: later.id, label: later.label, source_url: later.sourceUrl },
       });
       continue;
     }

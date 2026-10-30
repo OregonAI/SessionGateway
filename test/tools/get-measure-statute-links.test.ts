@@ -44,8 +44,8 @@ type VersionEntry = {
 type Superseded = {
   id: string;
   number: string;
-  amended_version: { id: string; label: string };
-  later_version: { id: string; label: string };
+  amended_version: { id: string | null; label: string; source_url: string | null };
+  later_version: { id: string; label: string; source_url: string };
 };
 type ByAmendment = { id: string; number: string };
 type StatuteLinksBySource = {
@@ -180,14 +180,30 @@ describe.for(eras)("get_measure's Statute Links for a %s client", (era) => {
         {
           id: "amendment-2025r1-sb69-1",
           number: "-1",
-          amended_version: { id: "version-2025r1-sb69-introduced", label: "Introduced" },
-          later_version: { id: "version-2025r1-sb69-a-engrossed", label: "A-Engrossed" },
+          amended_version: {
+            id: "version-2025r1-sb69-introduced",
+            label: "Introduced",
+            source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/Introduced",
+          },
+          later_version: {
+            id: "version-2025r1-sb69-a-engrossed",
+            label: "A-Engrossed",
+            source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/A-Engrossed",
+          },
         },
         {
           id: "amendment-2025r1-sb69-2",
           number: "-2",
-          amended_version: { id: "version-2025r1-sb69-introduced", label: "Introduced" },
-          later_version: { id: "version-2025r1-sb69-a-engrossed", label: "A-Engrossed" },
+          amended_version: {
+            id: "version-2025r1-sb69-introduced",
+            label: "Introduced",
+            source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/Introduced",
+          },
+          later_version: {
+            id: "version-2025r1-sb69-a-engrossed",
+            label: "A-Engrossed",
+            source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/A-Engrossed",
+          },
         },
       ]);
     });
@@ -200,21 +216,37 @@ describe.for(eras)("get_measure's Statute Links for a %s client", (era) => {
         {
           id: "amendment-2025r1-hb3795-1",
           number: "-1",
-          amended_version: { id: "version-2025r1-hb3795-introduced", label: "Introduced" },
-          later_version: { id: "version-2025r1-hb3795-a-engrossed", label: "A-Engrossed" },
+          amended_version: {
+            id: "version-2025r1-hb3795-introduced",
+            label: "Introduced",
+            source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/HB3795/Introduced",
+          },
+          later_version: {
+            id: "version-2025r1-hb3795-a-engrossed",
+            label: "A-Engrossed",
+            source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/HB3795/A-Engrossed",
+          },
         },
         {
           id: "amendment-2025r1-hb3795-a3",
           number: "-A3",
-          amended_version: { id: "version-2025r1-hb3795-a-engrossed", label: "A-Engrossed" },
-          later_version: { id: "version-2025r1-hb3795-b-engrossed", label: "B-Engrossed" },
+          amended_version: {
+            id: "version-2025r1-hb3795-a-engrossed",
+            label: "A-Engrossed",
+            source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/HB3795/A-Engrossed",
+          },
+          later_version: {
+            id: "version-2025r1-hb3795-b-engrossed",
+            label: "B-Engrossed",
+            source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/HB3795/B-Engrossed",
+          },
         },
       ]);
     });
 
     it("says where the left-out amendments are and what answers for them", async () => {
       expect((await linksOf("SB 69")).note).toBe(
-        "A Proposed Amendment's Statute Links are listed under proposed_amendments only while this index holds no Version later than the one the amendment amends, because the next Version's own Statute Links replace them. The amendments left out are in superseded_amendments, and compare_amendment still answers for each. An amendment whose Version is not known stays in proposed_amendments.",
+        "A Proposed Amendment's Statute Links are listed under proposed_amendments only while this index holds no Version later than the one the amendment amends, because the next Version's own Statute Links replace them. The amendments left out are in superseded_amendments, and compare_amendment still answers for each. An amendment whose Version cannot be named stays in proposed_amendments.",
       );
     });
   });

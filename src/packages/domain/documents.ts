@@ -204,9 +204,16 @@ function citationOf(measure: { prefix: string; number: number }): string {
   return `${measure.prefix} ${measure.number}`;
 }
 
-/** Where a Proposed Amendment's Version is, as far as the evidence goes, and why (ADR-0015). */
+/**
+ * Where a Proposed Amendment's Version is, as far as the evidence goes, and why (ADR-0015). `version`: the header
+ * and the number name a Version and the store holds it. `not_held`: they name one, but the store does not hold
+ * it (its file did not come). The Version is then known by name, and where it sits in the order of printing is
+ * known with it. `unknown`: the evidence does not name one.
+ */
 export type AmendmentPlacement =
-  { kind: "version"; versionId: DocumentId; description: string; reason: string } | { kind: "unknown"; reason: string };
+  | { kind: "version"; versionId: DocumentId; description: string; reason: string }
+  | { kind: "not_held"; description: string; reason: string }
+  | { kind: "unknown"; reason: string };
 
 /**
  * Says which Version of the Measure a Proposed Amendment amends. The amendment's own header names it and its
@@ -267,9 +274,11 @@ export function placeAmendment(
   }
   const versionId = versionIdOf(key, fromHeader);
   if (!isHeld(versionId)) {
-    return unknown(
-      `The amendment's header and number both name the ${fromHeader} Version of ${key.prefix} ${key.number}, which this index does not hold.`,
-    );
+    return {
+      kind: "not_held",
+      description: fromHeader,
+      reason: `The amendment's header and number both name the ${fromHeader} Version of ${own}, which this index does not hold.`,
+    };
   }
   return {
     kind: "version",
