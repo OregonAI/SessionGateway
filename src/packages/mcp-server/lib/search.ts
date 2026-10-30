@@ -133,22 +133,26 @@ export type SearchResult =
   | { kind: "unknown_committee"; reference: string; session: SessionKey }
   | { kind: "backwards_range"; from: string; to: string };
 
-/** A passage or document a hit is made from, and how it was found. */
+type FoundBy = "citation" | "keyword" | "embedding";
+/** The order `found_by` lists how a hit was found in. */
+const foundByOrder: readonly FoundBy[] = ["citation", "keyword", "embedding"];
+
+/** The id a hit carries: a document's, or for a posting its Proposed Amendment's. */
+type HitId = DocumentId | AmendmentId;
+
+/** A document a hit is made from, the passage its snippet is cut from, and how it was found. */
 type Candidate = {
   documentId: DocumentId;
   passageId: number | null;
   foundBy: Set<FoundBy>;
 };
-type FoundBy = "citation" | "keyword" | "embedding";
 
-export async function search(
+/** What the call's arguments mean for the index: or the reason they can't be met. */
+function filterOf(
   deps: SearchDeps,
   session: SessionKey,
   input: z.infer<typeof searchInput>,
-): Promise<SearchResult> {
-  const asOf = deps.reader.asOf(session);
-  if (asOf === undefined) throw new Error(`The index holds no completed full pull of ${session} to date it by`);
-  const limit = input.limit ?? DEFAULT_LIMIT;
+): { kind: "filter"; filter: SearchFilter } | Exclude<SearchResult, { kind: "found" }> {
   const measure = input.measure === undefined ? undefined : parseMeasureReference(input.measure, session);
   if (input.measure !== undefined && (measure === undefined || deps.reader.findMeasure(measure) === undefined)) {
     return { kind: "unknown_measure", reference: input.measure, session };
@@ -160,102 +164,159 @@ export async function search(
   if (input.from !== undefined && input.to !== undefined && input.from > input.to) {
     return { kind: "backwards_range", from: input.from, to: input.to };
   }
-  // Testimony is left out unless the call asks for it, or for it by kind, or the search is scoped to one
-  // Measure (spec #1 story 11).
-  const filter: SearchFilter = {
-    session,
-    withTestimony: input.include_testimony === true || input.kind === "testimony" || measure !== undefined,
-    ...(input.kind === undefined ? {} : { kind: input.kind }),
-    ...(measure === undefined ? {} : { measure: measureIdOf(measure) }),
-    ...(committee === undefined ? {} : { committee: committee.id }),
-    ...(input.from === undefined ? {} : { from: input.from }),
-    ...(input.to === undefined ? {} : { to: input.to }),
+  return {
+    kind: "filter",
+    filter: {
+      session,
+      // Testimony is left out unless the call asks for it, or for it by kind, or the search is scoped to one
+      // Measure (spec #1 story 11).
+      withTestimony: input.include_testimony === true || input.kind === "testimony" || measure !== undefined,
+      ...(input.kind === undefined ? {} : { kind: input.kind }),
+      ...(measure === undefined ? {} : { measure: measureIdOf(measure) }),
+      ...(committee === undefined ? {} : { committee: committee.id }),
+      ...(input.from === undefined ? {} : { from: input.from }),
+      ...(input.to === undefined ? {} : { to: input.to }),
+    },
   };
+}
 
-  // What the query names exactly comes first, in the order it names it (docs/adr/0025, "Citations").
-  const citations = findCitations(input.query, session);
-  const cited = new Map<DocumentId | AmendmentId, Candidate>();
+/** What the query names exactly, in the order it names it, each document once (docs/adr/0025, "Exact citations come first"). */
+function citedCandidates(
+  index: SearchIndexReader,
+  citations: readonly Citation[],
+  filter: SearchFilter,
+): Map<HitId, Candidate> {
+  const cited = new Map<HitId, Candidate>();
   for (const citation of citations) {
-    for (const found of documentsCitedBy(deps.searchIndex, citation, filter)) {
-      if (!cited.has(found.nodeId)) {
-        cited.set(found.nodeId, {
-          documentId: found.documentId,
-          passageId: found.passageId,
-          foundBy: new Set(["citation"]),
-        });
-      }
+    for (const found of documentsCitedBy(index, citation, filter)) {
+      if (cited.has(found.nodeId)) continue;
+      cited.set(found.nodeId, {
+        documentId: found.documentId,
+        passageId: found.passageId,
+        foundBy: new Set(["citation"]),
+      });
     }
   }
+  return cited;
+}
 
-  const terms = termsOf(input.query);
-  const match = matchExpressionOf(terms, citations.map(phraseOf));
-  const passages = match === undefined ? [] : deps.searchIndex.keyword(match, filter, CANDIDATE_PASSAGES);
-  // One entry for each id a hit carries, at the best passage that matched it, best first.
-  const byKeyword = new Map<DocumentId | AmendmentId, Candidate>();
-  for (const passage of passages) {
-    if (byKeyword.has(passage.nodeId)) continue;
-    byKeyword.set(passage.nodeId, {
+/** The documents whose passages match the words, best first, each at its best passage. */
+function keywordCandidates(
+  index: SearchIndexReader,
+  match: string | undefined,
+  filter: SearchFilter,
+): Map<HitId, Candidate> {
+  const found = new Map<HitId, Candidate>();
+  if (match === undefined) return found;
+  for (const passage of index.keyword(match, filter, CANDIDATE_PASSAGES)) {
+    if (found.has(passage.nodeId)) continue;
+    found.set(passage.nodeId, {
       documentId: passage.documentId,
       passageId: passage.passageId,
       foundBy: new Set(["keyword"]),
     });
   }
+  return found;
+}
 
-  // The meaning side. A query that is nothing but citations has no meaning to look for, and an index with no
-  // vectors has nothing to look in, so neither embeds the question.
-  const byEmbedding = new Map<DocumentId | AmendmentId, Candidate>();
-  const withoutCitations = citations.reduce((text, citation) => text.replace(citation.text, " "), input.query);
+/**
+ * The documents whose passages are nearest the question in meaning, nearest first, each at its nearest
+ * passage. A query that is nothing but citations has no meaning to look for, and an index with no vectors
+ * has nothing to look in, so neither embeds the question.
+ */
+async function embeddingCandidates(
+  deps: SearchDeps,
+  query: string,
+  citations: readonly Citation[],
+  filter: SearchFilter,
+): Promise<Map<HitId, Candidate>> {
+  const found = new Map<HitId, Candidate>();
+  const withoutCitations = citations.reduce((text, citation) => text.replaceAll(citation.text, " "), query);
+  if (termsOf(withoutCitations).length === 0) return found;
   const vectors = deps.vectors.current();
-  if (termsOf(withoutCitations).length > 0 && vectors.index.size > 0) {
-    const question = quantizeUnitVector(await deps.embedder.embedQuestion(input.query));
-    const near = vectors.index.nearest(
-      question,
-      (documentIndex) => acceptsDocument(filter, vectors.documents.facts[documentIndex] as DocumentFacts),
-      CANDIDATE_PASSAGES,
-    );
-    for (const passage of near) {
-      const nodeId = vectors.documents.nodeIds[passage.documentIndex] as DocumentId | AmendmentId;
-      if (byEmbedding.has(nodeId)) continue;
-      byEmbedding.set(nodeId, {
-        documentId: vectors.documents.documentIds[passage.documentIndex] as DocumentId,
-        passageId: passage.passageId,
-        foundBy: new Set(["embedding"]),
-      });
-    }
+  if (vectors.index.size === 0) return found;
+  const question = quantizeUnitVector(await deps.embedder.embedQuestion(query));
+  const near = vectors.index.nearest(
+    question,
+    (documentIndex) => acceptsDocument(filter, vectors.documents.facts[documentIndex] as DocumentFacts),
+    CANDIDATE_PASSAGES,
+  );
+  for (const passage of near) {
+    const nodeId = vectors.documents.nodeIds[passage.documentIndex] as HitId;
+    if (found.has(nodeId)) continue;
+    found.set(nodeId, {
+      documentId: vectors.documents.documentIds[passage.documentIndex] as DocumentId,
+      passageId: passage.passageId,
+      foundBy: new Set(["embedding"]),
+    });
   }
+  return found;
+}
 
-  // The two sides become one list by reciprocal rank fusion; what a citation names exactly comes before it.
-  const ranked = new Map<DocumentId | AmendmentId, Candidate>(cited);
-  for (const nodeId of reciprocalRankFusion([[...byKeyword.keys()], [...byEmbedding.keys()]])) {
-    const sides = [byKeyword.get(nodeId), byEmbedding.get(nodeId)].filter(
+/**
+ * The hits in order: what a citation names exactly first, then the keyword and meaning rankings fused by
+ * reciprocal rank fusion. A hit's snippet is cut from the passage the words matched, else the one the meaning
+ * matched, and it says every way it was found.
+ */
+function orderedCandidates(
+  cited: ReadonlyMap<HitId, Candidate>,
+  byKeyword: ReadonlyMap<HitId, Candidate>,
+  byEmbedding: ReadonlyMap<HitId, Candidate>,
+): Candidate[] {
+  const ranked = new Map<HitId, Candidate>(cited);
+  for (const id of reciprocalRankFusion([[...byKeyword.keys()], [...byEmbedding.keys()]])) {
+    const sides = [byKeyword.get(id), byEmbedding.get(id)].filter(
       (candidate): candidate is Candidate => candidate !== undefined,
     );
-    const already = ranked.get(nodeId);
-    for (const side of sides) for (const how of side.foundBy) already?.foundBy.add(how);
-    // The passage a snippet is cut from is the one the words matched, else the one the meaning matched.
-    if (already === undefined) {
-      const [first] = sides;
-      ranked.set(nodeId, {
-        documentId: (first as Candidate).documentId,
-        passageId: (first as Candidate).passageId,
-        foundBy: new Set(sides.flatMap((side) => [...side.foundBy])),
-      });
+    const already = ranked.get(id);
+    if (already !== undefined) {
+      for (const side of sides) for (const how of side.foundBy) already.foundBy.add(how);
+      continue;
     }
+    const [first] = sides;
+    if (first === undefined) continue;
+    ranked.set(id, {
+      documentId: first.documentId,
+      passageId: first.passageId,
+      foundBy: new Set(sides.flatMap((side) => [...side.foundBy])),
+    });
   }
-  const results = [...ranked.values()].slice(0, limit).map((candidate): SearchOutput["results"][number] => {
-    const details = deps.searchIndex.details(candidate);
-    return {
-      id: details.nodeId,
-      document_id: details.documentId,
-      kind: details.kind,
-      title: details.title,
-      measure: details.measureId,
-      date: details.date,
-      snippet: snippetOf(details.passageText, terms),
-      source_url: details.sourceUrl,
-      found_by: [...candidate.foundBy],
-    };
-  });
+  return [...ranked.values()];
+}
+
+export async function search(
+  deps: SearchDeps,
+  session: SessionKey,
+  input: z.infer<typeof searchInput>,
+): Promise<SearchResult> {
+  const asOf = deps.reader.asOf(session);
+  if (asOf === undefined) throw new Error(`The index holds no completed full pull of ${session} to date it by`);
+  const resolved = filterOf(deps, session, input);
+  if (resolved.kind !== "filter") return resolved;
+  const filter = resolved.filter;
+
+  const citations = findCitations(input.query, session);
+  const terms = termsOf(input.query);
+  const cited = citedCandidates(deps.searchIndex, citations, filter);
+  const byKeyword = keywordCandidates(deps.searchIndex, matchExpressionOf(terms, citations.map(phraseOf)), filter);
+  const byEmbedding = await embeddingCandidates(deps, input.query, citations, filter);
+
+  const results = orderedCandidates(cited, byKeyword, byEmbedding)
+    .slice(0, input.limit ?? DEFAULT_LIMIT)
+    .map((candidate): SearchOutput["results"][number] => {
+      const details = deps.searchIndex.details(candidate);
+      return {
+        id: details.nodeId,
+        document_id: details.documentId,
+        kind: details.kind,
+        title: details.title,
+        measure: details.measureId,
+        date: details.date,
+        snippet: snippetOf(details.passageText, terms),
+        source_url: details.sourceUrl,
+        found_by: foundByOrder.filter((how) => candidate.foundBy.has(how)),
+      };
+    });
   return { kind: "found", search: { query: input.query, results, as_of: asOf, notice: NON_OFFICIAL_NOTICE } };
 }
 
@@ -274,7 +335,7 @@ function documentsCitedBy(index: SearchIndexReader, citation: Citation, filter: 
     }
     case "ors": {
       const exact = orsCitationPattern(citation.id);
-      const documents = new Map<DocumentId | AmendmentId, CitedDocument>();
+      const documents = new Map<HitId, CitedDocument>();
       // The keyword side finds the passages that hold the words in order; the pattern keeps those that
       // hold the citation and not a longer number.
       for (const passage of index.keyword(
