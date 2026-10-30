@@ -103,4 +103,26 @@ describe("the requests of one get_measure call", () => {
     expect(answers.map((answer) => answer.isError)).toEqual([false, false, false, true, true]);
     expect(system.olis.requests()).toHaveLength(15);
   });
+
+  // The limiter is a fixed window that opens with its first call (mcp-server/lib/rate-limit.ts), so a burst
+  // can straddle a boundary: with a limit of 3, the first call opened the window a minute ago, two more
+  // are answered in its last second, and three in the first second of the next window. Those five calls
+  // within one second of the clock ask 5 x 5 = 25 questions, not the 15 of a window's worth.
+  it("asks 25 questions for the 5 calls a limit of 3 lets through in the second around a window boundary", async () => {
+    const system = await systemAfterThePull({ MCP_RATE_LIMIT: "3", MCP_RATE_WINDOW_SECONDS: "60" });
+    const connected = await connectClient("2026-07-28", system.handler);
+    const call = (): ReturnType<typeof callTool> => callTool(connected, "get_measure", { measure: "SB 69" });
+    expect((await call()).isError).toBe(false);
+    system.olis.forgetRequests();
+
+    system.clock.advance(59_000);
+    const endOfTheFirstWindow = [await call(), await call(), await call()];
+    system.clock.advance(1_000);
+    const startOfTheSecond = [await call(), await call(), await call(), await call()];
+    await connected.close();
+
+    expect(endOfTheFirstWindow.map((answer) => answer.isError)).toEqual([false, false, true]);
+    expect(startOfTheSecond.map((answer) => answer.isError)).toEqual([false, false, false, true]);
+    expect(system.olis.requests()).toHaveLength(25);
+  });
 });

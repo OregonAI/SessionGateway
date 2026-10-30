@@ -49,8 +49,11 @@ SESSION_KEY=2025R1 DATABASE_PATH=data/index.db node src/bin/server.ts   # serves
 
 `get_measure` reads the Measure's location, history, schedule and votes from OLIS when a call arrives
 (the `live_status` block, dated by the clock at the read). That is five OData requests for each call,
-all filtered to that one Measure, so at the default rate limit the server makes at most 600 a minute. If
-OLIS cannot be read the block holds the index's values and says the lookup failed.
+all filtered to that one Measure. The rate limit is a fixed window, so at the default 120 calls a minute
+the server makes at most 600 requests in a window, and up to 1,195 within one minute when a burst of
+calls straddles two windows (the window opens with its first call, so 119 calls at the end of one window
+and 120 at the start of the next are all answered). If OLIS cannot be read the block holds the index's
+values and says the lookup failed.
 
 A full pull against the live feed is allowed only between 5 pm and 6 am Pacific (ADR-0005). Nothing
 schedules it yet, so run it by hand inside that window.
