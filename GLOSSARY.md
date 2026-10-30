@@ -190,6 +190,14 @@ _Avoid_: reference, citation, when the kind matters
 A numbered section of a Version or Proposed Amendment, printed "SECTION 8." and written "§8" (or "§21a" for one inserted later). A Statute Link names the measure section it is read in.
 _Avoid_: section, unqualified (an ORS section is another thing)
 
+**Amended Version**:
+The Version a Proposed Amendment amends. The amendment's own header names it ("PROPOSED AMENDMENTS TO / SENATE BILL 69" is the Introduced Version, "A-ENGROSSED HOUSE BILL 3795" the A-Engrossed one) and so does the letter in its number ("-2" is Introduced, "-A3" is A-Engrossed). It is known only when the two agree and the Index holds that Version; otherwise it is not known, and nothing is guessed (ADR-0015).
+_Avoid_: base Version, parent Version
+
+**Superseded amendment**:
+A Proposed Amendment whose Amended Version is no longer the latest the Index holds. `get_measure` leaves its Statute Links out and lists it apart, because the next Version's own links replace them (ADR-0001, ADR-0015); `compare_amendment` still answers for it.
+_Avoid_: withdrawn, rejected (the committee's action on an amendment is its Meaning at each Posting)
+
 **Relating clause**:
 The words of a Measure's text that say what it does to the statutes: "Relating to human services; amending ORS 409.711." They start on line 2 of page 1 and can run over several lines (SB 69's A-Engrossed Version has three). A Proposed Amendment can edit them.
 _Avoid_: title

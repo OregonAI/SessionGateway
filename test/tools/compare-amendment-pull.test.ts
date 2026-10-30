@@ -183,6 +183,15 @@ describe("amendments the fixture has no row for", () => {
       expect(comparison.amended_version.known).toBe(false);
     });
 
+    // The operator reads the same fact in the build report (spec #1, story 54): a posting with no text layer is on its list of
+    // documents with no text layer, so the scan is chased and not read as an amendment with no Statute Links.
+    it("puts the scan on the build report's list of documents with no text layer", () => {
+      expect(system.buildReport()["documents_without_text_layer"]).toContainEqual({
+        id: "posting-2025r1-990004",
+        source_url: `${root}/ProposedAmendment/990004`,
+      });
+    });
+
     it("lists the postings of the amendments it was asked about, made up or not, and no others", async () => {
       expect((await compare("SB 69-A9")).amendment.postings.map((posting) => posting.id)).toEqual([
         "posting-2025r1-990001",
