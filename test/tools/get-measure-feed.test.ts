@@ -107,6 +107,19 @@ describe("the simulated clock", () => {
   });
 });
 
+describe("the OLIS base URL", () => {
+  // docs/research/olis-odata.md writes the service root as https://api.oregonlegislature.gov/odata/odataservice.svc
+  // with no trailing slash, and that is what an operator will copy into OLIS_BASE_URL.
+  it("reaches the feed from the service root written without a trailing slash", async () => {
+    const outcome = await getMeasure(
+      { clockAt: "2025-12-15T17:00:00Z", olisBaseUrl: (root) => root.replace(/\/$/, "") },
+      "SB 69",
+    );
+
+    expect(outcome.structured).toMatchObject({ id: "measure-2025r1-sb69" });
+  });
+});
+
 describe("the feed's paging", () => {
   // The fixture holds these eight Measures of 2025R1 (test/fixtures/olis-2025R1/measures.txt).
   const fixtureMeasures = [

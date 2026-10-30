@@ -24,6 +24,11 @@ export type SystemOptions = {
   /** The deployment's Session (the SESSION_KEY variable). */
   sessionKey?: string;
   olis?: Omit<FakeOlisOptions, "clock">;
+  /**
+   * Rewrites the fake OLIS's service root, ending in a slash, into the OLIS_BASE_URL the worker is
+   * given. For writing the root the way docs/research/olis-odata.md does, without the slash.
+   */
+  olisBaseUrl?: (serviceRoot: string) => string;
   /** Further environment variables for the server's configuration (MCP_PATH, MCP_PORT, ...). */
   serverEnv?: Record<string, string>;
 };
@@ -47,7 +52,7 @@ export async function startSystem(options: SystemOptions): Promise<System> {
   const database = createTempDatabase();
   const env = {
     SESSION_KEY: options.sessionKey ?? "2025R1",
-    OLIS_BASE_URL: olis.baseUrl,
+    OLIS_BASE_URL: options.olisBaseUrl === undefined ? olis.baseUrl : options.olisBaseUrl(olis.baseUrl),
     DATABASE_PATH: database.path,
   };
   try {

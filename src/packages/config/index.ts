@@ -35,9 +35,20 @@ const sessionKey = z.string().transform((text, context) => {
   return parsed;
 });
 
+/**
+ * The OLIS client resolves each entity set against the base URL, which drops the last path segment
+ * of a base that does not end in a slash. docs/research/olis-odata.md writes the service root without
+ * one, so the slash is added here, at the edge, whichever way the operator writes it.
+ */
+const serviceRoot = z.url().transform((text) => {
+  const url = new URL(text);
+  if (!url.pathname.endsWith("/")) url.pathname += "/";
+  return url.href;
+});
+
 const ingestSchema = z.object({
   SESSION_KEY: sessionKey,
-  OLIS_BASE_URL: z.url(),
+  OLIS_BASE_URL: serviceRoot,
   DATABASE_PATH: z.string().min(1),
 });
 
