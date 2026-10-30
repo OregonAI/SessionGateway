@@ -346,3 +346,28 @@ describe.for(failures)("the live status when OLIS %s", ([, behavior, timeoutMs, 
     });
   });
 });
+
+describe("the bound on a live lookup", () => {
+  // OLIS_LIVE_TIMEOUT_MS is not set here, so this is the bound a deployment gets: the tool still answers
+  // promptly when OLIS accepts the request and never replies. It takes that long, once.
+  it("is 5 seconds unless the deployment sets another: then the cache answers", async () => {
+    const system = await startSystem({ clockAt: pulledAt });
+    try {
+      system.clock.set(readAt);
+      system.olis.behave({ kind: "hang" });
+      const connected = await connectClient("2026-07-28", system.handler);
+
+      const started = Date.now();
+      const outcome = await callTool(connected, "get_measure", { measure: "SB 69" });
+      const waited = Date.now() - started;
+      await connected.close();
+
+      expect(liveStatusOf(outcome)).toMatchObject({ source: "cache", lookup_failed: true });
+      expect(liveStatusOf(outcome)?.notice).toContain("did not answer within 5 seconds");
+      expect(waited).toBeGreaterThanOrEqual(4_900);
+      expect(waited).toBeLessThan(8_000);
+    } finally {
+      await system.stop();
+    }
+  }, 15_000);
+});

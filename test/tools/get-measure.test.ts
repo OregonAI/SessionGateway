@@ -129,4 +129,20 @@ describe.for(eras)("get_measure for a %s client", (era) => {
     expect(tools[0]?.annotations?.readOnlyHint).toBe(true);
     expect(tools[0]?.outputSchema).toBeDefined();
   });
+
+  // The tool reads OLIS when a call arrives (ticket #21), so it touches a world outside the index.
+  it("advertises get_measure as open-world: it reads OLIS when a call arrives", async () => {
+    const { tools } = await connected.client.listTools();
+
+    expect(tools[0]?.annotations?.openWorldHint).toBe(true);
+  });
+
+  it("tells an agent that a live_status from the cache means the live lookup failed, and that the cache has no schedule", async () => {
+    const { tools } = await connected.client.listTools();
+    const schema = tools[0]?.outputSchema;
+
+    expect(describedAs(schema, ["live_status", "source"])).toContain('"cache" when the live lookup failed');
+    expect(describedAs(schema, ["live_status", "schedule"])).toContain('Null when source is "cache"');
+    expect(describedAs(tools[0], [])).toMatch(/live/i);
+  });
 });

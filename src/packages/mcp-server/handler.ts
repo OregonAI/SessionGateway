@@ -37,10 +37,10 @@ function buildServer(
     {
       title: "Get a Measure",
       description:
-        "Looks up one Measure of the Session by its id or citation and returns its catchline, its current location and history, its sponsors who are Legislators in print order, its floor votes and committee votes with each Legislator's vote, a link to its OLIS page, when this index was last refreshed (the location, history and votes are as of then) and a notice that it is not the official record.",
+        "Looks up one Measure of the Session by its id or citation and returns its catchline, its sponsors who are Legislators in print order, a link to its OLIS page, when this index was last refreshed and a notice that it is not the official record. Its location, history, floor votes and committee votes are given twice: as the index last pulled them (as_of), and in live_status, read from OLIS when the call arrives with the committee meetings still ahead of the Measure (its schedule). If OLIS cannot be read, live_status holds the index's values and says plainly that the live lookup failed.",
       inputSchema: getMeasureInput,
       outputSchema: getMeasureOutput,
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: { readOnlyHint: true, openWorldHint: true },
     },
     async (input) => {
       // The MCP specification requires servers to rate-limit tool calls (src/CLAUDE.md, "MCP"). A

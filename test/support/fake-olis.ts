@@ -153,8 +153,7 @@ function sendError(response: ServerResponse, status: number, message: string): v
 }
 
 type FilterTerm =
-  | { property: string; operator: "eq"; value: string | number }
-  | { property: string; operator: "ge"; value: number; isDatetime: true };
+  { property: string; operator: "eq"; value: string | number } | { property: string; operator: "ge"; value: number };
 
 const textTerm = /^(\w+) eq '((?:[^']|'')*)'$/;
 const numberTerm = /^(\w+) eq (-?\d+)$/;
@@ -172,7 +171,7 @@ function parseFilter(filter: string): FilterTerm[] | { error: string } {
     } else if (asNumber?.[1] !== undefined && asNumber[2] !== undefined) {
       terms.push({ property: asNumber[1], operator: "eq", value: Number(asNumber[2]) });
     } else if (asDatetime?.[1] !== undefined && asDatetime[2] !== undefined) {
-      terms.push({ property: asDatetime[1], operator: "ge", value: feedWallClock(asDatetime[2]), isDatetime: true });
+      terms.push({ property: asDatetime[1], operator: "ge", value: feedWallClock(asDatetime[2]) });
     } else {
       return {
         error: `The fake OLIS understands only "Property eq 'text'", "Property eq 123" and "Property ge datetime'...'" joined by " and ", not "${text}".`,

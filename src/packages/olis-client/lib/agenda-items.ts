@@ -11,7 +11,7 @@ const agendaItemRow = z.looseObject({
   // The property name is misspelled in the feed (gotcha 1): CommitteCode.
   CommitteCode: z.string(),
   MeetingDate: feedTimestamp,
-  // An item that is not about a Measure has neither (3,598 of the cache's 9,275 rows); a read of one
+  // An item that is not about a Measure has neither (docs/research/olis-live.md §2); a read of one
   // Measure's items never gets one, and the rows the feed sends for another Measure are dropped.
   MeasurePrefix: z.string().nullable(),
   MeasureNumber: z.number().int().nullable(),

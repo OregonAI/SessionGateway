@@ -20,7 +20,7 @@ Expected values are literals from an independent source:
 
 ## The harness
 
-- **Fake OLIS.** An in-process `node:http` server on `127.0.0.1:0` replays `test/fixtures/` as the feed stood at the clock time. It reproduces the real feed's quirks: `$inlinecount`, 5,000-row pages with a relative `odata.nextLink`, `/$count` answered only without a JSON `Accept` header, misspelled property names, and decimal keys as strings. Because it fakes OLIS at the wire, the OLIS client's quirk handling runs in every seam-1 test, which a mocked OLIS adapter would skip.
+- **Fake OLIS.** An in-process `node:http` server on `127.0.0.1:0` replays `test/fixtures/` as the feed stood at the clock time. It reproduces the real feed's quirks: `$inlinecount`, 5,000-row pages with a relative `odata.nextLink`, `/$count` answered only without a JSON `Accept` header, misspelled property names, and decimal keys as strings. Its `$filter` is a conjunction of `eq` and `ge datetime'...'` terms, as the live lookup sends, and anything else is refused. A test changes it after the pull with `behave` (answer, fail with a status, hang, or drop the connection), `amendRows`, `addRows` and `withholdLastRows`, and reads the requests it received with `requests()`. Because it fakes OLIS at the wire, the OLIS client's quirk handling runs in every seam-1 test, which a mocked OLIS adapter would skip.
 - **Clock.** One injected `Clock` drives the fake OLIS, the worker and the server. Global fake timers freeze `performance` for the whole worker, so seam-1 tests move the injected clock instead.
 - **Time zone.** The Vitest config sets `TZ` to a zone other than Pacific before workers start. Code that quietly relies on local time then fails.
 - **Database.** A WAL file in a disposable temp directory, because WAL can't run in memory.
@@ -36,7 +36,7 @@ Expected values are literals from an independent source:
 
 The layout is the deep-module one in `src/packages/README.md`:
 - seam 2 in the parser package's own `tests/` folder, next to the parser it tests;
-- seam 1 in `test/tools/`, one file per kind of database use: `get-measure.test.ts` shares one read-only database, `get-measure-feed.test.ts` builds its own for each case, and the real-port and entry-script tests are files of their own;
+- seam 1 in `test/tools/`, one file per kind of database use: `get-measure.test.ts` shares one read-only database, `get-measure-feed.test.ts` builds its own for each case, and the real-port and entry-script tests are files of their own; the live status has `get-measure-live.test.ts` (the fixture as it stands, one pull for each describe), `get-measure-live-feed.test.ts` (what OLIS says after the pull changes, one system for each case) and `get-measure-live-requests.test.ts` (what the lookup asks OLIS);
 - the shared harness (fake OLIS, clock, MCP client) in `test/support/`;
 - fixtures in `test/fixtures/`.
 

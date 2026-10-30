@@ -31,8 +31,8 @@ async function systemAfterThePull(serverEnv?: SystemOptions["serverEnv"]): Promi
 
 describe("the requests of one get_measure call", () => {
   // Five requests, one for each kind of value in the block, none of them a count: the first page's
-  // `$inlinecount` is the count (one Measure's rows fit a page: the most any Measure has in any of these
-  // sets in the 2025R1 cache is 447 floor-vote rows, against the page's 5,000).
+  // `$inlinecount` is the count (one Measure's rows fit a page: docs/research/olis-live.md §1 has the most
+  // any Measure has in any of these sets, against the page's 5,000).
   //   Measures                Measure.CurrentLocation, the location
   //   MeasureHistoryActions   the history
   //   MeasureVotes            the floor votes
