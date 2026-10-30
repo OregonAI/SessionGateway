@@ -167,9 +167,10 @@ export type IndexWriter = {
   /**
    * Brings what the feed says about documents already stored up to date, in one transaction: each one's
    * label, the node it belongs to, when it was posted, an analysis document's Version label and minority
-   * flag and the nodes it points at, and what search files it under (its Measure, committee, title and date). A
-   * fetched file is unchanging (ADR-0005), so its text, hash, retrieval time, passages and vectors are left alone.
-   * A link whose document is not stored is ignored.
+   * flag and the nodes it points at, and what search files it under (its Measure, committee, title, date and whether
+   * it is keyword-only). A fetched file is unchanging (ADR-0005), so its text, hash, retrieval time and passages
+   * are left alone. A document that is filed as embeddable now needs its vectors to be stored before this call
+   * (`storeVectors`). A link whose document is not stored is ignored.
    */
   refreshDocuments(
     session: SessionKey,
@@ -178,6 +179,16 @@ export type IndexWriter = {
   ): void;
   /** Which of these passage hashes already have a vector under this model id. */
   storedVectorHashes(modelId: string, hashes: readonly string[]): Set<string>;
+  /** The stored documents of the Session that search files as keyword-only, by id: they have no vectors. */
+  keywordOnlyDocumentIds(session: SessionKey): Set<DocumentId>;
+  /** The passages a stored document was cut into, in order, with their text as the document has it. */
+  passagesOf(document: DocumentId): Passage[];
+  /**
+   * Keeps vectors for passages the index holds, in their own transaction. The server loads the vectors of the
+   * passages of documents that are not keyword-only, so these are not seen until the document is filed as
+   * embeddable (`refreshDocuments`).
+   */
+  storeVectors(vectors: SearchRecord["vectors"]): void;
   /** Every stored document of the Session whose file has no text layer, by id. */
   documentsWithoutTextLayer(session: SessionKey): { id: DocumentId; sourceUrl: string }[];
   /**
@@ -205,6 +216,12 @@ const unreadFileRow = z.object({
   content_hash: z.string(),
 });
 const storedTextRow = z.object({ text: z.string(), has_text_layer: z.number() });
+const passageRow = z.object({
+  start_offset: z.number(),
+  end_offset: z.number(),
+  text_hash: z.string(),
+  text: z.string(),
+});
 
 /** SQLite has no boolean: an analysis document's flag is 0 or 1, and any other document's is NULL. */
 function minorityColumn(isMinority: boolean | undefined): 0 | 1 | null {
@@ -485,6 +502,43 @@ export function openIndexWriter(path: string): IndexWriter {
     storedDocumentIds(session) {
       const rows = database.prepare("SELECT id FROM document WHERE session_key = ?").all(session);
       return new Set(rows.map((row) => idRow.parse(row).id as DocumentId));
+    },
+    keywordOnlyDocumentIds(session) {
+      const rows = database
+        .prepare("SELECT document_id AS id FROM search_document WHERE session_key = ? AND keyword_only = 1")
+        .all(session);
+      return new Set(rows.map((row) => idRow.parse(row).id as DocumentId));
+    },
+    passagesOf(document) {
+      const rows = database
+        .prepare(
+          `SELECT p.start_offset, p.end_offset, p.text_hash, d.text
+           FROM passage p JOIN document d ON d.id = p.document_id
+           WHERE p.document_id = ? ORDER BY p.ordinal`,
+        )
+        .all(document);
+      return rows.map((row) => {
+        const stored = passageRow.parse(row);
+        return {
+          start: stored.start_offset,
+          end: stored.end_offset,
+          text: stored.text.slice(stored.start_offset, stored.end_offset),
+          hash: stored.text_hash,
+        };
+      });
+    },
+    storeVectors(vectors) {
+      const insertVector = database.prepare(
+        "INSERT OR IGNORE INTO passage_vector (text_hash, model_id, vector) VALUES (?, ?, ?)",
+      );
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        for (const row of vectors.rows) insertVector.run(row.hash, vectors.modelId, row.vector);
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
     },
     storedVectorHashes(modelId, hashes) {
       const select = database.prepare("SELECT 1 AS present FROM passage_vector WHERE text_hash = ? AND model_id = ?");

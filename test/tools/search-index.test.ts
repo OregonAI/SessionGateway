@@ -253,3 +253,75 @@ describe("a search in the middle of a pull", () => {
     await connected.close();
   }, 60_000);
 });
+
+// OLIS changes a row after the file was stored (ADR-0005): the label of an Exhibit can change from a witness-registration
+// list, which is found by its words and never embedded, to material, which is found by its meaning too, and back. The
+// pull that sees the new label moves the document across, in either direction. The rows here are made up: Exhibit
+// 900005 is served with the text of HB 3131's Preliminary SMS (row 287931), filed first under one label and then under
+// the other. The embedder is the fake, whose vectors point the same way for texts that share words; the query is words
+// of the SMS and one that no document has ("zzqx"), so that no passage holds all of them and a document is found by
+// its words only if it is keyword-only, and by its meaning only if it is not.
+describe("an Exhibit whose label OLIS changes", () => {
+  const root = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument";
+  const query = "Oregon Agricultural Heritage Fund established farmland fragmentation zzqx";
+  const label = { list: "Witness Registration", material: "Meeting Material" } as const;
+
+  async function startWith(documentType: string): Promise<{ system: System; row: Record<string, unknown> }> {
+    const row: Record<string, unknown> = {
+      SessionKey: "2025R1",
+      CommitteeMeetingDocumentId: 900005,
+      CommitteeCode: "HALNRW",
+      MeetingDate: "2025-01-22T08:00:00",
+      ExhibitTitle: "HB 3131 notes",
+      DocumentType: documentType,
+      MeasurePrefix: "HB",
+      MeasureNumber: 3131,
+      DocumentUrl: `${root}/900005`,
+    };
+    const system = await startSystem({
+      clockAt: "2025-01-15T22:00:00Z",
+      documents: true,
+      olis: {
+        strayRows: { CommitteeMeetingDocuments: [row] },
+        strayDocuments: {
+          "/liz/2025R1/Downloads/CommitteeMeetingDocument/900005": "committee-meeting-documents/287931.pdf",
+        },
+      },
+    });
+    systems.push(system);
+    return { system, row };
+  }
+
+  async function foundBy(system: System): Promise<string[] | undefined> {
+    const connected = await connectClient("2026-07-28", system.handler);
+    const outcome = await callTool(connected, "search", { query, kind: "exhibit" });
+    await connected.close();
+    return (outcome.structured?.["results"] as { id: string; found_by: string[] }[]).find(
+      (hit) => hit.id === "exhibit-2025r1-900005",
+    )?.found_by;
+  }
+
+  it("is found by its meaning from the pull that sees it relabelled as material, and no longer by its words alone", async () => {
+    const { system, row } = await startWith(label.list);
+    expect(await foundBy(system)).toEqual(["keyword"]);
+
+    row["DocumentType"] = label.material;
+    system.clock.advance(60 * 60 * 1000);
+    await system.pullAgain();
+
+    expect(await foundBy(system)).toEqual(["embedding"]);
+    const report = searchIndexOf(system);
+    expect(report.embedded).toBeGreaterThan(0);
+  }, 60_000);
+
+  it("is found by its words alone from the pull that sees it relabelled as a witness-registration list, and no longer by its meaning", async () => {
+    const { system, row } = await startWith(label.material);
+    expect(await foundBy(system)).toEqual(["embedding"]);
+
+    row["DocumentType"] = label.list;
+    system.clock.advance(60 * 60 * 1000);
+    await system.pullAgain();
+
+    expect(await foundBy(system)).toEqual(["keyword"]);
+  }, 60_000);
+});

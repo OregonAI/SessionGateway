@@ -325,11 +325,19 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     // A fetched file is unchanging (ADR-0005) but its feed row is not: OLIS changes a posting's Meaning,
     // a Testimony's Measure. What the row says about a stored document is refreshed without fetching it.
     const refreshed = links.filter((link) => stored.has(link.id));
-    writer.refreshDocuments(
-      config.session,
-      refreshed,
-      new Map(refreshed.map((link) => [link.id, searchEntryOf(link, committeeNames)])),
-    );
+    const refreshedEntries = new Map(refreshed.map((link) => [link.id, searchEntryOf(link, committeeNames)]));
+    // A document OLIS now files as embeddable that the index holds as keyword-only (a list relabelled as material)
+    // has passages and no vectors. They are embedded in this pull, before the document is refiled, so that it is
+    // never filed as embeddable without them. The other direction needs nothing: the vectors of a keyword-only
+    // document are never loaded.
+    const keywordOnlyBefore = writer.keywordOnlyDocumentIds(config.session);
+    for (const [id, entry] of refreshedEntries) {
+      if (!keywordOnlyBefore.has(id) || entry.keywordOnly) continue;
+      writer.storeVectors(
+        await vectorsForNewPassages(writer, deps.embedder, entry, writer.passagesOf(id), passageCounts),
+      );
+    }
+    writer.refreshDocuments(config.session, refreshed, refreshedEntries);
     for (const link of links) {
       if (stored.has(link.id)) continue;
       const fetched = await fetchAndRead(olis, link, deps.signal);
