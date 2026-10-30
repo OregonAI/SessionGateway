@@ -32,9 +32,10 @@ export type DocumentId = string & { readonly brand: "DocumentId" };
 /** The id of a Proposed Amendment: one node per Measure and amendment number, whatever its postings. */
 export type AmendmentId = string & { readonly brand: "AmendmentId" };
 export type CommitteeId = string & { readonly brand: "CommitteeId" };
+export type MeetingId = string & { readonly brand: "MeetingId" };
 
 /** A node a document can point at. */
-export type NodeId = MeasureId | AmendmentId | CommitteeId;
+export type NodeId = MeasureId | AmendmentId | CommitteeId | MeetingId;
 
 /** How a document points at a node. */
 export type Relation = "measure" | "committee" | "meeting" | "posted_to" | "amendment";
@@ -70,8 +71,31 @@ export function analysisIdOf(session: SessionKey, measureAnalysisId: string): Do
   return `analysis-${session.toLowerCase()}-${measureAnalysisId}` as DocumentId;
 }
 
+export function exhibitIdOf(session: SessionKey, committeeMeetingDocumentId: number): DocumentId {
+  return `exhibit-${session.toLowerCase()}-${committeeMeetingDocumentId}` as DocumentId;
+}
+
+export function testimonyIdOf(session: SessionKey, commTestId: number): DocumentId {
+  return `testimony-${session.toLowerCase()}-${commTestId}` as DocumentId;
+}
+
 export function committeeIdOf(session: SessionKey, committeeCode: string): CommitteeId {
   return `committee-${session.toLowerCase()}-${slug(committeeCode)}` as CommitteeId;
+}
+
+/** The part of a Timestamp that reads as the feed's wall clock: "2025-01-30-0800". */
+function meetingKey(at: Timestamp): string {
+  return `${at.slice(0, 10)}-${at.slice(11, 13)}${at.slice(14, 16)}`;
+}
+
+/** `meeting-2025r1-slb-2025-01-30-0800`: the committee and the Pacific wall-clock start of the meeting. */
+export function meetingIdOf(session: SessionKey, committeeCode: string, at: Timestamp): MeetingId {
+  return `meeting-${session.toLowerCase()}-${slug(committeeCode)}-${meetingKey(at)}` as MeetingId;
+}
+
+/** A meeting's agenda is a document of its own. */
+export function agendaIdOf(session: SessionKey, committeeCode: string, at: Timestamp): DocumentId {
+  return `agenda-${session.toLowerCase()}-${slug(committeeCode)}-${meetingKey(at)}` as DocumentId;
 }
 
 /** A node a document points at, and how, with where the feed said so. */
@@ -112,4 +136,14 @@ export type StoredDocument = DocumentLink & {
   hasTextLayer: boolean;
   /** The text exactly as the extractor read it, with a form feed between pages. */
   text: string;
+};
+
+export type Meeting = {
+  session: SessionKey;
+  committeeCode: string;
+  id: MeetingId;
+  committeeId: CommitteeId;
+  at: Timestamp;
+  /** The meeting's agenda, when the feed links one. */
+  agenda: DocumentLink | null;
 };

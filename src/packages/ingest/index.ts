@@ -39,7 +39,11 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     },
   });
   const measures = await olis.readMeasures(config.session, deps.signal);
-  const links = await olis.readDocumentLinks(config.session, deps.signal);
+  const meetings = await olis.readMeetings(config.session, deps.signal);
+  const links = [
+    ...(await olis.readDocumentLinks(config.session, deps.signal)),
+    ...meetings.flatMap((meeting) => (meeting.agenda === null ? [] : [meeting.agenda])),
+  ];
   const writer = openIndexWriter(config.databasePath);
   let documentsFetched = 0;
   try {

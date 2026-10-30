@@ -97,6 +97,43 @@ describe.for(eras)("get_document for a %s client", (era) => {
         ["committee", "committee-2025r1-slb"],
       ],
     },
+    {
+      document: "CommitteeMeetingDocuments row 287879, an Exhibit of SLB's 2025-01-21 meeting on SB 69",
+      id: "exhibit-2025r1-287879",
+      kind: "exhibit",
+      label: "Meeting Material",
+      sourceUrl: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/287879",
+      related: [
+        ["measure", "measure-2025r1-sb69"],
+        ["committee", "committee-2025r1-slb"],
+        ["meeting", "meeting-2025r1-slb-2025-01-21-0800"],
+      ],
+    },
+    {
+      // The row's own DocumentUrl is only the session root, https://olis.oregonlegislature.gov/liz/2025R1
+      // (olis-odata.md gotcha 2); the file is at /Downloads/PublicTestimonyDocument/{CommTestId}.
+      document: "CommitteePublicTestimonies row 117165, Testimony on HB 3131 to HALNRW on 2025-01-22",
+      id: "testimony-2025r1-117165",
+      kind: "testimony",
+      label: "Testimony",
+      sourceUrl: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/PublicTestimonyDocument/117165",
+      related: [
+        ["measure", "measure-2025r1-hb3131"],
+        ["committee", "committee-2025r1-halnrw"],
+        ["meeting", "meeting-2025r1-halnrw-2025-01-22-0800"],
+      ],
+    },
+    {
+      document: "CommitteeMeetings row for SLB on 2025-01-30 at 08:00, whose AgendaUrl is the agenda",
+      id: "agenda-2025r1-slb-2025-01-30-0800",
+      kind: "agenda",
+      label: "Agenda",
+      sourceUrl: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeAgenda/SLB/2025-01-30-08-00",
+      related: [
+        ["committee", "committee-2025r1-slb"],
+        ["meeting", "meeting-2025r1-slb-2025-01-30-0800"],
+      ],
+    },
   ];
 
   it.for(kinds)("returns $document with its id, kind, label, link and related nodes", async (row) => {
