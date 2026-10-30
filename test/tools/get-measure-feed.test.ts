@@ -142,6 +142,20 @@ describe("the feed's paging", () => {
     expect(outcomes.map((outcome) => outcome.structured?.["id"])).toEqual(fixtureMeasures.map(([, id]) => id));
   });
 
+  // A feed that never stops paging must end the pull with an error, not keep the worker fetching and
+  // collecting rows until memory runs out or the process is stopped (src/CLAUDE.md, "Errors").
+  it("refuses a feed whose next link keeps returning to the first page", { timeout: 10_000 }, async () => {
+    const pull = startSystem({ clockAt: "2025-12-15T17:00:00Z", olis: { pagingFault: "repeats-the-first-page" } });
+
+    await expect(pull).rejects.toThrow(/more rows than.*counted/);
+  });
+
+  it("refuses a feed that keeps sending empty pages with a next link", { timeout: 10_000 }, async () => {
+    const pull = startSystem({ clockAt: "2025-12-15T17:00:00Z", olis: { pagingFault: "never-ends" } });
+
+    await expect(pull).rejects.toThrow(/empty page/);
+  });
+
   it("refuses a pull whose pages hold fewer rows than the feed counted", async () => {
     const pull = startSystem({ clockAt: "2025-12-15T17:00:00Z", olis: { withholdLastRows: 1 } });
 

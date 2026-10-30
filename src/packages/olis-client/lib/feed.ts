@@ -57,6 +57,14 @@ export async function readEntitySet<Row>(
     if (!response.ok) throw new Error(`OLIS answered ${response.status} to ${url.pathname}`);
     const body = page.parse(await response.json());
     rows.push(...body.value);
+    // The loop ends only when a page has no next link, so a feed that keeps sending one is bounded here
+    // (src/CLAUDE.md, "Errors"): every page must bring a row, and the rows may not pass the feed's count.
+    if (rows.length > counted) {
+      throw new Error(`OLIS sent more rows than the ${counted} it counted for ${entitySet} (/$count)`);
+    }
+    if (body.value.length === 0 && body["odata.nextLink"] !== undefined) {
+      throw new Error(`OLIS sent an empty page of ${entitySet} with a next link`);
+    }
     if (inlineCounted === undefined && body["odata.count"] !== undefined) inlineCounted = Number(body["odata.count"]);
     // The next link is relative to the page it came with (`../odataservice.svc/...`).
     url = body["odata.nextLink"] === undefined ? undefined : new URL(body["odata.nextLink"], url);

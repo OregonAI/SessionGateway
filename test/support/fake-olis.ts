@@ -35,6 +35,12 @@ export type FakeOlisOptions = {
    * between the count and the paging, or dropped a page.
    */
   withholdLastRows?: number;
+  /**
+   * A feed whose paging does not end. "repeats-the-first-page": every `odata.nextLink` points back
+   * to the first page, so the same rows come again and again. "never-ends": once the rows run out
+   * the pages are empty, and each still carries a `nextLink` to the next one.
+   */
+  pagingFault?: "repeats-the-first-page" | "never-ends";
 };
 
 export type FakeOlis = {
@@ -178,10 +184,12 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
     const body: Record<string, unknown> = {};
     if (url.searchParams.get("$inlinecount") === "allpages") body["odata.count"] = String(rows.length);
     body["value"] = delivered.slice(skip, skip + pageSize);
-    if (skip + pageSize < delivered.length) {
+    const hasMorePages = skip + pageSize < delivered.length;
+    if (hasMorePages || options.pagingFault !== undefined) {
       const filter = url.searchParams.get("$filter");
       const keep = filter === null ? "" : `$filter=${encodeURIComponent(filter).replaceAll("%27", "'")}&`;
-      body["odata.nextLink"] = `../odataservice.svc/${entitySet}?${keep}$skiptoken=${skip + pageSize}`;
+      const next = options.pagingFault === "repeats-the-first-page" ? 0 : skip + pageSize;
+      body["odata.nextLink"] = `../odataservice.svc/${entitySet}?${keep}$skiptoken=${next}`;
     }
     sendText(response, 200, "application/json;odata=nometadata;charset=utf-8", JSON.stringify(body));
   }
