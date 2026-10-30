@@ -301,4 +301,58 @@ describe.for(eras)("get_measure floor votes for a %s client", (era) => {
       vote: "Excused for Business",
     });
   });
+
+  // Courtney Neron was "Rep Neron" until she moved to the Senate in May 2025, and is "Sen Neron Misslin"
+  // since (the Legislators set lists only the second code). The fixture's votes hold both:
+  //   MeasureVoteId 1468790  SB 69    House   2025-05-05T11:30:33  "Rep Neron"         Aye
+  //   MeasureVoteId 1475890  SB 983   Senate  2025-05-15T11:50:00  "Sen Neron Misslin" Aye
+  //   MeasureVoteId 1456830  HB 3795  House   2025-04-14T14:20:19  "Rep Neron"         Aye
+  //   MeasureVoteId 1494348  HB 3795  Senate  2025-06-11T11:29:13  "Sen Neron Misslin" Aye
+  // One person has one Legislator id: the one the alias file's code, "Rep Neron", makes. The name is
+  // the Legislators row's.
+  const neron = { id: "legislator-2025r1-neron", name: "Courtney Neron Misslin" };
+
+  it("is one Legislator in SB 69's House vote as Rep Neron and in SB 983's Senate vote as Sen Neron Misslin", async () => {
+    const sb69 = await callTool(connected, "get_measure", { measure: "SB 69" });
+    const sb983 = await callTool(connected, "get_measure", { measure: "SB 983" });
+
+    const inTheHouse = floorVotesOf(sb69)
+      ?.find((vote) => vote.chamber === "house")
+      ?.votes.find((cast) => cast.legislator_code === "Rep Neron");
+    const inTheSenate = floorVotesOf(sb983)
+      ?.find((vote) => vote.date === "2025-05-15T11:50:00-07:00")
+      ?.votes.find((cast) => cast.legislator_code === "Sen Neron Misslin");
+    expect(inTheHouse).toEqual({ legislator_code: "Rep Neron", legislator: neron, vote: "Aye" });
+    expect(inTheSenate).toEqual({ legislator_code: "Sen Neron Misslin", legislator: neron, vote: "Aye" });
+  });
+
+  it("is one Legislator across HB 3795's House and Senate votes, whichever of her two codes the roll uses", async () => {
+    const outcome = await callTool(connected, "get_measure", { measure: "HB 3795" });
+
+    const castsOfHers = (floorVotesOf(outcome) ?? []).flatMap((vote) =>
+      vote.votes
+        .filter((cast) => cast.legislator_code === "Rep Neron" || cast.legislator_code === "Sen Neron Misslin")
+        .map((cast) => [vote.chamber, vote.date, cast.legislator_code, cast.legislator?.id, cast.vote]),
+    );
+    expect(castsOfHers).toEqual([
+      ["house", "2025-04-14T14:20:19-07:00", "Rep Neron", neron.id, "Aye"],
+      ["senate", "2025-06-11T11:29:13-07:00", "Sen Neron Misslin", neron.id, "Aye"],
+      // She is in neither code in the third floor vote, the House agreeing to the Senate's amendments
+      // (2025-06-16): a Senator by then, she did not vote in the House.
+    ]);
+  });
+
+  // "Sen Woods" has no Legislators row at all. The alias file names her as Aaron Woods from the feed's
+  // own evidence (committee minutes, a sponsor row, the Measure HB 3592's catchline), so she is a
+  // Legislator in the votes too: in SB 69's Senate roll (MeasureVoteId 1437980, Aye) and in its SLB
+  // committee vote (CommitteeVoteId 324941, Excused).
+  it("names Sen Woods, who has no Legislators row, as the Legislator the alias file says she is", async () => {
+    const outcome = await callTool(connected, "get_measure", { measure: "SB 69" });
+
+    const woods = { id: "legislator-2025r1-woods", name: "Aaron Woods" };
+    const floor = floorVotesOf(outcome)?.[0]?.votes.find((cast) => cast.legislator_code === "Sen Woods");
+    const committee = committeeVotesOf(outcome)?.[0]?.votes.find((cast) => cast.legislator_code === "Sen Woods");
+    expect(floor).toEqual({ legislator_code: "Sen Woods", legislator: woods, vote: "Aye" });
+    expect(committee).toEqual({ legislator_code: "Sen Woods", legislator: woods, vote: "Excused" });
+  });
 });
