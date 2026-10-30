@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {
-  orsChapterOf,
+  orsChaptersOf,
   parseAgencySlug,
   parseOrsChapterId,
   parseOrsSectionId,
@@ -80,7 +80,7 @@ export const snapshotSchema = z
       }
       sections.add(section);
     }
-    const chaptersWithSections = new Set(file.orsSections.map(orsChapterOf));
+    const chaptersWithSections = orsChaptersOf(file.orsSections);
     const chapterAgencies = new Map<OrsChapterId, AgencySlug[]>();
     for (const [chapter, agencies] of Object.entries(file.chapterAgencies)) {
       const id = parseOrsChapterId(chapter);

@@ -17,9 +17,17 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { orsChapterOf, parseOrsChapterId, parseOrsSectionId } from "#/packages/domain/oregonai.ts";
+import {
+  orsChapterOf,
+  orsChaptersOf,
+  parseOrsChapterId,
+  parseOrsSectionId,
+  type OrsChapterId,
+  type OrsSectionId,
+} from "#/packages/domain/oregonai.ts";
 import { extractPdfText } from "#/packages/pdf-text/index.ts";
 import type { SnapshotFile } from "#/packages/oregonai-snapshot/index.ts";
+import { compareCodeUnits } from "./order.ts";
 
 const manifestSchema = z.object({ documents: z.array(z.object({ path: z.string() })) });
 const rowsSchema = z.array(z.record(z.string(), z.unknown()));
@@ -72,8 +80,8 @@ const chapterCitation = new RegExp(
 const parenthesizedSection = new RegExp(String.raw`\(\s*(${chapter})\.\d{3}[A-Z]?\s*\)`, "g");
 
 /** The ORS chapters the texts cite, as chapter ids, in order. */
-export function citedOrsChapters(texts: readonly string[]): string[] {
-  const chapters = new Set<string>();
+export function citedOrsChapters(texts: readonly string[]): OrsChapterId[] {
+  const chapters = new Set<OrsChapterId>();
   const add = (name: string): void => {
     const id = parseOrsChapterId(`ors-chapter-${name.toLowerCase()}`);
     if (id !== undefined) chapters.add(id);
@@ -87,7 +95,7 @@ export function citedOrsChapters(texts: readonly string[]): string[] {
     }
     for (const match of text.matchAll(parenthesizedSection)) add(match[1] ?? "");
   }
-  return [...chapters].sort(compare);
+  return [...chapters].sort(compareCodeUnits);
 }
 
 /** Lower case, a line broken at a hyphen mended, runs of white space made one space. */
@@ -121,7 +129,7 @@ export function agenciesNamedIn(
       }
     }
   }
-  return [...named].sort(compare);
+  return [...named].sort(compareCodeUnits);
 }
 
 const countsSchema = z.strictObject({
@@ -164,14 +172,9 @@ export function trimSnapshot(
   texts: readonly string[],
 ): { trimmed: SnapshotFile; record: Omit<TrimRecord, "derivedFrom" | "snapshotSha256"> } {
   const cited = citedOrsChapters(texts);
-  const chaptersHeld = new Set(
-    file.orsSections.map((id) => {
-      const parsed = parseOrsSectionId(id);
-      if (parsed === undefined) throw new Error(`Not an ORS section id: ${id}`);
-      return orsChapterOf(parsed);
-    }),
-  );
-  const keptChapters = new Set(cited.filter((id) => chaptersHeld.has(parseOrsChapterIdOrThrow(id))));
+  const sections = file.orsSections.map(orsSectionOrThrow);
+  const chaptersHeld = orsChaptersOf(sections);
+  const keptChapters: ReadonlySet<string> = new Set(cited.filter((id) => chaptersHeld.has(id)));
   const chapterAgencies = Object.fromEntries(
     Object.entries(file.chapterAgencies).filter(([id]) => keptChapters.has(id)),
   );
@@ -180,10 +183,7 @@ export function trimSnapshot(
   const trimmed: SnapshotFile = {
     ...file,
     agencies: file.agencies.filter((agency) => keptAgencies.has(agency.slug)),
-    orsSections: file.orsSections.filter((id) => {
-      const parsed = parseOrsSectionId(id);
-      return parsed !== undefined && keptChapters.has(orsChapterOf(parsed));
-    }),
+    orsSections: sections.filter((section) => keptChapters.has(orsChapterOf(section))),
     chapterAgencies,
   };
   return {
@@ -198,12 +198,8 @@ export function trimSnapshot(
   };
 }
 
-function parseOrsChapterIdOrThrow(id: string): ReturnType<typeof orsChapterOf> {
-  const parsed = parseOrsChapterId(id);
-  if (parsed === undefined) throw new Error(`Not an ORS chapter id: ${id}`);
+function orsSectionOrThrow(id: string): OrsSectionId {
+  const parsed = parseOrsSectionId(id);
+  if (parsed === undefined) throw new Error(`Not an ORS section id: ${id}`);
   return parsed;
-}
-
-function compare(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
 }

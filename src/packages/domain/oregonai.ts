@@ -41,6 +41,11 @@ export function orsChapterOf(section: OrsSectionId): OrsChapterId {
   return `ors-chapter-${chapter}` as OrsChapterId;
 }
 
+/** The ORS chapters that have a section among these. */
+export function orsChaptersOf(sections: Iterable<OrsSectionId>): Set<OrsChapterId> {
+  return new Set([...sections].map(orsChapterOf));
+}
+
 /**
  * Which copy of OregonAI's data a snapshot is: the repository it was read from and the commit of that
  * repository, with the commit's date in Pacific time and its UTC offset (as every time here is).

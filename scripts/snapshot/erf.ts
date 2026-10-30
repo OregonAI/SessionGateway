@@ -18,6 +18,7 @@ import { z } from "zod";
 import { orsChapterOf, parseOrsSectionId, type OrsSectionId } from "#/packages/domain/oregonai.ts";
 import { formatPacific } from "#/packages/time/pacific.ts";
 import { parseSnapshot, type SnapshotFile } from "#/packages/oregonai-snapshot/index.ts";
+import { compareCodeUnits } from "./order.ts";
 
 const REGISTRY_FILE = "_meta/catalog/agencies.yml";
 const GRAPH_FILE = "_meta/graph.json";
@@ -187,19 +188,14 @@ export function readErfSnapshot(checkout: string): SnapshotFile {
         oarChapter: row.oar_chapter,
         dasAgencyNumber: row.das_agency_number ?? null,
       }))
-      .sort((a, b) => compare(a.slug, b.slug)),
-    orsSections: sections.sort(compare),
+      .sort((a, b) => compareCodeUnits(a.slug, b.slug)),
+    orsSections: sections.sort(compareCodeUnits),
     chapterAgencies: Object.fromEntries(
       [...agenciesOfOrsChapter]
-        .sort(([a], [b]) => compare(a, b))
-        .map(([chapter, agencies]) => [chapter, [...agencies].sort(compare)]),
+        .sort(([a], [b]) => compareCodeUnits(a, b))
+        .map(([chapter, agencies]) => [chapter, [...agencies].sort(compareCodeUnits)]),
     ),
   };
   parseSnapshot(file);
   return file;
-}
-
-/** Code-unit order, so the same data gives the same file on every machine. */
-function compare(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
 }

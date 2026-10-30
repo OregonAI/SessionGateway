@@ -14,7 +14,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { orsChapterOf, parseOrsSectionId } from "#/packages/domain/oregonai.ts";
+import { orsChaptersOf } from "#/packages/domain/oregonai.ts";
 import { parseSnapshot } from "#/packages/oregonai-snapshot/index.ts";
 import { agenciesNamedIn, citedOrsChapters, readFixtureTexts, trimRecordSchema } from "./touched.ts";
 
@@ -45,13 +45,7 @@ try {
   const cited = citedOrsChapters(texts);
   same("the ORS chapters the fixture cites", cited, record.orsChaptersCited);
 
-  const held = new Set<string>(
-    snapshot.orsSections.map((id) => {
-      const section = parseOrsSectionId(id);
-      if (section === undefined) throw new Error(`Not an ORS section id: ${id}`);
-      return orsChapterOf(section);
-    }),
-  );
+  const held: ReadonlySet<string> = orsChaptersOf(snapshot.orsSections);
   same(
     "the chapters the snapshot holds sections of",
     [...held],
