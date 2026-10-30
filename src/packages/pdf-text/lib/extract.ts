@@ -27,6 +27,9 @@ const pageContent = z.object({
   items: z.array(z.looseObject({ str: z.string().optional(), hasEOL: z.boolean().optional() })),
 });
 
+/** The page count pdf.js reports, which bounds the loop over the pages. */
+const pageCount = z.number().int().nonnegative();
+
 type Page = { getTextContent(parameters: { disableNormalization: boolean }): Promise<unknown> };
 
 /** One page's text: each item's characters, and a line end where pdf.js saw one. */
@@ -53,7 +56,8 @@ async function readDocument(bytes: Uint8Array): Promise<ExtractedPdf> {
     // Page by page, not unpdf's `extractText`: its `mergePages: true` collapses runs of spaces and blank
     // lines, and without it the call still lets pdf.js normalize the characters (see readPage).
     const pages: string[] = [];
-    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+    const total = pageCount.parse(document.numPages);
+    for (let pageNumber = 1; pageNumber <= total; pageNumber += 1) {
       pages.push(await readPage(await document.getPage(pageNumber), pageNumber));
     }
     const text = pages.join("\f");
