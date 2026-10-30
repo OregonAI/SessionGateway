@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { statuteLinkKinds } from "#/packages/domain/statute-links.ts";
 
 // The only file in the project that imports node:sqlite (src/CLAUDE.md, "Shape"): the API is
 // Stability 1.2, so keeping it here keeps a swap to better-sqlite3 local.
@@ -201,7 +202,7 @@ const schema = `
     content_hash TEXT NOT NULL,
     parsed_as TEXT NOT NULL,
     ordinal INTEGER NOT NULL,
-    kind TEXT NOT NULL CHECK (kind IN ('amends', 'repeals', 'adds-to', 'cites')),
+    kind TEXT NOT NULL CHECK (kind IN (${statuteLinkKinds.map((kind) => `'${kind}'`).join(", ")})),
     target_type TEXT NOT NULL CHECK (target_type IN ('section', 'chapter')),
     target_id TEXT NOT NULL,
     measure_section TEXT,

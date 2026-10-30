@@ -34,14 +34,15 @@ import {
 } from "#/packages/domain/index.ts";
 import { comparePrintOrder, type Legislator, type LegislatorId, type Sponsor } from "#/packages/domain/legislators.ts";
 import { parseOrsChapterId, parseOrsSectionId, type AgencyId, type SnapshotVersion } from "#/packages/domain/oregonai.ts";
-import type {
-  AmendmentFile,
-  RelatingClauseEdit,
-  StatuteLink,
-  StatuteLinkSource,
-  StatuteParse,
-  StoredAmendment,
-  StoredVersion,
+import {
+  statuteLinkKinds,
+  type AmendmentFile,
+  type RelatingClauseEdit,
+  type StatuteLink,
+  type StatuteLinkSource,
+  type StatuteParse,
+  type StoredAmendment,
+  type StoredVersion,
 } from "#/packages/domain/statute-links.ts";
 import {
   groupCommitteeVotes,
@@ -292,7 +293,7 @@ const parseRow = z.object({
   relating_clause_edits: z.string(),
 });
 const linkRow = z.object({
-  kind: z.enum(["amends", "repeals", "adds-to", "cites"]),
+  kind: z.enum(statuteLinkKinds),
   target_type: z.enum(["section", "chapter"]),
   target_id: z.string(),
   measure_section: z.string().nullable(),

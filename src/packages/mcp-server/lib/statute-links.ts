@@ -8,19 +8,20 @@ import {
   type AmendmentPosting,
 } from "#/packages/domain/documents.ts";
 import type { MeasureKey } from "#/packages/domain/index.ts";
-import type {
-  AmendmentFile,
-  RelatingClauseEdit,
-  StatuteLink,
-  StatuteLinkKind,
-  StatuteParse,
-  StoredAmendment,
-  StoredVersion,
+import {
+  statuteLinkKinds,
+  type AmendmentFile,
+  type RelatingClauseEdit,
+  type StatuteLink,
+  type StatuteLinkKind,
+  type StatuteParse,
+  type StoredAmendment,
+  type StoredVersion,
 } from "#/packages/domain/statute-links.ts";
 
 export const statuteLinkOutput = z.object({
   kind: z
-    .enum(["amends", "repeals", "adds-to", "cites"])
+    .enum(statuteLinkKinds)
     .describe(
       "What the text does to the target: amends it, repeals it, adds a section to it (a chapter), or only cites it. A citation is not a change.",
     ),
