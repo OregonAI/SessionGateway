@@ -33,6 +33,7 @@ import {
   unknownCommitteeMessage,
 } from "./lib/meetings.ts";
 import { search, searchInput, searchOutput, type SearchDeps } from "./lib/search.ts";
+import { createVectorCache } from "./lib/vector-cache.ts";
 import { sessionOverview, sessionOverviewInput, sessionOverviewOutput } from "./lib/session-overview.ts";
 import {
   noSuchPageMessage,
@@ -274,10 +275,10 @@ function buildServer(
       outputSchema: searchOutput,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    (input) => {
+    async (input) => {
       const refused = refuseOverRateLimit(limiter, config);
       if (refused !== undefined) return refused;
-      const result = search(searchDeps, config.session, input);
+      const result = await search(searchDeps, config.session, input);
       switch (result.kind) {
         case "found":
           return { content: [{ type: "text", text: JSON.stringify(result.search) }], structuredContent: result.search };
@@ -336,7 +337,17 @@ export function createSessionGatewayHandler(config: ServerConfig, deps: HandlerD
     signal: deps.signal,
     onFailure: deps.onLiveLookupFailed,
   });
-  const searchDeps: SearchDeps = { reader, searchIndex };
+  const searchDeps: SearchDeps = {
+    reader,
+    searchIndex,
+    embedder: deps.embedder,
+    vectors: createVectorCache({
+      reader,
+      searchIndex,
+      session: config.session,
+      modelId: deps.embedder.modelId,
+    }),
+  };
   const handler = createMcpHandler(() => buildServer(reader, searchDeps, liveStatus, config, limiter, deps.clock));
   return {
     fetch: handler.fetch,

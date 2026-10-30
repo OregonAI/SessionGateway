@@ -1,11 +1,21 @@
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
-import type { CitedDocument, SearchFilter, SearchIndexReader } from "#/packages/database/search.ts";
+import {
+  acceptsDocument,
+  type CitedDocument,
+  type DocumentFacts,
+  type SearchFilter,
+  type SearchIndexReader,
+} from "#/packages/database/search.ts";
 import { findCitations, type Citation } from "#/packages/domain/citations.ts";
 import { documentKinds, type AmendmentId, type DocumentId } from "#/packages/domain/documents.ts";
 import { measureIdOf, parseMeasureReference, type SessionKey } from "#/packages/domain/index.ts";
+import type { Embedder } from "#/packages/embedder/index.ts";
+import { reciprocalRankFusion } from "#/packages/search/ranking.ts";
 import { matchExpressionOf, orsCitationPattern, phraseOf, snippetOf, termsOf } from "#/packages/search/text.ts";
+import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
+import type { VectorCache } from "./vector-cache.ts";
 
 /** The most hits one call returns, when the call does not say, and the most it may ask for (spec #1; docs/adr/0025). */
 export const DEFAULT_LIMIT = 20;
@@ -106,6 +116,10 @@ export type SearchOutput = z.infer<typeof searchOutput>;
 export type SearchDeps = {
   reader: IndexReader;
   searchIndex: SearchIndexReader;
+  /** The vectors of the passages, in memory. */
+  vectors: VectorCache;
+  /** Embeds the question. */
+  embedder: Embedder;
 };
 
 /** An unknown Measure is an expected outcome, so it is a value; the MCP edge decides it is a tool error. */
@@ -123,7 +137,11 @@ type Candidate = {
 };
 type FoundBy = "citation" | "keyword" | "embedding";
 
-export function search(deps: SearchDeps, session: SessionKey, input: z.infer<typeof searchInput>): SearchResult {
+export async function search(
+  deps: SearchDeps,
+  session: SessionKey,
+  input: z.infer<typeof searchInput>,
+): Promise<SearchResult> {
   const asOf = deps.reader.asOf(session);
   if (asOf === undefined) throw new Error(`The index holds no completed full pull of ${session} to date it by`);
   const limit = input.limit ?? DEFAULT_LIMIT;
@@ -168,22 +186,57 @@ export function search(deps: SearchDeps, session: SessionKey, input: z.infer<typ
   const terms = termsOf(input.query);
   const match = matchExpressionOf(terms, citations.map(phraseOf));
   const passages = match === undefined ? [] : deps.searchIndex.keyword(match, filter, CANDIDATE_PASSAGES);
-  // One hit for each id a hit carries, at the best passage that matched it.
-  const found = new Map<DocumentId | AmendmentId, Candidate>();
+  // One entry for each id a hit carries, at the best passage that matched it, best first.
+  const byKeyword = new Map<DocumentId | AmendmentId, Candidate>();
   for (const passage of passages) {
-    if (found.has(passage.nodeId)) continue;
-    found.set(passage.nodeId, {
+    if (byKeyword.has(passage.nodeId)) continue;
+    byKeyword.set(passage.nodeId, {
       documentId: passage.documentId,
       passageId: passage.passageId,
       foundBy: new Set(["keyword"]),
     });
   }
 
+  // The meaning side. A query that is nothing but citations has no meaning to look for, and an index with no
+  // vectors has nothing to look in, so neither embeds the question.
+  const byEmbedding = new Map<DocumentId | AmendmentId, Candidate>();
+  const withoutCitations = citations.reduce((text, citation) => text.replace(citation.text, " "), input.query);
+  const vectors = deps.vectors.current();
+  if (termsOf(withoutCitations).length > 0 && vectors.index.size > 0) {
+    const question = quantizeUnitVector(await deps.embedder.embedQuestion(input.query));
+    const near = vectors.index.nearest(
+      question,
+      (documentIndex) => acceptsDocument(filter, vectors.documents.facts[documentIndex] as DocumentFacts),
+      CANDIDATE_PASSAGES,
+    );
+    for (const passage of near) {
+      const nodeId = vectors.documents.nodeIds[passage.documentIndex] as DocumentId | AmendmentId;
+      if (byEmbedding.has(nodeId)) continue;
+      byEmbedding.set(nodeId, {
+        documentId: vectors.documents.documentIds[passage.documentIndex] as DocumentId,
+        passageId: passage.passageId,
+        foundBy: new Set(["embedding"]),
+      });
+    }
+  }
+
+  // The two sides become one list by reciprocal rank fusion; what a citation names exactly comes before it.
   const ranked = new Map<DocumentId | AmendmentId, Candidate>(cited);
-  for (const [nodeId, candidate] of found) {
+  for (const nodeId of reciprocalRankFusion([[...byKeyword.keys()], [...byEmbedding.keys()]])) {
+    const sides = [byKeyword.get(nodeId), byEmbedding.get(nodeId)].filter(
+      (candidate): candidate is Candidate => candidate !== undefined,
+    );
     const already = ranked.get(nodeId);
-    if (already === undefined) ranked.set(nodeId, candidate);
-    else already.foundBy.add("keyword");
+    for (const side of sides) for (const how of side.foundBy) already?.foundBy.add(how);
+    // The passage a snippet is cut from is the one the words matched, else the one the meaning matched.
+    if (already === undefined) {
+      const [first] = sides;
+      ranked.set(nodeId, {
+        documentId: (first as Candidate).documentId,
+        passageId: (first as Candidate).passageId,
+        foundBy: new Set(sides.flatMap((side) => [...side.foundBy])),
+      });
+    }
   }
   const results = [...ranked.values()].slice(0, limit).map((candidate): SearchOutput["results"][number] => {
     const details = deps.searchIndex.details(candidate);

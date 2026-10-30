@@ -6,7 +6,10 @@ import { amendmentIdOf, type AmendmentId } from "./documents.ts";
 import { measureIdOf, type MeasureId, type MeasureKey, type SessionKey } from "./index.ts";
 import { orsSectionCitationSource, orsSectionIdOf, type OrsSectionId } from "./oregonai.ts";
 
-export type Citation =
+/** A citation found in a text, with the words it was written with there. */
+export type Citation = { text: string } & CitationOf;
+
+type CitationOf =
   | { kind: "measure"; measure: MeasureKey; id: MeasureId }
   | {
       kind: "amendment";
@@ -44,6 +47,7 @@ export function findCitations(text: string, session: SessionKey): Citation[] {
     found.push({
       index: match.index,
       citation: {
+        text: match[0],
         kind: "amendment",
         measure,
         number: amendment.toUpperCase(),
@@ -55,11 +59,14 @@ export function findCitations(text: string, session: SessionKey): Citation[] {
     const [, prefix, number] = match;
     if (prefix === undefined || number === undefined) continue;
     const measure = { session, prefix: prefix.toUpperCase(), number: Number(number) };
-    found.push({ index: match.index, citation: { kind: "measure", measure, id: measureIdOf(measure) } });
+    found.push({
+      index: match.index,
+      citation: { text: match[0], kind: "measure", measure, id: measureIdOf(measure) },
+    });
   }
   for (const match of text.matchAll(orsPattern)) {
     const id = match[1] === undefined ? undefined : orsSectionIdOf(match[1]);
-    if (id !== undefined) found.push({ index: match.index, citation: { kind: "ors", id } });
+    if (id !== undefined) found.push({ index: match.index, citation: { text: match[0], kind: "ors", id } });
   }
   found.sort((a, b) => a.index - b.index);
   const seen = new Set<string>();

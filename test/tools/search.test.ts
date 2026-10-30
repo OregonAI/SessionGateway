@@ -3,19 +3,27 @@
 // ingest worker pulls and indexes them, and an MCP client calls the tool in-process. One database
 // serves every case in this file because none of them changes it.
 //
-// The clock is 2025-01-17 18:00 Pacific. Every document the feed had created by then is in: the
+// Search here runs on the real embedding model (bge-small-en-v1.5, `npm run model:fetch`), because what
+// these cases show is how well it ranks. The clock is 2025-01-17 18:00 Pacific. Every document the feed had created by then is in: the
 // Introduced Versions of six Measures, four agendas, SB 69's Exhibit 287879 and Proposed Amendment -1,
 // and three of HB 3131's letters. A later clock would include SB 64's Testimony 117281 (395,000
 // characters) and take half a minute to embed with the real model.
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, test } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
+import { loadRealEmbedder } from "../support/real-embedder.ts";
 import { startSystem, type System } from "../support/system.ts";
 
 let system: System;
 
 beforeAll(async () => {
-  system = await startSystem({ clockAt: "2025-01-18T02:00:00Z", documents: true });
-}, 60_000);
+  // The real model: these are the tests of how well search ranks. About 140,000 characters are embedded,
+  // which takes about ten seconds on one core.
+  system = await startSystem({
+    clockAt: "2025-01-18T02:00:00Z",
+    documents: true,
+    embedder: await loadRealEmbedder(),
+  });
+}, 120_000);
 
 afterAll(async () => {
   await system.stop();
@@ -57,12 +65,47 @@ describe.for(eras)("search for a %s client", (era) => {
     expect(outcome.structured?.["notice"]).toMatch(/not the official record/i);
   });
 
+  // A paraphrased question. Each expected document is chosen by reading it, and each question is worded from
+  // the subject of that document without the distinctive words it holds, so that no passage holds all of the
+  // question's words and only the meaning can bring the document up: the hit says it was found by meaning
+  // alone, and it is the first hit.
+  //  - HB 3027's Introduced Version (documents/measure-documents/HB3027/Introduced.pdf): "Permits the Higher
+  //    Education Coordinating Commission to seek an injunction against a person or career school that is
+  //    engaged ... in any activity in violation of career school licensure requirements."
+  //  - SB 64's Introduced Version (SB64/Introduced.pdf): "Requires the Department of Human Services to seek a
+  //    waiver of federal requirements in the Supplemental Nutrition Assistance Program in order to allow
+  //    recipients ... to receive advance installment payments of the tax credit for dependent care expenses."
+  //  - HB 3131's Introduced Version (HB3131/Introduced.pdf): "Appropriates moneys to the Oregon Watershed
+  //    Enhancement Board, out of the General Fund, for deposit in the Oregon Agricultural Heritage Fund."
+  test.for([
+    {
+      document: "version-2025r1-hb3027-introduced",
+      question:
+        "Gives the postsecondary oversight panel the power to ask a judge to halt vocational academies that ignore their permits",
+    },
+    {
+      document: "version-2025r1-sb64-introduced",
+      question:
+        "A petition for an exemption from national food stamp rules, so that families keep their benefits when a childcare refund is paid early, month by month",
+    },
+    {
+      document: "version-2025r1-hb3131-introduced",
+      question:
+        "Lets a legislator-sponsored cash grant go to a conservation program that keeps ranches from being turned into subdivisions",
+    },
+  ])("finds $document from a question that shares none of its words", async ({ document, question }) => {
+    const outcome = await callTool(connected, "search", { query: question });
+
+    const hits = outcome.structured?.["results"] as { id: string; found_by: string[] }[];
+    expect(hits[0]).toMatchObject({ id: document, found_by: ["embedding"] });
+  });
+
   // Testimony. HB 3131's Testimony 117165, 117166 and 117167 (CommitteePublicTestimonies rows, all three
   // written on 2025-01-17 for HB 3131) are letters from the Oregon Climate and Agriculture Network, American
   // Farmland Trust and the Oregon Association of Conservation Districts about the Oregon Agricultural
   // Heritage Program. The query is words from them and from HB 3131's Introduced Version, which also holds
   // "Oregon Agricultural Heritage Fund", so a general search has something to return that is not Testimony.
-  const heritageQuery = "Oregon Agricultural Heritage Fund conservation easements";
+  const heritageQuery = "Oregon Agricultural Heritage";
   const idsOf = (outcome: { structured: Record<string, unknown> | undefined }): string[] =>
     (outcome.structured?.["results"] as { id: string }[]).map((result) => result.id);
   const kindsOf = (outcome: { structured: Record<string, unknown> | undefined }): string[] =>
@@ -157,7 +200,7 @@ describe.for(eras)("search for a %s client", (era) => {
       expect(idsOf(onTheDay).toSorted()).toEqual(
         expect.arrayContaining(["amendment-2025r1-sb69-1", "exhibit-2025r1-287879"]),
       );
-      expect(hitsOf(onTheDay).every((hit) => hit.date?.startsWith("2025-01-21"))).toBe(true);
+      expect(hitsOf(onTheDay).every((hit) => hit.date?.startsWith("2025-01-21") === true)).toBe(true);
       expect(idsOf(afterTheVersions)).not.toContain("version-2025r1-sb69-introduced");
       expect(hitsOf(afterTheVersions).every((hit) => (hit.date ?? "") >= "2025-01-11")).toBe(true);
       expect(idsOf(beforeTheMeetings)).toContain("version-2025r1-sb69-introduced");
@@ -225,7 +268,7 @@ describe.for(eras)("search for a %s client", (era) => {
       expect(new Set(kindsOf(outcome))).toEqual(new Set(["agenda"]));
     });
 
-    it("that no document has finds what the words find", async () => {
+    it("that no document has finds what the rest of the query finds", async () => {
       const outcome = await callTool(connected, "search", { query: "HB 9999 Oregon Agricultural Heritage Fund" });
 
       expect(outcome.isError).toBe(false);
