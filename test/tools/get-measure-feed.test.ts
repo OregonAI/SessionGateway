@@ -44,3 +44,46 @@ describe("Pacific time", () => {
     expect(winter.structured).toMatchObject({ as_of: "2025-12-15T09:00:00-08:00" });
   });
 });
+
+describe("the deployment's Session", () => {
+  // A Measure of another Session that shares SB 69's prefix and number: measure numbers restart each
+  // Session (docs/research/olis-odata.md section 8, gotcha 1). The harness adds it to the fake
+  // OLIS; the committed fixture holds 2025R1 only.
+  const otherSessionSb69 = {
+    SessionKey: "2025S1",
+    MeasurePrefix: "SB",
+    MeasureNumber: 69,
+    CatchLine: "A special-session Measure that happens to be numbered SB 69.",
+    CreatedDate: "2025-08-29T09:00:00",
+    ModifiedDate: null,
+  };
+  const sb69CatchlineStart = "Specifies that the Bureau of Labor and Industries";
+
+  it("ignores rows of another Session that the feed serves", async () => {
+    const olis = { strayRows: { Measures: [otherSessionSb69] } };
+
+    const own = await getMeasure({ clockAt: "2025-12-15T17:00:00Z", olis }, "SB 69");
+    const other = await getMeasure({ clockAt: "2025-12-15T17:00:00Z", olis }, "measure-2025s1-sb69");
+
+    expect(own.structured).toMatchObject({ id: "measure-2025r1-sb69" });
+    expect(String(own.structured?.["catchline"])).toContain(sb69CatchlineStart);
+    expect(other.isError).toBe(true);
+  });
+
+  it("serves the Session the configuration names", async () => {
+    const options = {
+      clockAt: "2025-12-15T17:00:00Z",
+      sessionKey: "2025S1",
+      olis: { strayRows: { Measures: [otherSessionSb69] } },
+    };
+
+    const configured = await getMeasure(options, "SB 69");
+    const unconfigured = await getMeasure(options, "measure-2025r1-sb69");
+
+    expect(configured.structured).toMatchObject({
+      id: "measure-2025s1-sb69",
+      catchline: "A special-session Measure that happens to be numbered SB 69.",
+    });
+    expect(unconfigured.isError).toBe(true);
+  });
+});

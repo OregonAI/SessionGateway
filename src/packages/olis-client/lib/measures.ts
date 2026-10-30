@@ -29,12 +29,16 @@ export async function readMeasureRows(
   });
   if (!response.ok) throw new Error(`OLIS answered ${response.status} to ${url.pathname}`);
   const body = page.parse(await response.json());
-  return body.value.map((row) => ({
-    session,
-    prefix: row.MeasurePrefix,
-    number: row.MeasureNumber,
-    catchline: row.CatchLine,
-    createdAt: readPacificLocal(row.CreatedDate),
-    modifiedAt: row.ModifiedDate === null ? null : readPacificLocal(row.ModifiedDate),
-  }));
+  // The feed is asked for one Session, but a row of another one is never taken for it: measure
+  // numbers restart every Session, so SB 69 of one Session is not SB 69 of another.
+  return body.value
+    .filter((row) => row.SessionKey === session)
+    .map((row) => ({
+      session,
+      prefix: row.MeasurePrefix,
+      number: row.MeasureNumber,
+      catchline: row.CatchLine,
+      createdAt: readPacificLocal(row.CreatedDate),
+      modifiedAt: row.ModifiedDate === null ? null : readPacificLocal(row.ModifiedDate),
+    }));
 }
