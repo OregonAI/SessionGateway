@@ -32,7 +32,14 @@ export async function serveMcp(
   const allowedHost = hostHeaderValidation(config.allowedHosts);
   const allowedOrigin = originValidation(config.allowedOrigins);
   const server = createServer((request, response) => {
-    if (new URL(request.url ?? "/", "http://localhost").pathname !== config.mcpPath) {
+    // The request-target is the client's to choose, and `new URL` throws on some (`//`, a bad port), so
+    // `URL.parse` reads it: an unreadable target is a 400 here, where a throw would end the process.
+    const path = URL.parse(request.url ?? "/", "http://localhost")?.pathname;
+    if (path === undefined) {
+      response.writeHead(400, { "content-type": "text/plain" }).end("Bad request");
+      return;
+    }
+    if (path !== config.mcpPath) {
       response.writeHead(404, { "content-type": "text/plain" }).end("Not found");
       return;
     }

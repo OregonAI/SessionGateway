@@ -1,6 +1,7 @@
 // Seam 1 on a real port (test/CLAUDE.md, "MCP client"): the Node adapter, the mount path and, below,
 // the Host and Origin guards. Everything else is tested in-process through handler.fetch.
 import { request as httpRequest } from "node:http";
+import { connect } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { serveMcp, type RunningServer } from "#/packages/mcp-server/http.ts";
 import { callTool, connectClientToUrl, eras } from "../support/mcp-clients.ts";
@@ -35,6 +36,35 @@ function postInitialize(port: number, headers: Record<string, string>): Promise<
     );
     request.once("error", reject);
     request.end(initializeRequest);
+  });
+}
+
+/**
+ * Sends one GET with exactly this request-target over a raw socket and returns the status code the
+ * server answers with. fetch and http.request both normalise or refuse the targets below (`//`
+ * would become `/`), so only bytes on a socket reach the server as written.
+ */
+function statusOfRawTarget(port: number, requestTarget: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const socket = connect(port, "127.0.0.1");
+    let received = "";
+    const shown = JSON.stringify(requestTarget);
+    socket.setTimeout(2000, () => {
+      socket.destroy();
+      reject(new Error(`No answer to the request-target ${shown} within 2 s`));
+    });
+    socket.on("data", (chunk: Buffer) => {
+      received += chunk.toString("latin1");
+      const code = /^HTTP\/1\.1 (\d{3}) /.exec(received)?.[1];
+      if (code === undefined) return;
+      socket.destroy();
+      resolve(Number(code));
+    });
+    socket.once("error", reject);
+    socket.once("close", () => {
+      reject(new Error(`The server closed the connection without answering the request-target ${shown}`));
+    });
+    socket.write(`GET ${requestTarget} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nConnection: close\r\n\r\n`);
   });
 }
 
@@ -76,6 +106,39 @@ describe("get_measure over HTTP", () => {
     });
 
     expect(response.status).toBe(404);
+  });
+});
+
+describe("a request-target that is not a URL", () => {
+  // `new URL(target, "http://localhost")` rejects each of these, and the server once let that TypeError
+  // out of the request listener, which ended the process. A request-target the server cannot read is
+  // the client's mistake: 400 (the 404 above is for a target that reads fine and names another path).
+  const unreadableTargets = [
+    { target: "//", reason: "a network-path reference with no host" },
+    { target: "//x:y", reason: "a port that is not a number" },
+    { target: "//a:99999/b", reason: "a port above 65535" },
+    { target: "//[", reason: "an IPv6 literal that never closes" },
+    {
+      target: "http://127.0.0.1:99999/session-gateway/mcp",
+      reason: "an absolute-form target at the mount path with a bad port",
+    },
+    { target: "http://", reason: "an absolute-form target with no host" },
+  ];
+
+  it.for(unreadableTargets)("answers 400 to $target ($reason) and keeps serving", async ({ target }) => {
+    expect(await statusOfRawTarget(server.port, target)).toBe(400);
+
+    const connected = await connectClientToUrl(
+      "2026-07-28",
+      new URL(`http://127.0.0.1:${server.port}/session-gateway/mcp`),
+    );
+    try {
+      const outcome = await callTool(connected, "get_measure", { measure: "SB 69" });
+
+      expect(outcome.structured).toMatchObject({ id: "measure-2025r1-sb69" });
+    } finally {
+      await connected.close();
+    }
   });
 });
 
