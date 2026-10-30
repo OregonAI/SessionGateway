@@ -181,4 +181,49 @@ describe.for(eras)("get_measure sponsors for a %s client", (era) => {
     expect(outcome.structured?.["committee_sponsors"]).toEqual([]);
     expect(outcome.structured?.["presession_messages"]).toEqual([]);
   });
+
+  // Ticket #15, box 1: "SB 69 and HB 3795 show sponsors in print order, chief sponsors first". Each
+  // Measure has exactly one MeasureSponsors row in the fixture, and neither row is a Legislator's:
+  //   SB 69    142256  SponsorType "Presession"  SponsorLevel "Regular"  PrintOrder "20"  LegislatoreCode null
+  //            PresessionFiledMessage "Printed pursuant to Senate Interim Rule 213.28 by order of the
+  //            President of the Senate in conformance with presession filing rules, indicating neither
+  //            advocacy nor opposition on the part of the President."
+  //   HB 3795  151277  SponsorType "Committee"   SponsorLevel "Regular"  CommitteeCode "HECHS"  PrintOrder "20"
+  // So for these two Measures the print order is the order of one line each, and there is no chief
+  // sponsor to put first: SB 69 is a presession filing (its Introduced.pdf prints that notice where a
+  // sponsor line would be) and HB 3795 is "Sponsored by COMMITTEE ON EARLY CHILDHOOD AND HUMAN
+  // SERVICES" (its Introduced.pdf), a committee, which is not a Legislator. What "chief sponsors
+  // first" does to Legislators is shown by HB 3131 above (six chiefs at PrintOrder 1 to 10 before 31
+  // regular sponsors at 20), and by the sponsor rows added to SB 69 and HB 3795 in
+  // get-measure-sponsors-feed.test.ts. This case states the whole sponsor line of each, so nothing is
+  // missing from it and nothing extra is in it.
+  it.for([
+    [
+      "SB 69",
+      {
+        sponsors: [],
+        committee_sponsors: [],
+        presession_messages: [
+          "Printed pursuant to Senate Interim Rule 213.28 by order of the President of the Senate in conformance with presession filing rules, indicating neither advocacy nor opposition on the part of the President.",
+        ],
+      },
+    ],
+    [
+      "HB 3795",
+      {
+        sponsors: [],
+        committee_sponsors: [{ committee_code: "HECHS" }],
+        presession_messages: [],
+      },
+    ],
+  ] as const)("gives %s's whole sponsor line: the one row the feed has, and no Legislator", async ([measure, line]) => {
+    const outcome = await callTool(connected, "get_measure", { measure });
+
+    expect(outcome.isError).toBe(false);
+    expect({
+      sponsors: outcome.structured?.["sponsors"],
+      committee_sponsors: outcome.structured?.["committee_sponsors"],
+      presession_messages: outcome.structured?.["presession_messages"],
+    }).toEqual(line);
+  });
 });
