@@ -2,9 +2,11 @@
 // containers run them, with their configuration in the environment. The fake OLIS is the only
 // thing in this process; the worker and the server are child processes.
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { connect, createServer } from "node:net";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { startFakeOlis, type FakeOlis } from "../support/fake-olis.ts";
+import { startFakeOlis, type FakeOlis, type FakeOlisOptions } from "../support/fake-olis.ts";
 import { createSimulatedClock } from "../support/clock.ts";
 import { callTool, connectClientToUrl } from "../support/mcp-clients.ts";
 import { createTempDatabase, type TempDatabase } from "../support/temp-database.ts";
@@ -68,8 +70,10 @@ async function listening(port: number): Promise<void> {
   throw new Error(`nothing listens on port ${port}`);
 }
 
-async function fakeOlisAndDatabase(): Promise<{ olis: FakeOlis; database: TempDatabase }> {
-  const olis = await startFakeOlis({ clock: createSimulatedClock("2025-07-15T17:00:00Z") });
+async function fakeOlisAndDatabase(
+  options: Omit<FakeOlisOptions, "clock"> = {},
+): Promise<{ olis: FakeOlis; database: TempDatabase }> {
+  const olis = await startFakeOlis({ clock: createSimulatedClock("2025-07-15T17:00:00Z"), ...options });
   const database = createTempDatabase();
   cleanups.push(async () => {
     await olis.close();
@@ -105,6 +109,40 @@ describe("the entry scripts", () => {
     // The worker dated the pull with the system clock: Pacific time, an offset of -08:00 or -07:00.
     expect(outcome.structured?.["as_of"]).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-0[78]:00$/);
     expect(await exited).toBe(0);
+  }, 20_000);
+
+  it("src/bin/ingest.ts writes the Legislator Codes it could not resolve to a report beside the database", async () => {
+    // A sponsor row (SB 69) whose code has no Legislators row and no alias; the cache's real codes
+    // all resolve, so the report would otherwise be empty.
+    const stray = {
+      MeasureSponsorId: "900001",
+      SessionKey: "2025R1",
+      MeasurePrefix: "SB",
+      MeasureNumber: 69,
+      SponsorType: "Member",
+      LegislatoreCode: "Rep Fahey",
+      CommitteeCode: null,
+      SponsorLevel: "Chief",
+      PrintOrder: "1",
+      PresessionFiledMessage: null,
+      CreatedDate: "2024-12-30T16:16:37",
+      ModifiedDate: null,
+    };
+    const { olis, database } = await fakeOlisAndDatabase({ strayRows: { MeasureSponsors: [stray] } });
+    const env = { SESSION_KEY: "2025R1", OLIS_BASE_URL: olis.baseUrl, DATABASE_PATH: database.path };
+
+    const pulled = await run("src/bin/ingest.ts", env);
+
+    expect(pulled.code, pulled.stderr).toBe(0);
+    const report: unknown = JSON.parse(
+      readFileSync(join(dirname(database.path), "unresolved-legislator-codes.json"), "utf8"),
+    );
+    expect(report).toEqual({
+      session: "2025R1",
+      // The worker dated the pull with the system clock, in Pacific time.
+      as_of: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-0[78]:00$/) as unknown,
+      unresolved_legislator_codes: [{ code: "Rep Fahey", references: [{ source: "MeasureSponsors", count: 1 }] }],
+    });
   }, 20_000);
 
   describe("src/bin/server.ts logs", () => {

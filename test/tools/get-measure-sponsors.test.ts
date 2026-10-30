@@ -26,7 +26,8 @@ afterAll(async () => {
 // Legislator, and 37 Member rows), in the order of their PrintOrder (1, 2, 3, 10, 10, 10, then 20 for
 // every regular sponsor); rows with the same PrintOrder follow in MeasureSponsorId order, the order
 // the feed created them in. Each row is [Legislator Code, level, id, name]: the name is the
-// fixture's Legislators row for that code, except that "Rep Neron" has none and is Courtney Neron
+// fixture's Legislators row for that code (the feed writes the last name of "Rep McDonald" as
+// "McDonald ", with a trailing space), except that "Rep Neron" has none and is Courtney Neron
 // Misslin by the alias file (src/packages/legislators/data/legislator-aliases.json).
 const hb3131Sponsors = [
   ["Rep Owens", "chief", "legislator-2025r1-owens", "Mark Owens"],
