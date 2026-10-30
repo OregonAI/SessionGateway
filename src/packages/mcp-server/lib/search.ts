@@ -22,11 +22,33 @@ export const searchInput = z.object({
     .describe(
       'What to look for: a question in your own words, or words from the document, or a citation such as "HB 3131", "SB 69-2" or "ORS 468.130".',
     ),
+  kind: z
+    .enum(documentKinds)
+    .optional()
+    .describe("Only documents of this kind. Asking for testimony includes Testimony, as include_testimony does."),
   measure: z
     .string()
     .optional()
     .describe(
       'Only documents of this Measure: its id, such as "measure-2025r1-sb69", or its citation, such as "SB 69". Testimony is included when a Measure is given.',
+    ),
+  committee: z
+    .string()
+    .optional()
+    .describe(
+      'Only documents of this committee (posted to it or of it): its code, such as "SLB", or its id, such as "committee-2025r1-slb".',
+    ),
+  from: z.iso
+    .date()
+    .optional()
+    .describe(
+      "Only documents dated on this date or later, as a Pacific date such as 2025-01-21. A document is dated by the meeting it was posted to or for, else by when OLIS created its row.",
+    ),
+  to: z.iso
+    .date()
+    .optional()
+    .describe(
+      "Only documents dated on this date or earlier, as a Pacific date such as 2025-01-28. The whole day counts.",
     ),
   include_testimony: z
     .boolean()
@@ -87,7 +109,9 @@ export type SearchDeps = {
 /** An unknown Measure is an expected outcome, so it is a value; the MCP edge decides it is a tool error. */
 export type SearchResult =
   | { kind: "found"; search: SearchOutput }
-  | { kind: "unknown_measure"; reference: string; session: SessionKey };
+  | { kind: "unknown_measure"; reference: string; session: SessionKey }
+  | { kind: "unknown_committee"; reference: string; session: SessionKey }
+  | { kind: "backwards_range"; from: string; to: string };
 
 export function search(deps: SearchDeps, session: SessionKey, input: z.infer<typeof searchInput>): SearchResult {
   const asOf = deps.reader.asOf(session);
@@ -99,11 +123,23 @@ export function search(deps: SearchDeps, session: SessionKey, input: z.infer<typ
   if (input.measure !== undefined && (measure === undefined || deps.reader.findMeasure(measure) === undefined)) {
     return { kind: "unknown_measure", reference: input.measure, session };
   }
-  // Testimony is left out unless the call asks for it or the search is scoped to one Measure (spec #1 story 11).
+  const committee = input.committee === undefined ? undefined : deps.reader.findCommittee(session, input.committee);
+  if (input.committee !== undefined && committee === undefined) {
+    return { kind: "unknown_committee", reference: input.committee, session };
+  }
+  if (input.from !== undefined && input.to !== undefined && input.from > input.to) {
+    return { kind: "backwards_range", from: input.from, to: input.to };
+  }
+  // Testimony is left out unless the call asks for it, or for it by kind, or the search is scoped to one
+  // Measure (spec #1 story 11).
   const filter: SearchFilter = {
     session,
-    withTestimony: input.include_testimony === true || measure !== undefined,
+    withTestimony: input.include_testimony === true || input.kind === "testimony" || measure !== undefined,
+    ...(input.kind === undefined ? {} : { kind: input.kind }),
     ...(measure === undefined ? {} : { measure: measureIdOf(measure) }),
+    ...(committee === undefined ? {} : { committee: committee.id }),
+    ...(input.from === undefined ? {} : { from: input.from }),
+    ...(input.to === undefined ? {} : { to: input.to }),
   };
   const passages = match === undefined ? [] : deps.searchIndex.keyword(match, filter, CANDIDATE_PASSAGES);
   // One hit for each document id a hit carries, at the best passage that matched it.

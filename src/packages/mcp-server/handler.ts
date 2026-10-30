@@ -286,6 +286,13 @@ function buildServer(
             isError: true,
             content: [{ type: "text", text: unknownMeasureMessage(result.reference, result.session) }],
           };
+        case "unknown_committee":
+          return {
+            isError: true,
+            content: [{ type: "text", text: unknownCommitteeMessage(result.reference, result.session) }],
+          };
+        case "backwards_range":
+          return { isError: true, content: [{ type: "text", text: backwardsRangeMessage(result.from, result.to) }] };
         default:
           return result satisfies never;
       }
