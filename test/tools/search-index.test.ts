@@ -4,7 +4,10 @@
 // the cases are about how often a passage is embedded and whether the server sees a new pull, not about how
 // well anything ranks.
 import { afterEach, describe, expect, it } from "vitest";
+import type { Embedder } from "#/packages/embedder/index.ts";
 import { callTool, connectClient } from "../support/mcp-clients.ts";
+import { loadRealEmbedder } from "../support/real-embedder.ts";
+import { recordEmbeddings } from "../support/recording-embedder.ts";
 import { startSystem, type System } from "../support/system.ts";
 
 const systems: System[] = [];
@@ -13,8 +16,8 @@ afterEach(async () => {
   for (const system of systems.splice(0)) await system.stop();
 });
 
-async function start(clockAt: string): Promise<System> {
-  const system = await startSystem({ clockAt, documents: true });
+async function start(clockAt: string, embedder?: Embedder): Promise<System> {
+  const system = await startSystem({ clockAt, documents: true, ...(embedder === undefined ? {} : { embedder }) });
   systems.push(system);
   return system;
 }
@@ -147,4 +150,40 @@ describe("a row OLIS changes after the pull", () => {
     expect(await idsFor("SB 69")).not.toContain("testimony-2025r1-900006");
     await connected.close();
   }, 60_000);
+});
+
+// A vector is kept under the hash of its passage's text and reused by it (ADR-0025), so it has to be a function of
+// that text and of nothing that happened to be embedded beside it. The real model, with its weights quantized,
+// scales its activations over the whole batch it is given, so a passage run with others gets a slightly different
+// vector from the same passage run alone (cosine about 0.997 in the review of #9). The worker's embedder is
+// wrapped to read the vectors it hands back (test/support/recording-embedder.ts).
+describe("a passage's vector", () => {
+  const startOf = (passage: { text: string }): string => passage.text.replace(/\s+/g, " ").slice(0, 60);
+  const smallPull = "2025-01-15T22:00:00Z"; // 14:00 Pacific: SLB's agenda and the Introduced Versions of five Measures
+  const largerPull = "2025-01-18T02:00:00Z"; // 2025-01-17 18:00 Pacific: the early Session of search.test.ts, 87 more documents
+
+  it("is the one the model gives the passage on its own, whichever other documents were pulled with it", async () => {
+    const model = await loadRealEmbedder();
+    const small = recordEmbeddings(model);
+    const larger = recordEmbeddings(model);
+    await start(smallPull, small.embedder);
+    await start(largerPull, larger.embedder);
+
+    expect(small.embedded.length).toBeGreaterThan(5);
+    expect(larger.embedded.length).toBeGreaterThan(small.embedded.length);
+    const largerByText = new Map(larger.embedded.map((passage) => [passage.text, passage.vector]));
+    const same = (a: Float32Array | undefined, b: Float32Array | undefined): boolean =>
+      a !== undefined && b !== undefined && a.every((value, place) => value === b[place]);
+    // The five Versions are in both pulls, with other documents beside them in the larger one.
+    expect(
+      small.embedded.filter((passage) => !same(largerByText.get(passage.text), passage.vector)).map(startOf),
+    ).toEqual([]);
+    // And each is what the model gives that passage with nothing beside it.
+    const differing: string[] = [];
+    for (const passage of larger.embedded) {
+      const [alone] = await model.embedPassages([passage.text]);
+      if (!same(passage.vector, alone)) differing.push(startOf(passage));
+    }
+    expect(differing).toEqual([]);
+  }, 180_000);
 });
