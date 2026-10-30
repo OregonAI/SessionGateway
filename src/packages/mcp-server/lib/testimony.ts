@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
-import type { TestimonyEntry } from "#/packages/domain/documents.ts";
+import type { DocumentId, TestimonyEntry } from "#/packages/domain/documents.ts";
 import { measureIdOf, parseMeasureReference, type SessionKey } from "#/packages/domain/index.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 
@@ -20,6 +20,12 @@ const listedPositions = [
 ] as const;
 
 const UNLISTED_POSITION_LABEL = "unlisted position";
+
+/**
+ * The most ids one set of identical letters lists. A form letter can run to hundreds of rows on one Measure,
+ * and the set is on every page.
+ */
+const MAX_LISTED_IDS = 100;
 
 function positionLabelOf(id: number): string {
   return listedPositions.find((position) => position.id === id)?.label ?? UNLISTED_POSITION_LABEL;
@@ -81,12 +87,31 @@ const itemOutput = z.object({
     .describe(
       "False when the file has no text to read, as with a scan or a photograph, so get_document returns empty text. Null when fetched is false.",
     ),
+  same_letter_as: z
+    .string()
+    .nullable()
+    .describe(
+      "The id to read (id_to_read of an entry of identical_letters) when this row's letter is the same text as another row's of the Measure, this row's own id included when it is the lowest. Null when no other row has the same text.",
+    ),
   agency_id: z
     .string()
     .nullable()
     .describe(
       "The OregonAI agency registry slug of the Agency that Organization names, from the build-time snapshot. Null when Organization is not an Agency's name or alias.",
     ),
+});
+
+const identicalLetterOutput = z.object({
+  id_to_read: z
+    .string()
+    .describe(
+      "The id of the set's Testimony with the lowest CommTestId. Give it to get_document to read the letter once.",
+    ),
+  count: z.number().describe("How many of the Measure's Testimony rows have this letter."),
+  ids: z
+    .array(z.string())
+    .describe(`The ids of the rows that have it, lowest CommTestId first, at most the first ${MAX_LISTED_IDS}.`),
+  ids_left_out: z.number().describe("How many of the rows are not in ids: count minus the ids listed."),
 });
 
 const organizationGroupOutput = z.object({
@@ -122,6 +147,11 @@ export const testimonyOutput = z.object({
     .describe(
       "The Measure's rows by position: the four listed positions in the order support, oppose, neutral, unknown, each with its count (0 when none), then any other position id found, in numeric order.",
     ),
+  identical_letters: z
+    .array(identicalLetterOutput)
+    .describe(
+      "Each text that two or more of the Measure's rows share, listed once, on every page. The rows stay one item each, so who testified is not lost and the counts add up to total. Texts are compared as stored, exactly. A file with no text layer is never the same as another.",
+    ),
   positions: z
     .array(positionOutput)
     .describe("The rows on this page, by position in the order of position_counts, then by organization."),
@@ -153,7 +183,7 @@ function compareGroupKeys(a: string, b: string): number {
 
 type Item = TestimonyOutput["positions"][number]["organizations"][number]["items"][number];
 
-function itemOf(entry: TestimonyEntry): Item {
+function itemOf(entry: TestimonyEntry, sameLetterAs: ReadonlyMap<DocumentId, DocumentId>): Item {
   return {
     id: entry.id,
     source_url: entry.sourceUrl,
@@ -166,6 +196,7 @@ function itemOf(entry: TestimonyEntry): Item {
     meeting_date: entry.meetingAt,
     fetched: entry.fetched,
     has_text_layer: entry.hasTextLayer,
+    same_letter_as: sameLetterAs.get(entry.id) ?? null,
     agency_id: entry.agencyId,
   };
 }
@@ -173,7 +204,7 @@ function itemOf(entry: TestimonyEntry): Item {
 type Group = TestimonyOutput["positions"][number]["organizations"][number];
 
 /** The entries of one position (already in CommTestId order) as organization groups, in alphabetical order. */
-function groupsOf(entries: readonly TestimonyEntry[]): Group[] {
+function groupsOf(entries: readonly TestimonyEntry[], sameLetterAs: ReadonlyMap<DocumentId, DocumentId>): Group[] {
   const byKey = new Map<string, Group>();
   for (const entry of entries) {
     const key = organizationKey(entry.organization);
@@ -186,9 +217,37 @@ function groupsOf(entries: readonly TestimonyEntry[]): Group[] {
       group.spellings.push(entry.organization);
     }
     group.count += 1;
-    group.items.push(itemOf(entry));
+    group.items.push(itemOf(entry, sameLetterAs));
   }
   return [...byKey.entries()].sort(([a], [b]) => compareGroupKeys(a, b)).map(([, group]) => group);
+}
+
+type IdenticalLetter = TestimonyOutput["identical_letters"][number];
+
+/**
+ * The texts two or more of the rows share (entries are in CommTestId order, so the first of a set is the
+ * lowest), and which set each row of one is in. A file with no text layer is never the same as another: its
+ * empty text says nothing about what the file shows.
+ */
+function identicalLettersOf(entries: readonly TestimonyEntry[]): {
+  letters: IdenticalLetter[];
+  sameLetterAs: Map<DocumentId, DocumentId>;
+} {
+  const byText = new Map<string, DocumentId[]>();
+  for (const entry of entries) {
+    if (entry.hasTextLayer !== true || entry.textHash === null) continue;
+    byText.set(entry.textHash, [...(byText.get(entry.textHash) ?? []), entry.id]);
+  }
+  const letters: IdenticalLetter[] = [];
+  const sameLetterAs = new Map<DocumentId, DocumentId>();
+  for (const ids of byText.values()) {
+    const [idToRead] = ids;
+    if (idToRead === undefined || ids.length < 2) continue;
+    for (const id of ids) sameLetterAs.set(id, idToRead);
+    const listed = ids.slice(0, MAX_LISTED_IDS);
+    letters.push({ id_to_read: idToRead, count: ids.length, ids: listed, ids_left_out: ids.length - listed.length });
+  }
+  return { letters, sameLetterAs };
 }
 
 export function testimony(
@@ -205,6 +264,7 @@ export function testimony(
     throw new Error(`The index holds Testimony of ${session} but no completed full pull to date it by`);
   }
   const entries = reader.findTestimony(key);
+  const identical = identicalLettersOf(entries);
   const countByPosition = new Map<number, number>();
   for (const entry of entries) countByPosition.set(entry.positionId, (countByPosition.get(entry.positionId) ?? 0) + 1);
   return {
@@ -215,11 +275,15 @@ export function testimony(
       position_counts: [...new Set([...listedPositions.map((position) => position.id), ...countByPosition.keys()])]
         .sort(comparePositions)
         .map((id) => ({ position_id: id, position: positionLabelOf(id), count: countByPosition.get(id) ?? 0 })),
+      identical_letters: identical.letters,
       positions: [...countByPosition.keys()].sort(comparePositions).map((id) => ({
         position_id: id,
         position: positionLabelOf(id),
         count: countByPosition.get(id) ?? 0,
-        organizations: groupsOf(entries.filter((entry) => entry.positionId === id)),
+        organizations: groupsOf(
+          entries.filter((entry) => entry.positionId === id),
+          identical.sameLetterAs,
+        ),
       })),
       as_of: asOf,
       notice: NON_OFFICIAL_NOTICE,

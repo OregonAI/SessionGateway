@@ -146,6 +146,7 @@ const schema = `
     source_url TEXT NOT NULL,
     retrieved_at TEXT NOT NULL,
     content_hash TEXT NOT NULL,
+    text_hash TEXT NOT NULL,
     page_count INTEGER NOT NULL,
     has_text_layer INTEGER NOT NULL,
     posted_at TEXT,

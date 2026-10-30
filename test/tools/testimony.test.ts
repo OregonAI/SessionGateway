@@ -21,6 +21,7 @@ afterAll(async () => {
 type PositionCount = { position_id: number; position: string; count: number };
 type Item = { id: string; [field: string]: unknown };
 type Group = { organization: string | null; spellings: string[]; count: number; items: Item[] };
+type IdenticalLetter = { id_to_read: string; count: number; ids: string[]; ids_left_out: number };
 type Position = { position_id: number; position: string; count: number; organizations: Group[] };
 
 describe.for(eras)("testimony for a %s client", (era) => {
@@ -165,5 +166,73 @@ describe.for(eras)("testimony for a %s client", (era) => {
       source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/PublicTestimonyDocument/117165",
     });
     expect(items.map((item) => item.id)).toContain("testimony-2025r1-117165");
+  });
+
+  // The lead checked HB 3131's 42 files by bytes, and `pdftotext -raw` over all 84 fixture files finds the same two
+  // pairs of Testimony anywhere in the fixture (SB 64's 117286 and 117289, SB 921's two photographs) and none among
+  // HB 3131's. So nothing is reported there, and no item points at another.
+  it("reports no identical letters on HB 3131", async () => {
+    const outcome = await callTool(connected, "testimony", { measure: "HB 3131" });
+
+    expect(outcome.structured?.["identical_letters"]).toEqual([]);
+    const items = (outcome.structured?.["positions"] as Position[])
+      .flatMap((position) => position.organizations)
+      .flatMap((group) => group.items);
+    expect(items.map((item) => item["same_letter_as"])).toEqual(Array<null>(42).fill(null));
+  });
+
+  // SB 64's Testimony 117286 and 117289 (Cedric Hayden, "Oregon State Senate ", SHS, 2025-01-23) are byte-identical
+  // files: `sha256sum` gives c0bf7b78e4df... for both (98,777 bytes), and `pdftotext -raw` prints the same text.
+  // 117281, 117283, 117284, 117288 and 117290 are the same submitter's other files; their hashes and their text
+  // differ. The set is reported once, with the lowest CommTestId to read and the count; both items stay listed and
+  // point at it, so the rows still add up to the Measure's 12 and who submitted what is not lost.
+  it("reports SB 64's two byte-identical letters once, with a count, and points both items at it", async () => {
+    const outcome = await callTool(connected, "testimony", { measure: "SB 64" });
+
+    expect(outcome.isError).toBe(false);
+    expect(outcome.structured).toMatchObject({ measure_id: "measure-2025r1-sb64", total: 12 });
+    expect(outcome.structured?.["identical_letters"] as IdenticalLetter[]).toEqual([
+      {
+        id_to_read: "testimony-2025r1-117286",
+        count: 2,
+        ids: ["testimony-2025r1-117286", "testimony-2025r1-117289"],
+        ids_left_out: 0,
+      },
+    ]);
+    const items = (outcome.structured?.["positions"] as Position[])
+      .flatMap((position) => position.organizations)
+      .flatMap((group) => group.items);
+    expect(items).toHaveLength(12);
+    const pointers = items
+      .filter((item) => item["same_letter_as"] !== null)
+      .map((item) => [item.id, item["same_letter_as"]]);
+    expect(pointers).toEqual([
+      ["testimony-2025r1-117286", "testimony-2025r1-117286"],
+      ["testimony-2025r1-117289", "testimony-2025r1-117286"],
+    ]);
+  });
+
+  // SB 921's Testimony 148731 and 148734 are two photographs (test/fixtures/olis-2025R1/README.md) with no text
+  // layer, and `pdftotext` finds no character in either. Two files with nothing to read say nothing about each
+  // other, so they are not a set; each is listed with the no-text-layer flag.
+  it("does not take two files with no text layer for the same letter", async () => {
+    const outcome = await callTool(connected, "testimony", { measure: "SB 921" });
+
+    expect(outcome.structured?.["identical_letters"]).toEqual([]);
+    const items = (outcome.structured?.["positions"] as Position[])
+      .flatMap((position) => position.organizations)
+      .flatMap((group) => group.items);
+    const photographs = items.filter((item) => ["148731", "148734"].some((id) => item.id.endsWith(id)));
+    expect(
+      photographs.map((item) => [
+        item.id,
+        item["document_description"],
+        item["has_text_layer"],
+        item["same_letter_as"],
+      ]),
+    ).toEqual([
+      ["testimony-2025r1-148731", "Photo", false, null],
+      ["testimony-2025r1-148734", "Photo", false, null],
+    ]);
   });
 });

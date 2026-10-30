@@ -463,9 +463,9 @@ export function openIndexWriter(path: string): IndexWriter {
     storeDocument(session, document) {
       const insertDocument = database.prepare(
         `INSERT INTO document (id, node_id, session_key, kind, label, source_url, retrieved_at, content_hash,
-                               page_count, has_text_layer, posted_at, analysis_version_label,
+                               text_hash, page_count, has_text_layer, posted_at, analysis_version_label,
                                analysis_is_minority, text)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       const insertRelation = database.prepare(
         `INSERT INTO document_relation (document_id, relation, to_id, meaning, provenance) VALUES (?, ?, ?, ?, ?)`,
@@ -481,6 +481,7 @@ export function openIndexWriter(path: string): IndexWriter {
           document.sourceUrl,
           document.retrievedAt,
           document.contentHash,
+          document.textHash,
           document.pageCount,
           document.hasTextLayer ? 1 : 0,
           document.postedAt,

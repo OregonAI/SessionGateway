@@ -235,6 +235,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
         ...link,
         retrievedAt: formatPacific(deps.clock.now()),
         contentHash: createHash("sha256").update(fetched.bytes).digest("hex"),
+        textHash: createHash("sha256").update(fetched.pdf.text).digest("hex"),
         pageCount: fetched.pdf.pageCount,
         hasTextLayer: fetched.pdf.hasTextLayer,
         text: fetched.pdf.text,

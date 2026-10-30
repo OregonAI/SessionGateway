@@ -227,7 +227,7 @@ export type RelatedNode = {
 /** What `get_document` resolves an id to: a document, and the nodes it (or the amendment's postings) point at. */
 export type DocumentView = {
   /** The document whose text is served: the id asked for, or an amendment's latest posting. */
-  document: Omit<StoredDocument, "relations">;
+  document: Omit<StoredDocument, "relations" | "textHash">;
   related: RelatedNode[];
 };
 
@@ -236,6 +236,12 @@ export type StoredDocument = DocumentLink & {
   retrievedAt: Timestamp;
   /** The sha256 of the file OLIS served, in lower-case hex. */
   contentHash: string;
+  /**
+   * The sha256 of the extracted text, as the store keeps it, in lower-case hex. Two files with the same
+   * words can differ in bytes (a PDF's modification date, ADR-0010), so this and not `contentHash` says
+   * whether two documents read the same.
+   */
+  textHash: string;
   pageCount: number;
   /** False when extraction found nothing but whitespace: a scan or a photograph. */
   hasTextLayer: boolean;
@@ -260,6 +266,8 @@ export type TestimonyEntry = TestimonyDetails & {
   fetched: boolean;
   /** False when the file has no text layer; null while the store does not hold the file. */
   hasTextLayer: boolean | null;
+  /** The sha256 of the file's extracted text (`StoredDocument.textHash`); null while the store does not hold the file. */
+  textHash: string | null;
 };
 
 export type Meeting = {

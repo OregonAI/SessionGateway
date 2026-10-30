@@ -241,6 +241,7 @@ const testimonyRow = z.object({
   agency_id: z.string().nullable(),
   fetched: z.number(),
   has_text_layer: z.number().nullable(),
+  text_hash: z.string().nullable(),
 });
 const countRow = z.object({ n: z.number() });
 const kindCountRow = z.object({ kind: z.string(), n: z.number() });
@@ -352,7 +353,7 @@ export function openIndexReader(path: string): IndexReader {
   const selectTestimony = database.prepare(
     `SELECT t.document_id AS id, t.comm_test_id, t.source_url, t.document_description, t.position_id, t.submitter,
             t.behalf_of, t.organization, t.committee_id, t.committee_code, t.meeting_at, t.agency_id,
-            d.id IS NOT NULL AS fetched, d.has_text_layer
+            d.id IS NOT NULL AS fetched, d.has_text_layer, d.text_hash
      FROM testimony t LEFT JOIN document d ON d.id = t.document_id
      WHERE t.measure_id = ? ORDER BY t.comm_test_id`,
   );
@@ -567,6 +568,7 @@ export function openIndexReader(path: string): IndexReader {
           agencyId: stored.agency_id as AgencyId | null,
           fetched: stored.fetched === 1,
           hasTextLayer: stored.has_text_layer === null ? null : stored.has_text_layer === 1,
+          textHash: stored.text_hash,
         };
       });
     },
