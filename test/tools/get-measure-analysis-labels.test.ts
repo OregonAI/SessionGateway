@@ -3,8 +3,10 @@
 // after the file was fetched. The fixture is never edited by hand (test/fixtures/CLAUDE.md), so each
 // case adds a feed row to the fake OLIS (`strayRows`), served with a fixture file (`strayDocuments`).
 // EVERY ROW BELOW IS MADE UP: its id (9001xx), its Measure and its files are not the feed's. What is
-// real is the label it carries: each one occurs in the full 2025R1 cache (olis-odata.md gotcha 9;
-// docs/adr/0012 has the rows). Cases that only read the fixture are in get-measure-analysis.test.ts.
+// real is the label it carries: "B*", "MRA", "MRB", "MRC" and "A" on a Measure without A-Engrossed
+// occur in the full 2025R1 cache (olis-odata.md gotcha 9; docs/adr/0012 has the rows). "Z9" and a null
+// Version do not, and are made up to show the branches for a label nobody has met.
+// Cases that only read the fixture are in get-measure-analysis.test.ts.
 // The last case is a made-up Measure with no digest and no analysis documents.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, type ConnectedClient, type ToolOutcome } from "../support/mcp-clients.ts";
