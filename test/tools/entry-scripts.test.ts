@@ -17,10 +17,15 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-/** Runs a script with exactly this environment (and Node's own PATH), until it exits. */
+/** The environment of a child: this and nothing else, plus PATH and the tests' own non-Pacific zone. */
+function childEnvironment(env: Record<string, string>): Record<string, string> {
+  return { PATH: process.env["PATH"] ?? "", TZ: process.env["TZ"] ?? "UTC", ...env };
+}
+
+/** Runs a script with exactly this environment, until it exits. */
 function run(script: string, env: Record<string, string>): Promise<Finished> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [script], { env: { PATH: process.env["PATH"] ?? "", ...env } });
+    const child = spawn(process.execPath, [script], { env: childEnvironment(env) });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
@@ -83,7 +88,7 @@ describe("the entry scripts", () => {
 
     const port = await freePort();
     const server = spawn(process.execPath, ["src/bin/server.ts"], {
-      env: { PATH: process.env["PATH"] ?? "", ...env, MCP_PORT: String(port) },
+      env: childEnvironment({ ...env, MCP_PORT: String(port) }),
     });
     const exited = new Promise<number | null>((resolve) => server.once("close", resolve));
     cleanups.push(() => {
@@ -97,20 +102,37 @@ describe("the entry scripts", () => {
     server.kill("SIGTERM");
 
     expect(outcome.structured).toMatchObject({ id: "measure-2025r1-sb69" });
+    // The worker dated the pull with the system clock: Pacific time, an offset of -08:00 or -07:00.
+    expect(outcome.structured?.["as_of"]).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-0[78]:00$/);
     expect(await exited).toBe(0);
-  });
+  }, 20_000);
 
-  it("fail at start-up on a bad variable, naming the variable and never its value", async () => {
-    const { olis, database } = await fakeOlisAndDatabase();
+  // [script, variable, a value the variable must refuse]
+  const badVariables: readonly (readonly [string, string, string])[] = [
+    ["src/bin/ingest.ts", "SESSION_KEY", "not-a-session-key"],
+    ["src/bin/ingest.ts", "OLIS_BASE_URL", "not a url at all"],
+    ["src/bin/server.ts", "SESSION_KEY", "not-a-session-key"],
+    ["src/bin/server.ts", "MCP_PORT", "seventy"],
+    ["src/bin/server.ts", "MCP_PATH", "no-leading-slash"],
+  ];
 
-    const finished = await run("src/bin/ingest.ts", {
-      SESSION_KEY: "not-a-session-key",
-      OLIS_BASE_URL: olis.baseUrl,
-      DATABASE_PATH: database.path,
-    });
+  it.for(badVariables)(
+    "%s fails at start-up on a bad %s, naming the variable and never its value",
+    { timeout: 20_000 },
+    async ([script, variable, value]) => {
+      const { olis, database } = await fakeOlisAndDatabase();
+      const env = {
+        SESSION_KEY: "2025R1",
+        OLIS_BASE_URL: olis.baseUrl,
+        DATABASE_PATH: database.path,
+        [variable]: value,
+      };
 
-    expect(finished.code).not.toBe(0);
-    expect(finished.stderr).toContain("SESSION_KEY");
-    expect(finished.stderr).not.toContain("not-a-session-key");
-  });
+      const finished = await run(script, env);
+
+      expect(finished.code).not.toBe(0);
+      expect(finished.stderr).toContain(variable);
+      expect(finished.stderr).not.toContain(value);
+    },
+  );
 });
