@@ -3,6 +3,7 @@
 // wires the production packages through their entry points, the way src/bin/ does.
 import { loadIngestConfig, loadServerConfig, type ServerConfig } from "#/packages/config/index.ts";
 import { runFullPull, type FullPullResult } from "#/packages/ingest/index.ts";
+import { readLegislatorAliases } from "#/packages/legislators/aliases.ts";
 import { createSessionGatewayHandler, type SessionGatewayHandler } from "#/packages/mcp-server/handler.ts";
 import { createSimulatedClock, type SimulatedClock } from "./clock.ts";
 import { startFakeOlis, type FakeOlis, type FakeOlisOptions } from "./fake-olis.ts";
@@ -58,7 +59,12 @@ export async function startSystem(options: SystemOptions): Promise<System> {
     DATABASE_PATH: database.path,
   };
   const pull = (): Promise<FullPullResult> =>
-    runFullPull(loadIngestConfig(env), { fetch, clock, signal: AbortSignal.timeout(30_000) });
+    runFullPull(loadIngestConfig(env), {
+      fetch,
+      clock,
+      signal: AbortSignal.timeout(30_000),
+      legislatorAliases: readLegislatorAliases(),
+    });
   try {
     await pull();
     const serverConfig = loadServerConfig({ ...env, ...options.serverEnv });

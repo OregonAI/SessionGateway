@@ -3,6 +3,7 @@
 // and passed down: the configuration, `fetch`, the clock and the shutdown signal.
 import { loadIngestConfig } from "#/packages/config/index.ts";
 import { runFullPull } from "#/packages/ingest/index.ts";
+import { readLegislatorAliases } from "#/packages/legislators/aliases.ts";
 import { systemClock } from "#/packages/time/clock.ts";
 
 const shutdown = new AbortController();
@@ -13,4 +14,9 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 const config = loadIngestConfig(process.env);
-await runFullPull(config, { fetch, clock: systemClock, signal: shutdown.signal });
+await runFullPull(config, {
+  fetch,
+  clock: systemClock,
+  signal: shutdown.signal,
+  legislatorAliases: readLegislatorAliases(),
+});

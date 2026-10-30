@@ -49,16 +49,28 @@ export type Sponsor = {
   legislator: Legislator | null;
 };
 
-/**
- * Mints a Legislator's id from the Legislator Code that names the person: the code without its
- * chamber word, lower case, in hyphenated words.
- */
-export function legislatorIdOf(session: SessionKey, code: string): LegislatorId {
-  const name = code
-    .split(" ")
-    .slice(1)
-    .join(" ")
+/** Lower-case ASCII words: accents dropped, anything else that is not a letter or digit a word break. */
+function wordsOf(text: string): string[] {
+  return text
+    .normalize("NFD")
+    .replace(/\p{Mn}/gu, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-");
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word !== "");
+}
+
+/**
+ * Mints a Legislator's id, `legislator-2025r1-<name>`, from the Legislator Code that names the person
+ * and the person's last name. The name is the last name and whatever the code adds after it (the
+ * initials that tell two Legislators of one last name apart: "Rep Levy B" is `levy-b`), in lower
+ * case, hyphenated. The chamber word and a title before the last name ("Speaker" in "Rep Speaker
+ * Fahey") are left out, so the id stays with the person when their code changes chamber or office.
+ */
+export function legislatorIdOf(session: SessionKey, code: string, lastName: string): LegislatorId {
+  const words = wordsOf(code).slice(1);
+  const last = wordsOf(lastName);
+  let start = 0;
+  while (start < words.length && words.slice(start, start + last.length).join(" ") !== last.join(" ")) start += 1;
+  const name = (start < words.length ? words.slice(start) : words).join("-");
   return `legislator-${session.toLowerCase()}-${name}` as LegislatorId;
 }
