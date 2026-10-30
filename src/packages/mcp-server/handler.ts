@@ -4,7 +4,13 @@ import { createMcpHandler, McpServer, type McpHttpHandler } from "@modelcontextp
 import type { ServerConfig } from "#/packages/config/index.ts";
 import { openIndexReader, type IndexReader } from "#/packages/database/reader.ts";
 import type { Clock } from "#/packages/time/clock.ts";
-import { getDocument, getDocumentInput, getDocumentOutput, unknownDocumentMessage } from "./lib/get-document.ts";
+import {
+  getDocument,
+  getDocumentInput,
+  getDocumentOutput,
+  noSuchPartMessage,
+  unknownDocumentMessage,
+} from "./lib/get-document.ts";
 import { getMeasure, getMeasureInput, getMeasureOutput, unknownMeasureMessage } from "./lib/get-measure.ts";
 import { createRateLimiter, rateLimitMessage, type RateLimiter } from "./lib/rate-limit.ts";
 
@@ -96,6 +102,11 @@ function buildServer(reader: IndexReader, config: ServerConfig, limiter: RateLim
           return {
             isError: true,
             content: [{ type: "text", text: unknownDocumentMessage(result.id, result.session) }],
+          };
+        case "no_such_part":
+          return {
+            isError: true,
+            content: [{ type: "text", text: noSuchPartMessage(result.id, result.part, result.partCount) }],
           };
         default:
           return result satisfies never;

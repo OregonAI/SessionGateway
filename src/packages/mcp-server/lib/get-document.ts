@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
+import { splitIntoParts } from "./parts.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
 
 export const getDocumentInput = z.object({
@@ -64,7 +65,9 @@ export type GetDocumentOutput = z.infer<typeof getDocumentOutput>;
 
 /** An unknown document is an expected outcome, so it is a value; the MCP edge decides it is a tool error. */
 export type GetDocumentResult =
-  { kind: "found"; document: GetDocumentOutput } | { kind: "unknown"; id: string; session: SessionKey };
+  | { kind: "found"; document: GetDocumentOutput }
+  | { kind: "unknown"; id: string; session: SessionKey }
+  | { kind: "no_such_part"; id: string; part: number; partCount: number };
 
 export function getDocument(
   reader: IndexReader,
@@ -74,6 +77,9 @@ export function getDocument(
   const found = reader.findDocument(input.id);
   if (found === undefined) return { kind: "unknown", id: input.id, session };
   const stored = found.document;
+  const parts = splitIntoParts(stored.text);
+  const part = input.part ?? 1;
+  if (part > parts.length) return { kind: "no_such_part", id: input.id, part, partCount: parts.length };
   const asOf = reader.asOf(session);
   if (asOf === undefined) {
     throw new Error(`The index holds documents of ${session} but no completed full pull to date them by`);
@@ -90,9 +96,9 @@ export function getDocument(
       content_hash: stored.contentHash,
       page_count: stored.pageCount,
       has_text_layer: stored.hasTextLayer,
-      part: 1,
-      part_count: 1,
-      text: stored.text,
+      part,
+      part_count: parts.length,
+      text: parts[part - 1] ?? "",
       related: found.related.map((node) => ({
         id: node.to,
         relation: node.relation,
@@ -108,4 +114,10 @@ export function getDocument(
 /** What an agent is told when no document matches, so it can correct the call. */
 export function unknownDocumentMessage(id: string, session: SessionKey): string {
   return `No document "${id}" in the ${session} Session. Give a document id such as version-${session.toLowerCase()}-sb69-a-engrossed.`;
+}
+
+/** What an agent is told when it asks for a part past the last one. */
+export function noSuchPartMessage(id: string, part: number, partCount: number): string {
+  const parts = partCount === 1 ? "1 part" : `${partCount} parts`;
+  return `Document "${id}" has ${parts}, so there is no part ${part}. Ask for a part from 1 to ${partCount}.`;
 }

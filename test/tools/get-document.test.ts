@@ -252,4 +252,43 @@ describe.for(eras)("get_document for a %s client", (era) => {
       expect(meetings).toEqual(["meeting-2025r1-slb-2025-03-13-0800", "meeting-2025r1-slb-2025-03-18-0800"]);
     });
   });
+
+  describe("a long document", () => {
+    // SB 69's A-Engrossed Version is 10 pages (`pdfinfo`), 35,802 characters and 29,734 that are not
+    // whitespace as `pdftotext -raw` prints it: more than one part of at most 20,000 characters.
+    const id = "version-2025r1-sb69-a-engrossed";
+
+    it("is served in parts that say how many there are and add up to the text as published", async () => {
+      const first = await callTool(connected, "get_document", { id });
+      const count = Number(first.structured?.["part_count"]);
+      const parts = [first];
+      for (let part = 2; part <= count; part += 1) {
+        parts.push(await callTool(connected, "get_document", { id, part }));
+      }
+
+      expect(count).toBe(2);
+      expect(parts.map((outcome) => outcome.structured?.["part"])).toEqual([1, 2]);
+      expect(parts.map((outcome) => outcome.structured?.["part_count"])).toEqual([2, 2]);
+      const texts = parts.map((outcome) => String(outcome.structured?.["text"]));
+      for (const text of texts) expect(text.length).toBeLessThanOrEqual(20_000);
+      // A part ends at the end of a line, so no line is cut in two.
+      expect(texts[0]).toMatch(/\n$/);
+
+      const whole = texts.join("");
+      expect(whole.replace(/\s/g, "")).toHaveLength(29_734);
+      // Exactly as published: line numbers, the hyphen that breaks "Labor" across two lines, and the
+      // form feed between pages are all kept (the page count is 10, so there are nine).
+      expect(whole.startsWith("1\n2\n3\n")).toBe(true);
+      expect(whole).toContain("the Bureau of La-\nbor and Industries is responsible for administrative");
+      expect(whole.split("\f")).toHaveLength(10);
+      expect(parts[0]?.structured).toMatchObject({ page_count: 10 });
+    });
+
+    it("tells an agent that asks for a part that is not there", async () => {
+      const outcome = await callTool(connected, "get_document", { id, part: 3 });
+
+      expect(outcome.isError).toBe(true);
+      expect(outcome.text).toContain("2 parts");
+    });
+  });
 });
