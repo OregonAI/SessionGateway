@@ -145,3 +145,111 @@ describe("a document that cannot be had", () => {
     ]);
   });
 });
+
+describe("rows the fixture does not have", () => {
+  // The fixture has no Recording Log, no file that is not a PDF, and no Proposed Amendment whose text
+  // changed between postings. A row for each is added to the fake feed, and the file it links is a
+  // fixture file served under a path of its own. The expected values are the manifest's.
+  const olisRoot = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads";
+  const recordingLogUrl = `${olisRoot}/CommitteeMeetingDocument/900001`;
+  const corruptUrl = `${olisRoot}/MeasureDocument/SB69/Corrupt`;
+  const revisedUrl = `${olisRoot}/ProposedAmendment/900002`;
+  let system: System;
+
+  beforeAll(async () => {
+    system = await startSystem({
+      clockAt: "2025-01-29T17:00:00Z",
+      documents: true,
+      olis: {
+        strayRows: {
+          CommitteeMeetingDocuments: [
+            {
+              SessionKey: "2025R1",
+              CommitteeMeetingDocumentId: 900001,
+              CommitteeCode: "SLB",
+              MeetingDate: "2025-01-21T08:00:00",
+              DocumentType: "Recording Log",
+              MeasurePrefix: null,
+              MeasureNumber: null,
+              DocumentUrl: recordingLogUrl,
+            },
+          ],
+          MeasureDocuments: [
+            {
+              SessionKey: "2025R1",
+              MeasurePrefix: "SB",
+              MeasureNumber: 69,
+              VersionDescription: "Corrupt",
+              DocumentUrl: corruptUrl,
+              CreatedDate: "2025-01-10T13:20:19.467",
+            },
+          ],
+          CommitteeProposedAmendments: [
+            {
+              SessionKey: "2025R1",
+              ProposedAmendmentId: 900002,
+              CommitteeCode: "SLB",
+              MeetingDate: "2025-02-04T08:00:00",
+              MeasurePrefix: "SB",
+              MeasureNumber: 69,
+              AmendmentNumber: "-1",
+              Meaning: "Proposed",
+              ProposedAmendmentUrl: revisedUrl,
+            },
+          ],
+        },
+        strayDocuments: {
+          [new URL(recordingLogUrl).pathname]: "committee-meeting-documents/287879.pdf",
+          // Not a PDF at all: the fixture's own list of Measures.
+          [new URL(corruptUrl).pathname]: "../measures.txt",
+          // SB 69-2's file, standing in for a -1 that was revised and posted again.
+          [new URL(revisedUrl).pathname]: "proposed-amendments/26286.pdf",
+        },
+      },
+    });
+  }, 60_000);
+
+  afterAll(async () => {
+    await system.stop();
+  });
+
+  it("makes a Recording Log of a CommitteeMeetingDocuments row of that type, which is not an Exhibit", async () => {
+    const outcome = await getDocument(system, "recording-log-2025r1-900001");
+
+    expect(outcome.isError).toBe(false);
+    expect(outcome.structured).toMatchObject({
+      kind: "recording_log",
+      label: "Recording Log",
+      source_url: recordingLogUrl,
+    });
+    expect((await getDocument(system, "exhibit-2025r1-900001")).isError).toBe(true);
+  });
+
+  it("reports a file that is not a PDF instead of failing the pull", async () => {
+    expect((await getDocument(system, "version-2025r1-sb69-corrupt")).isError).toBe(true);
+    expect((await getDocument(system, "version-2025r1-sb69-introduced")).isError).toBe(false);
+    expect(system.buildReport()["documents_not_fetched"]).toEqual([
+      {
+        id: "version-2025r1-sb69-corrupt",
+        source_url: corruptUrl,
+        reason: expect.stringMatching(/not a PDF/i) as unknown,
+      },
+    ]);
+  });
+
+  it("keeps the text of each posting when it differs, and serves the latest under the amendment's id", async () => {
+    const node = await getDocument(system, "amendment-2025r1-sb69-1");
+    const first = await getDocument(system, "posting-2025r1-26284");
+
+    // The latest posting is the one to the later meeting, with the revised file.
+    expect(node.structured).toMatchObject({
+      document_id: "posting-2025r1-900002",
+      content_hash: "7aa1301569fee7620b2b050fe096567160cf692b2efe6b0edba4c89779c4e10b",
+    });
+    // The first posting is still there, with the text it had.
+    expect(first.structured).toMatchObject({
+      content_hash: "c58e10ef692899f88e4d595727d739117b5893775527c09737441b5d95e57fe3",
+    });
+    expect(first.structured?.["text"]).not.toBe(node.structured?.["text"]);
+  });
+});

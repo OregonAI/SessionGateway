@@ -85,6 +85,14 @@ export function exhibitIdOf(session: SessionKey, committeeMeetingDocumentId: num
   return `exhibit-${session.toLowerCase()}-${committeeMeetingDocumentId}` as DocumentId;
 }
 
+/**
+ * A Recording Log is a CommitteeMeetingDocuments row like an Exhibit, but a document of its own kind:
+ * the committee's timecoded index of the meeting's recording, not material posted to the record.
+ */
+export function recordingLogIdOf(session: SessionKey, committeeMeetingDocumentId: number): DocumentId {
+  return `recording-log-${session.toLowerCase()}-${committeeMeetingDocumentId}` as DocumentId;
+}
+
 export function testimonyIdOf(session: SessionKey, commTestId: number): DocumentId {
   return `testimony-${session.toLowerCase()}-${commTestId}` as DocumentId;
 }

@@ -10,6 +10,7 @@ import {
   isPrintedAmendment,
   meetingIdOf,
   postingIdOf,
+  recordingLogIdOf,
   testimonyIdOf,
   versionIdOf,
   type DocumentLink,
@@ -159,7 +160,10 @@ async function readExhibits(
   return rows
     .filter((row) => row.SessionKey === session)
     .map((row) => {
-      const id = exhibitIdOf(session, row.CommitteeMeetingDocumentId);
+      const isRecordingLog = row.DocumentType === "Recording Log";
+      const id = isRecordingLog
+        ? recordingLogIdOf(session, row.CommitteeMeetingDocumentId)
+        : exhibitIdOf(session, row.CommitteeMeetingDocumentId);
       const provenance = `CommitteeMeetingDocuments ${row.CommitteeMeetingDocumentId}`;
       const relations: DocumentRelation[] = [
         {
@@ -177,7 +181,7 @@ async function readExhibits(
       return {
         id,
         nodeId: id,
-        kind: "exhibit",
+        kind: isRecordingLog ? "recording_log" : "exhibit",
         label: row.DocumentType,
         sourceUrl: sourceUrlOf(row.DocumentUrl),
         postedAt: null,

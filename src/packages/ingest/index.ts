@@ -6,7 +6,7 @@ import type { IngestConfig } from "#/packages/config/index.ts";
 import { openIndexWriter } from "#/packages/database/writer.ts";
 import { buildReportPath, writeBuildReport, type BuildReport } from "./lib/build-report.ts";
 import { createOlisClient } from "#/packages/olis-client/index.ts";
-import { extractPdfText } from "#/packages/pdf-text/index.ts";
+import { extractPdfText, type ExtractedPdf } from "#/packages/pdf-text/index.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
 
@@ -32,6 +32,18 @@ export type FullPullResult = {
 
 /** A document that takes longer than this is an outage, not a slow answer (olis-odata.md gotcha 15). */
 const DEFAULT_DOCUMENT_TIMEOUT_MS = 60_000;
+
+/** A file OLIS served that is not a PDF the extractor can open is an expected outcome, not a crash. */
+async function readPdf(
+  bytes: Uint8Array,
+): Promise<{ kind: "read"; pdf: ExtractedPdf } | { kind: "unreadable"; reason: string }> {
+  try {
+    return { kind: "read", pdf: await extractPdfText(bytes) };
+  } catch (error) {
+    const why = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    return { kind: "unreadable", reason: `The file is not a PDF the extractor can read (${why})` };
+  }
+}
 
 export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promise<FullPullResult> {
   const asOf = formatPacific(deps.clock.now());
@@ -65,14 +77,18 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
         notFetched.push({ id: link.id, source_url: link.sourceUrl, reason: download.reason });
         continue;
       }
-      const extracted = await extractPdfText(download.bytes);
+      const extracted = await readPdf(download.bytes);
+      if (extracted.kind === "unreadable") {
+        notFetched.push({ id: link.id, source_url: link.sourceUrl, reason: extracted.reason });
+        continue;
+      }
       writer.storeDocument(config.session, {
         ...link,
         retrievedAt: formatPacific(deps.clock.now()),
         contentHash: createHash("sha256").update(download.bytes).digest("hex"),
-        pageCount: extracted.pageCount,
-        hasTextLayer: extracted.hasTextLayer,
-        text: extracted.text,
+        pageCount: extracted.pdf.pageCount,
+        hasTextLayer: extracted.pdf.hasTextLayer,
+        text: extracted.pdf.text,
       });
       documentsFetched += 1;
     }

@@ -107,6 +107,50 @@ describe("the entry scripts", () => {
     expect(await exited).toBe(0);
   }, 20_000);
 
+  it("fetch and serve documents: ingest.ts pulls from OLIS_DOCUMENT_ORIGIN, then server.ts serves the text", async () => {
+    // The feed links documents on olis.oregonlegislature.gov; OLIS_DOCUMENT_ORIGIN sends the worker to the
+    // fake instead, so no test reaches the real OLIS. The documents are served only because this test asks.
+    const olis = await startFakeOlis({ clock: createSimulatedClock("2025-01-29T17:00:00Z"), documents: true });
+    const database = createTempDatabase();
+    cleanups.push(async () => {
+      await olis.close();
+      database.remove();
+    });
+    const env = {
+      SESSION_KEY: "2025R1",
+      OLIS_BASE_URL: olis.baseUrl,
+      OLIS_DOCUMENT_ORIGIN: olis.origin,
+      DATABASE_PATH: database.path,
+    };
+
+    const pulled = await run("src/bin/ingest.ts", env);
+    expect(pulled.code, pulled.stderr).toBe(0);
+
+    const port = await freePort();
+    const server = spawn(process.execPath, ["src/bin/server.ts"], {
+      env: childEnvironment({ ...env, MCP_PORT: String(port) }),
+    });
+    const exited = new Promise<number | null>((resolve) => server.once("close", resolve));
+    cleanups.push(() => {
+      server.kill("SIGKILL");
+    });
+    await listening(port);
+    const connected = await connectClientToUrl("2026-07-28", new URL(`http://127.0.0.1:${port}/mcp`));
+    const outcome = await callTool(connected, "get_document", { id: "version-2025r1-sb69-introduced" });
+    const overview = await callTool(connected, "session_overview", {});
+    await connected.close();
+    server.kill("SIGTERM");
+
+    // The text is SB 69's Introduced Version as `pdftotext -raw` prints it; the link is the feed row's.
+    expect(outcome.structured).toMatchObject({
+      source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/Introduced",
+      has_text_layer: true,
+    });
+    expect(String(outcome.structured?.["text"])).toContain("SECTION 2. Section 1 of this 2025 Act is repealed");
+    expect(overview.structured).toMatchObject({ session: "2025R1" });
+    expect(await exited).toBe(0);
+  }, 30_000);
+
   describe("src/bin/server.ts logs", () => {
     /** Pulls into a fresh database, starts the server on a free port and waits until it listens. */
     async function runningServer(): Promise<{
@@ -191,6 +235,7 @@ describe("the entry scripts", () => {
   const badVariables: readonly (readonly [string, string, string])[] = [
     ["src/bin/ingest.ts", "SESSION_KEY", "not-a-session-key"],
     ["src/bin/ingest.ts", "OLIS_BASE_URL", "not a url at all"],
+    ["src/bin/ingest.ts", "OLIS_DOCUMENT_ORIGIN", "not a url at all"],
     ["src/bin/server.ts", "SESSION_KEY", "not-a-session-key"],
     ["src/bin/server.ts", "MCP_PORT", "seventy"],
     ["src/bin/server.ts", "MCP_PATH", "no-leading-slash"],
