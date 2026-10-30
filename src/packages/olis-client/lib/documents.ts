@@ -178,7 +178,15 @@ async function readAnalyses(
     // only when the feed lists it for the Measure, so a label that names a Version it lacks points nowhere.
     const versionLabel = row.Version ?? "";
     const placement = placeAnalysis(key, versionLabel, (version) => versions.has(version));
-    if (placement.kind === "version") relations.push(versionRelation(placement.versionId, provenance));
+    switch (placement.kind) {
+      case "version":
+        relations.push(versionRelation(placement.versionId, provenance));
+        break;
+      case "unmapped":
+        break;
+      default:
+        placement satisfies never;
+    }
     return {
       id,
       nodeId: id,
