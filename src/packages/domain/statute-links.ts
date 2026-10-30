@@ -6,8 +6,12 @@ import type { AmendmentHeader, AmendmentId, AmendmentPosting, DocumentId } from 
 import type { MeasureId } from "./index.ts";
 import type { OrsChapterId, OrsSectionId } from "./oregonai.ts";
 
-/** What a Statute Link does to its target (GLOSSARY.md, "Statute Link"). */
-export type StatuteLinkKind = "amends" | "repeals" | "adds-to" | "cites";
+/**
+ * What a Statute Link does to its target (GLOSSARY.md, "Statute Link"), in the order spec #1 (story 24) lists them:
+ * the changes first, then the mentions. The one list: the database, the reader and the tools' output take the kinds from it.
+ */
+export const statuteLinkKinds = ["amends", "repeals", "adds-to", "cites"] as const;
+export type StatuteLinkKind = (typeof statuteLinkKinds)[number];
 
 /**
  * What a Statute Link points at. A section can be taken to OregonAI; a chapter cannot, so it is
