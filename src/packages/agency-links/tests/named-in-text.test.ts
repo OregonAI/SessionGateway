@@ -98,4 +98,27 @@ describe("Agencies named in Version and Proposed Amendment text", () => {
       },
     ])("$source", expectLinks);
   });
+  describe("words that look like an Agency's name but are not", () => {
+    test.for<TextRow>([
+      {
+        source:
+          'measure-documents/SB64/Introduced.pdf (SB 64, Introduced): "the United States Department of Agriculture" is the federal department, not Oregon\'s Department of Agriculture',
+        text: [
+          "",
+          "Be It Enacted by the People of the State of Oregon:",
+          "",
+          "4",
+          "",
+          "SECTION 1. (1) No later than 90 days after the effective date of this 2025 Act, the De-",
+          "",
+          "5",
+          "",
+          "partment of Human Services shall submit to the United States Department of Agriculture a",
+          "",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [{ slug: "department-of-human-services", terms: ["Department of Human Services"] }],
+      },
+    ])("$source", expectLinks);
+  });
 });
