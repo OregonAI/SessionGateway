@@ -54,6 +54,20 @@ describe.for(eras)("session_overview for a %s client", (era) => {
       },
     });
   });
+
+  // An agent picks a tool by the description in the tool list (spec #1, story 56: "so that I know which
+  // snapshot an answer used"), so the description has to say that session_overview is where the version is.
+  it("says in the tool list that it reports which OregonAI snapshot the index was built with", async () => {
+    const system = await start(madeUpSnapshot().path);
+
+    const connected = await connectClient(era, system.handler);
+    const { tools } = await connected.client.listTools();
+    await connected.close();
+
+    const description = tools.find((tool) => tool.name === "session_overview")?.description ?? "";
+    expect(description).toContain("OregonAI snapshot");
+    expect(description).toContain("commit");
+  });
 });
 
 describe("a build with the committed snapshot fixture", () => {

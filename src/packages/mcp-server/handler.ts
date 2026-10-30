@@ -115,7 +115,7 @@ function buildServer(reader: IndexReader, config: ServerConfig, limiter: RateLim
     {
       title: "Overview of the Session",
       description:
-        "Returns which Session this service holds, how many Measures, committees, meetings and documents it has (and how many documents are scans with no text layer), and when the index was last refreshed. It is not the official record.",
+        "Returns which Session this service holds, how many Measures, committees, meetings and documents it has (and how many documents are scans with no text layer), when the index was last refreshed, and which version of the OregonAI snapshot it was built with (the commit of OregonAI's executive-regulatory-frameworks repository the registry and ORS data were copied from, and the commit's date). It is not the official record.",
       inputSchema: sessionOverviewInput,
       outputSchema: sessionOverviewOutput,
       annotations: { readOnlyHint: true, openWorldHint: false },
