@@ -11,15 +11,25 @@
 // MeasureSponsorId of 900000 or more is made up for the test, and carries a Legislator Code in a form
 // the feed does use.
 import { afterEach, describe, expect, it } from "vitest";
+import { createTempAliasFile, type TempAliasFile } from "../support/alias-file.ts";
 import { callTool, connectClient, type ToolOutcome } from "../support/mcp-clients.ts";
 import { legislatorRow, memberSponsorRow, sponsorsOf } from "../support/sponsors.ts";
 import { startSystem, type System, type SystemOptions } from "../support/system.ts";
 
 const started: System[] = [];
+const aliasFiles: TempAliasFile[] = [];
 
 afterEach(async () => {
   for (const system of started.splice(0)) await system.stop();
+  for (const aliasFile of aliasFiles.splice(0)) aliasFile.remove();
 });
+
+/** Writes an alias file for the system under test to read in place of the committed one. */
+function aliasFileOf(content: unknown): string {
+  const aliasFile = createTempAliasFile(content);
+  aliasFiles.push(aliasFile);
+  return aliasFile.path;
+}
 
 /** Builds one system and calls get_measure for each reference in it. */
 async function getMeasures(options: SystemOptions, references: readonly string[]): Promise<ToolOutcome[]> {
@@ -266,5 +276,56 @@ describe("sponsors with the same print order", () => {
 
     const codes = sponsorsOf(outcome)?.map((sponsor) => sponsor.legislator_code);
     expect(codes).toEqual(["Rep Speaker Fahey", "Sen President Wagner"]);
+  });
+});
+
+describe("the alias file the worker is given", () => {
+  // "Sen Woods" alone: a file that does not list "Rep Neron". The entry is the committed one's own
+  // evidence for Woods, cut down to the cache's row 150301.
+  const woodsOnly = {
+    about: "A test's alias file.",
+    aliases: [
+      {
+        session: "2025R1",
+        code: "Sen Woods",
+        person: { first_name: "Aaron", last_name: "Woods" },
+        evidence: [
+          { entity_set: "MeasureSponsors (cache)", row: "MeasureSponsorId 150301", says: "HB 3592, Sen Woods, Chief." },
+        ],
+      },
+    ],
+  };
+
+  it("is the only one read: HB 3131's Rep Neron stays unresolved when the file does not list the code", async () => {
+    const system = await startSystem({
+      clockAt: afterTheSession,
+      legislatorAliasesPath: aliasFileOf(woodsOnly),
+    });
+    started.push(system);
+    const connected = await connectClient("2026-07-28", system.handler);
+    try {
+      const outcome = await callTool(connected, "get_measure", { measure: "HB 3131" });
+      const pull = await system.pullAgain();
+
+      const neron = sponsorsOf(outcome)?.find((sponsor) => sponsor.legislator_code === "Rep Neron");
+      expect(neron).toEqual({ level: "chief", legislator_code: "Rep Neron", legislator: null });
+      expect(pull.unresolvedLegislatorCodes).toEqual([
+        { code: "Rep Neron", references: [{ source: "MeasureSponsors", count: 1 }] },
+      ]);
+    } finally {
+      await connected.close();
+    }
+  });
+
+  it.for([
+    [
+      "an entry that cites no evidence",
+      { about: "", aliases: [{ session: "2025R1", code: "Rep Neron", same_person_as: "Sen Neron Misslin" }] },
+    ],
+    ["text that is not JSON", "{ not json"],
+  ] as const)("stops the pull, naming the alias file, for %s", async ([, content]) => {
+    const pull = startSystem({ clockAt: afterTheSession, legislatorAliasesPath: aliasFileOf(content) });
+
+    await expect(pull).rejects.toThrow(/Legislator alias file/);
   });
 });

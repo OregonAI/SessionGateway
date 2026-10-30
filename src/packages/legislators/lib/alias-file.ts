@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { parseSessionKey, type SessionKey } from "#/packages/domain/index.ts";
 
@@ -66,8 +67,16 @@ export function parseAliasFile(content: unknown): LegislatorAlias[] {
   return result.data.aliases;
 }
 
-/** The alias file committed with the code, beside the package's other implementation files. */
-export function readCommittedAliasFile(): LegislatorAlias[] {
-  const path = new URL("../data/legislator-aliases.json", import.meta.url);
-  return parseAliasFile(JSON.parse(readFileSync(path, "utf8")));
+/** Where the alias file committed with the code is: beside the package's other implementation files. */
+export const committedAliasFilePath = fileURLToPath(new URL("../data/legislator-aliases.json", import.meta.url));
+
+/** Reads and parses the alias file at `path`. The entry script chooses the path and passes it down. */
+export function readAliasFile(path: string): LegislatorAlias[] {
+  let content: unknown;
+  try {
+    content = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    throw new Error(`The Legislator alias file at "${path}" could not be read as JSON`, { cause: error });
+  }
+  return parseAliasFile(content);
 }

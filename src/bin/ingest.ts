@@ -5,7 +5,7 @@ import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { loadIngestConfig } from "#/packages/config/index.ts";
 import { runFullPull } from "#/packages/ingest/index.ts";
-import { readLegislatorAliases } from "#/packages/legislators/aliases.ts";
+import { committedAliasFilePath, readLegislatorAliases } from "#/packages/legislators/aliases.ts";
 import { systemClock } from "#/packages/time/clock.ts";
 
 const shutdown = new AbortController();
@@ -20,7 +20,7 @@ const pull = await runFullPull(config, {
   fetch,
   clock: systemClock,
   signal: shutdown.signal,
-  legislatorAliases: readLegislatorAliases(),
+  legislatorAliases: readLegislatorAliases(committedAliasFilePath),
 });
 
 // The build report of Legislator Codes (spec #1, story 54), beside the database it describes. It is

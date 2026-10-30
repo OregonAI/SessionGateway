@@ -3,7 +3,7 @@
 // wires the production packages through their entry points, the way src/bin/ does.
 import { loadIngestConfig, loadServerConfig, type ServerConfig } from "#/packages/config/index.ts";
 import { runFullPull, type FullPullResult } from "#/packages/ingest/index.ts";
-import { readLegislatorAliases } from "#/packages/legislators/aliases.ts";
+import { committedAliasFilePath, readLegislatorAliases } from "#/packages/legislators/aliases.ts";
 import { createSessionGatewayHandler, type SessionGatewayHandler } from "#/packages/mcp-server/handler.ts";
 import { createSimulatedClock, type SimulatedClock } from "./clock.ts";
 import { startFakeOlis, type FakeOlis, type FakeOlisOptions } from "./fake-olis.ts";
@@ -32,6 +32,8 @@ export type SystemOptions = {
   olisBaseUrl?: (serviceRoot: string) => string;
   /** Further environment variables for the server's configuration (MCP_PATH, MCP_PORT, ...). */
   serverEnv?: Record<string, string>;
+  /** The alias file the worker reads, as the entry script would pass it. The committed one by default. */
+  legislatorAliasesPath?: string;
 };
 
 export type System = {
@@ -63,7 +65,7 @@ export async function startSystem(options: SystemOptions): Promise<System> {
       fetch,
       clock,
       signal: AbortSignal.timeout(30_000),
-      legislatorAliases: readLegislatorAliases(),
+      legislatorAliases: readLegislatorAliases(options.legislatorAliasesPath ?? committedAliasFilePath),
     });
   try {
     await pull();
