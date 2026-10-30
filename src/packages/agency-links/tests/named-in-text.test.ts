@@ -42,4 +42,60 @@ describe("Agencies named in Version and Proposed Amendment text", () => {
       },
     ])("$source", expectLinks);
   });
+  describe("a name that the printed line wraps", () => {
+    test.for<TextRow>([
+      {
+        source:
+          "measure-documents/SB69/A-Engrossed.pdf (SB 69, A-Engrossed): the line breaks between the words of a name",
+        text: [
+          "21",
+          "",
+          "(a) Is confidential and for the exclusive use and information of the Director of the Employment",
+          "Department in administering this chapter;",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [{ slug: "employment-department", terms: ["Employment Department"] }],
+      },
+      {
+        source:
+          "measure-documents/SB69/Senate-Amendments-to-Introduced.pdf (Senate Amendments to SB 69): a word hyphenated at the line end, a line number, then the rest of the word",
+        text: [
+          "“(b) Upon request to the United States Attorney’s Office.",
+          "",
+          "Under this paragraph, the Employ-",
+          "",
+          "12",
+          "",
+          "ment Department may disclose an individual’s employment and wage information in response to a",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [{ slug: "employment-department", terms: ["Employment Department"] }],
+      },
+      {
+        source:
+          'measure-documents/SB69/Senate-Amendments-to-Introduced.pdf (Senate Amendments to SB 69): a hyphenated name, then a second name wrapped after "and"',
+        text: [
+          "43",
+          "",
+          "information disclosed under this paragraph is not prepared for the use of the Employment Depart-",
+          "",
+          "44",
+          "",
+          "ment, the costs of disclosing the information shall be paid by the Department of Consumer and",
+          "",
+          "45",
+          "",
+          "Business Services.",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [
+          { slug: "employment-department", terms: ["Employment Department"] },
+          {
+            slug: "department-of-consumer-and-business-services",
+            terms: ["Department of Consumer and Business Services"],
+          },
+        ],
+      },
+    ])("$source", expectLinks);
+  });
 });
