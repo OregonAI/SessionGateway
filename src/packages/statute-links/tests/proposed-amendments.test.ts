@@ -125,7 +125,7 @@ proper for the administration of those sections.
   },
   {
     name: "HB 3795-1: an edit that inserts '; amending ORS 409.711' after a word of the relating clause, and the section that amends it",
-    source: "proposed-amendments/27966.pdf (HB 3795-1), lines 1-169. Statutes Affected Table: 409.711 A §1 HB 3795 B",
+    source: "proposed-amendments/27966.pdf (HB 3795-1), lines 1-168. Statutes Affected Table: 409.711 A §1 HB 3795 B",
     text: `HB 3795-1
 (LC 1688)
 3/31/25 (RH/ps)
@@ -304,7 +304,7 @@ Page 2`,
   },
   {
     name: "HB 3795-A3: an edit that inserts a bare section number, 'and 418.808', and a section that amends it and cites a range",
-    source: "proposed-amendments/28997.pdf (HB 3795-A3), lines 1-83. Statutes Affected Table: 418.808 A §2 HB 3795 B",
+    source: "proposed-amendments/28997.pdf (HB 3795-A3), lines 1-82. Statutes Affected Table: 418.808 A §2 HB 3795 B",
     sectionList: ["ors-418.805", "ors-418.806", "ors-418.808", "ors-418.811", "ors-418.816", "ors-418.817"],
     text: `HB 3795-A3
 (LC 1688)
@@ -401,7 +401,7 @@ without an investigation being commenced.”.
   },
   {
     name: "SB 983-1: a relating clause edit that names no statute, and an inserted section that cites none",
-    source: "proposed-amendments/28716.pdf (SB 983-1), lines 1-31",
+    source: "proposed-amendments/28716.pdf (SB 983-1), lines 1-30",
     text: `SB 983-1
 (LC 784)
 4/3/25 (DJ/wjc/ps)
@@ -439,7 +439,7 @@ declared to exist, and this 2025 Act takes effect on its passage.”.
   },
   {
     name: "SB 921-2: no relating clause edit, and a range in an inserted section",
-    source: "proposed-amendments/26824.pdf (SB 921-2), lines 1-73",
+    source: "proposed-amendments/26824.pdf (SB 921-2), lines 1-72",
     sectionList: ["ors-285a.700"],
     text: `SB 921-2
 (LC 3562)
@@ -715,7 +715,7 @@ describe("a Proposed Amendment's Statute Links and relating clause edits", () =>
 const sb692Rows: { tableRow: string; source: string; text: string; expected: Expected }[] = [
   {
     tableRow: "Ch. 657B Add §1 SB 69 A",
-    source: "proposed-amendments/26286.pdf (SB 69-2), lines 26-31, a header wrapped over a line number",
+    source: "proposed-amendments/26286.pdf (SB 69-2), lines 26-30, a header wrapped over a line number",
     text: `“SECTION 1. Section 2 of this 2025 Act is added to and made a part
 
 6

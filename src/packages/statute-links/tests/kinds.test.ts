@@ -52,7 +52,7 @@ SECTION 1. ORS 409.711 is amended to read:
   },
   {
     name: "is added to and made a part of ORS chapter X",
-    source: "measure-documents/SB69/A-Engrossed.pdf, lines 56-62. Statutes Affected Table: Ch. 657B Add §1 SB 69 A",
+    source: "measure-documents/SB69/A-Engrossed.pdf, lines 57-61. Statutes Affected Table: Ch. 657B Add §1 SB 69 A",
     text: `5
 6
 
@@ -62,7 +62,7 @@ SECTION 1. Section 2 of this 2025 Act is added to and made a part of ORS chapter
   },
   {
     name: "a plain mention is a cite, and a sunset of the Act's own section is no link",
-    source: "measure-documents/HB3795/Introduced.pdf, lines 28-48",
+    source: "measure-documents/HB3795/Introduced.pdf, lines 29-47",
     text: `4
 
 SECTION 1. The Department of Human Services shall study human services. The de-
@@ -86,7 +86,7 @@ SECTION 2. Section 1 of this 2025 Act is repealed on January 2, 2027.`,
   },
   {
     name: "plain mentions in a section that amends nothing",
-    source: "measure-documents/SB69/A-Engrossed.pdf, lines 65-80",
+    source: "measure-documents/SB69/A-Engrossed.pdf, lines 65-79",
     text: `SECTION 2. Notwithstanding any other provision under this chapter, the Bureau of La-
 
 8
@@ -109,7 +109,7 @@ and discrimination, and shall adopt any rules necessary and proper for the admin
   },
   {
     name: "Section 1 of this Act is repealed on a date: no ORS target, no link",
-    source: "measure-documents/SB69/Introduced.pdf, lines 44-48",
+    source: "measure-documents/SB69/Introduced.pdf, lines 45-47",
     text: `8
 
 SECTION 2. Section 1 of this 2025 Act is repealed on January 2, 2027.`,
@@ -135,7 +135,7 @@ amended to read:`,
   },
   {
     name: "an Oregon Laws section amended is no ORS link, and the ORS section it mentions is a cite",
-    source: "measure-documents/SB121/Introduced.pdf, lines 20-37",
+    source: "measure-documents/SB121/Introduced.pdf, lines 21-37",
     text: `Relating to earned income tax credits; amending section 6, chapter 880, Oregon Laws 2007.
 
 3
@@ -157,7 +157,7 @@ Sec. 6. ORS 315.266 applies to tax years beginning before January 1, [2026] 2032
   },
   {
     name: "a subsection is cut back to its section",
-    source: "measure-documents/SB69/A-Engrossed.pdf, lines 215-253. Statutes Affected Table: 659A.165 A §5 SB 69 A",
+    source: "measure-documents/SB69/A-Engrossed.pdf, lines 215-252. Statutes Affected Table: 659A.165 A §5 SB 69 A",
     text: `(b) Leave under subsection (1)(b) of this section must be completed within 60 days of the date
 on which the eligible employee receives notice of the death of a family member.
 SECTION 5. ORS 659A.165, as amended by section 10, chapter 20, Oregon Laws 2024, is
@@ -232,7 +232,7 @@ need for leave for purposes of ORS 659A.272 as provided in ORS 659A.280.`,
   },
   {
     name: "text with no SECTION header has no measure section",
-    source: "measure-documents/SB69/A-Engrossed.pdf, lines 300-309",
+    source: "measure-documents/SB69/A-Engrossed.pdf, lines 300-308",
     text: `14
 
 under a uniformly applied policy or practice of the employer. A reduction of family leave under this

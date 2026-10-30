@@ -38,7 +38,7 @@ to read:`,
   },
   {
     tableRow: "659A.165 A §5 SB 69 A",
-    source: "measure-documents/SB69/A-Engrossed.pdf, lines 217-219",
+    source: "measure-documents/SB69/A-Engrossed.pdf, lines 217-218",
     text: `SECTION 5. ORS 659A.165, as amended by section 10, chapter 20, Oregon Laws 2024, is
 amended to read:`,
     expected: ["amends", "ors-659a.165", "5"],

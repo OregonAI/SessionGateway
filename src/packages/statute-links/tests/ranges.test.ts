@@ -23,7 +23,7 @@ type Row = {
 const rows: Row[] = [
   {
     name: "a range in a section that amends a section of the range: each listed section of the range, ends included, in order",
-    source: "measure-documents/HB3795/B-Engrossed.pdf, lines 153-158",
+    source: "measure-documents/HB3795/B-Engrossed.pdf, lines 153-157",
     // Handed over in descending order: the expansion comes out ascending all the same.
     sectionList: ["ors-418.817", "ors-418.816", "ors-418.811", "ors-418.808", "ors-418.806", "ors-418.805"],
     text: `SECTION 2. ORS 418.808 is amended to read:
@@ -85,7 +85,7 @@ activity in violation of ORS 345.010 to 345.340 or any rule adopted under the au
     // Replaces the row "the ends of a range are links even when the section list lacks them": that
     // row pinned an expansion that left the list it was given (#6 F5).
     name: "an end of a range the section list lacks is no link: the expansion stays inside the list",
-    source: "measure-documents/SB921/A-Engrossed.pdf, lines 34-40",
+    source: "measure-documents/SB921/A-Engrossed.pdf, lines 35-39",
     sectionList: ["ors-285a.700"],
     text: `4
 
@@ -133,7 +133,7 @@ SECTION 1. (1) Subject to the provisions of ORS 285A.666 to 285A.732, the Oregon
   },
   {
     name: "'ORS chapters 654, 656 and 731'",
-    source: "measure-documents/SB69/A-Engrossed.pdf, lines 646-652",
+    source: "measure-documents/SB69/A-Engrossed.pdf, lines 647-651",
     sectionList: [],
     text: `15
 
@@ -148,7 +148,7 @@ ties under ORS chapters 654, 656 and 731. The information disclosed may include,
   },
   {
     name: "two ranges and a section, then a chapter: 'ORS 184.610 to 184.665, 184.670 to 184.733 and 805.263, ORS chapter 319'",
-    source: "measure-documents/SB69/A-Engrossed.pdf, lines 712-719",
+    source: "measure-documents/SB69/A-Engrossed.pdf, lines 713-719",
     sectionList: [
       "ors-184.610",
       "ors-184.640",
