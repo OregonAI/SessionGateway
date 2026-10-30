@@ -258,25 +258,70 @@ describe("rows of another Session", () => {
 });
 
 describe("sponsors with the same print order", () => {
-  it("follow in MeasureSponsorId order, whatever order the feed sent the rows in", async () => {
-    // Both rows are regular sponsors with PrintOrder 20. The feed sends the later one (900002) first.
+  // OLIS prints the sponsors who share a PrintOrder by chamber and then by name: the Measure's own
+  // chamber first (HB 3131's regular sponsors in get-measure-sponsors.test.ts are the House's
+  // Representatives, then the Senators). In the cache's MeasureSponsors, every group of Member rows
+  // that one Measure got on one CreatedDate at one PrintOrder, with both chambers among them, is in
+  // MeasureSponsorId order with the Measure's own chamber first: 294 of 294 groups of House Measures
+  // and 140 of 140 of Senate Measures (counted 2026-10-30). The rows added later are the ones the
+  // MeasureSponsorId order puts last, and the print order puts in their place.
+  //
+  // SB 452's two regular sponsors at PrintOrder 20 are real rows of the cache, moved to SB 69:
+  // 144073 "Rep Lewis" (created 2024-12-31T11:51:19) and 148585 "Sen Weber" (2025-01-22T15:19:18), the
+  // Senator added three weeks after the Representative. SB 69 is a Senate bill, so the Senator is first.
+  const lewis = memberSponsorRow("144073", "Rep Lewis", "Regular", "20", { createdDate: "2024-12-31T11:51:19" });
+  const weber = memberSponsorRow("148585", "Sen Weber", "Regular", "20", { createdDate: "2025-01-22T15:19:18" });
+
+  it.for([
+    ["the order of their MeasureSponsorId", [lewis, weber]],
+    ["the reverse", [weber, lewis]],
+  ] as const)("put a Senate Measure's Senator before its Representative, when the feed sends %s", async ([, rows]) => {
     const outcome = await getMeasure(
-      {
-        clockAt: afterTheSession,
-        olis: {
-          strayRows: {
-            MeasureSponsors: [
-              memberSponsorRow("900002", "Sen President Wagner", "Regular", "20"),
-              memberSponsorRow("900001", "Rep Speaker Fahey", "Regular", "20"),
-            ],
-          },
-        },
-      },
+      { clockAt: afterTheSession, olis: { strayRows: { MeasureSponsors: [...rows] } } },
       "SB 69",
     );
 
-    const codes = sponsorsOf(outcome)?.map((sponsor) => sponsor.legislator_code);
-    expect(codes).toEqual(["Rep Speaker Fahey", "Sen President Wagner"]);
+    expect(sponsorsOf(outcome)?.map((sponsor) => sponsor.legislator_code)).toEqual(["Sen Weber", "Rep Lewis"]);
+  });
+});
+
+describe("sponsors whose codes carry a title", () => {
+  // HB 3838's eleven chief sponsors are real rows of the cache, moved to HB 3027 (a House Measure
+  // with no Member sponsor of its own): ids 151358 to 151368, all created 2025-02-26T17:50:06. The
+  // cache created them in print order, so their MeasureSponsorId order is the expected order, and it
+  // shows that "Rep Speaker Fahey" stands among the House's chiefs at PrintOrder 10 as Fahey (between
+  // Bowman and Munoz) and not as Speaker (which would put her after Munoz), and that PrintOrder
+  // comes before the chamber ("Sen Taylor", PrintOrder 2, is before "Rep Nelson", PrintOrder 3).
+  const chiefs: [string, string, string][] = [
+    ["151358", "Rep Grayber", "1"],
+    ["151359", "Sen Taylor", "2"],
+    ["151360", "Rep Nelson", "3"],
+    ["151361", "Rep Bowman", "10"],
+    ["151362", "Rep Speaker Fahey", "10"],
+    ["151363", "Rep Munoz", "10"],
+    ["151364", "Rep Valderrama", "10"],
+    ["151365", "Sen Jama", "10"],
+    ["151366", "Sen Patterson", "10"],
+    ["151367", "Sen Pham", "10"],
+    ["151368", "Sen President Wagner", "10"],
+  ];
+
+  it("stand where the person's name puts them, not the office", async () => {
+    const rows = chiefs
+      .map(([id, code, printOrder]) =>
+        memberSponsorRow(id, code, "Chief", printOrder, {
+          measure: { prefix: "HB", number: 3027 },
+          createdDate: "2025-02-26T17:50:06",
+        }),
+      )
+      .reverse();
+
+    const outcome = await getMeasure(
+      { clockAt: afterTheSession, olis: { strayRows: { MeasureSponsors: rows } } },
+      "HB 3027",
+    );
+
+    expect(sponsorsOf(outcome)?.map((sponsor) => sponsor.legislator_code)).toEqual(chiefs.map(([, code]) => code));
   });
 });
 

@@ -85,7 +85,7 @@ The small file, kept by hand and committed with the code, that says who a Legisl
 A Legislator Code that has no Legislators row and no alias-file entry. The ingest worker lists each one after a full pull, with how many rows of each entity set used it, so that the operator can fix the alias file.
 
 **Sponsor**:
-A Legislator named on a Measure's MeasureSponsors row, chief or regular, shown in print order. Committee and presession rows name no Legislator and are not Sponsors.
+A Legislator named on a Measure's MeasureSponsors row, chief or regular, shown in print order: by the row's PrintOrder, then, among the sponsors who share one, the Measure's own chamber before the other, then by name, as OLIS prints them. A sponsor added after introduction stands in their printed place, not at the end. Committee and presession rows name no Legislator and are not Sponsors.
 _Avoid_: author
 
 ### Statutes and agencies

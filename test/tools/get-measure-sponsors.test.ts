@@ -23,31 +23,41 @@ afterAll(async () => {
   await system.stop();
 });
 
-// HB 3131's MeasureSponsors rows in the fixture (38 rows: one Presession row, which names no
-// Legislator, and 37 Member rows), in the order of their PrintOrder (1, 2, 3, 10, 10, 10, then 20 for
-// every regular sponsor); rows with the same PrintOrder follow in MeasureSponsorId order, the order
-// the feed created them in. Each row is [Legislator Code, level, id, name]: the name is the
-// fixture's Legislators row for that code (the feed writes the last name of "Rep McDonald" as
-// "McDonald ", with a trailing space), except that "Rep Neron" has none and is Courtney Neron
-// Misslin by the alias file (src/packages/legislators/data/legislator-aliases.json), whose id is the
-// one the alias file's code makes: legislator-2025r1-neron.
+// HB 3131's sponsors in print order. The order is OLIS's own: its overview page for the Measure (the
+// cache's video-research/pages/hb3131.html, in the page's `Srv.ChiefSponsors` and `Srv.RegularSponsors`
+// arrays) lists the six chief sponsors, then the regular sponsors, Representatives and then Senators.
+// Sponsors who share a PrintOrder (the three chiefs at 10, the regulars at 20) are in alphabetical
+// order within their chamber, whenever the feed added them: Hartman (added 2025-02-12) is among the
+// chiefs at 10, Fragala (2025-01-15) and McDonald (2025-01-23) among the regulars at 20. The fixture's
+// Introduced.pdf prints the sponsors it was introduced with the same way ("Representatives BOICE,
+// BOWMAN, CHAICHI, EVANS, GAMBA, ... Senators ANDERSON, FREDERICK, ..."). The page and the document
+// are the oracle; the order the feed created the rows in (their MeasureSponsorId) is not.
+//
+// The fixture has 38 MeasureSponsors rows for HB 3131: one Presession row, which names no Legislator,
+// and 37 Member rows. Each entry is [Legislator Code, level, id, name]: the name is the fixture's
+// Legislators row for that code (the feed writes the last name of "Rep McDonald" as "McDonald ", with
+// a trailing space), except that "Rep Neron" has none and is Courtney Neron Misslin by the alias file
+// (src/packages/legislators/data/legislator-aliases.json), whose id is the one the alias file's code
+// makes: legislator-2025r1-neron.
 const hb3131Sponsors = [
   ["Rep Owens", "chief", "legislator-2025r1-owens", "Mark Owens"],
   ["Rep Helm", "chief", "legislator-2025r1-helm", "Ken Helm"],
   ["Rep Levy B", "chief", "legislator-2025r1-levy-b", "Bobby Levy"],
+  ["Rep Hartman", "chief", "legislator-2025r1-hartman", "Annessa Hartman"],
   ["Rep Neron", "chief", "legislator-2025r1-neron", "Courtney Neron Misslin"],
   ["Rep Smith G", "chief", "legislator-2025r1-smith-g", "Gregory Smith"],
-  ["Rep Hartman", "chief", "legislator-2025r1-hartman", "Annessa Hartman"],
   ["Rep Boice", "regular", "legislator-2025r1-boice", "Court Boice"],
   ["Rep Bowman", "regular", "legislator-2025r1-bowman", "Ben Bowman"],
   ["Rep Chaichi", "regular", "legislator-2025r1-chaichi", "Farrah Chaichi"],
   ["Rep Evans", "regular", "legislator-2025r1-evans", "Paul Evans"],
+  ["Rep Fragala", "regular", "legislator-2025r1-fragala", "Lisa Fragala"],
   ["Rep Gamba", "regular", "legislator-2025r1-gamba", "Mark Gamba"],
   ["Rep Gomberg", "regular", "legislator-2025r1-gomberg", "David Gomberg"],
   ["Rep Levy E", "regular", "legislator-2025r1-levy-e", "Emerson Levy"],
   ["Rep Lively", "regular", "legislator-2025r1-lively", "John Lively"],
   ["Rep Mannix", "regular", "legislator-2025r1-mannix", "Kevin Mannix"],
   ["Rep Marsh", "regular", "legislator-2025r1-marsh", "Pam Marsh"],
+  ["Rep McDonald", "regular", "legislator-2025r1-mcdonald", "Sarah McDonald"],
   ["Rep McIntire", "regular", "legislator-2025r1-mcintire", "Emily McIntire"],
   ["Rep McLain", "regular", "legislator-2025r1-mclain", "Susan McLain"],
   ["Rep Nelson", "regular", "legislator-2025r1-nelson", "Travis Nelson"],
@@ -67,8 +77,6 @@ const hb3131Sponsors = [
   ["Sen Sollman", "regular", "legislator-2025r1-sollman", "Janeen Sollman"],
   ["Sen Taylor", "regular", "legislator-2025r1-taylor", "Kathleen Taylor"],
   ["Sen Weber", "regular", "legislator-2025r1-weber", "Suzanne Weber"],
-  ["Rep Fragala", "regular", "legislator-2025r1-fragala", "Lisa Fragala"],
-  ["Rep McDonald", "regular", "legislator-2025r1-mcdonald", "Sarah McDonald"],
 ] as const;
 
 describe.for(eras)("get_measure sponsors for a %s client", (era) => {

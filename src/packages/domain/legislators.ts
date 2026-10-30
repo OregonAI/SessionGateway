@@ -94,3 +94,53 @@ export function legislatorIdOf(session: SessionKey, code: string, lastName: stri
   }
   return `legislator-${session.toLowerCase()}-${words.slice(start).join("-")}` as LegislatorId;
 }
+
+/** What decides where a sponsor stands in the print order of a Measure's sponsors. */
+export type SponsorPrintFields = {
+  /** The feed's `PrintOrder`. */
+  printOrder: number;
+  /** The feed's `MeasureSponsorId`: the order the rows were created in, used only to make the order total. */
+  sponsorId: number;
+  legislatorCode: string;
+  legislatorId: LegislatorId | null;
+};
+
+/** The first word of a House member's Legislator Code ("Rep Helm") and of a Senator's ("Sen Meek"), by the Measure prefix's first letter. */
+const chamberWordOfPrefix: Record<string, string> = { H: "rep", S: "sen" };
+
+/** 0 for the Measure's own chamber, 1 for the other one, 2 for a code that begins with neither word. */
+function chamberRank(measurePrefix: string, code: string): number {
+  const word = wordsOf(code)[0];
+  if (word === chamberWordOfPrefix[measurePrefix.slice(0, 1)]) return 0;
+  return word === "rep" || word === "sen" ? 1 : 2;
+}
+
+/**
+ * The name a sponsor is sorted by: the name part of their Legislator's id when the code resolved,
+ * which leaves out the chamber word and an office title ("Fahey" for "Rep Speaker Fahey"), and
+ * otherwise the code without its chamber word.
+ */
+function sortName(sponsor: SponsorPrintFields): string {
+  if (sponsor.legislatorId !== null) return sponsor.legislatorId.split("-").slice(2).join("-");
+  return wordsOf(sponsor.legislatorCode).slice(1).join("-");
+}
+
+function compareText(a: string, b: string): number {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+}
+
+/**
+ * Orders a Measure's sponsors the way OLIS prints them: by `PrintOrder` (chief sponsors come first
+ * that way), then, among the sponsors who share one, the Measure's own chamber before the other, then
+ * by name. A sponsor added after introduction stands in the printed place and not at the end. OLIS's
+ * overview page for HB 3131 and the cache's MeasureSponsors rows both show it (see
+ * test/tools/get-measure-sponsors.test.ts).
+ */
+export function comparePrintOrder(measurePrefix: string): (a: SponsorPrintFields, b: SponsorPrintFields) => number {
+  return (a, b) =>
+    a.printOrder - b.printOrder ||
+    chamberRank(measurePrefix, a.legislatorCode) - chamberRank(measurePrefix, b.legislatorCode) ||
+    compareText(sortName(a), sortName(b)) ||
+    a.sponsorId - b.sponsorId;
+}
