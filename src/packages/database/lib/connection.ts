@@ -241,6 +241,14 @@ const schema = `
   ) STRICT;
   CREATE INDEX IF NOT EXISTS passage_document ON passage (document_id, ordinal);
   CREATE INDEX IF NOT EXISTS passage_hash ON passage (text_hash);
+  -- The vector side: the int8 vector of a passage's text (384 bytes), under the sha256 of the text and the id of
+  -- the model that made it, so that identical text is embedded once and a change of model reuses nothing.
+  CREATE TABLE IF NOT EXISTS passage_vector (
+    text_hash TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    vector BLOB NOT NULL,
+    PRIMARY KEY (text_hash, model_id)
+  ) STRICT, WITHOUT ROWID;
   -- The keyword side: one row for each passage, with the passage's id as its rowid. Contentless, so the text
   -- is not kept a second time; a hit's snippet is cut from document.text.
   CREATE VIRTUAL TABLE IF NOT EXISTS passage_fts USING fts5(

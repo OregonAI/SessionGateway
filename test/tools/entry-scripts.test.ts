@@ -165,8 +165,10 @@ describe("the entry scripts", () => {
   }, 20_000);
 
   it("fetch and serve documents: ingest.ts pulls from OLIS_DOCUMENT_ORIGIN, then server.ts serves the text", async () => {
-    // The documents are served only because this test asks.
-    const { olis, database } = await fakeOlisAndDatabase({ clockAt: "2025-01-29T17:00:00Z", documents: true });
+    // The documents are served only because this test asks. The clock is 2025-01-10 13:30 Pacific, when the
+    // feed had created six Introduced Versions: the worker here is the real one, which embeds every document
+    // it stores with the real model, and a later clock would add SB 64's Testimony 117281 (395,000 characters).
+    const { olis, database } = await fakeOlisAndDatabase({ clockAt: "2025-01-10T21:30:00Z", documents: true });
     const env = workerEnvironment(olis, database.path);
 
     const pulled = await run("src/bin/ingest.ts", env);
@@ -184,6 +186,8 @@ describe("the entry scripts", () => {
     const connected = await connectClientToUrl("2026-07-28", new URL(`http://127.0.0.1:${port}/mcp`));
     const outcome = await callTool(connected, "get_document", { id: "version-2025r1-sb69-introduced" });
     const overview = await callTool(connected, "session_overview", {});
+    // The server made its embedder from MODEL_PATH, and the worker embedded the Version with the same model.
+    const searched = await callTool(connected, "search", { query: "job-protected leave from work" });
     await connected.close();
     server.kill("SIGTERM");
 
@@ -194,8 +198,12 @@ describe("the entry scripts", () => {
     });
     expect(String(outcome.structured?.["text"])).toContain("SECTION 2. Section 1 of this 2025 Act is repealed");
     expect(overview.structured).toMatchObject({ session: "2025R1" });
+    expect((searched.structured?.["results"] as { id: string; found_by: string[] }[])[0]).toMatchObject({
+      id: "version-2025r1-sb69-introduced",
+      found_by: ["keyword", "embedding"],
+    });
     expect(await exited).toBe(0);
-  }, 30_000);
+  }, 60_000);
 
   // A broken install of the extractor: Node cannot resolve "unpdf/pdfjs", the PDF.js bundle unpdf loads for
   // the first document. A resolve hook, passed in NODE_OPTIONS as a data: URL so that no file is needed,

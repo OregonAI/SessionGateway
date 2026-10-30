@@ -80,11 +80,15 @@ function quoted(text: string): string {
 }
 
 /**
- * The FTS5 expression that finds passages with any of the keywords, or any of the phrases (a phrase is
- * words next to each other, in order). Undefined when there is nothing to look for.
+ * The FTS5 expression for the keyword side: a passage matches when it holds every one of the keywords, or
+ * holds one of the phrases (a phrase is words next to each other, in order). Every keyword and not any
+ * one: a question has words in it that the document has no need of, and a passage that holds one of
+ * them is no evidence it is the answer; the embedding side is for the question that is not in the
+ * document's words. Undefined when there is nothing to look for.
  */
 export function matchExpressionOf(terms: readonly string[], phrases: readonly string[]): string | undefined {
-  const parts = [...phrases.map((phrase) => quoted(phrase)), ...terms.map((term) => quoted(term))];
+  const parts = phrases.map((phrase) => quoted(phrase));
+  if (terms.length > 0) parts.push(`(${terms.map((term) => quoted(term)).join(" AND ")})`);
   return parts.length === 0 ? undefined : parts.join(" OR ");
 }
 
@@ -94,7 +98,11 @@ export function matchExpressionOf(terms: readonly string[], phrases: readonly st
  * ellipsis where the passage goes on. A passage with none of the keywords starts at its beginning.
  */
 export function snippetOf(passage: string, terms: readonly string[]): string {
-  const flat = passage.replace(/\s+/g, " ").trim();
+  // A PDF's extracted text starts with the numbers of its margin lines ("1 2 3 4 ..."), which are no part of a snippet.
+  const flat = passage
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^(?:\d{1,3} ){3,}/, "");
   const lower = flat.toLowerCase();
   let first = -1;
   for (const term of terms) {

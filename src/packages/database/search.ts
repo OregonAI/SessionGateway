@@ -22,6 +22,39 @@ export type SearchFilter = {
   to?: string;
 };
 
+/** What a filter looks at in a document. */
+export type DocumentFacts = {
+  kind: DocumentKind;
+  measureId: MeasureId | null;
+  committeeId: CommitteeId | null;
+  date: Timestamp | null;
+};
+
+/**
+ * Whether a document passes a filter. This is `filterTerms` again, for the vector side, which scans in memory
+ * and not in SQL: the two sit side by side so that they change together.
+ */
+export function acceptsDocument(filter: SearchFilter, facts: DocumentFacts): boolean {
+  if (filter.kind !== undefined && facts.kind !== filter.kind) return false;
+  if (!filter.withTestimony && facts.kind === "testimony") return false;
+  if (filter.measure !== undefined && facts.measureId !== filter.measure) return false;
+  if (filter.committee !== undefined && facts.committeeId !== filter.committee) return false;
+  const day = facts.date?.slice(0, 10);
+  if (filter.from !== undefined && (day === undefined || day < filter.from)) return false;
+  if (filter.to !== undefined && (day === undefined || day > filter.to)) return false;
+  return true;
+}
+
+/** One passage that has a vector, with the document it is of. */
+export type VectorRow = {
+  passageId: number;
+  documentId: DocumentId;
+  nodeId: DocumentId | AmendmentId;
+  facts: DocumentFacts;
+  /** The int8 vector, as the worker stored it. */
+  vector: Int8Array;
+};
+
 /** A passage that matched, and the hit it belongs to. */
 export type PassageMatch = {
   passageId: number;
@@ -63,12 +96,30 @@ export type SearchIndexReader = {
    * for the amendment), or undefined when none does.
    */
   postingOf(amendment: AmendmentId, filter: SearchFilter): CitedDocument | undefined;
+  /** How many passages of the Session have a vector under this model id. */
+  vectorCount(session: SessionKey, modelId: string): number;
+  /**
+   * Every passage of the Session that has a vector under this model id, in the order of the passages' ids.
+   * The passages of keyword-only documents have none.
+   */
+  vectors(session: SessionKey, modelId: string): Iterable<VectorRow>;
   /** What a hit shows. A document with no passage shows no text. */
   details(match: { passageId: number | null; documentId: DocumentId }): HitDetails;
   close(): void;
 };
 
 const citedRow = z.object({ document_id: z.string(), node_id: z.string(), passage_id: z.number().nullable() });
+const countRow = z.object({ n: z.number() });
+const vectorRow = z.object({
+  passage_id: z.number(),
+  document_id: z.string(),
+  node_id: z.string(),
+  kind: z.string(),
+  measure_id: z.string().nullable(),
+  committee_id: z.string().nullable(),
+  dated_at: z.string().nullable(),
+  vector: z.instanceof(Uint8Array),
+});
 const matchRow = z.object({ passage_id: z.number(), document_id: z.string(), node_id: z.string() });
 const detailsRow = z.object({
   document_id: z.string(),
@@ -121,6 +172,15 @@ export function openSearchReader(path: string): SearchIndexReader {
        LEFT JOIN passage p ON p.id = ? AND p.document_id = d.id
      WHERE d.id = ?`,
   );
+  const vectorSelection = `FROM passage p
+       JOIN search_document sd ON sd.document_id = p.document_id
+       JOIN passage_vector v ON v.text_hash = p.text_hash AND v.model_id = ?2
+     WHERE sd.session_key = ?1 AND sd.keyword_only = 0`;
+  const selectVectorCount = database.prepare(`SELECT COUNT(*) AS n ${vectorSelection}`);
+  const selectVectors = database.prepare(
+    `SELECT p.id AS passage_id, p.document_id, sd.node_id, sd.kind, sd.measure_id, sd.committee_id, sd.dated_at,
+            v.vector ${vectorSelection} ORDER BY p.id`,
+  );
   /** The first passage of a document: what a hit shows when it is found by a citation and not by a passage. */
   const firstPassage = "(SELECT p.id FROM passage p WHERE p.document_id = sd.document_id ORDER BY p.ordinal LIMIT 1)";
   const citedOf = (row: unknown): CitedDocument => {
@@ -153,6 +213,29 @@ export function openSearchReader(path: string): SearchIndexReader {
           nodeId: stored.node_id as DocumentId | AmendmentId,
         };
       });
+    },
+    vectorCount(session, modelId) {
+      return countRow.parse(selectVectorCount.get(session, modelId)).n;
+    },
+    *vectors(session, modelId) {
+      for (const row of selectVectors.iterate(session, modelId)) {
+        const stored = vectorRow.parse(row);
+        yield {
+          passageId: stored.passage_id,
+          documentId: stored.document_id as DocumentId,
+          nodeId: stored.node_id as DocumentId | AmendmentId,
+          facts: {
+            kind: stored.kind as DocumentKind,
+            measureId: stored.measure_id as MeasureId | null,
+            committeeId: stored.committee_id as CommitteeId | null,
+            date: stored.dated_at as Timestamp | null,
+          },
+          // The blob is a view of SQLite's buffer, which the next row reuses: the vector is copied out.
+          vector: new Int8Array(
+            stored.vector.buffer.slice(stored.vector.byteOffset, stored.vector.byteOffset + stored.vector.byteLength),
+          ),
+        };
+      }
     },
     versionsOf(measure, filter) {
       const terms = filterTerms(filter);

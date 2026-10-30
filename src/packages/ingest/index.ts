@@ -15,6 +15,8 @@ import {
   openIndexWriter,
   type CommitteeVoteRecord,
   type FloorVoteRecord,
+  type IndexWriter,
+  type SearchRecord,
   type SponsorRecord,
   type TestimonyRecord,
   type StatuteParseRecord,
@@ -25,6 +27,7 @@ import type { CommitteeId, DocumentLink } from "#/packages/domain/documents.ts";
 import type { LegislatorId, Sponsorship } from "#/packages/domain/legislators.ts";
 import type { OrsSectionId } from "#/packages/domain/oregonai.ts";
 import { unreadStatuteParse } from "#/packages/domain/statute-links.ts";
+import type { Passage, SearchEntry } from "#/packages/domain/search.ts";
 import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
 import type { LegislatorAlias } from "#/packages/legislators/aliases.ts";
 import {
@@ -39,6 +42,7 @@ import { extractPdfText, type ExtractedPdf } from "#/packages/pdf-text/index.ts"
 import { parseStatuteLinks, readAmendedVersionHeader } from "#/packages/statute-links/index.ts";
 import { searchEntryOf } from "#/packages/search/documents.ts";
 import { splitPassages } from "#/packages/search/passages.ts";
+import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
 import { buildReportPath, writeBuildReport, type BuildReport } from "./lib/build-report.ts";
@@ -215,6 +219,45 @@ function statuteParseOf(
   }
 }
 
+/** What a pull made of the passages of the documents it stored: how many, and how many it had to embed. */
+type PassageCounts = { passages: number; keywordOnly: number; embedded: number; reused: number };
+
+/**
+ * The vectors a document needs that the index does not hold: one for each distinct passage text of a document
+ * that is found by meaning, unless the same text already has a vector under this model (identical Testimony,
+ * a Proposed Amendment posted again, a passage the pull stored before). Embedding is the slow part of a
+ * pull, so this is where "embedded once" is decided.
+ */
+async function vectorsForNewPassages(
+  writer: IndexWriter,
+  embedder: Embedder,
+  entry: SearchEntry,
+  passages: readonly Passage[],
+  counts: PassageCounts,
+): Promise<SearchRecord["vectors"]> {
+  counts.passages += passages.length;
+  if (entry.keywordOnly) {
+    counts.keywordOnly += passages.length;
+    return { modelId: embedder.modelId, rows: [] };
+  }
+  const distinct = [...new Map(passages.map((passage) => [passage.hash, passage])).values()];
+  const stored = writer.storedVectorHashes(
+    embedder.modelId,
+    distinct.map((passage) => passage.hash),
+  );
+  const missing = distinct.filter((passage) => !stored.has(passage.hash));
+  counts.embedded += missing.length;
+  counts.reused += passages.length - missing.length;
+  const vectors = await embedder.embedPassages(missing.map((passage) => passage.text));
+  return {
+    modelId: embedder.modelId,
+    rows: missing.map((passage, index) => ({
+      hash: passage.hash,
+      vector: quantizeUnitVector(vectors[index] as Float32Array),
+    })),
+  };
+}
+
 export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promise<FullPullResult> {
   // The snapshot is read before OLIS is: a build with no usable snapshot fails at once, naming the file.
   const snapshot = await loadSnapshot(config.snapshotPath);
@@ -256,6 +299,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
   const committeeNames = new Map<CommitteeId, string>(committees.map((committee) => [committee.id, committee.name]));
   const writer = openIndexWriter(config.databasePath);
   let documentsFetched = 0;
+  const passageCounts: PassageCounts = { passages: 0, keywordOnly: 0, embedded: 0, reused: 0 };
   const notFetched: BuildReport["documents_not_fetched"] = [];
   try {
     // What each meeting lists and which analysis documents each Measure has are the feed's, so they are
@@ -290,6 +334,9 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
         notFetched.push({ id: link.id, source_url: link.sourceUrl, reason: fetched.reason });
         continue;
       }
+      const entry = searchEntryOf(link, committeeNames);
+      const passages = splitPassages(fetched.pdf.text, deps.embedder);
+      const vectors = await vectorsForNewPassages(writer, deps.embedder, entry, passages, passageCounts);
       writer.storeDocument(
         config.session,
         {
@@ -301,7 +348,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
           hasTextLayer: fetched.pdf.hasTextLayer,
           text: fetched.pdf.text,
         },
-        { entry: searchEntryOf(link, committeeNames), passages: splitPassages(fetched.pdf.text, deps.embedder) },
+        { entry, passages, vectors },
       );
       stored.add(link.id);
       documentsFetched += 1;

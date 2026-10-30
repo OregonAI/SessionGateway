@@ -137,6 +137,12 @@ function kindColumnsOf(sponsor: SponsorRecord): {
 export type SearchRecord = {
   entry: SearchEntry;
   passages: readonly Passage[];
+  /**
+   * The vectors of passages this document brings that the index does not hold yet: the passage's hash and its
+   * int8 vector, under the id of the model that made it. A vector that is already stored is not given again,
+   * so an unchanged passage is never embedded twice.
+   */
+  vectors: { modelId: string; rows: readonly { hash: string; vector: Int8Array }[] };
 };
 
 export type IndexWriter = {
@@ -158,6 +164,8 @@ export type IndexWriter = {
    * are left alone. A link whose document is not stored is ignored.
    */
   refreshDocuments(session: SessionKey, links: readonly DocumentLink[]): void;
+  /** Which of these passage hashes already have a vector under this model id. */
+  storedVectorHashes(modelId: string, hashes: readonly string[]): Set<string>;
   /** Every stored document of the Session whose file has no text layer, by id. */
   documentsWithoutTextLayer(session: SessionKey): { id: DocumentId; sourceUrl: string }[];
   /**
@@ -466,6 +474,10 @@ export function openIndexWriter(path: string): IndexWriter {
       const rows = database.prepare("SELECT id FROM document WHERE session_key = ?").all(session);
       return new Set(rows.map((row) => idRow.parse(row).id as DocumentId));
     },
+    storedVectorHashes(modelId, hashes) {
+      const select = database.prepare("SELECT 1 AS present FROM passage_vector WHERE text_hash = ? AND model_id = ?");
+      return new Set(hashes.filter((hash) => select.get(hash, modelId) !== undefined));
+    },
     documentsWithoutTextLayer(session) {
       const rows = database
         .prepare("SELECT id, source_url FROM document WHERE session_key = ? AND has_text_layer = 0 ORDER BY id")
@@ -526,6 +538,9 @@ export function openIndexWriter(path: string): IndexWriter {
         "INSERT INTO passage (document_id, ordinal, start_offset, end_offset, text_hash) VALUES (?, ?, ?, ?, ?)",
       );
       const insertPassageText = database.prepare("INSERT INTO passage_fts (rowid, text) VALUES (?, ?)");
+      const insertVector = database.prepare(
+        "INSERT OR IGNORE INTO passage_vector (text_hash, model_id, vector) VALUES (?, ?, ?)",
+      );
       database.exec("BEGIN IMMEDIATE");
       try {
         insertDocument.run(
@@ -563,6 +578,7 @@ export function openIndexWriter(path: string): IndexWriter {
           const inserted = insertPassage.run(document.id, ordinal, passage.start, passage.end, passage.hash);
           insertPassageText.run(inserted.lastInsertRowid, passage.text);
         });
+        for (const row of search.vectors.rows) insertVector.run(row.hash, search.vectors.modelId, row.vector);
         database.exec("COMMIT");
       } catch (error) {
         database.exec("ROLLBACK");
