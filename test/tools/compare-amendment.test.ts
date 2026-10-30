@@ -355,6 +355,16 @@ describe.for(eras)("compare_amendment for a %s client", (era) => {
       expect(files[0]?.statute_links).toContainEqual(section("amends", "ors-657b.070", "3"));
     });
 
+    // SECTION 8 of SB 69-1 (pdftotext of proposed-amendments/26284.pdf): "(4) For a purpose specified in ORS 659A.272,
+    // notwithstanding ORS" ends page 13, and "659A.270 (1)." starts page 14. The index reads the text the store holds,
+    // which is PDF.js's, whose page footer is one line less than pdftotext's (finding F4): the citation must still join.
+    it("reads a citation that runs over a page break, from the text the store holds", async () => {
+      const files = await filesOf("SB 69-1");
+
+      expect(files[0]?.statute_links).toContainEqual(section("cites", "ors-659a.270", "8"));
+      expect(files[0]?.statute_links).toContainEqual(section("cites", "ors-659a.272", "8"));
+    });
+
     it("carries the amendment's edit to the relating clause", async () => {
       const [file] = await filesOf("SB 69-2");
 

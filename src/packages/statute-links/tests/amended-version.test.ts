@@ -6,7 +6,10 @@ import { readAmendedVersionHeader } from "../index.ts";
 // Introduced Version ("SENATE BILL 69"), and the Version's letter before it for an amendment to an
 // engrossed one ("A-ENGROSSED HOUSE BILL 3795"). Each row quotes the head of a Proposed Amendment as
 // `pdftotext <file>.pdf -` prints it (test/fixtures/olis-2025R1/documents/proposed-amendments/<ProposedAmendmentId>.pdf),
-// except the row that says it is from the gitignored cache. The expected value is the Version in the words the
+// except the row that says it is from the gitignored cache and the rows that say "PDF.js text (pdf-text package)":
+// those are the text as the pdf-text package extracts it, which is the text the store holds and the ingest worker
+// reads (ADR-0010, ADR-0015). The page's line numbers come in a block before its text, and the page footer is two
+// lines, the second ending in the form feed (finding F5). The expected value is the Version in the words the
 // feed describes Versions in (MeasureDocuments `VersionDescription`: "Introduced", "A-Engrossed"), with the Measure the
 // header names as its prefix and number (ticket #13 finding F3: a file posted under the wrong Measure is not the
 // amendment's own, so the Measure is read as well as the Version).
@@ -100,6 +103,49 @@ PROPOSED AMENDMENTS TO
 B-ENGROSSED SENATE BILL 243
 1`,
     header: { version: "B-Engrossed", measure: { prefix: "SB", number: 243 } },
+  },
+  {
+    name: "SB 69-2, as the store holds it: PDF.js puts the page's line numbers in a block before the text, and the header names Introduced",
+    source: "PDF.js text (pdf-text package) of proposed-amendments/26286.pdf (SB 69-2), lines 19-30",
+    text: `19
+20
+21
+SB 69-2
+(LC 1368)
+1/23/25 (JAS/ps)
+Requested by SENATE COMMITTEE ON LABOR AND BUSINESS
+PROPOSED AMENDMENTS TO
+SENATE BILL 69
+In line 2 of the printed bill, before the period insert “; creating new pro-
+visions; amending ORS 653.616, 653.626, 657B.060, 657B.070, 657B.400,
+659A.156, 659A.159 and 659A.165; and prescribing an effective date”.`,
+    header: { version: "Introduced", measure: { prefix: "SB", number: 69 } },
+  },
+  {
+    name: "HB 3795-A3, as the store holds it: the line numbers come before the header, and the Version's letter is before the Measure",
+    source: "PDF.js text (pdf-text package) of proposed-amendments/28997.pdf (HB 3795-A3), lines 18-28",
+    text: `18
+19
+20
+HB 3795-A3
+(LC 1688)
+4/29/25 (LAS/ps)
+Requested by Senator GELSER BLOUIN
+PROPOSED AMENDMENTS TO
+A-ENGROSSED HOUSE BILL 3795
+On page 1 of the printed A-engrossed bill, line 2, before the period insert
+“and 418.808”.`,
+    header: { version: "A-Engrossed", measure: { prefix: "HB", number: 3795 } },
+  },
+  {
+    name: "The page footer as PDF.js writes it, 'Proposed Amendments to SB 69 Page 2' on one line before the form feed, is not the header: it names no Version",
+    source: "PDF.js text (pdf-text package) of proposed-amendments/26286.pdf (SB 69-2), lines 107-111",
+    text: `for a child of the employee who is:
+SB 69-2 1/23/25
+Proposed Amendments to SB 69 Page 2\f1
+2
+3`,
+    header: undefined,
   },
   {
     name: "A Version's own text has no 'PROPOSED AMENDMENTS TO' header, so it names no Version",
