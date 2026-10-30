@@ -67,6 +67,11 @@ export type StatuteParse = {
   relatingClauseEdits: RelatingClauseEdit[];
 };
 
+/** What reading a file came to when it was not read: no header, no links and no edits. A fresh value each time. */
+export function unreadStatuteParse(): StatuteParse {
+  return { textRead: false, amendedVersionHeader: null, links: [], relatingClauseEdits: [] };
+}
+
 /** A Version the store holds, with what was read of its text. */
 export type StoredVersion = {
   id: DocumentId;

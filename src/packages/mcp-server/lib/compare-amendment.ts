@@ -9,14 +9,14 @@ import {
   amendedVersionOutput,
   fileOutput,
   fileShown,
-  notReadReasonOf,
+  maybeParseResultFields,
+  noLinks,
+  parseResultShown,
   placeStoredAmendment,
   postingOutput,
   postingShown,
   relatingClauseEditOutput,
   relatingClauseEditShown,
-  statuteLinksOutput,
-  statuteLinksShown,
 } from "./statute-links.ts";
 
 /** The one sentence that says what the comparison does not cover (ADR-0001). Every result carries it. */
@@ -31,21 +31,7 @@ export const compareAmendmentInput = z.object({
     ),
 });
 
-const comparedVersionOutput = amendedVersionOutput.extend({
-  text_read: z
-    .boolean()
-    .nullable()
-    .describe(
-      "True when this index read the Version's text for Statute Links. False when it did not (no text layer, or not read yet): statute_links is then empty, and that does not mean the Version has none. Null when the Version is not known.",
-    ),
-  not_read_reason: z
-    .string()
-    .nullable()
-    .describe("Why the Version's text was not read. Null when text_read is true or null."),
-  statute_links: statuteLinksOutput.describe(
-    "The Version's Statute Links, in the same shape and order as the amendment's, so that the two can be read side by side. Empty (no target under any kind) when the Version is not known: there is then no comparison.",
-  ),
-});
+const comparedVersionOutput = amendedVersionOutput.extend(maybeParseResultFields);
 
 const comparedFileOutput = fileOutput.extend({
   relating_clause_edits: z
@@ -103,14 +89,9 @@ function comparedVersionShown(
   versions: readonly StoredVersion[],
 ): CompareAmendmentOutput["amended_version"] {
   const { version, shown } = placeStoredAmendment(amendment, key, versions);
-  if (version === undefined)
-    return { ...shown, text_read: null, not_read_reason: null, statute_links: statuteLinksShown([]) };
-  return {
-    ...shown,
-    text_read: version.parse.textRead,
-    not_read_reason: notReadReasonOf(version.parse),
-    statute_links: statuteLinksShown(version.parse.links),
-  };
+  // A Version that is not known has nothing read: there is no comparison.
+  if (version === undefined) return { ...shown, text_read: null, not_read_reason: null, statute_links: noLinks };
+  return { ...shown, ...parseResultShown(version.parse) };
 }
 
 export function compareAmendment(

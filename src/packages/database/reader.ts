@@ -36,6 +36,7 @@ import { comparePrintOrder, type Legislator, type LegislatorId, type Sponsor } f
 import { parseOrsChapterId, parseOrsSectionId, type AgencyId, type SnapshotVersion } from "#/packages/domain/oregonai.ts";
 import {
   statuteLinkKinds,
+  unreadStatuteParse,
   type AmendmentFile,
   type RelatingClauseEdit,
   type StatuteLink,
@@ -475,7 +476,7 @@ export function openIndexReader(path: string): IndexReader {
    */
   function statuteParseOf(contentHash: string, readAs: StatuteLinkSource): StatuteParse {
     const row = selectStatuteParse.get(contentHash, readAs);
-    if (row === undefined) return { textRead: false, amendedVersionHeader: null, links: [], relatingClauseEdits: [] };
+    if (row === undefined) return unreadStatuteParse();
     const stored = parseRow.parse(row);
     const links = selectStatuteLinks.all(contentHash, readAs).map((linkRowOf): StatuteLink => {
       const link = linkRow.parse(linkRowOf);

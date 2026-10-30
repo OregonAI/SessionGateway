@@ -23,6 +23,7 @@ import {
 import type { DocumentLink } from "#/packages/domain/documents.ts";
 import type { LegislatorId, Sponsorship } from "#/packages/domain/legislators.ts";
 import type { OrsSectionId } from "#/packages/domain/oregonai.ts";
+import { unreadStatuteParse } from "#/packages/domain/statute-links.ts";
 import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
 import type { LegislatorAlias } from "#/packages/legislators/aliases.ts";
 import {
@@ -181,7 +182,7 @@ function statuteParseOf(
 ): StatuteParseRecord {
   const common = { contentHash: file.contentHash, readAs: file.readAs };
   if (!stored.hasTextLayer) {
-    return { ...common, textRead: false, amendedVersionHeader: null, links: [], relatingClauseEdits: [] };
+    return { ...common, ...unreadStatuteParse() };
   }
   switch (file.readAs) {
     case "version": {
