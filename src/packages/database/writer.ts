@@ -2,7 +2,7 @@
 // it imports reader.ts only.
 import type { HistoryAction, Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
 import type { Legislator, LegislatorId, SponsorLevel } from "#/packages/domain/legislators.ts";
-import type { CommitteeVoteRecord, FloorVoteRecord } from "#/packages/domain/votes.ts";
+import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openWriteConnection } from "./lib/connection.ts";
 
@@ -22,6 +22,12 @@ export type SponsorRecord =
   | (SponsorRecordFields & { kind: "member"; legislatorCode: string; legislatorId: LegislatorId | null })
   | (SponsorRecordFields & { kind: "committee"; committeeCode: string })
   | (SponsorRecordFields & { kind: "presession"; message: string });
+
+/** What the worker stores of a floor vote entry: the entry and the Legislator its code resolved to, if any. */
+export type FloorVoteRecord = FloorVoteEntry & { legislatorId: LegislatorId | null };
+
+/** What the worker stores of a committee vote entry: the entry and the Legislator its code resolved to, if any. */
+export type CommitteeVoteRecord = CommitteeVoteEntry & { legislatorId: LegislatorId | null };
 
 /**
  * The people a full pull read: the Legislators the resolver can name, and the rows that name a

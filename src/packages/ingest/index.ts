@@ -2,14 +2,14 @@
 // Session from OLIS and stores them, with the time the pull started as the index's "as of" time. It
 // resolves each sponsor's Legislator Code to a Legislator on the way and reports the codes it could not.
 import type { IngestConfig } from "#/packages/config/index.ts";
-import { openIndexWriter, type SponsorRecord } from "#/packages/database/writer.ts";
+import {
+  openIndexWriter,
+  type CommitteeVoteRecord,
+  type FloorVoteRecord,
+  type SponsorRecord,
+} from "#/packages/database/writer.ts";
 import type { LegislatorId, Sponsorship } from "#/packages/domain/legislators.ts";
-import type {
-  CommitteeVoteEntry,
-  CommitteeVoteRecord,
-  FloorVoteEntry,
-  FloorVoteRecord,
-} from "#/packages/domain/votes.ts";
+import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
 import type { LegislatorAlias } from "#/packages/legislators/aliases.ts";
 import {
   createLegislatorResolver,

@@ -3,7 +3,7 @@
 // ("Aye", "Nay", "Excused"; floor votes also have "Excused for Business" and "Absent"), kept as a
 // string because nothing branches on it and a closed set would stop a pull on the first new word.
 import type { Chamber, MeasureKey } from "./index.ts";
-import type { Legislator, LegislatorId } from "./legislators.ts";
+import type { Legislator } from "./legislators.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 
 type EntryFields = {
@@ -62,9 +62,3 @@ export type FloorVote = {
   action: string;
   votes: LegislatorVote[];
 };
-
-/** What the worker stores of a floor vote entry: the entry and the Legislator its code resolved to, if any. */
-export type FloorVoteRecord = FloorVoteEntry & { legislatorId: LegislatorId | null };
-
-/** What the worker stores of a committee vote entry: the entry and the Legislator its code resolved to, if any. */
-export type CommitteeVoteRecord = CommitteeVoteEntry & { legislatorId: LegislatorId | null };
