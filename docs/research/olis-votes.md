@@ -35,6 +35,7 @@ A `CommitteeReportId` groups the rows of one report, and a `CommitteeAgendaItemI
 | In all 209 items with two reports, the two reports hold the same roll (the same Legislator Codes with the same votes), and every row of the item has one `CreatedDate`. None of the 209 has two different rolls. | local measurement | `measure.mjs`, output 4 |
 | The 209 items belong to joint committees: 207 to "Joint Committee On" (JWM 191, JCT 14, JLAUD 1, JLCIMT 1) and 2 to conference committees (`HB3694` and `SB916`). `Committees.HouseOfAction` is `J` for all of them. 63 items of joint committees have one report. | local measurement | `measure.mjs`, output 4 |
 | HB 2232, JCT, agenda item 204180, meeting 2025-02-18T17:00:00: reports 37557 and 37689, each with the same 12 Aye rows (7 Representatives and 5 Senators), all created 2025-02-10T15:02:49. Its history has one "Work Session held." (House, 2025-02-18T17:02:00), then "Recommendation: Do pass with amendments and be printed A-Engrossed." in the House on 2025-02-20 and "Recommendation: Do pass the A-Eng. bill." in the Senate on 2025-03-06. | local measurement | `measure.mjs`, output 8 |
+| Dropping each report whose Measure, committee, meeting and roll repeat an earlier report's leaves 1,947 of the 2,156 reports, which is the number of agenda items with votes: the rule drops the 209 second reports and merges no two agenda items. | local measurement | `collapse-check.mjs` |
 | The two reports of a joint committee's item are one roll call that the feed gives once for each chamber the committee reports to. The feed does not say why there are two. | inferred, from the 209 identical rolls and the HB 2232 history | outputs 4 and 8 |
 
 ## 4. Committee rows exist before the meeting
@@ -67,7 +68,7 @@ A `CommitteeReportId` groups the rows of one report, and a `CommitteeAgendaItemI
 
 ## Commands
 
-Both scripts were run with Node 26 from outside the repository. `measure.mjs` takes the cache's `feed` directory:
+The scripts were run with Node 26 from outside the repository. `measure.mjs` takes the cache's `feed` directory:
 
 ```
 node measure.mjs ~/SessionGateway/.cache/olis-2025R1/feed
@@ -191,4 +192,30 @@ try {
 } finally {
   writer.close();
 }
+```
+
+`collapse-check.mjs` takes the same directory:
+
+```
+node collapse-check.mjs ~/SessionGateway/.cache/olis-2025R1/feed
+```
+
+```js
+// Over the cache: how many committee votes remain per Measure when a report whose committee, meeting and roll
+// repeat an earlier report of the same Measure is dropped (reader.ts withoutRepeatedRolls), against the agenda items.
+import { readFileSync } from "node:fs";
+const cv = JSON.parse(readFileSync(`${process.argv[2]}/CommitteeVotes.json`, "utf8"));
+const reports = new Map();
+for (const r of cv) {
+  const key = `${r.MeasurePrefix}${r.MeasureNumber}|${r.CommitteeReportId}`;
+  reports.set(key, [...(reports.get(key) ?? []), r]);
+}
+const kept = new Set();
+for (const [key, rows] of reports) {
+  const [measure] = key.split("|");
+  const roll = rows.map((r) => `${r.VoteName}:${r.Meaning}`).sort().join(",");
+  kept.add(`${measure}|${rows[0].CommitteeCode}|${rows[0].MeetingDate}|${roll}`);
+}
+const items = new Set(cv.map((r) => r.CommitteeAgendaItemId));
+console.log("reports", reports.size, "kept after collapse", kept.size, "agenda items with votes", items.size);
 ```
