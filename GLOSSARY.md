@@ -191,11 +191,11 @@ A numbered section of a Version or Proposed Amendment, printed "SECTION 8." and 
 _Avoid_: section, unqualified (an ORS section is another thing)
 
 **Amended Version**:
-The Version a Proposed Amendment amends. The amendment's own header names it ("PROPOSED AMENDMENTS TO / SENATE BILL 69" is the Introduced Version, "A-ENGROSSED HOUSE BILL 3795" the A-Engrossed one) and so does the letter in its number ("-2" is Introduced, "-A3" is A-Engrossed). It is known only when the two agree and the Index holds that Version; otherwise it is not known, and nothing is guessed (ADR-0015).
+The Version a Proposed Amendment amends. The amendment's own header names it, with the Measure it is to ("PROPOSED AMENDMENTS TO / SENATE BILL 69" is the Introduced Version of SB 69, "A-ENGROSSED HOUSE BILL 3795" the A-Engrossed Version of HB 3795) and so does the letter in its number, however the feed spells it ("-2", "2" and "- 2" are Introduced; "-A3" and "A3" are A-Engrossed). It is known only when the header, the number and the Measure agree and the Index holds that Version; otherwise it is not known, and nothing is guessed (ADR-0015).
 _Avoid_: base Version, parent Version
 
 **Superseded amendment**:
-A Proposed Amendment whose Amended Version is no longer the latest the Index holds. `get_measure` leaves its Statute Links out and lists it apart, because the next Version's own links replace them (ADR-0001, ADR-0015); `compare_amendment` still answers for it.
+A Proposed Amendment whose Amended Version is not the latest the Index holds: it holds a later Version, whether or not it holds the Amended Version itself. `get_measure` leaves its Statute Links out and lists it apart, because the next Version's own links replace them (ADR-0001, ADR-0015); `compare_amendment` still answers for it.
 _Avoid_: withdrawn, rejected (the committee's action on an amendment is its Meaning at each Posting)
 
 **Relating clause**:
