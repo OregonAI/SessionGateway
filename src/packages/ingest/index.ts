@@ -40,6 +40,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     },
   });
   const measures = await olis.readMeasures(config.session, deps.signal);
+  const committees = await olis.readCommittees(config.session, deps.signal);
   const meetings = await olis.readMeetings(config.session, deps.signal);
   const links = [
     ...(await olis.readDocumentLinks(config.session, deps.signal)),
@@ -49,6 +50,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
   let documentsFetched = 0;
   try {
     writer.recordFullPull(config.session, measures, asOf);
+    writer.recordMeetings(config.session, committees, meetings);
     const stored = writer.storedDocumentIds(config.session);
     for (const link of links) {
       if (stored.has(link.id)) continue;

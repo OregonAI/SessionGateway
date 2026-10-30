@@ -1,7 +1,7 @@
 // The ingest worker's side of the database. The server has no way to reach this file's functions:
 // it imports reader.ts only.
 import { z } from "zod";
-import type { DocumentId, StoredDocument } from "#/packages/domain/documents.ts";
+import type { Committee, DocumentId, Meeting, StoredDocument } from "#/packages/domain/documents.ts";
 import type { Measure, SessionKey } from "#/packages/domain/index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openWriteConnection } from "./lib/connection.ts";
@@ -9,6 +9,8 @@ import { openWriteConnection } from "./lib/connection.ts";
 export type IndexWriter = {
   /** Stores what a full pull read, and when, in one transaction. A full pull never deletes (ADR-0005). */
   recordFullPull(session: SessionKey, measures: readonly Measure[], asOf: Timestamp): void;
+  /** Stores the committees and meetings a full pull read, in one transaction. A full pull never deletes (ADR-0005). */
+  recordMeetings(session: SessionKey, committees: readonly Committee[], meetings: readonly Meeting[]): void;
   /** The ids of the documents already stored for the Session: a stored document is never fetched again. */
   storedDocumentIds(session: SessionKey): Set<DocumentId>;
   /** Every stored document of the Session whose file has no text layer, by id. */
@@ -47,6 +49,28 @@ export function openIndexWriter(path: string): IndexWriter {
           );
         }
         recordAsOf.run(session, asOf);
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    recordMeetings(session, committees, meetings) {
+      const upsertCommittee = database.prepare(
+        `INSERT INTO committee (session_key, code, id, name) VALUES (?, ?, ?, ?)
+         ON CONFLICT (session_key, code) DO UPDATE SET id = excluded.id, name = excluded.name`,
+      );
+      const upsertMeeting = database.prepare(
+        `INSERT INTO meeting (id, session_key, committee_code, committee_id, at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET committee_code = excluded.committee_code,
+           committee_id = excluded.committee_id, at = excluded.at`,
+      );
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        for (const committee of committees) upsertCommittee.run(session, committee.code, committee.id, committee.name);
+        for (const meeting of meetings) {
+          upsertMeeting.run(meeting.id, session, meeting.committeeCode, meeting.committeeId, meeting.at);
+        }
         database.exec("COMMIT");
       } catch (error) {
         database.exec("ROLLBACK");

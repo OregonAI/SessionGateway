@@ -173,3 +173,23 @@ export type Meeting = {
   /** The meeting's agenda, when the feed links one. */
   agenda: DocumentLink | null;
 };
+
+export type Committee = {
+  session: SessionKey;
+  code: string;
+  id: CommitteeId;
+  name: string;
+};
+
+/** What the index holds of a Session. */
+export type IndexCounts = {
+  measures: number;
+  committees: number;
+  meetings: number;
+  /** Proposed Amendments as nodes: one per Measure and amendment number, however many postings. */
+  proposedAmendments: number;
+  /** Documents the store holds, one per file fetched (a Proposed Amendment has one for each posting). */
+  documents: number;
+  documentsWithoutTextLayer: number;
+  documentsByKind: Record<DocumentKind, number>;
+};

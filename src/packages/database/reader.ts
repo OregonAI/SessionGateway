@@ -5,6 +5,7 @@ import type {
   DocumentId,
   DocumentKind,
   DocumentView,
+  IndexCounts,
   NodeId,
   Relation,
   RelatedNode,
@@ -23,6 +24,8 @@ export type IndexReader = {
    * nodes all its postings point at.
    */
   findDocument(id: string): DocumentView | undefined;
+  /** What the index holds of the Session. */
+  counts(session: SessionKey): IndexCounts;
   close(): void;
 };
 
@@ -45,6 +48,8 @@ const documentRow = z.object({
   posted_at: z.string().nullable(),
   text: z.string(),
 });
+const countRow = z.object({ n: z.number() });
+const kindCountRow = z.object({ kind: z.string(), n: z.number() });
 const relationRow = z.object({
   relation: z.string(),
   to_id: z.string(),
@@ -57,6 +62,10 @@ export function openIndexReader(path: string): IndexReader {
     "SELECT catchline, created_at, modified_at FROM measure WHERE session_key = ? AND prefix = ? AND number = ?",
   );
   const selectAsOf = database.prepare("SELECT full_pull_as_of FROM index_state WHERE session_key = ?");
+  const countOf = (sql: string, session: SessionKey): number => countRow.parse(database.prepare(sql).get(session)).n;
+  const selectKindCounts = database.prepare(
+    "SELECT kind, COUNT(*) AS n FROM document WHERE session_key = ? GROUP BY kind",
+  );
   const selectDocument = database.prepare("SELECT * FROM document WHERE id = ?");
   const selectPostings = database.prepare(
     "SELECT * FROM document WHERE node_id = ? AND node_id <> id ORDER BY posted_at DESC, id DESC",
@@ -88,6 +97,37 @@ export function openIndexReader(path: string): IndexReader {
     });
   }
   return {
+    counts(session) {
+      const documentsByKind: Record<DocumentKind, number> = {
+        version: 0,
+        printed_amendment: 0,
+        proposed_amendment: 0,
+        analysis: 0,
+        exhibit: 0,
+        recording_log: 0,
+        testimony: 0,
+        agenda: 0,
+      };
+      for (const row of selectKindCounts.all(session)) {
+        const counted = kindCountRow.parse(row);
+        documentsByKind[counted.kind as DocumentKind] = counted.n;
+      }
+      return {
+        measures: countOf("SELECT COUNT(*) AS n FROM measure WHERE session_key = ?", session),
+        committees: countOf("SELECT COUNT(*) AS n FROM committee WHERE session_key = ?", session),
+        meetings: countOf("SELECT COUNT(*) AS n FROM meeting WHERE session_key = ?", session),
+        proposedAmendments: countOf(
+          "SELECT COUNT(DISTINCT node_id) AS n FROM document WHERE session_key = ? AND kind = 'proposed_amendment'",
+          session,
+        ),
+        documents: countOf("SELECT COUNT(*) AS n FROM document WHERE session_key = ?", session),
+        documentsWithoutTextLayer: countOf(
+          "SELECT COUNT(*) AS n FROM document WHERE session_key = ? AND has_text_layer = 0",
+          session,
+        ),
+        documentsByKind,
+      };
+    },
     findDocument(id) {
       const own = selectDocument.get(id);
       if (own !== undefined) {

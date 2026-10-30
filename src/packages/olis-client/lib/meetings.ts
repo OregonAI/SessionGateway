@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { SessionKey } from "#/packages/domain/index.ts";
-import { agendaIdOf, committeeIdOf, meetingIdOf, type Meeting } from "#/packages/domain/documents.ts";
+import { agendaIdOf, committeeIdOf, meetingIdOf, type Committee, type Meeting } from "#/packages/domain/documents.ts";
 import { sourceUrlOf } from "./documents.ts";
 import { readEntitySet } from "./feed.ts";
 import type { OlisClientOptions } from "./options.ts";
@@ -50,4 +50,27 @@ export async function readMeetings(
               },
       };
     });
+}
+
+const committeeRow = z.looseObject({
+  SessionKey: z.string(),
+  CommitteeCode: z.string(),
+  CommitteeName: z.string(),
+});
+
+/** Every committee of the Session. */
+export async function readCommittees(
+  options: OlisClientOptions,
+  session: SessionKey,
+  signal: AbortSignal,
+): Promise<Committee[]> {
+  const rows = await readEntitySet(options, "Committees", `SessionKey eq '${session}'`, committeeRow, signal);
+  return rows
+    .filter((row) => row.SessionKey === session)
+    .map((row) => ({
+      session,
+      code: row.CommitteeCode,
+      id: committeeIdOf(session, row.CommitteeCode),
+      name: row.CommitteeName,
+    }));
 }

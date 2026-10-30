@@ -17,6 +17,20 @@ const schema = `
     session_key TEXT NOT NULL PRIMARY KEY,
     full_pull_as_of TEXT NOT NULL
   ) STRICT;
+  CREATE TABLE IF NOT EXISTS committee (
+    session_key TEXT NOT NULL,
+    code TEXT NOT NULL,
+    id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    PRIMARY KEY (session_key, code)
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS meeting (
+    id TEXT NOT NULL PRIMARY KEY,
+    session_key TEXT NOT NULL,
+    committee_code TEXT NOT NULL,
+    committee_id TEXT NOT NULL,
+    at TEXT NOT NULL
+  ) STRICT;
   CREATE TABLE IF NOT EXISTS document (
     id TEXT NOT NULL PRIMARY KEY,
     node_id TEXT NOT NULL,

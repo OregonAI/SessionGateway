@@ -292,6 +292,62 @@ describe.for(eras)("get_document for a %s client", (era) => {
     });
   });
 
+  describe("an id that is not a document", () => {
+    it.for([
+      ["an id the Session does not have", "version-2025r1-sb69-z-engrossed"],
+      ["a document of another Session", "version-2025s1-sb69-introduced"],
+      ["a Measure id, which is a node and not a document", "measure-2025r1-sb69"],
+      ["an Amendment of a Measure that has none by that number", "amendment-2025r1-sb69-9"],
+      ["words that are not an id", "the paid leave bill"],
+      ["an empty id", ""],
+    ])("is a tool error, not a result: %s", async ([, id]) => {
+      const outcome = await callTool(connected, "get_document", { id });
+
+      expect(outcome.isError).toBe(true);
+      expect(outcome.structured).toBeUndefined();
+      expect(outcome.text).toContain("2025R1");
+      // The message teaches the id form (spec #1's), so the agent can correct the call.
+      expect(outcome.text).toContain("version-2025r1-sb69-a-engrossed");
+    });
+  });
+
+  describe("session_overview", () => {
+    // Counts are literals from the fixture: its README says it holds 8 Measures and 278 documents, and
+    // feed/ has 12 Committees, 36 CommitteeMeetings, 23 MeasureDocuments (5 of them Printed Amendments:
+    // "Senate Amendments to Introduced" for SB 69, SB 921 and SB 983, "House Amendments to Introduced"
+    // and "Senate Amendments to A-Engrossed" for HB 3795), 34 MeasureAnalysisDocuments, 15
+    // CommitteeProposedAmendments (postings of 7 amendments), 86 CommitteeMeetingDocuments and 84
+    // CommitteePublicTestimonies. No row is a Recording Log.
+    it("returns the Session, what the index holds, and when it was last refreshed", async () => {
+      const outcome = await callTool(connected, "session_overview", {});
+
+      expect(outcome.isError).toBe(false);
+      expect(outcome.structured).toMatchObject({
+        session: "2025R1",
+        as_of: "2026-08-01T10:00:00-07:00",
+        counts: {
+          measures: 8,
+          committees: 12,
+          meetings: 36,
+          proposed_amendments: 7,
+          documents: 278,
+          documents_without_text_layer: 3,
+          documents_by_kind: {
+            version: 18,
+            printed_amendment: 5,
+            proposed_amendment: 15,
+            analysis: 34,
+            exhibit: 86,
+            recording_log: 0,
+            testimony: 84,
+            agenda: 36,
+          },
+        },
+      });
+      expect.soft(outcome.structured?.["notice"]).toMatch(/not the official record/i);
+    });
+  });
+
   describe("a document with no text layer", () => {
     // The fixture has three, none of which `pdftotext` finds a character in (test/fixtures/olis-2025R1/
     // README.md): Exhibit 288141 (SB 64, a 2-page scan) and the photographs behind SB 921's Testimony 148731

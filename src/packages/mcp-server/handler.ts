@@ -12,6 +12,7 @@ import {
   unknownDocumentMessage,
 } from "./lib/get-document.ts";
 import { getMeasure, getMeasureInput, getMeasureOutput, unknownMeasureMessage } from "./lib/get-measure.ts";
+import { sessionOverview, sessionOverviewInput, sessionOverviewOutput } from "./lib/session-overview.ts";
 import { createRateLimiter, rateLimitMessage, type RateLimiter } from "./lib/rate-limit.ts";
 
 export type HandlerDeps = {
@@ -111,6 +112,33 @@ function buildServer(reader: IndexReader, config: ServerConfig, limiter: RateLim
         default:
           return result satisfies never;
       }
+    },
+  );
+  server.registerTool(
+    "session_overview",
+    {
+      title: "Overview of the Session",
+      description:
+        "Returns which Session this service holds, how many Measures, committees, meetings and documents it has (and how many documents are scans with no text layer), and when the index was last refreshed. It is not the official record.",
+      inputSchema: sessionOverviewInput,
+      outputSchema: sessionOverviewOutput,
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    () => {
+      const turn = limiter.take();
+      if (!turn.allowed) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: rateLimitMessage(config.rateLimit, config.rateWindowSeconds, turn.retryAfterSeconds),
+            },
+          ],
+        };
+      }
+      const overview = sessionOverview(reader, config.session);
+      return { content: [{ type: "text", text: JSON.stringify(overview) }], structuredContent: overview };
     },
   );
   return server;
