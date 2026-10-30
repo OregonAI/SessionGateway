@@ -261,6 +261,40 @@ export function keyString(values: unknown[]): string {
   return JSON.stringify(values);
 }
 
+// What the schema reads from each entity set's rows, and why: the key, the Measure the row is
+// about, and every property a reference is made from. Built on first use.
+const readsCache = new Map<string, Array<{ property: string; why: string }>>();
+
+function readsOf(entitySet: string): Array<{ property: string; why: string }> {
+  const known = readsCache.get(entitySet);
+  if (known !== undefined) return known;
+  const spec = entitySets[entitySet];
+  const whys = new Map<string, Set<string>>();
+  const read = (property: string, why: string): void => {
+    whys.set(property, (whys.get(property) ?? new Set()).add(why));
+  };
+  if (spec !== undefined) {
+    for (const property of spec.key) read(property, "part of its key");
+    if (spec.aboutMeasure) for (const property of ["SessionKey", "MeasurePrefix", "MeasureNumber"]) read(property, "says which Measure it is about");
+    for (const ref of spec.refs) for (const property of Object.values(ref.match)) read(property, `refers to ${ref.to}`);
+  }
+  const reads = [...whys].map(([property, why]) => ({ property, why: [...why].join(", ") }));
+  readsCache.set(entitySet, reads);
+  return reads;
+}
+
+/**
+ * The properties the schema reads from this row that the row does not have at all.
+ *
+ * valuesOf and targetKeyOf cannot tell such a property from one that is present and null, and
+ * they must not: a null is a row that refers to nothing, which is legitimate. A property that is
+ * absent is a different thing. OLIS respelled it, or the row was edited, and the reference it
+ * carried would be skipped without a word. Callers check this first, so that case is an error.
+ */
+export function absentProperties(entitySet: string, row: Row): Array<{ property: string; why: string }> {
+  return readsOf(entitySet).filter(({ property }) => !Object.hasOwn(row, property));
+}
+
 /** The values of `properties` on a row, or null when any of them is missing or null. */
 export function valuesOf(row: Row, properties: string[]): unknown[] | null {
   const values: unknown[] = [];
@@ -272,7 +306,7 @@ export function valuesOf(row: Row, properties: string[]): unknown[] | null {
   return values;
 }
 
-/** The target key a reference points at, in the target's own property order, or null. */
+/** The target key a reference points at, in the target's own property order, or null when a source value is null or absent (see absentProperties). */
 export function targetKeyOf(row: Row, ref: Ref): Record<string, unknown> | null {
   const target: Record<string, unknown> = {};
   for (const [targetProperty, sourceProperty] of Object.entries(ref.match)) {

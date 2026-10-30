@@ -19,6 +19,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { argv, exit } from "node:process";
 import {
+  absentProperties,
   describeKey,
   entitySets,
   isRecord,
@@ -204,11 +205,24 @@ function checkReferences(): { references: number; accepted: number } {
   for (const [entitySet, rows] of feedRows) {
     const spec = entitySets[entitySet];
     const present = new Set<string>();
+    // A property the schema reads that a row lacks altogether is not a null: it would skip the
+    // reference it carries without a word. Report it once per property, not once per row.
+    const absent = new Map<string, { why: string; count: number; first: number }>();
     rows.forEach((row, index) => {
-      const values = spec === undefined ? null : valuesOf(row, spec.key);
-      if (values === null) problem(`feed/${entitySet}.json row ${index}: a key property (${spec?.key.join(", ")}) is missing or null`);
+      const lacking = absentProperties(entitySet, row);
+      for (const { property, why } of lacking) {
+        const seen = absent.get(property) ?? { why, count: 0, first: index };
+        seen.count++;
+        absent.set(property, seen);
+      }
+      if (spec === undefined || lacking.some(({ property }) => spec.key.includes(property))) return;
+      const values = valuesOf(row, spec.key);
+      if (values === null) problem(`feed/${entitySet}.json row ${index}: a key property (${spec.key.join(", ")}) is null`);
       else present.add(keyString(values));
     });
+    for (const [property, { why, count, first }] of absent) {
+      problem(`feed/${entitySet}.json: ${count} row(s) lack the property ${property}, which the schema reads as: ${why} (the first is row ${first}). A property that is null is fine; one that is absent means the row is not the feed's own.`);
+    }
     keysPresent.set(entitySet, present);
   }
 

@@ -28,6 +28,7 @@ import {
 import { dirname, join } from "node:path";
 import { argv, exit } from "node:process";
 import {
+  absentProperties,
   documentLinks,
   entitySets,
   keyString,
@@ -133,9 +134,30 @@ function loadFeed(feedDir: string): Map<string, Row[]> {
     const path = join(feedDir, `${entitySet}.json`);
     const rows: unknown = JSON.parse(readFileSync(path, "utf8"));
     if (!Array.isArray(rows)) throw new BuildError(`${path}: expected a JSON array`);
+    rejectAbsentProperties(entitySet, path, rows as Row[]);
     feed.set(entitySet, rows as Row[]);
   }
   return feed;
+}
+
+/**
+ * select() follows a reference only when its source values are not null, so a row that lacks a
+ * referring property altogether would drop that reference without a word. The feed has every
+ * property on every row (null when empty), so a missing one means OLIS changed its spelling:
+ * stop, and name it, rather than build a slice with silently fewer rows.
+ */
+function rejectAbsentProperties(entitySet: string, path: string, rows: Row[]): void {
+  const absent = new Map<string, { why: string; count: number; first: number }>();
+  rows.forEach((row, index) => {
+    for (const { property, why } of absentProperties(entitySet, row)) {
+      const seen = absent.get(property) ?? { why, count: 0, first: index };
+      seen.count++;
+      absent.set(property, seen);
+    }
+  });
+  if (absent.size === 0) return;
+  const lines = [...absent].map(([property, { why, count, first }]) => `${count} row(s) lack ${property} (schema.ts reads it as: ${why}), the first at index ${first}`);
+  throw new BuildError(`${path}: ${lines.join("; ")}. Did OLIS rename a property? Fix schema.ts before building.`);
 }
 
 function select(feed: Map<string, Row[]>, chosen: Chosen[]): Selection {
@@ -188,7 +210,7 @@ function select(feed: Map<string, Row[]>, chosen: Chosen[]): Selection {
     const row = (feed.get(entitySet) as Row[])[rowIndex] as Row;
     for (const ref of spec.refs) {
       const target = targetKeyOf(row, ref);
-      if (target === null) continue;
+      if (target === null) continue; // a null source value: the row refers to nothing (absent ones were rejected in loadFeed)
       const targetSpec = entitySets[ref.to] as (typeof entitySets)[string];
       const targetIndex = indexOf(ref.to).get(keyString(targetSpec.key.map((p) => target[p])));
       if (targetIndex === undefined) {
