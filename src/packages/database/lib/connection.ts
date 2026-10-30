@@ -17,6 +17,23 @@ const schema = `
     session_key TEXT NOT NULL PRIMARY KEY,
     full_pull_as_of TEXT NOT NULL
   ) STRICT;
+  CREATE TABLE IF NOT EXISTS legislator (
+    session_key TEXT NOT NULL,
+    id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    PRIMARY KEY (session_key, id)
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS sponsor (
+    session_key TEXT NOT NULL,
+    sponsor_id INTEGER NOT NULL,
+    prefix TEXT NOT NULL,
+    number INTEGER NOT NULL,
+    level TEXT NOT NULL,
+    print_order INTEGER NOT NULL,
+    legislator_code TEXT NOT NULL,
+    legislator_id TEXT,
+    PRIMARY KEY (session_key, sponsor_id)
+  ) STRICT;
 `;
 
 /** The default timeout of 0 fails at once on a busy database, so both sides wait up to 5 seconds. */
