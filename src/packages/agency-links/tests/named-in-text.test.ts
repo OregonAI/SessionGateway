@@ -119,6 +119,32 @@ describe("Agencies named in Version and Proposed Amendment text", () => {
         registry: testRegistry,
         agencies: [{ slug: "department-of-human-services", terms: ["Department of Human Services"] }],
       },
+      {
+        // The registry has a row for the Legislative Assembly, but every printed Version names the
+        // Assembly in its own boilerplate (lines 1, 9 and 15), and spec #1 keeps it an unresolved unit.
+        source:
+          'measure-documents/HB3795/Introduced.pdf (HB 3795, Introduced): "the Legislative Assembly" in the page header and the summary is ordinary text',
+        text: [
+          "83rd OREGON LEGISLATIVE ASSEMBLY--2025 Regular Session",
+          "",
+          "House Bill 3795",
+          "Sponsored by COMMITTEE ON EARLY CHILDHOOD AND HUMAN SERVICES (at the request of Representative",
+          "Annessa Hartman)",
+          "",
+          "SUMMARY",
+          "The following summary is not prepared by the sponsors of the measure and is not a part of the body thereof subject",
+          "to consideration by the Legislative Assembly. It is an editor’s brief statement of the essential features of the",
+          "measure as introduced. The statement includes a measure digest written in compliance with applicable readability",
+          "standards.",
+          "",
+          "Digest: The Act tells ODHS to study human services. (Flesch Readability Score: 82.3).",
+          "Requires the Department of Human Services to study human services. Directs the department",
+          "to submit findings to the interim committees of the Legislative Assembly related to human services",
+          "not later than September 15, 2026.",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [{ slug: "department-of-human-services", terms: ["ODHS", "Department of Human Services"] }],
+      },
     ])("$source", expectLinks);
   });
 });
