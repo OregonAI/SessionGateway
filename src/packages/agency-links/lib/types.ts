@@ -19,6 +19,11 @@ export type AgencyEvidence =
       kind: "named-in-text";
       /** The registry names and aliases found in the text, each once, in the order they first appear. */
       terms: string[];
+    }
+  | {
+      kind: "testimony";
+      /** The Testimony row's `Organization`, as it is written there. */
+      organization: string;
     };
 
 /** A connection to one Agency, with the evidence that makes it. */

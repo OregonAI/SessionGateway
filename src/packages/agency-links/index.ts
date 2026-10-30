@@ -3,6 +3,7 @@
 // the network or the clock, and nothing calls OregonAI (ADR-0004).
 
 import { readFiscalImpactUnits } from "./lib/fiscal-impact.ts";
+import { matchOrganization } from "./lib/testimony-organization.ts";
 import { findNamedAgencies } from "./lib/text-names.ts";
 import type { AgencyLink, FiscalImpactResult, RegistryAgency } from "./lib/types.ts";
 
@@ -23,4 +24,9 @@ export function fiscalImpactAgencyLinks(text: string, registry: readonly Registr
 /** Finds the registry names and aliases that Version or Proposed Amendment text uses. */
 export function textAgencyLinks(text: string, registry: readonly RegistryAgency[]): AgencyLink[] {
   return findNamedAgencies(text, registry);
+}
+
+/** Matches a Testimony row's free-text `Organization` to the registry. Most values are not an Agency. */
+export function testimonyAgencyLinks(organization: string, registry: readonly RegistryAgency[]): AgencyLink[] {
+  return matchOrganization(organization, registry);
 }
