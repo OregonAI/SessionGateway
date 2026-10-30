@@ -6,13 +6,15 @@ import type { Timestamp } from "#/packages/time/pacific.ts";
 
 /**
  * What the operator reads after a full pull (spec #1, story 54): the documents that are scans or
- * photographs, whose text is empty, to chase by hand.
+ * photographs, whose text is empty, to chase by hand, and the documents this pull could not get.
  */
 export type BuildReport = {
   session: SessionKey;
   /** When the pull this report describes began. */
   as_of: Timestamp;
   documents_without_text_layer: { id: DocumentId; source_url: string }[];
+  /** Documents the feed links that this pull did not store: the next pull tries them again. */
+  documents_not_fetched: { id: DocumentId; source_url: string; reason: string }[];
 };
 
 /** The report's file: `build-report.json`, in the directory of the database. */

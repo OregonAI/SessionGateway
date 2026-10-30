@@ -4,7 +4,7 @@
 import { createHash } from "node:crypto";
 import type { IngestConfig } from "#/packages/config/index.ts";
 import { openIndexWriter } from "#/packages/database/writer.ts";
-import { buildReportPath, writeBuildReport } from "./lib/build-report.ts";
+import { buildReportPath, writeBuildReport, type BuildReport } from "./lib/build-report.ts";
 import { createOlisClient } from "#/packages/olis-client/index.ts";
 import { extractPdfText } from "#/packages/pdf-text/index.ts";
 import type { Clock } from "#/packages/time/clock.ts";
@@ -26,6 +26,8 @@ export type FullPullResult = {
   asOf: Timestamp;
   /** Documents fetched by this pull; the ones the store already held are not fetched again. */
   documentsFetched: number;
+  /** Documents the feed links that this pull could not get or read. The next pull tries them again. */
+  documentsNotFetched: number;
 };
 
 /** A document that takes longer than this is an outage, not a slow answer (olis-odata.md gotcha 15). */
@@ -51,6 +53,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
   ];
   const writer = openIndexWriter(config.databasePath);
   let documentsFetched = 0;
+  const notFetched: BuildReport["documents_not_fetched"] = [];
   try {
     writer.recordFullPull(config.session, measures, asOf);
     writer.recordMeetings(config.session, committees, meetings);
@@ -58,7 +61,10 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     for (const link of links) {
       if (stored.has(link.id)) continue;
       const download = await olis.downloadDocument(link, deps.signal);
-      if (download.kind === "failed") throw new Error(download.reason);
+      if (download.kind === "failed") {
+        notFetched.push({ id: link.id, source_url: link.sourceUrl, reason: download.reason });
+        continue;
+      }
       const extracted = await extractPdfText(download.bytes);
       writer.storeDocument(config.session, {
         ...link,
@@ -77,9 +83,10 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
         id: document.id,
         source_url: document.sourceUrl,
       })),
+      documents_not_fetched: notFetched,
     });
   } finally {
     writer.close();
   }
-  return { measures: measures.length, asOf, documentsFetched };
+  return { measures: measures.length, asOf, documentsFetched, documentsNotFetched: notFetched.length };
 }

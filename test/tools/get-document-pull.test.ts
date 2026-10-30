@@ -92,3 +92,56 @@ describe("a transient failure", () => {
     expect(system.olis.documentRequests().filter((path) => path === sb69IntroducedPath)).toHaveLength(2);
   });
 });
+
+describe("a document that cannot be had", () => {
+  const clockAt = "2025-01-29T17:00:00Z";
+  const sb69Introduced = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/Introduced";
+  const sb69IntroducedPath = new URL(sb69Introduced).pathname;
+
+  function notFetched(system: System): unknown {
+    return system.buildReport()["documents_not_fetched"];
+  }
+
+  it("is left out and reported when OLIS says it is not there, and the next pull fetches it", async () => {
+    const system = await start({ clockAt, olis: { documentFailures: { [sb69Introduced]: [404] } } });
+
+    const missing = await getDocument(system, "version-2025r1-sb69-introduced");
+    const other = await getDocument(system, "version-2025r1-sb64-introduced");
+
+    // Not a transient failure, so one request only; the pull went on to the other documents.
+    expect(system.olis.documentRequests().filter((path) => path === sb69IntroducedPath)).toHaveLength(1);
+    expect(missing.isError).toBe(true);
+    expect(other.isError).toBe(false);
+    expect(notFetched(system)).toEqual([
+      {
+        id: "version-2025r1-sb69-introduced",
+        source_url: sb69Introduced,
+        reason: expect.stringContaining("404") as unknown,
+      },
+    ]);
+
+    await system.pullAgain();
+
+    expect((await getDocument(system, "version-2025r1-sb69-introduced")).isError).toBe(false);
+    expect(notFetched(system)).toEqual([]);
+  });
+
+  it("is given up on after three attempts that all time out, and the pull goes on", async () => {
+    const system = await start({
+      clockAt,
+      documentTimeoutMs: 200,
+      olis: { documentFailures: { [sb69Introduced]: ["hang", "hang", "hang"] } },
+    });
+
+    expect((await getDocument(system, "version-2025r1-sb69-introduced")).isError).toBe(true);
+    expect((await getDocument(system, "version-2025r1-sb64-introduced")).isError).toBe(false);
+    expect(system.olis.documentRequests().filter((path) => path === sb69IntroducedPath)).toHaveLength(3);
+    expect(notFetched(system)).toEqual([
+      {
+        id: "version-2025r1-sb69-introduced",
+        source_url: sb69Introduced,
+        reason: expect.stringContaining("3 attempts") as unknown,
+      },
+    ]);
+  });
+});
