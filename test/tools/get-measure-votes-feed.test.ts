@@ -81,34 +81,20 @@ describe("a committee roll the feed lists before its meeting", () => {
 
     expect(outcome.structured).toMatchObject({ as_of: "2025-01-29T09:00:00-08:00" });
     expect(historyOf(outcome)?.at(-1)?.text).toBe("Public Hearing held.");
-    expect(committeeVotesOf(outcome)).toEqual([
-      {
-        committee_code: "SLB",
-        meeting_date: "2025-01-30T08:00:00-08:00",
-        votes: [
-          {
-            legislator_code: "Sen Bonham",
-            vote: "Aye",
-            legislator: expect.objectContaining({ name: "Daniel Bonham" }),
-          },
-          {
-            legislator_code: "Sen Hayden",
-            vote: "Aye",
-            legislator: expect.objectContaining({ name: "Cedric Hayden" }),
-          },
-          { legislator_code: "Sen Pham", vote: "Aye", legislator: expect.objectContaining({ name: "Khanh Pham" }) },
-          {
-            legislator_code: "Sen Taylor",
-            vote: "Aye",
-            legislator: expect.objectContaining({ name: "Kathleen Taylor" }),
-          },
-          {
-            legislator_code: "Sen Woods",
-            vote: "Excused",
-            legislator: expect.objectContaining({ name: "Aaron Woods" }),
-          },
+    expect(
+      committeeVotesOf(outcome)?.map((vote) => [vote.committee_code, vote.meeting_date, tuplesOf(vote.votes)]),
+    ).toEqual([
+      [
+        "SLB",
+        "2025-01-30T08:00:00-08:00",
+        [
+          ["Sen Bonham", "Aye", "legislator-2025r1-bonham", "Daniel Bonham"],
+          ["Sen Hayden", "Aye", "legislator-2025r1-hayden", "Cedric Hayden"],
+          ["Sen Pham", "Aye", "legislator-2025r1-pham", "Khanh Pham"],
+          ["Sen Taylor", "Aye", "legislator-2025r1-taylor", "Kathleen Taylor"],
+          ["Sen Woods", "Excused", "legislator-2025r1-woods", "Aaron Woods"],
         ],
-      },
+      ],
     ]);
   });
 });
