@@ -67,6 +67,15 @@ function sectionMatchOf(id: OrsSectionId): { chapter: string; letter: string; se
   return { chapter: match[1], letter: match[2] ?? "", section: match[3] };
 }
 
+/**
+ * The section as text prints it, the other way round from `orsSectionIdOf`: `ors-163a.040` is "163A.040" (the
+ * chapter's letter in upper case). Whatever needs the words a section is written with in a document gets them here.
+ */
+export function orsSectionCitationOf(id: OrsSectionId): string {
+  const parts = sectionMatchOf(id);
+  return `${parts.chapter}${parts.letter.toUpperCase()}.${parts.section}`;
+}
+
 /** Takes an id apart into the parts ORS order sorts by. */
 export function orsSectionPartsOf(id: OrsSectionId): OrsSectionParts {
   const parts = sectionMatchOf(id);

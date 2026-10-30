@@ -96,6 +96,12 @@ export type SearchIndexReader = {
    * for the amendment), or undefined when none does.
    */
   postingOf(amendment: AmendmentId, filter: SearchFilter): CitedDocument | undefined;
+  /**
+   * The documents whose text names a citation (an id: `ors-468.130`) and pass the filter, at most `limit`, oldest
+   * first (by the date they are filed under, then by id). Each comes with the passage that holds the citation's
+   * first mention, or the passage it starts in when a boundary cuts it in two.
+   */
+  citing(citationId: string, filter: SearchFilter, limit: number): CitedDocument[];
   /** How many passages of the Session have a vector under this model id. */
   vectorCount(session: SessionKey, modelId: string): number;
   /**
@@ -236,6 +242,26 @@ export function openSearchReader(path: string): SearchIndexReader {
           ),
         };
       }
+    },
+    citing(citationId, filter, limit) {
+      const terms = filterTerms(filter);
+      return database
+        .prepare(
+          `SELECT sd.document_id, sd.node_id,
+                  COALESCE(
+                    (SELECT p.id FROM passage p
+                     WHERE p.document_id = sd.document_id AND p.start_offset <= dc.first_offset
+                       AND dc.first_offset < p.end_offset
+                     ORDER BY p.ordinal LIMIT 1),
+                    ${firstPassage}) AS passage_id
+           FROM document_citation dc
+             JOIN search_document sd ON sd.document_id = dc.document_id
+           WHERE dc.citation_id = ? AND ${terms.sql}
+           ORDER BY sd.dated_at IS NULL, sd.dated_at, sd.document_id
+           LIMIT ?`,
+        )
+        .all(citationId, ...terms.values, limit)
+        .map(citedOf);
     },
     versionsOf(measure, filter) {
       const terms = filterTerms(filter);

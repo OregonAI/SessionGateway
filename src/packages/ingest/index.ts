@@ -23,6 +23,7 @@ import {
   type UnreadStatuteFile,
 } from "#/packages/database/writer.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
+import { findCitations } from "#/packages/domain/citations.ts";
 import type { CommitteeId, DocumentLink } from "#/packages/domain/documents.ts";
 import type { LegislatorId, Sponsorship } from "#/packages/domain/legislators.ts";
 import type { OrsSectionId } from "#/packages/domain/oregonai.ts";
@@ -350,7 +351,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
           hasTextLayer: fetched.pdf.hasTextLayer,
           text: fetched.pdf.text,
         },
-        { entry, passages, vectors },
+        { entry, passages, citations: findCitations(fetched.pdf.text, config.session), vectors },
       );
       stored.add(link.id);
       documentsFetched += 1;
