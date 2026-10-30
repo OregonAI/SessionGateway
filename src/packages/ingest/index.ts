@@ -1,6 +1,7 @@
-// The ingest worker. A full pull reads every Measure of the deployment's Session from OLIS and
-// stores it, with the time the pull started as the index's "as of" time. It then fetches every
-// document the feed links that the store does not hold yet, once each, and keeps its text.
+// The ingest worker. A full pull reads the deployment's Session from OLIS (its Measures, committees,
+// meetings and the documents they link) and stores the feed with the time the pull started as the
+// index's "as of" time. It then fetches every linked document the store does not hold yet, once each,
+// keeps its text, and writes the build report (docs/adr/0011-an-amendment-is-a-node-and-its-postings-are-documents.md).
 import { createHash } from "node:crypto";
 import type { IngestConfig } from "#/packages/config/index.ts";
 import { openIndexWriter } from "#/packages/database/writer.ts";
