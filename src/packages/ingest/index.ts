@@ -4,6 +4,7 @@
 import type { IngestConfig } from "#/packages/config/index.ts";
 import { openIndexWriter, type SponsorRecord } from "#/packages/database/writer.ts";
 import type { LegislatorId, Sponsorship } from "#/packages/domain/legislators.ts";
+import type { CommitteeVoteEntry, CommitteeVoteRecord } from "#/packages/domain/votes.ts";
 import type { LegislatorAlias } from "#/packages/legislators/aliases.ts";
 import {
   createLegislatorResolver,
@@ -71,6 +72,11 @@ function sponsorRecordOf(sponsorship: Sponsorship, resolver: LegislatorResolver)
   }
 }
 
+/** What the database keeps of one entry of a committee vote: the entry and the Legislator its code names. */
+function committeeVoteRecordOf(entry: CommitteeVoteEntry, resolver: LegislatorResolver): CommitteeVoteRecord {
+  return { ...entry, legislatorId: legislatorIdOfResolution(resolver.resolve("CommitteeVotes", entry.legislatorCode)) };
+}
+
 export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promise<FullPullResult> {
   const asOf = formatPacific(deps.clock.now());
   const olis = createOlisClient({ baseUrl: config.olisBaseUrl, fetch: deps.fetch });
@@ -78,6 +84,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
   const legislatorRows = await olis.readLegislators(config.session, deps.signal);
   const sponsorships = await olis.readSponsorships(config.session, deps.signal);
   const history = await olis.readHistoryActions(config.session, deps.signal);
+  const committeeVotes = await olis.readCommitteeVotes(config.session, deps.signal);
 
   // A Member sponsor names a Legislator by a Legislator Code; the resolver says who that is.
   const resolver = createLegislatorResolver({
@@ -86,10 +93,17 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     aliases: deps.legislatorAliases,
   });
   const sponsors = sponsorships.map((sponsorship) => sponsorRecordOf(sponsorship, resolver));
+  const committeeVoteRecords = committeeVotes.map((entry) => committeeVoteRecordOf(entry, resolver));
 
   const writer = openIndexWriter(config.databasePath);
   try {
-    writer.recordFullPull(config.session, measures, asOf, { legislators: resolver.people, sponsors }, history);
+    writer.recordFullPull(
+      config.session,
+      measures,
+      asOf,
+      { legislators: resolver.people, sponsors, committeeVotes: committeeVoteRecords },
+      history,
+    );
   } finally {
     writer.close();
   }

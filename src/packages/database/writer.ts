@@ -2,6 +2,7 @@
 // it imports reader.ts only.
 import type { HistoryAction, Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
 import type { Legislator, LegislatorId, SponsorLevel } from "#/packages/domain/legislators.ts";
+import type { CommitteeVoteRecord } from "#/packages/domain/votes.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openWriteConnection } from "./lib/connection.ts";
 
@@ -22,10 +23,14 @@ export type SponsorRecord =
   | (SponsorRecordFields & { kind: "committee"; committeeCode: string })
   | (SponsorRecordFields & { kind: "presession"; message: string });
 
-/** The people a full pull read: the Legislators the resolver can name, and the sponsor rows of the Measures. */
+/**
+ * The people a full pull read: the Legislators the resolver can name, and the rows that name a
+ * Legislator by a code (the sponsor rows of the Measures and the entries of their votes).
+ */
 export type PeopleRecord = {
   legislators: readonly Legislator[];
   sponsors: readonly SponsorRecord[];
+  committeeVotes: readonly CommitteeVoteRecord[];
 };
 
 /** The columns of the sponsor table that only some kinds of row fill; the others stay NULL. */
@@ -85,6 +90,15 @@ export function openIndexWriter(path: string): IndexWriter {
            legislator_id = excluded.legislator_id, committee_code = excluded.committee_code,
            presession_message = excluded.presession_message`,
       );
+      const upsertCommitteeVote = database.prepare(
+        `INSERT INTO committee_vote (session_key, vote_id, report_id, prefix, number, committee_code, meeting_date,
+                                     legislator_code, legislator_id, vote)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (session_key, vote_id) DO UPDATE SET
+           report_id = excluded.report_id, prefix = excluded.prefix, number = excluded.number,
+           committee_code = excluded.committee_code, meeting_date = excluded.meeting_date,
+           legislator_code = excluded.legislator_code, legislator_id = excluded.legislator_id, vote = excluded.vote`,
+      );
       const upsertHistory = database.prepare(
         `INSERT INTO history_action (session_key, history_id, prefix, number, chamber, action_date, action_text)
          VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -125,6 +139,20 @@ export function openIndexWriter(path: string): IndexWriter {
             columns.legislatorId,
             columns.committeeCode,
             columns.message,
+          );
+        }
+        for (const entry of people.committeeVotes) {
+          upsertCommitteeVote.run(
+            session,
+            entry.id,
+            entry.reportId,
+            entry.measure.prefix,
+            entry.measure.number,
+            entry.committeeCode,
+            entry.meetingDate,
+            entry.legislatorCode,
+            entry.legislatorId,
+            entry.vote,
           );
         }
         for (const action of history) {

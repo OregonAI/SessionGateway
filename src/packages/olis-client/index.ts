@@ -2,6 +2,8 @@
 // the OData v3 feed and hands everything else domain types named as GLOSSARY.md names them.
 import type { HistoryAction, Measure, SessionKey } from "#/packages/domain/index.ts";
 import type { LegislatorRow, Sponsorship } from "#/packages/domain/legislators.ts";
+import type { CommitteeVoteEntry } from "#/packages/domain/votes.ts";
+import { readCommitteeVoteRows } from "./lib/committee-votes.ts";
 import { readHistoryActionRows } from "./lib/history.ts";
 import { readLegislatorRows } from "./lib/legislators.ts";
 import { readMeasureRows } from "./lib/measures.ts";
@@ -19,6 +21,8 @@ export type OlisClient = {
   readSponsorships(session: SessionKey, signal: AbortSignal): Promise<Sponsorship[]>;
   /** Every MeasureHistoryActions row of the Session, in the feed's order. */
   readHistoryActions(session: SessionKey, signal: AbortSignal): Promise<HistoryAction[]>;
+  /** Every CommitteeVotes row of the Session: one entry for each member in each committee vote, in the feed's order. */
+  readCommitteeVotes(session: SessionKey, signal: AbortSignal): Promise<CommitteeVoteEntry[]>;
 };
 
 export function createOlisClient(options: OlisClientOptions): OlisClient {
@@ -27,5 +31,6 @@ export function createOlisClient(options: OlisClientOptions): OlisClient {
     readLegislators: (session, signal) => readLegislatorRows(options, session, signal),
     readSponsorships: (session, signal) => readSponsorshipRows(options, session, signal),
     readHistoryActions: (session, signal) => readHistoryActionRows(options, session, signal),
+    readCommitteeVotes: (session, signal) => readCommitteeVoteRows(options, session, signal),
   };
 }

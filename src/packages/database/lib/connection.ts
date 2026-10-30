@@ -36,6 +36,20 @@ const schema = `
     PRIMARY KEY (session_key, history_id)
   ) STRICT;
   CREATE INDEX IF NOT EXISTS history_action_of_measure ON history_action (session_key, prefix, number);
+  CREATE TABLE IF NOT EXISTS committee_vote (
+    session_key TEXT NOT NULL,
+    vote_id INTEGER NOT NULL,
+    report_id INTEGER NOT NULL,
+    prefix TEXT NOT NULL,
+    number INTEGER NOT NULL,
+    committee_code TEXT NOT NULL,
+    meeting_date TEXT NOT NULL,
+    legislator_code TEXT NOT NULL,
+    legislator_id TEXT,
+    vote TEXT NOT NULL,
+    PRIMARY KEY (session_key, vote_id)
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS committee_vote_of_measure ON committee_vote (session_key, prefix, number);
   CREATE TABLE IF NOT EXISTS sponsor (
     session_key TEXT NOT NULL,
     sponsor_id INTEGER NOT NULL,

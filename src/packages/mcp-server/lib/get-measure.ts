@@ -1,10 +1,26 @@
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
 import { measureIdOf, olisPageUrlOf, parseMeasureReference, type SessionKey } from "#/packages/domain/index.ts";
+import type { LegislatorVote } from "#/packages/domain/votes.ts";
 
 /** The notice every result carries (ADR-0002, spec #1 "What every result must carry"). */
 export const NON_OFFICIAL_NOTICE =
   "Not the official record of the Oregon Legislature. This is an unofficial copy of public information from the Legislature's Open Data Service; use source_url for the Legislature's own page.";
+
+const legislatorOutput = z
+  .object({
+    id: z.string().describe("The Legislator's id, the same for every Legislator Code that names them."),
+    name: z.string().describe("The Legislator's first and last name."),
+  })
+  .nullable()
+  .describe("The Legislator the code names, or null when the code could not be resolved.");
+
+/** One Legislator's vote, in a committee vote or a floor vote. */
+const legislatorVoteOutput = z.object({
+  legislator_code: z.string().describe("The Legislator Code the feed gives this voter, as the feed writes it."),
+  legislator: legislatorOutput,
+  vote: z.string().describe('The vote in the feed\'s word, such as "Aye", "Nay" or "Excused".'),
+});
 
 export const getMeasureInput = z.object({
   measure: z.string().describe('A Measure\'s id, such as "measure-2025r1-sb69", or its citation, such as "SB 69".'),
@@ -35,13 +51,7 @@ export const getMeasureOutput = z.object({
       z.object({
         level: z.enum(["chief", "regular"]).describe("Whether the Legislator is a chief sponsor or a regular one."),
         legislator_code: z.string().describe("The Legislator Code the feed gives this sponsor, as the feed writes it."),
-        legislator: z
-          .object({
-            id: z.string().describe("The Legislator's id, the same for every Legislator Code that names them."),
-            name: z.string().describe("The Legislator's first and last name."),
-          })
-          .nullable()
-          .describe("The Legislator the code names, or null when the code could not be resolved."),
+        legislator: legislatorOutput,
       }),
     )
     .describe("The Measure's sponsors who are Legislators, in print order."),
@@ -70,11 +80,26 @@ export const getMeasureOutput = z.object({
     .describe(
       "The Measure's history as of the last full pull (see as_of), oldest action first as OLIS prints it, so the last entry is the latest action.",
     ),
+  committee_votes: z
+    .array(
+      z.object({
+        committee_code: z.string().describe("The code of the committee that voted, such as SLB."),
+        meeting_date: z.string().describe("When the committee met, in Pacific time with its UTC offset."),
+        votes: z.array(legislatorVoteOutput).describe("Each member's vote, in the feed's order."),
+      }),
+    )
+    .describe(
+      "The Measure's committee votes as of the last full pull (see as_of), in the order the committees met. A committee that voted twice at one meeting has two entries.",
+    ),
   as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
   notice: z.string().describe("A reminder that this is not the official record."),
 });
 
 export type GetMeasureOutput = z.infer<typeof getMeasureOutput>;
+
+function legislatorVoteShown(cast: LegislatorVote): z.infer<typeof legislatorVoteOutput> {
+  return { legislator_code: cast.legislatorCode, legislator: cast.legislator, vote: cast.vote };
+}
 
 /** An unknown Measure is an expected outcome, so it is a value; the MCP edge decides it is a tool error. */
 export type GetMeasureResult =
@@ -114,6 +139,11 @@ export function getMeasure(
         chamber: action.chamber,
         date: action.date,
         text: action.text,
+      })),
+      committee_votes: reader.findCommitteeVotes(measure).map((vote) => ({
+        committee_code: vote.committeeCode,
+        meeting_date: vote.meetingDate,
+        votes: vote.votes.map(legislatorVoteShown),
       })),
       as_of: asOf,
       notice: NON_OFFICIAL_NOTICE,
