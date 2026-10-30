@@ -546,13 +546,12 @@ export function openIndexReader(path: string): IndexReader {
       file.postingIds.push(posting.documentId);
       readings.set(reading, file);
     }
-    const files = readings;
     return {
       id,
       number: first.label,
       measureId: first.measure_id as MeasureId,
       postings: listed.map(({ posting }) => posting),
-      files: [...files.values()],
+      files: [...readings.values()],
     };
   }
   return {
