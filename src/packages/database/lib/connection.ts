@@ -258,6 +258,15 @@ const schema = `
     vector BLOB NOT NULL,
     PRIMARY KEY (text_hash, model_id)
   ) STRICT, WITHOUT ROWID;
+  -- A number the worker raises in the same transaction as every change to what the server loads into memory for
+  -- the meaning side (a stored document's vectors, a stored document's filing). The server reads it before each
+  -- search and loads the vectors again when it has moved, so a document stored in the middle of a pull, after
+  -- the pull's as-of time was recorded, is not hidden from the meaning side until the next pull.
+  CREATE TABLE IF NOT EXISTS search_generation (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    generation INTEGER NOT NULL
+  ) STRICT;
+  INSERT OR IGNORE INTO search_generation (id, generation) VALUES (1, 0);
   -- The keyword side: one row for each passage, with the passage's id as its rowid. Contentless, so the text
   -- is not kept a second time; a hit's snippet is cut from document.text.
   CREATE VIRTUAL TABLE IF NOT EXISTS passage_fts USING fts5(

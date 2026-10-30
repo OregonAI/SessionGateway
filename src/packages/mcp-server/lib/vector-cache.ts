@@ -16,19 +16,28 @@ export type VectorDocuments = {
 export type LoadedVectors = {
   /** The index's as-of time when the vectors were read. */
   asOf: Timestamp;
+  /** The index's generation (`SearchIndexReader.generation`) when the vectors were read. */
+  generation: number;
   index: VectorIndex;
   documents: VectorDocuments;
 };
 
 export type VectorCache = {
-  /** The vectors as of the index's current as-of time: read again from the database when that has changed. */
+  /**
+   * The vectors the index holds now: read again from the database when its as-of time or its generation has
+   * changed since they were read.
+   */
   current(): LoadedVectors;
 };
 
 /**
- * Holds the vectors of the Session in memory for the exact scan, and reads them again when the index's as-of
- * time changes (docs/adr/0025, "Vectors in memory"). The as-of time is read on every call, which is one
- * small query, so a full pull that finishes between two questions shows in the second. The vectors are those
+ * Holds the vectors of the Session in memory for the exact scan, and reads them again when the index has changed
+ * (docs/adr/0025, "Meaning side"). The as-of time and the generation are read on every call, which is two small
+ * queries. A full pull records its as-of time before it stores its documents, one by one, and the server serves
+ * during the pull (ADR-0007), so the as-of time alone would pin the vectors a search in the middle of a pull read,
+ * and the pull's later documents would never reach the meaning side until the next pull; the worker raises the
+ * generation with each document and each refresh that changes what is held. The generation is read before the
+ * vectors, so a commit that lands while they are read makes the next call read them again. The vectors are those
  * of the embedder's model: a database built with another model has none, and a scan finds nothing.
  */
 export function createVectorCache(deps: {
@@ -42,7 +51,9 @@ export function createVectorCache(deps: {
     current() {
       const asOf = deps.reader.asOf(deps.session);
       if (asOf === undefined) throw new Error(`The index holds no completed full pull of ${deps.session}`);
-      if (loaded?.asOf === asOf) return loaded;
+      // Before the vectors are read: a commit that lands while they are read then shows in the next call.
+      const generation = deps.searchIndex.generation();
+      if (loaded?.asOf === asOf && loaded.generation === generation) return loaded;
       const index = createVectorIndex(VECTOR_DIMENSIONS, deps.searchIndex.vectorCount(deps.session, deps.modelId));
       const documents: VectorDocuments = { documentIds: [], nodeIds: [], facts: [] };
       const documentIndexes = new Map<DocumentId, number>();
@@ -57,7 +68,7 @@ export function createVectorCache(deps: {
         }
         index.add(row.passageId, documentIndex, row.vector);
       }
-      loaded = { asOf, index, documents };
+      loaded = { asOf, generation, index, documents };
       return loaded;
     },
   };

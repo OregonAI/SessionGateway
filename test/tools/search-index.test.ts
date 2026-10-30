@@ -142,8 +142,8 @@ describe("a row OLIS changes after the pull", () => {
 
     row["MeasurePrefix"] = "HB";
     row["MeasureNumber"] = 3131;
-    // The next pull begins later, so the index has a later as-of time, which is what tells the server to read its
-    // vectors again.
+    // The next pull begins later, so the index has a later as-of time, and its refresh of the row changes how the
+    // document is filed: either tells the server to read its vectors again.
     system.clock.advance(60 * 60 * 1000);
     await system.pullAgain();
 
@@ -205,4 +205,51 @@ describe("the passages a document is cut into", () => {
     expect(fakeReport.passages).toBe(realReport.passages);
     expect(fakeReport.keyword_only_passages).toBe(realReport.keyword_only_passages);
   }, 120_000);
+});
+
+// The server serves while the worker pulls (ADR-0007). A full pull records its as-of time first and stores its
+// documents one by one afterwards, so a search in the middle of a pull sees the new as-of time with only some of
+// the pull's documents stored. The vectors of the rest must still reach the meaning side once they are stored.
+// SB 921's Introduced Version, created 2025-01-16 13:48 Pacific, is the one document the second pull gets late: its
+// file hangs once, so that the pull waits on it while the test searches.
+describe("a search in the middle of a pull", () => {
+  const firstPull = "2025-01-15T22:00:00Z"; // 2025-01-15 14:00 Pacific: SB 921's Introduced Version is not in the feed yet
+  const secondPull = "2025-01-18T02:00:00Z"; // 2025-01-17 18:00 Pacific
+  const sb921 = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB921/Introduced";
+  // Words of SB 921's Introduced Version (it requires the Oregon Business Development Department to study needed
+  // investments in shipyards), and one that no document has, so that only the meaning of its passages can bring it up.
+  const query = "Oregon Business Development Department study needed investments in shipyards zzqx";
+
+  it("does not hide the documents the pull stores after it from the meaning side", async () => {
+    const system = await startSystem({
+      clockAt: firstPull,
+      documents: true,
+      documentTimeoutMs: 3000,
+      olis: { documentFailures: { [sb921]: ["hang"] } },
+    });
+    systems.push(system);
+    const connected = await connectClient("2026-07-28", system.handler);
+    const idsOf = async (): Promise<string[]> => {
+      const outcome = await callTool(connected, "search", { query });
+      return (outcome.structured?.["results"] as { id: string }[]).map((hit) => hit.id);
+    };
+    expect(await idsOf()).not.toContain("version-2025r1-sb921-introduced");
+
+    system.clock.set(secondPull);
+    const pull = system.pullAgain();
+    for (let waited = 0; !system.olis.documentRequests().includes(new URL(sb921).pathname); waited += 20) {
+      if (waited > 10_000) throw new Error("The worker never asked for SB 921's Introduced Version");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    // The pull has stored the documents before SB 921's and waits for its file. A search now reads the vectors there are.
+    expect(await idsOf()).not.toContain("version-2025r1-sb921-introduced");
+    await pull;
+
+    const hits = (await callTool(connected, "search", { query })).structured?.["results"] as {
+      id: string;
+      found_by: string[];
+    }[];
+    expect(hits[0]).toMatchObject({ id: "version-2025r1-sb921-introduced", found_by: ["embedding"] });
+    await connected.close();
+  }, 60_000);
 });
