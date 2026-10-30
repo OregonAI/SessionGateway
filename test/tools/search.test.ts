@@ -89,4 +89,90 @@ describe.for(eras)("search for a %s client", (era) => {
       expect(idsOf(outcome), measure).toEqual(expect.arrayContaining(letters));
     }
   });
+  // Filters. The corpus (see the top of the file) has these committee-bound documents, from the feed's
+  // CommitteeMeetings, CommitteeProposedAmendments, CommitteeMeetingDocuments and CommitteePublicTestimonies
+  // rows created by then: SLB's agenda for 2025-01-21, SB 69's Exhibit 287879 and Proposed Amendment -1
+  // (posted to SLB on 2025-01-21), HALNRW's agendas for 2025-01-22 and 2025-01-27, HB 3131's three letters
+  // (HALNRW, 2025-01-22) and SHS's agenda for 2025-01-23. Every Version in it was created on 2025-01-10 or
+  // 2025-01-16 (MeasureDocuments rows).
+  describe("filters", () => {
+    type Hit = { id: string; kind: string; measure: string | null; date: string | null };
+    const hitsOf = (outcome: { structured: Record<string, unknown> | undefined }): Hit[] =>
+      outcome.structured?.["results"] as Hit[];
+
+    it("kind narrows the hits to one kind of document", async () => {
+      const query = "dependent care tax credit";
+
+      const everything = await callTool(connected, "search", { query });
+      const agendas = await callTool(connected, "search", { query, kind: "agenda" });
+      const versions = await callTool(connected, "search", { query, kind: "version" });
+
+      expect(idsOf(everything)).toEqual(
+        expect.arrayContaining(["version-2025r1-sb64-introduced", "agenda-2025r1-shs-2025-01-23-0800"]),
+      );
+      expect(idsOf(agendas)).toContain("agenda-2025r1-shs-2025-01-23-0800");
+      expect(new Set(kindsOf(agendas))).toEqual(new Set(["agenda"]));
+      expect(idsOf(versions)).toContain("version-2025r1-sb64-introduced");
+      expect(new Set(kindsOf(versions))).toEqual(new Set(["version"]));
+    });
+
+    it("kind testimony returns Testimony without include_testimony: the call asked for it", async () => {
+      const outcome = await callTool(connected, "search", { query: heritageQuery, kind: "testimony" });
+
+      expect(idsOf(outcome)).toEqual(expect.arrayContaining(letters));
+      expect(new Set(kindsOf(outcome))).toEqual(new Set(["testimony"]));
+    });
+
+    it("measure narrows the hits to the documents of one Measure", async () => {
+      const everything = await callTool(connected, "search", { query: "department" });
+      const sb69 = await callTool(connected, "search", { query: "department", measure: "SB 69" });
+
+      expect(new Set(hitsOf(everything).map((hit) => hit.measure)).size).toBeGreaterThan(2);
+      expect(new Set(hitsOf(sb69).map((hit) => hit.measure))).toEqual(new Set(["measure-2025r1-sb69"]));
+      expect(idsOf(sb69)).toEqual(
+        expect.arrayContaining(["version-2025r1-sb69-introduced", "amendment-2025r1-sb69-1", "exhibit-2025r1-287879"]),
+      );
+    });
+
+    it("committee narrows the hits to the documents of one committee, given by its code or its id", async () => {
+      const slb = ["agenda-2025r1-slb-2025-01-21-0800", "amendment-2025r1-sb69-1", "exhibit-2025r1-287879"];
+      const everything = await callTool(connected, "search", { query: "department" });
+
+      expect(idsOf(everything).length).toBeGreaterThan(slb.length);
+      for (const committee of ["SLB", "slb", "committee-2025r1-slb"]) {
+        const outcome = await callTool(connected, "search", { query: "department", committee });
+
+        expect(idsOf(outcome).toSorted(), committee).toEqual(slb);
+      }
+    });
+
+    it("from and to narrow the hits to a range of dates, the whole of the last day included", async () => {
+      const query = "Employment Department";
+      const everything = await callTool(connected, "search", { query });
+      const onTheDay = await callTool(connected, "search", { query, from: "2025-01-21", to: "2025-01-21" });
+      const afterTheVersions = await callTool(connected, "search", { query, from: "2025-01-11" });
+      const beforeTheMeetings = await callTool(connected, "search", { query, to: "2025-01-20" });
+
+      expect(idsOf(everything)).toContain("version-2025r1-sb69-introduced");
+      expect(idsOf(onTheDay).toSorted()).toEqual(
+        expect.arrayContaining(["amendment-2025r1-sb69-1", "exhibit-2025r1-287879"]),
+      );
+      expect(hitsOf(onTheDay).every((hit) => hit.date?.startsWith("2025-01-21"))).toBe(true);
+      expect(idsOf(afterTheVersions)).not.toContain("version-2025r1-sb69-introduced");
+      expect(hitsOf(afterTheVersions).every((hit) => (hit.date ?? "") >= "2025-01-11")).toBe(true);
+      expect(idsOf(beforeTheMeetings)).toContain("version-2025r1-sb69-introduced");
+      expect(hitsOf(beforeTheMeetings).every((hit) => (hit.date ?? "9") < "2025-01-21")).toBe(true);
+    });
+
+    it("an unknown Measure, an unknown committee and a backwards range are tool errors that say what is wrong", async () => {
+      const measure = await callTool(connected, "search", { query: "department", measure: "HB 9999" });
+      const committee = await callTool(connected, "search", { query: "department", committee: "XYZ" });
+      const range = await callTool(connected, "search", { query: "department", from: "2025-02-01", to: "2025-01-01" });
+
+      expect([measure.isError, committee.isError, range.isError]).toEqual([true, true, true]);
+      expect(measure.text).toContain("HB 9999");
+      expect(committee.text).toContain("XYZ");
+      expect(range.text).toContain("2025-02-01");
+    });
+  });
 });
