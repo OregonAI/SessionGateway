@@ -4,6 +4,7 @@ import type { StatuteLinkDocumentKind } from "./lib/read-links.ts";
 import { readDocument } from "./lib/read-links.ts";
 import type { RelatingClauseEdit } from "./lib/relating-clause.ts";
 
+export { readAmendedVersionHeader } from "./lib/amended-version.ts";
 export type { StatuteLinkDocumentKind } from "./lib/read-links.ts";
 export type { RelatingClauseEdit } from "./lib/relating-clause.ts";
 
