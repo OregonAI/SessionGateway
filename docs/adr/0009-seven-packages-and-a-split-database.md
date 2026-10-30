@@ -9,7 +9,7 @@ Spec #1 lists twelve modules, and `src/CLAUDE.md` asks the ticket that first bui
 | `config` | `index.ts` | The environment read once through zod, for the worker and for the server. |
 | `olis-client` | `index.ts` | Spec module 1: the only code that sees the feed's own shapes, among them the offset-less timestamps, which it reads as Pacific local time and refuses in any other form. |
 | `database` | `writer.ts`, `reader.ts` | The only code that imports `node:sqlite`. |
-| `agency-links` | `index.ts` | Spec module 5, the Agency Link extractor (ticket #7): pure functions from a Fiscal Impact Statement's text, Version or Proposed Amendment text, or a Testimony row's `Organization` to Agency Links with their evidence. The agency registry is a parameter. It imports no other package and no package imports it yet; the ingest worker will, with the build-time snapshot (#16). |
+| `agency-links` | `index.ts` | Spec module 5, the Agency Link extractor (ticket #7): pure functions from a Fiscal Impact Statement's text, Version or Proposed Amendment text, or a Testimony row's `Organization` to Agency Links with their evidence. The agency registry is a parameter. It imports only `domain`, for the Agency id (`AgencyId`, minted in `domain/agencies.ts`), and no package imports it yet; the ingest worker will, with the build-time snapshot (#16). |
 | `ingest` | `index.ts` | Spec module 2, the full pull only. |
 | `mcp-server` | `handler.ts`, `http.ts` | The tool contract and its rate limit (one ceiling over every caller, timed by the injected `Clock`), and serving it on a port behind the Host and Origin guards. |
 

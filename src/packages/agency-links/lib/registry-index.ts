@@ -1,3 +1,4 @@
+import type { AgencyId } from "#/packages/domain/agencies.ts";
 import type { RegistryAgency } from "./types.ts";
 
 /**
@@ -9,8 +10,8 @@ import type { RegistryAgency } from "./types.ts";
 const neverLinked: ReadonlySet<string> = new Set(["legislative-assembly"]);
 
 /** The slug a name or alias belongs to. A term two rows share belongs to the first row. */
-export function slugsByTerm(registry: readonly RegistryAgency[]): Map<string, string> {
-  const slugs = new Map<string, string>();
+export function slugsByTerm(registry: readonly RegistryAgency[]): Map<string, AgencyId> {
+  const slugs = new Map<string, AgencyId>();
   for (const agency of registry) {
     if (neverLinked.has(agency.slug)) continue;
     for (const term of [agency.name, ...agency.aliases]) {

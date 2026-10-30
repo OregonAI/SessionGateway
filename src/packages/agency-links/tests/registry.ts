@@ -14,9 +14,18 @@
 // Services has no `aliases` key at that commit. It is added here so the tables can show an alias
 // resolving. Whether the real registry should list it is for the registry's owner to decide.
 
+import { parseAgencyId, type AgencyId } from "#/packages/domain/agencies.ts";
 import type { RegistryAgency } from "../index.ts";
 
-export const testRegistry: readonly RegistryAgency[] = [
+/** An Agency id for a table row: the slug as the catalog writes it. A slug that is not one fails the test run. */
+export function testAgencyId(slug: string): AgencyId {
+  const id = parseAgencyId(slug);
+  if (id === undefined) throw new Error(`not an Agency id: ${slug}`);
+  return id;
+}
+
+/** The rows as the catalog gives them, with the slug a plain string. */
+const rows: readonly { slug: string; name: string; aliases: readonly string[] }[] = [
   { slug: "bureau-of-labor-and-industries", name: "Bureau of Labor and Industries", aliases: [] },
   {
     slug: "department-of-agriculture",
@@ -62,3 +71,5 @@ export const testRegistry: readonly RegistryAgency[] = [
     aliases: [],
   },
 ];
+
+export const testRegistry: readonly RegistryAgency[] = rows.map((row) => ({ ...row, slug: testAgencyId(row.slug) }));

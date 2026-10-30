@@ -1,7 +1,9 @@
+import type { AgencyId } from "#/packages/domain/agencies.ts";
+
 /** One row of the OregonAI agency registry, as the build-time snapshot carries it (ADR-0004). */
 export type RegistryAgency = {
   /** The registry slug, such as `department-of-human-services`: the Agency's id. */
-  slug: string;
+  slug: AgencyId;
   /** The name the registry gives the Agency. */
   name: string;
   /** Other names the registry lists for it. */
@@ -29,7 +31,7 @@ export type AgencyEvidence =
 /** A connection to one Agency, with the evidence that makes it. */
 export type AgencyLink = {
   /** The Agency's registry slug. */
-  agency: string;
+  agency: AgencyId;
   evidence: AgencyEvidence;
 };
 
