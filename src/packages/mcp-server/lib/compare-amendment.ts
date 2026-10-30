@@ -15,7 +15,7 @@ import {
   postingShown,
   relatingClauseEditOutput,
   relatingClauseEditShown,
-  statuteLinkOutput,
+  statuteLinksOutput,
   statuteLinksShown,
 } from "./statute-links.ts";
 
@@ -42,11 +42,9 @@ const comparedVersionOutput = amendedVersionOutput.extend({
     .string()
     .nullable()
     .describe("Why the Version's text was not read. Null when text_read is true or null."),
-  statute_links: z
-    .array(statuteLinkOutput)
-    .describe(
-      "The Version's Statute Links, in the same shape and order as the amendment's, so that the two can be read side by side. Empty when the Version is not known: there is then no comparison.",
-    ),
+  statute_links: statuteLinksOutput.describe(
+    "The Version's Statute Links, in the same shape and order as the amendment's, so that the two can be read side by side. Empty (no target under any kind) when the Version is not known: there is then no comparison.",
+  ),
 });
 
 const comparedFileOutput = fileOutput.extend({
@@ -105,7 +103,8 @@ function comparedVersionShown(
   versions: readonly StoredVersion[],
 ): CompareAmendmentOutput["amended_version"] {
   const { version, shown } = placeStoredAmendment(amendment, key, versions);
-  if (version === undefined) return { ...shown, text_read: null, not_read_reason: null, statute_links: [] };
+  if (version === undefined)
+    return { ...shown, text_read: null, not_read_reason: null, statute_links: statuteLinksShown([]) };
   return {
     ...shown,
     text_read: version.parse.textRead,
