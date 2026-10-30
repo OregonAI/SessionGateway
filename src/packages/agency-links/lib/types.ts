@@ -46,4 +46,11 @@ export type FiscalImpactUnits = {
 /** The text has no "Government Unit(s) Affected:" line, as in a Revenue Impact Statement. */
 export type NoUnitLine = { kind: "no-unit-line" };
 
-export type FiscalImpactResult = FiscalImpactUnits | NoUnitLine;
+/**
+ * The text has a "Government Unit(s) Affected:" line, but nothing closes the list before a blank
+ * line or the end of the text (the template has no "Summary of Fiscal Impact" heading there). The
+ * list's end is unknown, so no unit is read from it.
+ */
+export type UnboundedUnitLine = { kind: "unbounded-unit-line" };
+
+export type FiscalImpactResult = FiscalImpactUnits | NoUnitLine | UnboundedUnitLine;

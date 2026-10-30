@@ -6,30 +6,37 @@ const unitLabel = "Government Unit(s) Affected:";
 const nextHeading = "Summary of Fiscal Impact";
 
 /**
- * The list as one string. `pdftotext` wraps a long list onto further lines, even inside a name
- * ("Judicial" then "Department"), and the list ends at the next heading.
+ * The list as one string, or undefined when the text has no unit line. `pdftotext` wraps a long
+ * list onto further lines, even inside a name ("Judicial" then "Department"), and the template
+ * closes the list with the next heading. A list that no heading closes before a blank line or the
+ * end of the text is `"unbounded"`: where it ends is unknown, and guessing would read the
+ * statement's body as units.
  */
-function listedUnits(text: string): string | undefined {
+function listedUnits(text: string): string | "unbounded" | undefined {
   const lines = text.split("\n");
   const first = lines.findIndex((line) => line.startsWith(unitLabel));
   if (first === -1) return undefined;
   const wrapped: string[] = [];
   for (const line of lines.slice(first)) {
-    if (line.startsWith(nextHeading)) break;
+    if (line.startsWith(nextHeading)) return wrapped.join(" ");
+    if (line.trim() === "") break;
     wrapped.push(line.startsWith(unitLabel) ? line.slice(unitLabel.length) : line);
   }
-  return wrapped.join(" ");
+  return "unbounded";
 }
 
 /** Reads the units a Fiscal Impact Statement lists after "Government Unit(s) Affected:". */
 export function readFiscalImpactUnits(text: string, registry: readonly RegistryAgency[]): FiscalImpactResult {
   const listed = listedUnits(text);
   if (listed === undefined) return { kind: "no-unit-line" };
+  if (listed === "unbounded") return { kind: "unbounded-unit-line" };
   const slugs = slugsByStatementTerm(registry);
   const links: AgencyLink[] = [];
   const unresolvedUnits: string[] = [];
   for (const piece of listed.split(",")) {
     const unit = piece.trim();
+    // An empty list or a comma left at the end of a line names no unit.
+    if (unit === "") continue;
     const agency = slugs.get(unit);
     if (agency === undefined) unresolvedUnits.push(unit);
     else links.push({ agency, evidence: { kind: "fiscal-impact-statement", unit } });

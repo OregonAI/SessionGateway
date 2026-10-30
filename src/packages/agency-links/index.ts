@@ -14,6 +14,7 @@ export type {
   FiscalImpactUnits,
   NoUnitLine,
   RegistryAgency,
+  UnboundedUnitLine,
 } from "./lib/types.ts";
 
 /** Reads a Fiscal Impact Statement's "Government Unit(s) Affected:" list against the registry. */

@@ -341,6 +341,79 @@ describe("Fiscal Impact Statement: Government Unit(s) Affected", () => {
       },
     ])("$document: $variant", expectUnits);
   });
+  describe("a unit line the template does not close", () => {
+    // All 24 statements in the fixture and all 19 in the cached samples close the list with the
+    // "Summary of Fiscal Impact" heading. These rows are real statements with one line cut, standing for a
+    // template that changes: the extractor must say it cannot tell where the list ends, not read
+    // the statement's body as units.
+    test.for<{ document: string; variant: string; path: string; text: string }>([
+      {
+        document: "FIS 89095 (HB 3795, A-Engrossed)",
+        variant: "the heading line is cut",
+        path: "measure-analysis-documents/89095.pdf",
+        text: [
+          "Bill Title: Relating to human services.",
+          "Government Unit(s) Affected: Department of Human Services",
+          "The proposed legislation has been determined to have",
+          "",
+          "MINIMAL FISCAL IMPACT",
+          "on state or local government expenditures.",
+          "While this individual measure has a minimal fiscal impact, an agency may incur a greater than minimal net fiscal",
+          "impact, depending on the cumulative impact of all measures enacted into law that affect the agency.",
+        ].join("\n"),
+      },
+      {
+        document: "FIS 89095 (HB 3795, A-Engrossed)",
+        variant: "a blank line comes before the heading",
+        path: "measure-analysis-documents/89095.pdf",
+        text: [
+          "Bill Title: Relating to human services.",
+          "Government Unit(s) Affected: Department of Human Services",
+          "",
+          "Summary of Fiscal Impact",
+          "The proposed legislation has been determined to have",
+        ].join("\n"),
+      },
+    ])("$document: $variant", ({ text }) => {
+      expect(fiscalImpactAgencyLinks(text, testRegistry)).toEqual({ kind: "unbounded-unit-line" });
+    });
+
+    test.for<UnitRow>([
+      {
+        document: "FIS 85414 (SB 69, A-Engrossed)",
+        variant: "the label with no unit after it",
+        path: "measure-analysis-documents/85414.pdf",
+        text: [
+          "Bill Title: Relating to laws concerning job-protected leave from work.",
+          "Government Unit(s) Affected:",
+          "Summary of Fiscal Impact",
+          "The proposed legislation has been determined to have",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [],
+        unresolved: [],
+      },
+      {
+        document: "FIS 85414 (SB 69, A-Engrossed)",
+        variant: "the last wrapped line is cut, leaving a comma",
+        path: "measure-analysis-documents/85414.pdf",
+        text: [
+          "Bill Title: Relating to laws concerning job-protected leave from work.",
+          "Government Unit(s) Affected: Bureau of Labor and Industries, Employment Department, Judicial Department,",
+          "Summary of Fiscal Impact",
+          "The proposed legislation has been determined to have",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [
+          { slug: "bureau-of-labor-and-industries", unit: "Bureau of Labor and Industries" },
+          { slug: "employment-department", unit: "Employment Department" },
+          { slug: "judicial-department", unit: "Judicial Department" },
+        ],
+        unresolved: [],
+      },
+    ])("$document: $variant", expectUnits);
+  });
+
   describe("a document with no unit line", () => {
     test("RIS 90375 (SB 121, Introduced): says there is no unit line instead of listing nothing", () => {
       // measure-analysis-documents/90375.pdf (Revenue Impact Statement, SB 121, Introduced), lines 1 to 22.
