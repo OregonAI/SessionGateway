@@ -112,6 +112,37 @@ describe.for(eras)("testimony on rows the fixture lacks, for a %s client", (era)
     });
   });
 
+  describe("a row whose BehalfOf names an Agency and whose Organization is a city", () => {
+    // MADE UP: row 930041 on SB 983 gives BehalfOf "Bureau of Labor and Industries", which is the whole of an Agency's
+    // name in the committed snapshot's registry (test/fixtures/oregonai-snapshot/snapshot.json, the same name that
+    // SB 69's real Testimony 196915 gives as its Organization), and Organization "Portland". Spec #1 (module 5) matches
+    // a row's Organization against the registry and nothing else, so the row carries no slug: no real row of the
+    // fixture has an Agency's name in BehalfOf, so only a made-up one can show that BehalfOf is not matched.
+    it("carries no Agency slug, because only Organization is matched", async () => {
+      const system = await start({
+        documents: false,
+        ...withMadeUp([
+          {
+            commTestId: 930_041,
+            behalfOf: "Bureau of Labor and Industries",
+            organization: "Portland",
+          },
+        ]),
+      });
+
+      const outcome = await testimonyOf(system, era, "SB 983");
+
+      const items = positionsOf(outcome)
+        .flatMap((position) => position.organizations)
+        .flatMap((group) => group.items);
+      expect(items.find((item) => item.id === "testimony-2025r1-930041")).toMatchObject({
+        behalf_of: "Bureau of Labor and Industries",
+        organization: "Portland",
+        agency_id: null,
+      });
+    });
+  });
+
   describe("Organization values that differ only in capitals or spaces", () => {
     // Made-up rows 930021 "grants pass", 930022 "Grants  Pass" (two spaces) and 930023 "GRANTS PASS " (capitals and a
     // trailing space) are support; 930024 "Grants Pass" is oppose. "grants pass" is how the feed's own row 197756
