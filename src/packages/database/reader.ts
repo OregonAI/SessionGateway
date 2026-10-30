@@ -595,17 +595,22 @@ export function openIndexReader(path: string): IndexReader {
           a.posting.meetingAt.localeCompare(b.posting.meetingAt) ||
           numbersInOrder.compare(a.posting.documentId, b.posting.documentId),
       );
-      // Postings that share a file (the same bytes) are one file with several postings.
-      const files = new Map<string, AmendmentFile>();
+      // Postings are told apart by their files, and files by what was read of them: postings that share a file
+      // (the same bytes) share one reading, and so do files that differ in bytes only (the PDF's modification date
+      // differs between SB 69-1's three postings, ADR-0011) and read the same. Each such set is one entry, with
+      // every posting it covers, so no posting is picked and none is left out.
+      const readings = new Map<string, AmendmentFile>();
+      const parsed = new Map<string, StatuteParse>();
       for (const { contentHash, posting } of listed) {
         if (contentHash === null) continue;
-        const file = files.get(contentHash) ?? {
-          postingIds: [],
-          parse: statuteParseOf(contentHash, "proposed_amendment"),
-        };
+        const parse = parsed.get(contentHash) ?? statuteParseOf(contentHash, "proposed_amendment");
+        parsed.set(contentHash, parse);
+        const reading = JSON.stringify(parse);
+        const file = readings.get(reading) ?? { postingIds: [], parse };
         file.postingIds.push(posting.documentId);
-        files.set(contentHash, file);
+        readings.set(reading, file);
       }
+      const files = readings;
       return {
         id,
         number: first.label,

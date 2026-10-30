@@ -342,6 +342,18 @@ describe.for(eras)("compare_amendment for a %s client", (era) => {
       );
     });
 
+    // ADR-0011: SB 69's -1 has three postings (26284, 26285, 26287) and three files, which differ in the PDF's
+    // modification date and not in their words. Their Statute Links and relating clause edits are the same, so
+    // they are listed once, with all three posting ids: nothing is picked, and nothing is repeated three times.
+    it("lists postings whose files read the same as one entry with all their posting ids", async () => {
+      const files = await filesOf("SB 69-1");
+
+      expect(files.map((file) => file.posting_ids)).toEqual([
+        ["posting-2025r1-26284", "posting-2025r1-26285", "posting-2025r1-26287"],
+      ]);
+      expect(files[0]?.statute_links).toContainEqual(section("amends", "ors-657b.070", "3"));
+    });
+
     it("carries the amendment's edit to the relating clause", async () => {
       const [file] = await filesOf("SB 69-2");
 
