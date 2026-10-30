@@ -175,4 +175,61 @@ describe.for(eras)("search for a %s client", (era) => {
       expect(range.text).toContain("2025-02-01");
     });
   });
+  // Exact citations. The citation of a Measure ("HB 3131"), of a Proposed Amendment ("SB 69-1") or of an ORS
+  // section ("ORS 192.245") puts its exact matches first, ahead of the documents that only talk about it.
+  describe("a citation", () => {
+    type Hit = { id: string; document_id: string; found_by: string[] };
+    const hitsOf = (outcome: { structured: Record<string, unknown> | undefined }): Hit[] =>
+      outcome.structured?.["results"] as Hit[];
+
+    it("of a Measure puts the Measure's Version first, however the citation is written or what surrounds it", async () => {
+      for (const query of ["HB 3131", "hb 3131", "HB3131", "what does HB 3131 pay for"]) {
+        const outcome = await callTool(connected, "search", { query });
+
+        expect(idsOf(outcome)[0], query).toBe("version-2025r1-hb3131-introduced");
+        expect(hitsOf(outcome)[0]?.found_by, query).toContain("citation");
+      }
+    });
+
+    it("of a Proposed Amendment puts the amendment first, as one node whose text is the posting's", async () => {
+      // SB 69's amendment -1 was posted once by then: CommitteeProposedAmendments row 26284, SLB, 2025-01-21.
+      const outcome = await callTool(connected, "search", { query: "SB 69-1" });
+
+      expect(hitsOf(outcome)[0]).toMatchObject({
+        id: "amendment-2025r1-sb69-1",
+        document_id: "posting-2025r1-26284",
+      });
+      expect(idsOf(outcome).filter((id) => id === "amendment-2025r1-sb69-1")).toHaveLength(1);
+    });
+
+    it("of an ORS section puts the documents whose text holds it first", async () => {
+      // `pdftotext -raw` finds "ORS 192.245" in SB 69's Introduced Version and in SB 921's, and in no other
+      // document the corpus has, and the corpus's other documents talk about statutes, so they follow.
+      const outcome = await callTool(connected, "search", { query: "ORS 192.245" });
+
+      expect(idsOf(outcome).slice(0, 2).toSorted()).toEqual([
+        "version-2025r1-sb69-introduced",
+        "version-2025r1-sb921-introduced",
+      ]);
+      expect(
+        hitsOf(outcome)
+          .slice(0, 2)
+          .map((hit) => hit.found_by),
+      ).toEqual([expect.arrayContaining(["citation"]), expect.arrayContaining(["citation"])]);
+    });
+
+    it("keeps to the filters: a Version is not first when the search is for agendas", async () => {
+      const outcome = await callTool(connected, "search", { query: "HB 3131", kind: "agenda" });
+
+      expect(idsOf(outcome)).toContain("agenda-2025r1-halnrw-2025-01-22-0800");
+      expect(new Set(kindsOf(outcome))).toEqual(new Set(["agenda"]));
+    });
+
+    it("that no document has finds what the words find", async () => {
+      const outcome = await callTool(connected, "search", { query: "HB 9999 Oregon Agricultural Heritage Fund" });
+
+      expect(outcome.isError).toBe(false);
+      expect(idsOf(outcome)).toContain("version-2025r1-hb3131-introduced");
+    });
+  });
 });

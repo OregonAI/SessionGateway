@@ -1,10 +1,10 @@
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
-import type { SearchIndexReader } from "#/packages/database/search.ts";
+import type { CitedDocument, SearchFilter, SearchIndexReader } from "#/packages/database/search.ts";
+import { findCitations, type Citation } from "#/packages/domain/citations.ts";
 import { documentKinds, type AmendmentId, type DocumentId } from "#/packages/domain/documents.ts";
 import { measureIdOf, parseMeasureReference, type SessionKey } from "#/packages/domain/index.ts";
-import { matchExpressionOf, snippetOf, termsOf } from "#/packages/search/text.ts";
-import type { SearchFilter } from "#/packages/database/search.ts";
+import { matchExpressionOf, orsCitationPattern, phraseOf, snippetOf, termsOf } from "#/packages/search/text.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 
 /** The most hits one call returns, when the call does not say, and the most it may ask for (spec #1; docs/adr/0025). */
@@ -88,8 +88,10 @@ const hit = z.object({
   snippet: z.string().describe("About 300 characters of the passage that matched."),
   source_url: z.string().describe("Where the Legislature publishes the document."),
   found_by: z
-    .array(z.enum(["keyword", "embedding"]))
-    .describe("How it was found: by its words, by the meaning of its passages, or both."),
+    .array(z.enum(["citation", "keyword", "embedding"]))
+    .describe(
+      "How it was found: named exactly by a citation in the query, by its words, by the meaning of its passages, or by several of these.",
+    ),
 });
 
 export const searchOutput = z.object({
@@ -113,12 +115,18 @@ export type SearchResult =
   | { kind: "unknown_committee"; reference: string; session: SessionKey }
   | { kind: "backwards_range"; from: string; to: string };
 
+/** A passage or document a hit is made from, and how it was found. */
+type Candidate = {
+  documentId: DocumentId;
+  passageId: number | null;
+  foundBy: Set<FoundBy>;
+};
+type FoundBy = "citation" | "keyword" | "embedding";
+
 export function search(deps: SearchDeps, session: SessionKey, input: z.infer<typeof searchInput>): SearchResult {
   const asOf = deps.reader.asOf(session);
   if (asOf === undefined) throw new Error(`The index holds no completed full pull of ${session} to date it by`);
   const limit = input.limit ?? DEFAULT_LIMIT;
-  const terms = termsOf(input.query);
-  const match = matchExpressionOf(terms, []);
   const measure = input.measure === undefined ? undefined : parseMeasureReference(input.measure, session);
   if (input.measure !== undefined && (measure === undefined || deps.reader.findMeasure(measure) === undefined)) {
     return { kind: "unknown_measure", reference: input.measure, session };
@@ -141,12 +149,44 @@ export function search(deps: SearchDeps, session: SessionKey, input: z.infer<typ
     ...(input.from === undefined ? {} : { from: input.from }),
     ...(input.to === undefined ? {} : { to: input.to }),
   };
+
+  // What the query names exactly comes first, in the order it names it (docs/adr/0025, "Citations").
+  const citations = findCitations(input.query, session);
+  const cited = new Map<DocumentId | AmendmentId, Candidate>();
+  for (const citation of citations) {
+    for (const found of documentsCitedBy(deps.searchIndex, citation, filter)) {
+      if (!cited.has(found.nodeId)) {
+        cited.set(found.nodeId, {
+          documentId: found.documentId,
+          passageId: found.passageId,
+          foundBy: new Set(["citation"]),
+        });
+      }
+    }
+  }
+
+  const terms = termsOf(input.query);
+  const match = matchExpressionOf(terms, citations.map(phraseOf));
   const passages = match === undefined ? [] : deps.searchIndex.keyword(match, filter, CANDIDATE_PASSAGES);
-  // One hit for each document id a hit carries, at the best passage that matched it.
-  const best = new Map<DocumentId | AmendmentId, (typeof passages)[number]>();
-  for (const passage of passages) if (!best.has(passage.nodeId)) best.set(passage.nodeId, passage);
-  const results = [...best.values()].slice(0, limit).map((passage): SearchOutput["results"][number] => {
-    const details = deps.searchIndex.details(passage);
+  // One hit for each id a hit carries, at the best passage that matched it.
+  const found = new Map<DocumentId | AmendmentId, Candidate>();
+  for (const passage of passages) {
+    if (found.has(passage.nodeId)) continue;
+    found.set(passage.nodeId, {
+      documentId: passage.documentId,
+      passageId: passage.passageId,
+      foundBy: new Set(["keyword"]),
+    });
+  }
+
+  const ranked = new Map<DocumentId | AmendmentId, Candidate>(cited);
+  for (const [nodeId, candidate] of found) {
+    const already = ranked.get(nodeId);
+    if (already === undefined) ranked.set(nodeId, candidate);
+    else already.foundBy.add("keyword");
+  }
+  const results = [...ranked.values()].slice(0, limit).map((candidate): SearchOutput["results"][number] => {
+    const details = deps.searchIndex.details(candidate);
     return {
       id: details.nodeId,
       document_id: details.documentId,
@@ -156,8 +196,41 @@ export function search(deps: SearchDeps, session: SessionKey, input: z.infer<typ
       date: details.date,
       snippet: snippetOf(details.passageText, terms),
       source_url: details.sourceUrl,
-      found_by: ["keyword"],
+      found_by: [...candidate.foundBy],
     };
   });
   return { kind: "found", search: { query: input.query, results, as_of: asOf, notice: NON_OFFICIAL_NOTICE } };
+}
+
+/**
+ * The documents a citation names exactly (docs/adr/0025, "Citations"): a Measure's Versions, from Introduced to
+ * Enrolled; a Proposed Amendment's latest posting; and for an ORS section the documents whose text holds
+ * the citation, best first. Only those that pass the filter.
+ */
+function documentsCitedBy(index: SearchIndexReader, citation: Citation, filter: SearchFilter): CitedDocument[] {
+  switch (citation.kind) {
+    case "measure":
+      return index.versionsOf(citation.id, filter);
+    case "amendment": {
+      const posting = index.postingOf(citation.id, filter);
+      return posting === undefined ? [] : [posting];
+    }
+    case "ors": {
+      const exact = orsCitationPattern(citation.id);
+      const documents = new Map<DocumentId | AmendmentId, CitedDocument>();
+      // The keyword side finds the passages that hold the words in order; the pattern keeps those that
+      // hold the citation and not a longer number.
+      for (const passage of index.keyword(
+        matchExpressionOf([], [phraseOf(citation)]) ?? "",
+        filter,
+        CANDIDATE_PASSAGES,
+      )) {
+        if (documents.has(passage.nodeId) || !exact.test(index.details(passage).passageText)) continue;
+        documents.set(passage.nodeId, passage);
+      }
+      return [...documents.values()];
+    }
+    default:
+      return citation satisfies never;
+  }
 }

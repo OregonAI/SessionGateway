@@ -30,6 +30,13 @@ export type PassageMatch = {
   nodeId: DocumentId | AmendmentId;
 };
 
+/** A document that a citation names exactly, and its first passage (null for a file with no text to show). */
+export type CitedDocument = {
+  passageId: number | null;
+  documentId: DocumentId;
+  nodeId: DocumentId | AmendmentId;
+};
+
 /** What a hit shows of a document and of the passage that matched. */
 export type HitDetails = {
   documentId: DocumentId;
@@ -46,11 +53,22 @@ export type HitDetails = {
 export type SearchIndexReader = {
   /** The passages that match an FTS5 expression, best first (BM25), at most `limit`. */
   keyword(match: string, filter: SearchFilter, limit: number): PassageMatch[];
-  /** What a hit shows. */
-  details(match: { passageId: number; documentId: DocumentId }): HitDetails;
+  /**
+   * The Versions of a Measure that pass the filter, in the order they came: Introduced first, Enrolled last.
+   * The Measure's own texts are what its citation names.
+   */
+  versionsOf(measure: MeasureId, filter: SearchFilter): CitedDocument[];
+  /**
+   * The Proposed Amendment's latest posting that passes the filter (the posting `get_document` serves
+   * for the amendment), or undefined when none does.
+   */
+  postingOf(amendment: AmendmentId, filter: SearchFilter): CitedDocument | undefined;
+  /** What a hit shows. A document with no passage shows no text. */
+  details(match: { passageId: number | null; documentId: DocumentId }): HitDetails;
   close(): void;
 };
 
+const citedRow = z.object({ document_id: z.string(), node_id: z.string(), passage_id: z.number().nullable() });
 const matchRow = z.object({ passage_id: z.number(), document_id: z.string(), node_id: z.string() });
 const detailsRow = z.object({
   document_id: z.string(),
@@ -61,8 +79,8 @@ const detailsRow = z.object({
   dated_at: z.string().nullable(),
   source_url: z.string(),
   text: z.string(),
-  start_offset: z.number(),
-  end_offset: z.number(),
+  start_offset: z.number().nullable(),
+  end_offset: z.number().nullable(),
 });
 
 /** The WHERE terms of a filter over `search_document` (aliased `sd`), and the values they take. */
@@ -98,11 +116,21 @@ export function openSearchReader(path: string): SearchIndexReader {
   const selectDetails = database.prepare(
     `SELECT d.id AS document_id, sd.node_id, sd.kind, sd.title, sd.measure_id, sd.dated_at, d.source_url, d.text,
             p.start_offset, p.end_offset
-     FROM passage p
-       JOIN document d ON d.id = p.document_id
-       JOIN search_document sd ON sd.document_id = p.document_id
-     WHERE p.id = ? AND p.document_id = ?`,
+     FROM document d
+       JOIN search_document sd ON sd.document_id = d.id
+       LEFT JOIN passage p ON p.id = ? AND p.document_id = d.id
+     WHERE d.id = ?`,
   );
+  /** The first passage of a document: what a hit shows when it is found by a citation and not by a passage. */
+  const firstPassage = "(SELECT p.id FROM passage p WHERE p.document_id = sd.document_id ORDER BY p.ordinal LIMIT 1)";
+  const citedOf = (row: unknown): CitedDocument => {
+    const stored = citedRow.parse(row);
+    return {
+      passageId: stored.passage_id,
+      documentId: stored.document_id as DocumentId,
+      nodeId: stored.node_id as DocumentId | AmendmentId,
+    };
+  };
   return {
     keyword(match, filter, limit) {
       const terms = filterTerms(filter);
@@ -126,9 +154,34 @@ export function openSearchReader(path: string): SearchIndexReader {
         };
       });
     },
+    versionsOf(measure, filter) {
+      const terms = filterTerms(filter);
+      return database
+        .prepare(
+          `SELECT sd.document_id, sd.node_id, ${firstPassage} AS passage_id
+           FROM search_document sd
+           WHERE sd.kind = 'version' AND sd.measure_id = ? AND ${terms.sql}
+           ORDER BY sd.dated_at, sd.document_id`,
+        )
+        .all(measure, ...terms.values)
+        .map(citedOf);
+    },
+    postingOf(amendment, filter) {
+      const terms = filterTerms(filter);
+      const row = database
+        .prepare(
+          `SELECT sd.document_id, sd.node_id, ${firstPassage} AS passage_id
+           FROM search_document sd
+           WHERE sd.node_id = ? AND ${terms.sql}
+           ORDER BY sd.dated_at DESC, sd.document_id DESC
+           LIMIT 1`,
+        )
+        .get(amendment, ...terms.values);
+      return row === undefined ? undefined : citedOf(row);
+    },
     details(match) {
       const row = selectDetails.get(match.passageId, match.documentId);
-      if (row === undefined) throw new Error(`The index has no passage ${match.passageId} of ${match.documentId}`);
+      if (row === undefined) throw new Error(`The index has no document ${match.documentId}`);
       const stored = detailsRow.parse(row);
       return {
         documentId: stored.document_id as DocumentId,
@@ -138,7 +191,10 @@ export function openSearchReader(path: string): SearchIndexReader {
         measureId: stored.measure_id as MeasureId | null,
         date: stored.dated_at as Timestamp | null,
         sourceUrl: stored.source_url,
-        passageText: stored.text.slice(stored.start_offset, stored.end_offset),
+        passageText:
+          stored.start_offset === null || stored.end_offset === null
+            ? ""
+            : stored.text.slice(stored.start_offset, stored.end_offset),
       };
     },
     close() {
