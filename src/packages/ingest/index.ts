@@ -20,7 +20,7 @@ export type IngestDeps = {
   clock: Clock;
   /** Aborts the pull on shutdown. */
   signal: AbortSignal;
-  /** The alias file's entries: who the Legislator Codes without a Legislators row are. */
+  /** The alias file's entries: who the Legislator Codes it lists are, where the Legislators rows do not say. */
   legislatorAliases: readonly LegislatorAlias[];
 };
 

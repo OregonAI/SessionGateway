@@ -3,7 +3,10 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { parseSessionKey, type SessionKey } from "#/packages/domain/index.ts";
 
-/** Who a Legislator Code without a Legislators row is. */
+/**
+ * Who a Legislator Code is: another code of the same person, which has a Legislators row (the entry
+ * joins the two even if the old code has a row too), or a person the Legislators rows do not list.
+ */
 export type AliasTarget =
   { kind: "same-person-as"; code: string } | { kind: "person"; firstName: string; lastName: string };
 
