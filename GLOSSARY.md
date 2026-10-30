@@ -103,5 +103,5 @@ _Avoid_: agency list
 Another name the registry lists for an Agency, such as "State Treasurer" for Oregon State Treasury.
 
 **Unresolved unit**:
-A government unit that a Fiscal Impact Statement lists under "Government Unit(s) Affected" and that is not an Agency: "Cities", "Counties", "TriMet", and the Legislative Assembly even where the registry has a row for it. It is kept as the statement wrote it, never dropped and never forced onto an Agency.
+A government unit that a Fiscal Impact Statement lists under "Government Unit(s) Affected" and that is not an Agency, because the registry does not name it as one: "Cities", "Counties", "TriMet", and the Legislative Assembly even where the registry has a row for it. A state body that the registry given lacks is one too. It is kept as the statement wrote it, never dropped and never forced onto an Agency.
 _Avoid_: non-agency unit, other unit

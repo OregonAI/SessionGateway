@@ -13,13 +13,42 @@ import type { RegistryAgency } from "./types.ts";
  */
 const notAnAgency: ReadonlySet<string> = new Set(["Legislative Assembly"]);
 
+const registryPrefix = "Oregon ";
+
+/** A registry term as a statement writes it: without the "Oregon " the registry puts in front of some names. */
+function writtenForm(term: string): string {
+  return term.startsWith(registryPrefix) ? term.slice(registryPrefix.length) : term;
+}
+
+function termsOf(agency: RegistryAgency): string[] {
+  return [agency.name, ...agency.aliases];
+}
+
 /** The slug a name or alias belongs to. A term two rows share belongs to the first row. */
 export function slugsByTerm(registry: readonly RegistryAgency[]): Map<string, AgencyId> {
   const slugs = new Map<string, AgencyId>();
   for (const agency of registry) {
-    for (const term of [agency.name, ...agency.aliases]) {
-      if (notAnAgency.has(term)) continue;
+    for (const term of termsOf(agency)) {
+      if (notAnAgency.has(writtenForm(term))) continue;
       if (!slugs.has(term)) slugs.set(term, agency.slug);
+    }
+  }
+  return slugs;
+}
+
+/**
+ * For a Fiscal Impact Statement: every term of `slugsByTerm`, then each of them again as the
+ * statement writes it. The Legislative Fiscal Office writes "Department of Education" for the
+ * registry's "Oregon Department of Education" (ADR-0004 gives that unit as the case the snapshot
+ * exists for). A term the registry itself lists is never taken over by a shortened one.
+ */
+export function slugsByStatementTerm(registry: readonly RegistryAgency[]): Map<string, AgencyId> {
+  const slugs = slugsByTerm(registry);
+  for (const agency of registry) {
+    for (const term of termsOf(agency)) {
+      const written = writtenForm(term);
+      if (notAnAgency.has(written) || slugs.has(written)) continue;
+      slugs.set(written, agency.slug);
     }
   }
   return slugs;

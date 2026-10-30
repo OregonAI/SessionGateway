@@ -1,4 +1,4 @@
-import { slugsByTerm } from "./registry-index.ts";
+import { slugsByStatementTerm } from "./registry-index.ts";
 import type { AgencyLink, FiscalImpactResult, RegistryAgency } from "./types.ts";
 
 const unitLabel = "Government Unit(s) Affected:";
@@ -25,7 +25,7 @@ function listedUnits(text: string): string | undefined {
 export function readFiscalImpactUnits(text: string, registry: readonly RegistryAgency[]): FiscalImpactResult {
   const listed = listedUnits(text);
   if (listed === undefined) return { kind: "no-unit-line" };
-  const slugs = slugsByTerm(registry);
+  const slugs = slugsByStatementTerm(registry);
   const links: AgencyLink[] = [];
   const unresolvedUnits: string[] = [];
   for (const piece of listed.split(",")) {

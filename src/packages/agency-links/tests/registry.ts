@@ -12,7 +12,9 @@
 // name it, and the fixture's own documents use it (HB 3795 Testimony 209256, Organization
 // "ODHS"; the Digest of HB 3795 Introduced), but the catalog row for the Department of Human
 // Services has no `aliases` key at that commit. It is added here so the tables can show an alias
-// resolving. Whether the real registry should list it is for the registry's owner to decide.
+// resolving. The extractor reads aliases only from the registry it is given, so against the
+// catalog as it stands "ODHS" resolves to nothing. Where the product gets it from (the registry's
+// owner adding it, or a supplement merged in when the snapshot is built, #16) is open.
 
 import { parseAgencyId, type AgencyId } from "#/packages/domain/agencies.ts";
 import type { RegistryAgency } from "../index.ts";
@@ -27,6 +29,7 @@ export function testAgencyId(slug: string): AgencyId {
 /** The rows as the catalog gives them, with the slug a plain string. */
 const rows: readonly { slug: string; name: string; aliases: readonly string[] }[] = [
   { slug: "bureau-of-labor-and-industries", name: "Bureau of Labor and Industries", aliases: [] },
+  { slug: "department-of-administrative-services", name: "Department of Administrative Services", aliases: [] },
   {
     slug: "department-of-agriculture",
     name: "Department of Agriculture",
@@ -59,7 +62,18 @@ const rows: readonly { slug: string; name: string; aliases: readonly string[] }[
     name: "Oregon Business Development Department",
     aliases: [],
   },
+  { slug: "oregon-department-of-education", name: "Oregon Department of Education", aliases: [] },
   { slug: "oregon-health-authority", name: "Oregon Health Authority", aliases: [] },
+  {
+    slug: "oregon-housing-and-community-services-department",
+    name: "Oregon Housing and Community Services Department",
+    aliases: [],
+  },
+  {
+    slug: "oregon-liquor-control-commission",
+    name: "Oregon Liquor Control Commission",
+    aliases: ["Liquor and Cannabis Commission", "Oregon Liquor and Cannabis Commission"],
+  },
   {
     slug: "oregon-state-treasury",
     name: "Oregon State Treasury",

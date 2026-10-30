@@ -2,17 +2,23 @@
 // per wording variant. Each row quotes the text `pdftotext` prints for a document in
 // test/fixtures/olis-2025R1/ and names that document. Expected slugs and units are read off the
 // document and the registry rows copied into ./registry.ts, never computed by the code under test.
+//
+// A row whose path says "not in the fixture" quotes a Fiscal Impact Statement from the full local
+// 2025R1 cache instead, because no statement in test/fixtures/ shows that wording (the fixture's
+// README.md, "Alias coverage", says so for the alias case). The statement is named by the
+// MeasureAnalysisId the feed gives for the Measure and Version printed on it. No statement in the
+// cache spells "ODHS" in its unit line, so the alias rows use two other aliases the catalog lists.
 
 import { describe, expect, test } from "vitest";
 import { fiscalImpactAgencyLinks, type RegistryAgency } from "../index.ts";
-import { testRegistry } from "./registry.ts";
+import { testAgencyId, testRegistry } from "./registry.ts";
 
 type UnitRow = {
   /** The fixture document the lines are quoted from, in a label short enough for a test name. */
   document: string;
   /** What is special about this wording. */
   variant: string;
-  /** The document's path under test/fixtures/olis-2025R1/documents/. */
+  /** The document's path under test/fixtures/olis-2025R1/documents/, or "not in the fixture" and where it was read. */
   path: string;
   /** Lines as `pdftotext` prints them, joined with newlines. */
   text: string;
@@ -177,6 +183,86 @@ describe("Fiscal Impact Statement: Government Unit(s) Affected", () => {
       },
     ])("$document: $variant", expectUnits);
   });
+
+  describe("the Legislative Fiscal Office writes a name without the Oregon the registry puts first", () => {
+    test.for<UnitRow>([
+      {
+        document: "FIS 89975 (SB 302, A-Engrossed)",
+        variant: "Department of Education, registry has Oregon Department of Education",
+        path: "not in the fixture: cached copy of MeasureAnalysisDocument 89975",
+        text: [
+          "Bill Title: Relating to kindergarten through grade 12 education.",
+          "Government Unit(s) Affected: Department of Education",
+          "Summary of Fiscal Impact",
+          "The proposed legislation has been determined to have",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [{ slug: "oregon-department-of-education", unit: "Department of Education" }],
+        unresolved: [],
+      },
+      {
+        document: "FIS 85624 (HB 2348, Introduced)",
+        variant: "one name without Oregon, one with it, the second wrapped",
+        path: "not in the fixture: cached copy of MeasureAnalysisDocument 85624",
+        text: [
+          "Bill Title: Relating to economic development programs.",
+          "Government Unit(s) Affected: Housing and Community Services Department, Oregon Business Development",
+          "Department",
+          "Summary of Fiscal Impact",
+          "The proposed legislation has been determined to have",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [
+          {
+            slug: "oregon-housing-and-community-services-department",
+            unit: "Housing and Community Services Department",
+          },
+          { slug: "oregon-business-development-department", unit: "Oregon Business Development Department" },
+        ],
+        unresolved: [],
+      },
+    ])("$document: $variant", expectUnits);
+  });
+
+  describe("an alias the registry lists", () => {
+    test.for<UnitRow>([
+      {
+        document: "FIS 88389 (SB 463, A-Engrossed)",
+        variant: "State Treasurer, an alias of Oregon State Treasury",
+        path: "not in the fixture: cached copy of MeasureAnalysisDocument 88389",
+        text: [
+          "Bill Title: Relating to reporting on the soundness of the state's Insurance Fund; prescribing an effective date.",
+          "Government Unit(s) Affected: State Treasurer, Department of Administrative Services",
+          "Summary of Fiscal Impact",
+          "The proposed legislation has been determined to have",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [
+          { slug: "oregon-state-treasury", unit: "State Treasurer" },
+          { slug: "department-of-administrative-services", unit: "Department of Administrative Services" },
+        ],
+        unresolved: [],
+      },
+      {
+        document: "FIS 87807 (SB 907, Introduced)",
+        variant: "Oregon Liquor and Cannabis Commission, an alias of Oregon Liquor Control Commission",
+        path: "not in the fixture: cached copy of MeasureAnalysisDocument 87807",
+        text: [
+          "Bill Title: Relating to ownership of premises; prescribing an effective date.",
+          "Government Unit(s) Affected: Oregon Health Authority, Oregon Liquor and Cannabis Commission",
+          "Summary of Fiscal Impact",
+          "2025-27 Biennium",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [
+          { slug: "oregon-health-authority", unit: "Oregon Health Authority" },
+          { slug: "oregon-liquor-control-commission", unit: "Oregon Liquor and Cannabis Commission" },
+        ],
+        unresolved: [],
+      },
+    ])("$document: $variant", expectUnits);
+  });
+
   describe("units that are not state agencies stay unresolved", () => {
     test.for<UnitRow>([
       {
@@ -194,6 +280,49 @@ describe("Fiscal Impact Statement: Government Unit(s) Affected", () => {
         unresolved: ["Cities", "Counties", "School Districts", "Special Districts", "Metro", "TriMet"],
       },
       {
+        // The registry has a row for the Legislative Assembly, and spec #1 (story 34) keeps the
+        // Assembly an unresolved unit all the same. No statement in the fixture lists it.
+        document: "FIS 86290 (SCR 10, Introduced)",
+        variant: "Legislative Assembly, which the registry has a row for",
+        path: "not in the fixture: cached copy of MeasureAnalysisDocument 86290",
+        text: [
+          "Bill Title: In memoriam: Senate President Peter Courtney, 1943-2024.",
+          "Government Unit(s) Affected: Legislative Assembly",
+          "Summary of Fiscal Impact",
+          "The proposed legislation has been determined to have",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [],
+        unresolved: ["Legislative Assembly"],
+      },
+      {
+        // The same line, read with a registry that names the row "Oregon Legislative Assembly": the
+        // name without Oregon, which the statement prints, must not reach the row either.
+        document: "FIS 86290 (SCR 10, Introduced)",
+        variant: "the registry row is named Oregon Legislative Assembly",
+        path: "not in the fixture: cached copy of MeasureAnalysisDocument 86290",
+        text: [
+          "Bill Title: In memoriam: Senate President Peter Courtney, 1943-2024.",
+          "Government Unit(s) Affected: Legislative Assembly",
+          "Summary of Fiscal Impact",
+          "The proposed legislation has been determined to have",
+        ].join("\n"),
+        registry: testRegistry.map((agency) =>
+          agency.slug === testAgencyId("legislative-assembly")
+            ? { ...agency, name: "Oregon Legislative Assembly" }
+            : agency,
+        ),
+        agencies: [],
+        unresolved: ["Legislative Assembly"],
+      },
+    ])("$document: $variant", expectUnits);
+  });
+
+  describe("a unit the registry has no row for stays unresolved", () => {
+    // By GLOSSARY.md an Agency is a unit the registry names, so a state body the registry given
+    // does not list is an unresolved unit for that registry.
+    test.for<UnitRow>([
+      {
         // The same line as the SB 121 row above, read with a registry that lacks the Judicial
         // Department. A unit the registry does not name stays in the list in its place, and the
         // unit it does name still resolves.
@@ -206,7 +335,7 @@ describe("Fiscal Impact Statement: Government Unit(s) Affected", () => {
           "Summary of Fiscal Impact",
           "The proposed legislation has been determined to have",
         ].join("\n"),
-        registry: testRegistry.filter((agency) => agency.slug !== "judicial-department"),
+        registry: testRegistry.filter((agency) => agency.slug !== testAgencyId("judicial-department")),
         agencies: [{ slug: "department-of-revenue", unit: "Department of Revenue" }],
         unresolved: ["Judicial Department"],
       },

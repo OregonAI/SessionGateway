@@ -39,7 +39,7 @@ export type AgencyLink = {
 export type FiscalImpactUnits = {
   kind: "units";
   links: AgencyLink[];
-  /** Units the registry does not name, as written. */
+  /** Units that are not an Agency (GLOSSARY.md, "Unresolved unit"): none the registry names, and not the Legislative Assembly, as written. */
   unresolvedUnits: string[];
 };
 
