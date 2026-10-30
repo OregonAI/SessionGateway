@@ -59,10 +59,27 @@ export function parseAliasFile(content: unknown): LegislatorAlias[] {
     });
   }
   const seen = new Set<string>();
+  const codeOfTarget = new Map<string, string>();
   for (const alias of result.data.aliases) {
     const key = `${alias.session} ${alias.code}`;
     if (seen.has(key)) throw new Error(`The Legislator alias file lists "${alias.code}" twice for ${alias.session}`);
     seen.add(key);
+    if (alias.target.kind !== "same-person-as") continue;
+    // The person's id is made from the entry's code, so a person with two codes to make it from has no one id.
+    const targetKey = `${alias.session} ${alias.target.code}`;
+    const other = codeOfTarget.get(targetKey);
+    if (other !== undefined) {
+      throw new Error(
+        `The Legislator alias file names "${alias.target.code}" as the same person for both "${other}" and "${alias.code}" in ${alias.session}`,
+      );
+    }
+    codeOfTarget.set(targetKey, alias.code);
+  }
+  for (const alias of result.data.aliases) {
+    if (alias.target.kind !== "same-person-as" || !seen.has(`${alias.session} ${alias.target.code}`)) continue;
+    throw new Error(
+      `The Legislator alias file names "${alias.target.code}" as the same person for "${alias.code}" in ${alias.session}, but "${alias.target.code}" has an entry of its own: an entry names a code that has a Legislators row`,
+    );
   }
   return result.data.aliases;
 }

@@ -29,12 +29,13 @@ afterAll(async () => {
 // the feed created them in. Each row is [Legislator Code, level, id, name]: the name is the
 // fixture's Legislators row for that code (the feed writes the last name of "Rep McDonald" as
 // "McDonald ", with a trailing space), except that "Rep Neron" has none and is Courtney Neron
-// Misslin by the alias file (src/packages/legislators/data/legislator-aliases.json).
+// Misslin by the alias file (src/packages/legislators/data/legislator-aliases.json), whose id is the
+// one the alias file's code makes: legislator-2025r1-neron.
 const hb3131Sponsors = [
   ["Rep Owens", "chief", "legislator-2025r1-owens", "Mark Owens"],
   ["Rep Helm", "chief", "legislator-2025r1-helm", "Ken Helm"],
   ["Rep Levy B", "chief", "legislator-2025r1-levy-b", "Bobby Levy"],
-  ["Rep Neron", "chief", "legislator-2025r1-neron-misslin", "Courtney Neron Misslin"],
+  ["Rep Neron", "chief", "legislator-2025r1-neron", "Courtney Neron Misslin"],
   ["Rep Smith G", "chief", "legislator-2025r1-smith-g", "Gregory Smith"],
   ["Rep Hartman", "chief", "legislator-2025r1-hartman", "Annessa Hartman"],
   ["Rep Boice", "regular", "legislator-2025r1-boice", "Court Boice"],

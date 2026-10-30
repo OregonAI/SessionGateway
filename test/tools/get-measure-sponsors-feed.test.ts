@@ -168,7 +168,8 @@ describe("a Legislator Code that has no Legislators row", () => {
 
   it("puts a code that moved chamber on the same Legislator as the code the row carries", async () => {
     // HB 3131's chief sponsor "Rep Neron" has no Legislators row; "Sen Neron Misslin" has one (Courtney
-    // Neron Misslin). One person, so one id, whichever code a sponsor row uses.
+    // Neron Misslin). One person, so one id, whichever code a sponsor row uses. The id is the one the
+    // alias file's code makes (see "one Legislator across the codes the feed uses for them" below).
     const [hb3131, sb69] = await getMeasures(
       {
         clockAt: afterTheSession,
@@ -179,7 +180,7 @@ describe("a Legislator Code that has no Legislators row", () => {
 
     const neron = sponsorsOf(hb3131)?.find((sponsor) => sponsor.legislator_code === "Rep Neron");
     const neronMisslin = sponsorsOf(sb69)?.[0];
-    expect(neron?.legislator).toEqual({ id: "legislator-2025r1-neron-misslin", name: "Courtney Neron Misslin" });
+    expect(neron?.legislator).toEqual({ id: "legislator-2025r1-neron", name: "Courtney Neron Misslin" });
     expect(neronMisslin?.legislator).toEqual(neron?.legislator);
   });
 
@@ -323,9 +324,115 @@ describe("the alias file the worker is given", () => {
       { about: "", aliases: [{ session: "2025R1", code: "Rep Neron", same_person_as: "Sen Neron Misslin" }] },
     ],
     ["text that is not JSON", "{ not json"],
+    [
+      "an entry that names a code with an entry of its own, here its own",
+      {
+        about: "",
+        aliases: [
+          {
+            session: "2025R1",
+            code: "Rep Neron",
+            same_person_as: "Rep Neron",
+            evidence: [{ entity_set: "a test", row: "none", says: "made up for the test" }],
+          },
+        ],
+      },
+    ],
   ] as const)("stops the pull, naming the alias file, for %s", async ([, content]) => {
     const pull = startSystem({ clockAt: afterTheSession, legislatorAliasesPath: aliasFileOf(content) });
 
     await expect(pull).rejects.toThrow(/Legislator alias file/);
+  });
+});
+
+describe("one Legislator across the codes the feed uses for them", () => {
+  // Courtney Neron was "Rep Neron" until she moved to the Senate on 2025-05-09, when the feed's
+  // Legislators set gained "Sen Neron Misslin" (olis-odata.md section 8, gotcha 4; the committed alias
+  // file cites the rows). The set is a current snapshot, so a pull made before the move would list
+  // "Rep Neron" (inferred: the cache holds only the snapshot of 2026-10-28). The id is the one the
+  // alias file's code, "Rep Neron", makes: it does not depend on which of the two rows the snapshot has.
+  const repNeronRow = legislatorRow("2025R1", "Rep Neron", "Courtney", "Neron");
+  const neronId = "legislator-2025r1-neron";
+
+  it("keeps her id from a pull made before the move to a pull made after it", async () => {
+    const [before] = await getMeasures(
+      { clockAt: "2025-01-29T17:00:00Z", olis: { strayRows: { Legislators: [repNeronRow] } } },
+      ["HB 3131"],
+    );
+    const [after] = await getMeasures({ clockAt: afterTheSession }, ["HB 3131"]);
+
+    const neronOf = (outcome: ToolOutcome | undefined) =>
+      sponsorsOf(outcome)?.find((sponsor) => sponsor.legislator_code === "Rep Neron")?.legislator;
+    expect(neronOf(before)).toEqual({ id: neronId, name: "Courtney Neron" });
+    expect(neronOf(after)).toEqual({ id: neronId, name: "Courtney Neron Misslin" });
+  });
+
+  it("is one person when the Legislators set lists both of her codes", async () => {
+    const [hb3131, sb69] = await getMeasures(
+      {
+        clockAt: afterTheSession,
+        olis: {
+          strayRows: {
+            Legislators: [repNeronRow],
+            MeasureSponsors: [memberSponsorRow("900010", "Sen Neron Misslin", "Regular", "20")],
+          },
+        },
+      },
+      ["HB 3131", "SB 69"],
+    );
+
+    const neron = sponsorsOf(hb3131)?.find((sponsor) => sponsor.legislator_code === "Rep Neron");
+    const neronMisslin = sponsorsOf(sb69)?.[0];
+    const person = { id: neronId, name: "Courtney Neron Misslin" };
+    expect(neron?.legislator).toEqual(person);
+    expect(neronMisslin?.legislator).toEqual(person);
+  });
+});
+
+describe("the id of a Legislator whose code carries more than the last name", () => {
+  // These two rows are made up for the test, in the shape of the real "Rep Speaker Fahey" row: a title
+  // between the chamber word and the name, as the feed writes it for the Speaker and the President.
+  it("leaves the title out even when the code writes only part of a longer last name", async () => {
+    const row = memberSponsorRow("900040", "Rep Speaker Quux", "Chief", "1");
+    const outcome = await getMeasure(
+      {
+        clockAt: afterTheSession,
+        olis: {
+          strayRows: {
+            Legislators: [legislatorRow("2025R1", "Rep Speaker Quux", "Quentin", "Quux-Zed")],
+            MeasureSponsors: [row],
+          },
+        },
+      },
+      "SB 69",
+    );
+
+    expect(sponsorsOf(outcome)?.[0]?.legislator).toEqual({ id: "legislator-2025r1-quux", name: "Quentin Quux-Zed" });
+  });
+
+  it("stops the pull for a code that does not contain the last name, since the title cannot be told from the name", async () => {
+    const pull = startSystem({
+      clockAt: afterTheSession,
+      olis: { strayRows: { Legislators: [legislatorRow("2025R1", "Rep Speaker Quux", "Quentin", "Smith")] } },
+    });
+
+    await expect(pull).rejects.toThrow(/"Rep Speaker Quux" does not contain the last name "Smith"/);
+  });
+
+  it("stops the pull for an alias file that names one Legislator Code as the person of two others", async () => {
+    const entry = (code: string) => ({
+      session: "2025R1",
+      code,
+      same_person_as: "Sen Neron Misslin",
+      evidence: [{ entity_set: "a test", row: "none", says: "made up for the test" }],
+    });
+    const pull = startSystem({
+      clockAt: afterTheSession,
+      legislatorAliasesPath: aliasFileOf({ about: "", aliases: [entry("Rep Neron"), entry("Rep Courtney")] }),
+    });
+
+    await expect(pull).rejects.toThrow(
+      /"Sen Neron Misslin" as the same person for both "Rep Neron" and "Rep Courtney"/,
+    );
   });
 });

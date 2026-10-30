@@ -60,17 +60,37 @@ function wordsOf(text: string): string[] {
 }
 
 /**
- * Mints a Legislator's id, `legislator-2025r1-<name>`, from the Legislator Code that names the person
+ * Where the name starts among a code's words (the chamber word already dropped): at the longest
+ * run of the last name's first words that the code contains, the earliest such place. A code can
+ * write only part of a long last name ("Rep Speaker Quux" for "Quux-Zed"), so a shorter run counts.
+ */
+function nameStartIn(words: string[], lastName: string[]): number | undefined {
+  for (let length = lastName.length; length >= 1; length -= 1) {
+    const wanted = lastName.slice(0, length).join(" ");
+    for (let start = 0; start + length <= words.length; start += 1) {
+      if (words.slice(start, start + length).join(" ") === wanted) return start;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Mints a Legislator's id, `legislator-2025r1-<name>`, from a Legislator Code that names the person
  * and the person's last name. The name is the last name and whatever the code adds after it (the
  * initials that tell two Legislators of one last name apart: "Rep Levy B" is `levy-b`), in lower
  * case, hyphenated. The chamber word and a title before the last name ("Speaker" in "Rep Speaker
  * Fahey") are left out, so the id stays with the person when their code changes chamber or office.
+ *
+ * A code that holds none of the last name has no way to tell a title from a name, so it is an error
+ * rather than an id that keeps the title.
  */
 export function legislatorIdOf(session: SessionKey, code: string, lastName: string): LegislatorId {
   const words = wordsOf(code).slice(1);
-  const last = wordsOf(lastName);
-  let start = 0;
-  while (start < words.length && words.slice(start, start + last.length).join(" ") !== last.join(" ")) start += 1;
-  const name = (start < words.length ? words.slice(start) : words).join("-");
-  return `legislator-${session.toLowerCase()}-${name}` as LegislatorId;
+  const start = nameStartIn(words, wordsOf(lastName));
+  if (start === undefined) {
+    throw new Error(
+      `The Legislator Code "${code}" does not contain the last name "${lastName}", so the Legislator's id cannot be made from it`,
+    );
+  }
+  return `legislator-${session.toLowerCase()}-${words.slice(start).join("-")}` as LegislatorId;
 }
