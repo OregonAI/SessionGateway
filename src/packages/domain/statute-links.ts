@@ -8,12 +8,46 @@ export type OrsSectionId = string & { readonly brand: "OrsSectionId" };
 /** An ORS chapter's id as SessionGateway mints it, as in `ors-chapter-657b`. OregonAI cannot resolve it. */
 export type OrsChapterId = string & { readonly brand: "OrsChapterId" };
 
-const sectionIdPattern = /^ors-(\d{1,3}[a-z]?)\.(\d{3,4})$/;
-const chapterPattern = /^\d{1,3}[a-z]?$/;
+// The one place the shape of an ORS chapter and section is spelled (#6 F9). A chapter is one to three
+// digits and perhaps a letter ("163", "163A", "657B"); a section is that, a dot and three or four digits
+// ("163A.040"). Text prints the letter in upper case and an id in lower case.
+const chapterDigits = String.raw`\d{1,3}`;
+const chapterLetter = String.raw`[A-Z]?`;
+const sectionDigits = String.raw`\d{3,4}`;
+const chapterShape = `${chapterDigits}${chapterLetter}`;
+
+/** Source of a regular expression for an ORS section as text prints it, such as "163A.040". For the parsers that find citations in text. */
+export const orsSectionCitationSource = String.raw`${chapterShape}\.${sectionDigits}`;
+/** Source of a regular expression for an ORS chapter as text prints it, such as "657B". */
+export const orsChapterCitationSource = chapterShape;
+
+const sectionIdPattern = new RegExp(String.raw`^ors-${chapterShape}\.${sectionDigits}$`, "i");
+const sectionPartsPattern = new RegExp(String.raw`^ors-(${chapterDigits})(${chapterLetter})\.(${sectionDigits})$`, "i");
+const chapterPattern = new RegExp(String.raw`^${chapterShape}$`, "i");
 
 /** Reads an id such as `ors-163a.040`, or undefined if the text is not one. */
 export function parseOrsSectionId(text: string): OrsSectionId | undefined {
-  return sectionIdPattern.test(text) ? (text as OrsSectionId) : undefined;
+  return sectionIdPattern.test(text) && text === text.toLowerCase() ? (text as OrsSectionId) : undefined;
+}
+
+/** Where an ORS section sorts: the chapter's number, then its letter ("163" before "163A"), then the section. */
+export type OrsSectionParts = { chapter: number; letter: string; section: number };
+
+/** Takes an id apart into the parts ORS order sorts by. */
+export function orsSectionPartsOf(id: OrsSectionId): OrsSectionParts {
+  const match = sectionPartsPattern.exec(id);
+  // An OrsSectionId is minted by parseOrsSectionId, which accepts only this shape.
+  if (match?.[1] === undefined || match[3] === undefined) throw new Error(`not an ORS section id: ${id}`);
+  return { chapter: Number(match[1]), letter: match[2] ?? "", section: Number(match[3]) };
+}
+
+/** Orders ORS section ids as the ORS does: by chapter number, then chapter letter, then section. */
+export function compareOrsSectionIds(a: OrsSectionId, b: OrsSectionId): number {
+  const left = orsSectionPartsOf(a);
+  const right = orsSectionPartsOf(b);
+  if (left.chapter !== right.chapter) return left.chapter - right.chapter;
+  if (left.letter !== right.letter) return left.letter < right.letter ? -1 : 1;
+  return left.section - right.section;
 }
 
 /** Mints the id of the ORS section a citation such as "163A.040" names, or undefined if it is not one. */

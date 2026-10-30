@@ -1,3 +1,5 @@
+import { orsChapterCitationSource, orsSectionCitationSource } from "#/packages/domain/statute-links.ts";
+
 /**
  * One thing an "ORS ..." reference names: a section as printed ("659A.162"), a range of sections
  * ("418.806 to 418.816", both ends as printed), or a whole chapter ("657B").
@@ -12,8 +14,8 @@ export type OrsReference = { start: number; end: number; items: OrsItem[] };
 
 const orsWord = /\bORS\s+/g;
 const chapterWord = /chapters?\s+/y;
-const chapterNumber = /(\d{1,3}[A-Z]?)(?!\d|\.\d)/y;
-const sectionNumber = /(\d{1,3}[A-Z]?\.\d{3,4})(?!\d)/y;
+const chapterNumber = new RegExp(String.raw`(${orsChapterCitationSource})(?!\d|\.\d)`, "y");
+const sectionNumber = new RegExp(String.raw`(${orsSectionCitationSource})(?!\d)`, "y");
 const subsections = /(?:\s*\([A-Za-z0-9]{1,3}\))*/y;
 const rangeWord = /\s+to\s+/y;
 // "A, B", "A and B", "A, and B", "A or B": what Legislative Counsel puts between list items.
@@ -102,7 +104,7 @@ export function findOrsReferences(text: string): OrsReference[] {
   return references;
 }
 
-const sectionToken = /(?<![\w.])\d{1,3}[A-Z]?\.\d{3,4}(?!\d)/g;
+const sectionToken = new RegExp(String.raw`(?<![\w.])${orsSectionCitationSource}(?!\d)`, "g");
 
 /**
  * Finds every section and range of sections in the text, with or without "ORS" before it. A
