@@ -1,0 +1,148 @@
+// Seam 1 (test/CLAUDE.md): the documents that search finds by their words and never by meaning (ADR-0006):
+// agendas, Recording Logs and witness-registration lists. The embedding model is the real one, because the
+// claim is about what the vector side would have found; the corpus is small, so that it embeds in a few
+// seconds. The clock is 2025-01-15 14:00 Pacific, when the feed had created SLB's agenda for 2025-01-21 and the
+// Introduced Versions of HB 3027, HB 3131, SB 64, SB 69 and SB 121, and nothing else.
+//
+// The fixture has no Recording Log, and its witness-registration lists are all created after 2025-01-22, when
+// SB 64's Testimony 117281 (395,000 characters) comes in. So four rows are made up here, as the feed's
+// CommitteeMeetingDocuments rows (fake OLIS `strayRows`), each served with a fixture file (`strayDocuments`):
+//   - 900001: DocumentType "Witness Registration", the files of HB 3131's real list (row 288487);
+//   - 900002: DocumentType "Meeting Material" titled "HB 3131 (witness registration)": the feed files 44 such
+//     lists under Meeting Material, and one under Presentation (cache of 2026-10-28);
+//   - 900003: DocumentType "Recording Log", with the text of HB 3131's Preliminary SMS (row 287931);
+//   - 900004: DocumentType "Meeting Material", with that same text: the control that IS found by meaning.
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { callTool, connectClient, type ConnectedClient } from "../support/mcp-clients.ts";
+import { loadRealEmbedder } from "../support/real-embedder.ts";
+import { startSystem, type System } from "../support/system.ts";
+
+const root = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument";
+
+function exhibitRow(id: number, documentType: string, title: string): Record<string, unknown> {
+  return {
+    SessionKey: "2025R1",
+    CommitteeMeetingDocumentId: id,
+    CommitteeCode: "HALNRW",
+    MeetingDate: "2025-01-22T08:00:00",
+    ExhibitTitle: title,
+    DocumentType: documentType,
+    MeasurePrefix: "HB",
+    MeasureNumber: 3131,
+    DocumentUrl: `${root}/${id}`,
+  };
+}
+
+let system: System;
+let connected: ConnectedClient;
+
+beforeAll(async () => {
+  system = await startSystem({
+    clockAt: "2025-01-15T22:00:00Z",
+    documents: true,
+    embedder: await loadRealEmbedder(),
+    olis: {
+      strayRows: {
+        CommitteeMeetingDocuments: [
+          exhibitRow(900001, "Witness Registration", "HB 3131 (witness registration)"),
+          exhibitRow(900002, "Meeting Material", "HB 3131 (witness registration)"),
+          exhibitRow(900003, "Recording Log", "HALNRW 1-22-2025 Recording Log"),
+          exhibitRow(900004, "Meeting Material", "HB 3131 background"),
+        ],
+      },
+      strayDocuments: {
+        "/liz/2025R1/Downloads/CommitteeMeetingDocument/900001": "committee-meeting-documents/288487.pdf",
+        "/liz/2025R1/Downloads/CommitteeMeetingDocument/900002": "committee-meeting-documents/288487.pdf",
+        "/liz/2025R1/Downloads/CommitteeMeetingDocument/900003": "committee-meeting-documents/287931.pdf",
+        "/liz/2025R1/Downloads/CommitteeMeetingDocument/900004": "committee-meeting-documents/287931.pdf",
+      },
+    },
+  });
+  connected = await connectClient("2026-07-28", system.handler);
+}, 120_000);
+
+afterAll(async () => {
+  await connected.close();
+  await system.stop();
+});
+
+type Hit = { id: string; kind: string; found_by: string[] };
+const hitsOf = (outcome: { structured: Record<string, unknown> | undefined }): Hit[] =>
+  outcome.structured?.["results"] as Hit[];
+
+describe("what is found by words and never by meaning", () => {
+  // SLB's agenda for 2025-01-21 (committee-agendas/SLB/2025-01-21-08-00.pdf) lists SB 397: "Provides that laws
+  // regarding employee entitlements for recovery of unpaid wages and penalties do not apply to wages and
+  // penalties lost as a result of an employer's time-rounding policies". No Version of SB 397 is in the fixture.
+  it("finds an agenda by its words, and the hit says it was found by its words alone", async () => {
+    const outcome = await callTool(connected, "search", { query: "time-rounding policies unpaid wages penalties" });
+
+    expect(hitsOf(outcome)[0]).toMatchObject({
+      id: "agenda-2025r1-slb-2025-01-21-0800",
+      kind: "agenda",
+      found_by: ["keyword"],
+    });
+  });
+
+  it("does not find an agenda from a question about what it says in other words, though nothing else answers it", async () => {
+    const question =
+      "Makes clear that staff compensation shortfalls caused by clocking-in practices cannot be claimed in court";
+
+    const everything = await callTool(connected, "search", { query: question });
+    const agendas = await callTool(connected, "search", { query: question, kind: "agenda" });
+
+    expect(hitsOf(everything).length).toBeGreaterThan(0);
+    expect(hitsOf(everything).map((hit) => hit.id)).not.toContain("agenda-2025r1-slb-2025-01-21-0800");
+    expect(hitsOf(agendas)).toEqual([]);
+  });
+
+  it("finds a witness-registration list by its words: the feed's label, or a title that says so", async () => {
+    // Names from the list (documents/committee-meeting-documents/288487.pdf): its first registrant.
+    const outcome = await callTool(connected, "search", { query: "Karsyn Kendrick Coalition of Oregon Land Trusts" });
+
+    const lists = hitsOf(outcome).filter(
+      (hit) => hit.id === "exhibit-2025r1-900001" || hit.id === "exhibit-2025r1-900002",
+    );
+    expect(lists.map((hit) => hit.id).toSorted()).toEqual(["exhibit-2025r1-900001", "exhibit-2025r1-900002"]);
+    expect(lists.map((hit) => hit.found_by)).toEqual([["keyword"], ["keyword"]]);
+  });
+
+  it("finds a Recording Log by its words, and an Exhibit of the same text by its words and its meaning", async () => {
+    // Words of HB 3131's Preliminary SMS (documents/committee-meeting-documents/287931.pdf): "the grant awards
+    // funded conservation easements for seven land trust grantees".
+    const outcome = await callTool(connected, "search", {
+      query: "grant awards funded conservation easements seven land trust grantees",
+    });
+
+    const byId = new Map(hitsOf(outcome).map((hit) => [hit.id, hit]));
+    expect(byId.get("recording-log-2025r1-900003")).toMatchObject({ kind: "recording_log", found_by: ["keyword"] });
+    expect(byId.get("exhibit-2025r1-900004")?.found_by).toEqual(["keyword", "embedding"]);
+  });
+
+  it("does not find a Recording Log, a witness-registration list or an agenda from a question in other words", async () => {
+    // The text of the Preliminary SMS: "The Oregon Agricultural Heritage Fund (OAHF) was established as part of
+    // the Oregon Agricultural Heritage Program (OAHP) in 2017 to help address challenges for farms and ranches
+    // associated with farmland fragmentation and conversions, complex regulations, and planning for generational
+    // transfers." The question is that, worded without any of those words. The Exhibit 900004 has the same text
+    // as the Recording Log 900003 and answers it; the Recording Log must not.
+    const outcome = await callTool(connected, "search", {
+      query:
+        "A program begun in the late twenty-tens that helps families who till the soil avoid breaking up their holdings, and plan to hand them to the next generation",
+    });
+
+    const ids = hitsOf(outcome).map((hit) => hit.id);
+    expect(ids).toContain("exhibit-2025r1-900004");
+    expect(ids).not.toContain("recording-log-2025r1-900003");
+    expect(ids).not.toContain("exhibit-2025r1-900001");
+    expect(ids).not.toContain("exhibit-2025r1-900002");
+    expect(hitsOf(outcome).filter((hit) => hit.kind === "agenda")).toEqual([]);
+    expect(
+      hitsOf(
+        await callTool(connected, "search", {
+          query: "A list of the people who signed up to speak, with their cities",
+          kind: "exhibit",
+        }),
+      ).map((hit) => hit.id),
+    ).not.toContain("exhibit-2025r1-900001");
+  });
+});
