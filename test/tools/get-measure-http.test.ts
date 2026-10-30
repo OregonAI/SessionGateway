@@ -1,5 +1,6 @@
 // Seam 1 on a real port (test/CLAUDE.md, "MCP client"): the Node adapter, the mount path and, below,
 // the Host and Origin guards. Everything else is tested in-process through handler.fetch.
+import { request as httpRequest } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { serveMcp, type RunningServer } from "#/packages/mcp-server/http.ts";
 import { callTool, connectClientToUrl, eras } from "../support/mcp-clients.ts";
@@ -46,5 +47,36 @@ describe("get_measure over HTTP", () => {
     });
 
     expect(response.status).toBe(404);
+  });
+});
+
+describe("the Host and Origin guards", () => {
+  /** Posts to the mount path with exactly these headers (fetch would not let a test choose Host). */
+  function post(headers: Record<string, string>): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const request = httpRequest(
+        {
+          host: "127.0.0.1",
+          port: server.port,
+          path: "/session-gateway/mcp",
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers },
+        },
+        (response) => {
+          response.resume();
+          resolve(response.statusCode ?? 0);
+        },
+      );
+      request.once("error", reject);
+      request.end("{}");
+    });
+  }
+
+  it("refuses a request addressed to a host that is not on the list (DNS rebinding)", async () => {
+    expect(await post({ host: "rebinding.example" })).toBe(403);
+  });
+
+  it("refuses a request from a browser origin that is not on the list", async () => {
+    expect(await post({ origin: "https://evil.example" })).toBe(403);
   });
 });
