@@ -21,18 +21,21 @@ import { argv, exit } from "node:process";
 import {
   absentProperties,
   describeKey,
+  documentLinks,
   entitySets,
+  isLinkedBy,
   isRecord,
   isUnresolved,
   keyString,
   linkedDocumentUrl,
   requiredManifestStrings,
   rowKeyOf,
+  statutesAffectedTablePath,
   targetKeyOf,
   unresolvedId,
   valuesOf,
 } from "./schema.ts";
-import type { Row, Unresolved } from "./schema.ts";
+import type { LinkedBy, Row, Unresolved } from "./schema.ts";
 
 const defaultFixture = join(import.meta.dirname, "..", "..", "test", "fixtures", "olis-2025R1");
 
@@ -76,6 +79,8 @@ function readJson(path: string, label: string): unknown {
 const offsetTimestamp = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?(Z|[+-]\d\d:\d\d)$/;
 const manifestPaths = new Set<string>();
 const manifestUrls = new Set<string>();
+/** The manifest entries whose links checkLinkedDocuments() resolves against the feed rows. */
+const linkedEntries: Array<{ path: string; sourceUrl: string; linkedBy: LinkedBy[] }> = [];
 let documentCount = 0;
 
 function checkManifest(): void {
@@ -95,10 +100,16 @@ function checkManifest(): void {
     for (const field of requiredManifestStrings) {
       if (typeof entry[field] !== "string" || entry[field] === "") problem(`${at}: ${field} is missing`);
     }
+    const linkedBy = entry.linked_by;
+    const linkedByOk = Array.isArray(linkedBy) && linkedBy.every(isLinkedBy);
+    if (!linkedByOk) problem(`${at}: linked_by must list {entity_set, row_key} objects, empty for a document no row links`);
     const path = entry.path;
     if (typeof path !== "string" || path === "") return;
     const name = `manifest entry ${path}`;
-    if (typeof entry.source_url === "string") manifestUrls.add(entry.source_url);
+    if (typeof entry.source_url === "string") {
+      manifestUrls.add(entry.source_url);
+      if (linkedByOk) linkedEntries.push({ path, sourceUrl: entry.source_url, linkedBy: linkedBy as LinkedBy[] });
+    }
     if (typeof entry.retrieved_at === "string") {
       if (!offsetTimestamp.test(entry.retrieved_at) || Number.isNaN(Date.parse(entry.retrieved_at))) {
         problem(`${name}: retrieved_at "${entry.retrieved_at}" is not ISO 8601 with an offset`);
@@ -149,6 +160,8 @@ function checkDocumentsAreListed(): void {
 // Feed rows: every reference resolves inside the fixture, or is a listed gap of the full cache.
 
 const feedRows = new Map<string, Row[]>();
+/** Each entity set's rows by key, for resolving references and the manifest's linked_by. */
+const rowsByKey = new Map<string, Map<string, Row>>();
 
 function loadFeed(): void {
   const feedDir = join(fixtureDir, "feed");
@@ -201,10 +214,9 @@ function loadUnresolved(): Map<string, { entry: Unresolved; used: boolean }> {
 }
 
 function checkReferences(): { references: number; accepted: number } {
-  const keysPresent = new Map<string, Set<string>>();
   for (const [entitySet, rows] of feedRows) {
     const spec = entitySets[entitySet];
-    const present = new Set<string>();
+    const present = new Map<string, Row>();
     // A property the schema reads that a row lacks altogether is not a null: it would skip the
     // reference it carries without a word. Report it once per property, not once per row.
     const absent = new Map<string, { why: string; count: number; first: number }>();
@@ -218,12 +230,12 @@ function checkReferences(): { references: number; accepted: number } {
       if (spec === undefined || lacking.some(({ property }) => spec.key.includes(property))) return;
       const values = valuesOf(row, spec.key);
       if (values === null) problem(`feed/${entitySet}.json row ${index}: a key property (${spec.key.join(", ")}) is null`);
-      else present.add(keyString(values));
+      else present.set(keyString(values), row);
     });
     for (const [property, { why, count, first }] of absent) {
       problem(`feed/${entitySet}.json: ${count} row(s) lack the property ${property}, which the schema reads as: ${why} (the first is row ${first}). A property that is null is fine; one that is absent means the row is not the feed's own.`);
     }
-    keysPresent.set(entitySet, present);
+    rowsByKey.set(entitySet, present);
   }
 
   const unresolved = loadUnresolved();
@@ -240,7 +252,7 @@ function checkReferences(): { references: number; accepted: number } {
         if (target === null) continue;
         references++;
         const targetSpec = entitySets[ref.to];
-        const present = keysPresent.get(ref.to);
+        const present = rowsByKey.get(ref.to);
         const found = targetSpec !== undefined && present !== undefined && present.has(keyString(targetSpec.key.map((p) => target[p])));
         const rowKey = rowKeyOf(entitySet, row);
         const id = unresolvedId(entitySet, rowKey, ref.property, ref.to);
@@ -277,22 +289,71 @@ function checkReferences(): { references: number; accepted: number } {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Documents the rows link: each must have a manifest entry with the same source_url.
+// Documents and the rows that link them, in both directions: every document a fixture row links
+// has a manifest entry, and every manifest entry is linked by the rows it names, which are in the
+// fixture. Only the Statutes Affected Table may have no row.
+
+/** The URL a row links, null when it links none, undefined when its link property is not a URL. */
+function linkedUrl(entitySet: string, row: Row): string | null | undefined {
+  try {
+    return linkedDocumentUrl(entitySet, row);
+  } catch {
+    return undefined;
+  }
+}
 
 function checkLinkedDocuments(): void {
+  const linking = new Map<string, Array<{ entitySet: string; row: Row }>>();
   for (const [entitySet, rows] of feedRows) {
     for (const row of rows) {
-      let url: string | null;
-      try {
-        url = linkedDocumentUrl(entitySet, row);
-      } catch {
+      const url = linkedUrl(entitySet, row);
+      if (url === undefined) {
         problem(`${describeKey(entitySet, rowKeyOf(entitySet, row))}: its document URL is not a valid URL`);
         continue;
       }
-      if (url !== null && !manifestUrls.has(url)) {
-        problem(`${describeKey(entitySet, rowKeyOf(entitySet, row))} links ${url}, which has no manifest entry`);
+      if (url === null) continue;
+      if (!manifestUrls.has(url)) problem(`${describeKey(entitySet, rowKeyOf(entitySet, row))} links ${url}, which has no manifest entry`);
+      linking.set(url, [...(linking.get(url) ?? []), { entitySet, row }]);
+    }
+  }
+
+  const absentRows = new Map<string, { count: number; example: string }>();
+  for (const { path, sourceUrl, linkedBy } of linkedEntries) {
+    const named = new Set<string>();
+    for (const { entity_set: entitySet, row_key: rowKey } of linkedBy) {
+      const spec = entitySets[entitySet];
+      if (spec === undefined || documentLinks[entitySet] === undefined) {
+        problem(`manifest entry ${path}: linked_by names "${entitySet}", which is not an entity set whose rows link documents`);
+        continue;
+      }
+      const id = keyString(spec.key.map((p) => rowKey[p]));
+      named.add(`${entitySet}|${id}`);
+      const row = rowsByKey.get(entitySet)?.get(id);
+      if (row === undefined) {
+        const seen = absentRows.get(entitySet) ?? { count: 0, example: `${describeKey(entitySet, rowKey)} (for ${path})` };
+        seen.count++;
+        absentRows.set(entitySet, seen);
+        continue;
+      }
+      const url = linkedUrl(entitySet, row);
+      if (url !== sourceUrl) {
+        problem(`manifest entry ${path}: linked_by names ${describeKey(entitySet, rowKey)}, but that row links ${url === null ? "no document" : String(url)}, not ${sourceUrl}`);
       }
     }
+    const rows = linking.get(sourceUrl) ?? [];
+    for (const { entitySet, row } of rows) {
+      const rowKey = rowKeyOf(entitySet, row);
+      const spec = entitySets[entitySet] as { key: string[] };
+      if (!named.has(`${entitySet}|${keyString(spec.key.map((p) => rowKey[p]))}`)) {
+        problem(`manifest entry ${path}: ${describeKey(entitySet, rowKey)} links this document, but linked_by does not name it`);
+      }
+    }
+    if (linkedBy.length === 0 && rows.length === 0 && path !== statutesAffectedTablePath) {
+      problem(`manifest entry ${path}: no fixture row links ${sourceUrl}, and only ${statutesAffectedTablePath} may be unlinked`);
+    }
+  }
+  for (const [entitySet, { count, example }] of absentRows) {
+    problem(`manifest.json: linked_by names ${count} row(s) of ${entitySet} that are not in the fixture, e.g. ${example}`);
   }
 }
 

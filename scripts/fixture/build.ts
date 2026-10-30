@@ -35,6 +35,7 @@ import {
   linkedDocumentUrl,
   makeUnresolved,
   rowKeyOf,
+  statutesAffectedTablePath,
   targetKeyOf,
 } from "./schema.ts";
 import type { LinkedBy, ManifestEntry, Row, Unresolved } from "./schema.ts";
@@ -57,7 +58,7 @@ const MAX_FAILURES_IN_A_ROW = 5; // a streak means something systemic: stop inst
 const ARTABLES = {
   url: "https://www.oregonlegislature.gov/AutoPubs/artables2025R1.pdf",
   file: "artables2025R1.pdf",
-  path: "documents/reports/artables2025R1.pdf",
+  path: statutesAffectedTablePath,
   note:
     "The Statutes Affected Table, published by Legislative Counsel outside OLIS. No feed row links it " +
     "(olis-odata.md section 5), so linked_by is empty.",

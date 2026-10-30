@@ -342,6 +342,13 @@ export type LinkedBy = { entity_set: string; row_key: Record<string, unknown> };
 export const isLinkedBy = (value: unknown): value is LinkedBy =>
   isRecord(value) && typeof value.entity_set === "string" && isRecord(value.row_key);
 
+/**
+ * The one document in the fixture that no feed row links: the Statutes Affected Table, which
+ * Legislative Counsel publishes outside OLIS (olis-odata.md section 5). verify.ts requires every
+ * other manifest entry to be linked by a fixture row.
+ */
+export const statutesAffectedTablePath = "documents/reports/artables2025R1.pdf";
+
 /** One entry of manifest.json: a document in the fixture. */
 export type ManifestEntry = {
   path: string;
