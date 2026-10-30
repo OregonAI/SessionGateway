@@ -14,6 +14,7 @@ import {
 import { getMeasure, getMeasureInput, getMeasureOutput, unknownMeasureMessage } from "./lib/get-measure.ts";
 import {
   backwardsRangeMessage,
+  MAX_MEETINGS,
   meetings,
   meetingsInput,
   meetingsOutput,
@@ -122,8 +123,7 @@ function buildServer(reader: IndexReader, config: ServerConfig, limiter: RateLim
     "meetings",
     {
       title: "Committee meetings",
-      description:
-        "Lists committee meetings of the Session, earliest first, for a Measure (meetings with an agenda item about it), a committee, a date range, or all three together. Each meeting has when it starts, the status OLIS gives it (Scheduled, Cancelled), whether it is still ahead of the service's clock, its agenda items, the Proposed Amendments posted to it, its Exhibits, its Recording Logs, its agenda document and a link to its OLIS page. next_meeting_id names the next scheduled meeting. At most 25 meetings come back; narrow with from and to when truncated is true. It is not the official record.",
+      description: `Lists committee meetings of the Session, earliest first, for a Measure (meetings with an agenda item about it), a committee, a date range, or all three together. Each meeting has when it starts, the status OLIS gives it (Scheduled, Cancelled), whether it is still ahead of the service's clock, its agenda items, the Proposed Amendments posted to it, its Exhibits, its Recording Logs, its agenda document and a link to its OLIS page. next_meeting_id names the next scheduled meeting. Documents are listed once this service has fetched them. At most ${MAX_MEETINGS} meetings come back; narrow with from and to when truncated is true. It is not the official record.`,
       inputSchema: meetingsInput,
       outputSchema: meetingsOutput,
       annotations: { readOnlyHint: true, openWorldHint: false },

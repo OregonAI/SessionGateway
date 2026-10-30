@@ -23,6 +23,13 @@ export const meetingsInput = z.object({
     .describe("Only meetings on this date or earlier, as a Pacific date such as 2025-01-28. The whole day counts."),
 });
 
+/**
+ * The most meetings one call returns. A meeting with its agenda items and documents runs to a few thousand
+ * characters, and one meeting of the 2025R1 feed has 70 agenda items and another 99 documents, so an
+ * unbounded range would overflow an agent's context (the reason `get_document` serves parts).
+ */
+export const MAX_MEETINGS = 25;
+
 const meetingOutput = z.object({
   id: z.string().describe("The meeting's id, such as meeting-2025r1-slb-2025-01-30-0800."),
   committee: z.object({
@@ -31,11 +38,7 @@ const meetingOutput = z.object({
     name: z.string().describe("The committee's name."),
   }),
   at: z.string().describe("When the meeting starts, in Pacific time with its UTC offset."),
-  status: z
-    .string()
-    .describe(
-      'What OLIS says of the meeting: "Scheduled", "Cancelled" or "No Meeting Scheduled". Check it before relying on a meeting.',
-    ),
+  status: z.string().describe('What OLIS says of the meeting: "Scheduled", "Cancelled" or "No Meeting Scheduled".'),
   upcoming: z.boolean().describe("True when the meeting starts at or after the time in `now`."),
   olis_page_url: z
     .string()
@@ -85,7 +88,9 @@ const meetingOutput = z.object({
         source_url: z.string().describe("Where the Legislature publishes the file."),
       }),
     )
-    .describe("The Exhibits posted to this meeting, whichever Measure they are filed under."),
+    .describe(
+      "The Exhibits posted to this meeting, whichever Measure they are filed under. Only documents this index has fetched are listed.",
+    ),
   recording_logs: z
     .array(
       z.object({
@@ -97,7 +102,7 @@ const meetingOutput = z.object({
       }),
     )
     .describe(
-      "The committee's timecoded index of the meeting's recording: agenda items, motions, votes and speakers. Empty before it is posted, and sometimes more than one.",
+      "The committee's timecoded index of the meeting's recording: agenda items, motions, votes and speakers. Empty before it is posted or fetched, and sometimes more than one.",
     ),
   proposed_amendments: z
     .array(
@@ -117,22 +122,19 @@ const meetingOutput = z.object({
         source_url: z.string().describe("Where the Legislature publishes the posted file."),
       }),
     )
-    .describe("The Proposed Amendments posted to this meeting, by Measure and number."),
+    .describe(
+      "The Proposed Amendments posted to this meeting, by Measure and number. Only postings this index has fetched are listed.",
+    ),
 });
-
-/**
- * The most meetings one call returns. A meeting with its agenda items and documents runs to a few thousand
- * characters, and one meeting of the 2025R1 feed has 70 agenda items and another 99 documents, so an
- * unbounded range would overflow an agent's context (the reason `get_document` serves parts).
- */
-export const MAX_MEETINGS = 25;
 
 export const meetingsOutput = z.object({
   now: z.string().describe("The time that `upcoming` is measured from, in Pacific time with its UTC offset."),
   meetings: z
     .array(meetingOutput)
-    .describe("The meetings that match, earliest first: the first 25 when more match (see `truncated`)."),
-  matching_meetings: z.number().describe("How many meetings match, including any past the first 25."),
+    .describe(
+      `The meetings that match, earliest first: the first ${MAX_MEETINGS} when more match (see \`truncated\`).`,
+    ),
+  matching_meetings: z.number().describe(`How many meetings match, including any past the first ${MAX_MEETINGS}.`),
   truncated: z
     .boolean()
     .describe("True when more meetings match than `meetings` holds. Narrow the question with from and to."),
