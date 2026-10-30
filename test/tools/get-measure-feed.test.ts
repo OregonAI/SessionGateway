@@ -2,7 +2,7 @@
 // own system, because the feed it serves (the clock time, the page size, the rows served) is the
 // thing under test. Cases that only read are in get-measure.test.ts.
 import { afterEach, describe, expect, it } from "vitest";
-import { callTool, connectClient } from "../support/mcp-clients.ts";
+import { callTool, connectClient, type ToolOutcome } from "../support/mcp-clients.ts";
 import { startSystem, type System, type SystemOptions } from "../support/system.ts";
 
 const started: System[] = [];
@@ -12,11 +12,18 @@ afterEach(async () => {
 });
 
 async function getMeasure(options: SystemOptions, reference: string) {
+  return (await getMeasures(options, [reference]))[0] as ToolOutcome;
+}
+
+/** Builds one system and looks several references up in it. */
+async function getMeasures(options: SystemOptions, references: readonly string[]): Promise<ToolOutcome[]> {
   const system = await startSystem(options);
   started.push(system);
   const connected = await connectClient("2026-07-28", system.handler);
   try {
-    return await callTool(connected, "get_measure", { measure: reference });
+    const outcomes: ToolOutcome[] = [];
+    for (const reference of references) outcomes.push(await callTool(connected, "get_measure", { measure: reference }));
+    return outcomes;
   } finally {
     await connected.close();
   }
@@ -85,5 +92,46 @@ describe("the deployment's Session", () => {
       catchline: "A special-session Measure that happens to be numbered SB 69.",
     });
     expect(unconfigured.isError).toBe(true);
+  });
+});
+
+describe("the simulated clock", () => {
+  // SB 921's row says "CreatedDate":"2025-01-16T11:00:34" (Pacific local time, Measures.json).
+  it("serves only the Measures the feed had by then", async () => {
+    // 10:00 and 12:00 on 2025-01-16 in Oregon, which was on UTC-8.
+    const beforeCreation = await getMeasure({ clockAt: "2025-01-16T18:00:00Z" }, "SB 921");
+    const afterCreation = await getMeasure({ clockAt: "2025-01-16T20:00:00Z" }, "SB 921");
+
+    expect(beforeCreation.isError).toBe(true);
+    expect(afterCreation.structured).toMatchObject({ id: "measure-2025r1-sb921" });
+  });
+});
+
+describe("the feed's paging", () => {
+  // The fixture holds these eight Measures of 2025R1 (test/fixtures/olis-2025R1/measures.txt).
+  const fixtureMeasures = [
+    ["SB 64", "measure-2025r1-sb64"],
+    ["SB 69", "measure-2025r1-sb69"],
+    ["SB 121", "measure-2025r1-sb121"],
+    ["SB 921", "measure-2025r1-sb921"],
+    ["SB 983", "measure-2025r1-sb983"],
+    ["HB 3027", "measure-2025r1-hb3027"],
+    ["HB 3131", "measure-2025r1-hb3131"],
+    ["HB 3795", "measure-2025r1-hb3795"],
+  ] as const;
+
+  it("reads every page: three rows to a page leave no Measure behind", async () => {
+    const outcomes = await getMeasures(
+      { clockAt: "2025-12-15T17:00:00Z", olis: { pageSize: 3 } },
+      fixtureMeasures.map(([citation]) => citation),
+    );
+
+    expect(outcomes.map((outcome) => outcome.structured?.["id"])).toEqual(fixtureMeasures.map(([, id]) => id));
+  });
+
+  it("refuses a pull whose pages hold fewer rows than the feed counted", async () => {
+    const pull = startSystem({ clockAt: "2025-12-15T17:00:00Z", olis: { withholdLastRows: 1 } });
+
+    await expect(pull).rejects.toThrow(/counted 8.*read 7/);
   });
 });
