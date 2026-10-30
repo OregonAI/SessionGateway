@@ -3,14 +3,21 @@
 import { createMcpHandler, McpServer, type McpHttpHandler } from "@modelcontextprotocol/server";
 import type { ServerConfig } from "#/packages/config/index.ts";
 import { openIndexReader, type IndexReader } from "#/packages/database/reader.ts";
+import type { Clock } from "#/packages/time/clock.ts";
 import { getMeasure, getMeasureInput, getMeasureOutput, unknownMeasureMessage } from "./lib/get-measure.ts";
+import { createRateLimiter, rateLimitMessage, type RateLimiter } from "./lib/rate-limit.ts";
+
+export type HandlerDeps = {
+  /** Times the rate limit's window. */
+  clock: Clock;
+};
 
 export type SessionGatewayHandler = {
   fetch: McpHttpHandler["fetch"];
   close(): Promise<void>;
 };
 
-function buildServer(reader: IndexReader, config: ServerConfig): McpServer {
+function buildServer(reader: IndexReader, config: ServerConfig, limiter: RateLimiter): McpServer {
   const server = new McpServer({ name: "session-gateway", version: "0.0.0" });
   server.registerTool(
     "get_measure",
@@ -23,6 +30,20 @@ function buildServer(reader: IndexReader, config: ServerConfig): McpServer {
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     (input) => {
+      // The MCP specification requires servers to rate-limit tool calls (src/CLAUDE.md, "MCP"). A
+      // refused call is an expected outcome, so it is a tool error the agent can read and act on.
+      const turn = limiter.take();
+      if (!turn.allowed) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: rateLimitMessage(config.rateLimit, config.rateWindowSeconds, turn.retryAfterSeconds),
+            },
+          ],
+        };
+      }
       const result = getMeasure(reader, config.session, input);
       switch (result.kind) {
         case "found":
@@ -43,9 +64,16 @@ function buildServer(reader: IndexReader, config: ServerConfig): McpServer {
   return server;
 }
 
-export function createSessionGatewayHandler(config: ServerConfig): SessionGatewayHandler {
+export function createSessionGatewayHandler(config: ServerConfig, deps: HandlerDeps): SessionGatewayHandler {
   const reader = openIndexReader(config.databasePath);
-  const handler = createMcpHandler(() => buildServer(reader, config));
+  // One limiter for the process: createMcpHandler builds a server for each request, so the limiter
+  // cannot live inside buildServer.
+  const limiter = createRateLimiter({
+    limit: config.rateLimit,
+    windowSeconds: config.rateWindowSeconds,
+    clock: deps.clock,
+  });
+  const handler = createMcpHandler(() => buildServer(reader, config, limiter));
   return {
     fetch: handler.fetch,
     close: async () => {

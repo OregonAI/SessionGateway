@@ -62,7 +62,7 @@ export async function startSystem(options: SystemOptions): Promise<System> {
   try {
     await pull();
     const serverConfig = loadServerConfig({ ...env, ...options.serverEnv });
-    const handler = createSessionGatewayHandler(serverConfig);
+    const handler = createSessionGatewayHandler(serverConfig, { clock });
     return {
       clock,
       olis,

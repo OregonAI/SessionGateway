@@ -3,9 +3,10 @@
 import { loadServerConfig } from "#/packages/config/index.ts";
 import { createSessionGatewayHandler } from "#/packages/mcp-server/handler.ts";
 import { serveMcp } from "#/packages/mcp-server/http.ts";
+import { systemClock } from "#/packages/time/clock.ts";
 
 const config = loadServerConfig(process.env);
-const handler = createSessionGatewayHandler(config);
+const handler = createSessionGatewayHandler(config, { clock: systemClock });
 const server = await serveMcp(handler, config, {
   onError: (error) => {
     process.stderr.write(`${error.stack ?? error.message}\n`);

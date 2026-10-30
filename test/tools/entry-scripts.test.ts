@@ -114,6 +114,8 @@ describe("the entry scripts", () => {
     ["src/bin/server.ts", "SESSION_KEY", "not-a-session-key"],
     ["src/bin/server.ts", "MCP_PORT", "seventy"],
     ["src/bin/server.ts", "MCP_PATH", "no-leading-slash"],
+    ["src/bin/server.ts", "MCP_RATE_LIMIT", "plenty"],
+    ["src/bin/server.ts", "MCP_RATE_WINDOW_SECONDS", "never"],
   ];
 
   it.for(badVariables)(

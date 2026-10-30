@@ -10,7 +10,7 @@ Spec #1 lists twelve modules, and `src/CLAUDE.md` asks the ticket that first bui
 | `olis-client` | `index.ts` | Spec module 1: the only code that sees the feed's own shapes, among them the offset-less timestamps, which it reads as Pacific local time and refuses in any other form. |
 | `database` | `writer.ts`, `reader.ts` | The only code that imports `node:sqlite`. |
 | `ingest` | `index.ts` | Spec module 2, the full pull only. |
-| `mcp-server` | `handler.ts`, `http.ts` | The tool contract, and serving it on a port behind the Host and Origin guards. |
+| `mcp-server` | `handler.ts`, `http.ts` | The tool contract and its rate limit (one ceiling over every caller, timed by the injected `Clock`), and serving it on a port behind the Host and Origin guards. |
 
 Dependencies point one way. `time` is at the bottom, `domain` is on it, `config`, `olis-client` and `database` build on those, and `ingest` and `mcp-server` sit on top. `src/bin/ingest.ts` and `src/bin/server.ts` are the two entry scripts: each loads its configuration and creates what it needs (the clock, `fetch`, the shutdown signal) once, and passes it down.
 

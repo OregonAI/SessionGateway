@@ -24,6 +24,10 @@ export type ServerConfig = {
   allowedHosts: string[];
   /** Origin host names a browser request may come from. A request with an Origin not listed is refused. */
   allowedOrigins: string[];
+  /** Most tool calls the server answers in one window, over every caller together. */
+  rateLimit: number;
+  /** The length of that window, in seconds. */
+  rateWindowSeconds: number;
 };
 
 const sessionKey = z.string().transform((text, context) => {
@@ -58,6 +62,12 @@ const list = (text: string): string[] =>
     .map((item) => item.trim())
     .filter((item) => item !== "");
 
+const positiveWholeNumber = z
+  .string()
+  .regex(/^\d+$/, "must be a whole number")
+  .transform(Number)
+  .pipe(z.number().min(1, "must be at least 1"));
+
 const serverSchema = z.object({
   SESSION_KEY: sessionKey,
   DATABASE_PATH: z.string().min(1),
@@ -74,6 +84,10 @@ const serverSchema = z.object({
     .default(3000),
   MCP_ALLOWED_HOSTS: z.string().transform(list).default(["localhost", "127.0.0.1", "[::1]"]),
   MCP_ALLOWED_ORIGINS: z.string().transform(list).default([]),
+  // The MCP specification requires servers to rate-limit tool calls (src/CLAUDE.md, "MCP"), so a limit
+  // is on by default: 120 calls a minute over every caller together.
+  MCP_RATE_LIMIT: positiveWholeNumber.default(120),
+  MCP_RATE_WINDOW_SECONDS: positiveWholeNumber.default(60),
 });
 
 function parseEnvironment<Schema extends z.ZodType>(schema: Schema, env: Environment): z.output<Schema> {
@@ -98,5 +112,7 @@ export function loadServerConfig(env: Environment): ServerConfig {
     port: parsed.MCP_PORT,
     allowedHosts: parsed.MCP_ALLOWED_HOSTS,
     allowedOrigins: parsed.MCP_ALLOWED_ORIGINS,
+    rateLimit: parsed.MCP_RATE_LIMIT,
+    rateWindowSeconds: parsed.MCP_RATE_WINDOW_SECONDS,
   };
 }
