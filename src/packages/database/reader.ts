@@ -510,9 +510,9 @@ export function openIndexReader(path: string): IndexReader {
   }
   function amendmentOf(id: AmendmentId): StoredAmendment | undefined {
     const rows = selectPostingsOfAmendment.all(id).map((row) => postingRow.parse(row));
-    const first = rows[0];
-    if (first === undefined) return undefined;
     const listed = rows.map((stored) => ({
+      label: stored.label,
+      measureId: stored.measure_id as MeasureId,
       contentHash: stored.content_hash,
       posting: {
         documentId: stored.document_id as DocumentId,
@@ -531,6 +531,8 @@ export function openIndexReader(path: string): IndexReader {
         a.posting.meetingAt.localeCompare(b.posting.meetingAt) ||
         numbersInOrder.compare(a.posting.documentId, b.posting.documentId),
     );
+    const [earliest] = listed;
+    if (earliest === undefined) return undefined;
     // Postings are told apart by their files, and files by what was read of them: postings that share a file
     // (the same bytes) share one reading, and so do files that differ in bytes only (the PDF's modification date
     // differs between SB 69-1's three postings, ADR-0011) and read the same. Each such set is one entry, with
@@ -548,8 +550,9 @@ export function openIndexReader(path: string): IndexReader {
     }
     return {
       id,
-      number: first.label,
-      measureId: first.measure_id as MeasureId,
+      number: earliest.label,
+      spellings: [...new Set(listed.map(({ label }) => label))],
+      measureId: earliest.measureId,
       postings: listed.map(({ posting }) => posting),
       files: [...readings.values()],
     };

@@ -81,8 +81,13 @@ export type AmendmentFile = {
 /** A Proposed Amendment: the node, its Measure, every posting the feed lists for it (earliest meeting first) and the files the store holds of them. */
 export type StoredAmendment = {
   id: AmendmentId;
-  /** The amendment's number as the feed writes it, trimmed: "-2", "-A3". */
+  /** The amendment's number as its earliest posting writes it, trimmed: "-2", "-A3". */
   number: string;
+  /**
+   * Every distinct way the postings write the number, trimmed, earliest first. The feed writes one amendment's
+   * number more than one way ("-1" and "1" for HB 2344's first), so the Version it names is read from all of them.
+   */
+  spellings: string[];
   measureId: MeasureId;
   postings: AmendmentPosting[];
   /** One for each distinct file the store holds among the postings, in the order of their first posting. */

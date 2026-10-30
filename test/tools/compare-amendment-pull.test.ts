@@ -155,7 +155,7 @@ describe("amendments the fixture has no row for", () => {
 
       expect(comparison.amended_version.known).toBe(false);
       expect(comparison.amended_version.reason).toBe(
-        "The amendment's number -AB3 names no Version (a number of digits alone names Introduced, and a letter names that engrossed Version), so which Version it amends is not known.",
+        "The amendment's number -AB3 is not a number with an optional Version letter (a number alone, as in -2, names Introduced, and a letter before it, as in -A3, names that engrossed Version), so which Version it amends is not known.",
       );
     });
 
@@ -208,6 +208,112 @@ describe("amendments the fixture has no row for", () => {
       expect((await compare("SB 69-A9")).amendment.postings.map((posting) => posting.id)).toEqual([
         "posting-2025r1-990001",
       ]);
+    });
+  });
+});
+
+describe("an amendment number the feed spells in more than one way", () => {
+  // The feed spells one amendment's number more than one way (CommitteeProposedAmendments.json: HB 2344's 27679 is
+  // "1" and 27883 is "-1"; SB 702's 29245 is "A6" and 29484 is "-A6"; HB 3051's three postings are "- 3"). They are
+  // one amendment, because its id is minted from the number. EVERY ROW BELOW IS MADE UP (ids 9901xx): the spellings
+  // are the real ones, put on SB 69 and HB 3795 in the order the review probed, and each is served with the
+  // fixture's file of that Measure: 26286 (SB 69-2, header "SENATE BILL 69") and 28997 (HB 3795-A3, header
+  // "A-ENGROSSED HOUSE BILL 3795").
+  const slb21 = "2025-01-21T08:00:00";
+  const slb30 = "2025-01-30T08:00:00";
+  const sb69File = `${root}/ProposedAmendment/26286`;
+  const hb3795File = `${root}/ProposedAmendment/28997`;
+  const madeUp = [
+    // SB 69 "7": a bare "7" at the earlier meeting, then "-7" at the later one.
+    { ...postingRow(990101, "7", sb69File), MeetingDate: slb21 },
+    { ...postingRow(990102, "-7", sb69File), MeetingDate: slb30 },
+    // SB 69 "-8": "-8" at the earlier meeting, then "- 8" (HB 3051's spelling) at the later one.
+    { ...postingRow(990103, "-8", sb69File), MeetingDate: slb21 },
+    { ...postingRow(990104, "- 8", sb69File), MeetingDate: slb30 },
+    // SB 69 "-9": the earlier posting is "-9" and the later one "--9", which is not a spelling of a number.
+    { ...postingRow(990105, "-9", sb69File), MeetingDate: slb21 },
+    { ...postingRow(990106, "--9", sb69File), MeetingDate: slb30 },
+    // HB 3795 "A5": a letter and digits with no hyphen, as SB 702's "A6", on A-Engrossed's file. Posted to SHS
+    // on 2025-05-15 08:00, the meeting of the real 28997 (agenda item 211461).
+    {
+      ...postingRow(990107, "A5", hb3795File),
+      CommitteeAgendaItemId: 211461,
+      CommitteeCode: "SHS",
+      MeetingDate: "2025-05-15T08:00:00",
+      MeasurePrefix: "HB",
+      MeasureNumber: 3795,
+    },
+  ];
+  let system: System;
+
+  beforeAll(async () => {
+    system = await startSystem({
+      clockAt,
+      documents: true,
+      serverEnv: { MCP_RATE_LIMIT: "1000" },
+      olis: { strayRows: { CommitteeProposedAmendments: madeUp } },
+    });
+  }, 60_000);
+
+  afterAll(async () => {
+    await system.stop();
+  });
+
+  describe.for(eras)("for a %s client", (era) => {
+    let connected: ConnectedClient;
+
+    beforeAll(async () => {
+      connected = await connectClient(era, system.handler);
+    });
+
+    afterAll(async () => {
+      await connected.close();
+    });
+
+    async function compare(reference: string): Promise<Comparison & { amendment: { number: string } }> {
+      const outcome = await callTool(connected, "compare_amendment", { amendment: reference });
+      expect(outcome.isError).toBe(false);
+      return outcome.structured as unknown as Comparison & { amendment: { number: string } };
+    }
+
+    it("names Introduced for a number whose earliest posting spells it with no hyphen: the Version does not depend on the spelling", async () => {
+      const comparison = await compare("SB 69-7");
+
+      expect(comparison.amendment.number).toBe("7");
+      expect(comparison.amended_version).toMatchObject({
+        known: true,
+        id: "version-2025r1-sb69-introduced",
+        label: "Introduced",
+      });
+    });
+
+    it("names Introduced for a number spelled with a space after the hyphen at one meeting and without at another", async () => {
+      const comparison = await compare("SB 69-8");
+
+      expect(comparison.amended_version).toMatchObject({ known: true, id: "version-2025r1-sb69-introduced" });
+      expect(comparison.amendment.postings.map((posting) => posting.id)).toEqual([
+        "posting-2025r1-990103",
+        "posting-2025r1-990104",
+      ]);
+    });
+
+    it("names A-Engrossed for a letter and digits with no hyphen, as the feed spells SB 702's A6", async () => {
+      const comparison = await compare("HB 3795-A5");
+
+      expect(comparison.amended_version).toMatchObject({
+        known: true,
+        id: "version-2025r1-hb3795-a-engrossed",
+        label: "A-Engrossed",
+      });
+    });
+
+    it("says the Version is not known when the postings spell the number in ways that do not name one Version, and names the spellings", async () => {
+      const comparison = await compare("SB 69-9");
+
+      expect(comparison.amended_version.known).toBe(false);
+      expect(comparison.amended_version.reason).toBe(
+        "The postings of the amendment write its number as -9 and --9, which do not name one Version, so which Version it amends is not known.",
+      );
     });
   });
 });

@@ -1,3 +1,4 @@
+import { versionDescriptionOfLetter } from "#/packages/domain/documents.ts";
 import { normalizeExtractedText } from "./normalize.ts";
 
 // A Proposed Amendment names the text it amends on its first page, in capitals, after "PROPOSED AMENDMENTS TO":
@@ -17,5 +18,5 @@ const header = /PROPOSED AMENDMENTS TO (?:([A-Z])-ENGROSSED )?(?:SENATE|HOUSE)(?
 export function readAmendedVersionHeader(text: string): string | undefined {
   const named = header.exec(normalizeExtractedText(text));
   if (named === null) return undefined;
-  return named[1] === undefined ? "Introduced" : `${named[1]}-Engrossed`;
+  return versionDescriptionOfLetter(named[1] ?? null);
 }
