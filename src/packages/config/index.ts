@@ -15,6 +15,10 @@ export type IngestConfig = {
 
 export type ServerConfig = {
   session: SessionKey;
+  /** The OLIS service root, with a trailing slash: where the live lookup reads one Measure at request time. */
+  olisBaseUrl: string;
+  /** How long one live lookup may take, all its requests together, before the cache answers instead. */
+  olisLiveTimeoutMs: number;
   databasePath: string;
   /** Where the MCP endpoint is mounted, such as /session-gateway/mcp. */
   mcpPath: string;
@@ -70,6 +74,12 @@ const positiveWholeNumber = z
 
 const serverSchema = z.object({
   SESSION_KEY: sessionKey,
+  // The server needs OLIS for the live status of get_measure (ticket #21): a deployment without it would
+  // answer every call from the cache and say the lookup failed, so a missing variable stops the start-up.
+  OLIS_BASE_URL: serviceRoot,
+  // get_measure's live lookup gives up after this long and answers from the cache, so the tool still
+  // answers promptly when OLIS is slow. 5 seconds: a lookup for one Measure is a few small requests.
+  OLIS_LIVE_TIMEOUT_MS: positiveWholeNumber.default(5000),
   DATABASE_PATH: z.string().min(1),
   MCP_PATH: z
     .string()
@@ -106,6 +116,8 @@ export function loadServerConfig(env: Environment): ServerConfig {
   const parsed = parseEnvironment(serverSchema, env);
   return {
     session: parsed.SESSION_KEY,
+    olisBaseUrl: parsed.OLIS_BASE_URL,
+    olisLiveTimeoutMs: parsed.OLIS_LIVE_TIMEOUT_MS,
     databasePath: parsed.DATABASE_PATH,
     mcpPath: parsed.MCP_PATH,
     host: parsed.MCP_HOST,

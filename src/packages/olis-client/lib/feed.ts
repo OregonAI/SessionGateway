@@ -1,7 +1,7 @@
 // How to read one entity set of the OLIS OData v3 feed, quirks included (docs/research/olis-odata.md
 // section 1 and section 8; spec #1, "OLIS client").
 import { z } from "zod";
-import type { SessionKey } from "#/packages/domain/index.ts";
+import type { MeasureKey, SessionKey } from "#/packages/domain/index.ts";
 import type { OlisClientOptions } from "./options.ts";
 
 /** A page that takes longer than this is an outage, not a slow answer (olis-odata.md gotcha 15). */
@@ -26,6 +26,13 @@ async function readCount(options: OlisClientOptions, url: URL, signal: AbortSign
   return Number(text);
 }
 
+/** How a read checks the rows it got against the feed's own count of them. */
+export type CountCheck =
+  /** Counts with the `/$count` path segment as well: a second request, for a pull that reads whole sets. */
+  | "count-endpoint-and-inlinecount"
+  /** Counts with the first page's `$inlinecount` alone: one request, for a read of one Measure's rows. */
+  | "inlinecount";
+
 /**
  * Reads every row of one entity set that matches a `$filter`, following the pages, and checks that
  * the rows read match the feed's own count of them. The feed has no `$count=true`: it counts with
@@ -37,6 +44,7 @@ export async function readEntitySet<Row>(
   filter: string,
   rowSchema: z.ZodType<Row>,
   signal: AbortSignal,
+  countCheck: CountCheck = "count-endpoint-and-inlinecount",
 ): Promise<Row[]> {
   const page = z.object({
     value: z.array(rowSchema),
@@ -44,9 +52,12 @@ export async function readEntitySet<Row>(
     "odata.nextLink": z.string().optional(),
   });
 
-  const countUrl = new URL(`${entitySet}/$count`, options.baseUrl);
-  countUrl.searchParams.set("$filter", filter);
-  const counted = await readCount(options, countUrl, signal);
+  let counted: number | undefined;
+  if (countCheck === "count-endpoint-and-inlinecount") {
+    const countUrl = new URL(`${entitySet}/$count`, options.baseUrl);
+    countUrl.searchParams.set("$filter", filter);
+    counted = await readCount(options, countUrl, signal);
+  }
 
   const firstUrl = new URL(entitySet, options.baseUrl);
   firstUrl.searchParams.set("$filter", filter);
@@ -70,40 +81,75 @@ export async function readEntitySet<Row>(
     }
     const body = parsed.data;
     rows.push(...body.value);
+    if (inlineCounted === undefined && body["odata.count"] !== undefined) inlineCounted = Number(body["odata.count"]);
     // The loop ends only when a page has no next link, so a feed that keeps sending one is bounded here
     // (src/CLAUDE.md, "Errors"): every page must bring a row, and the rows may not pass the feed's count.
-    if (rows.length > counted) {
-      throw new Error(`OLIS sent more rows than the ${counted} it counted for ${entitySet} (/$count)`);
+    const ceiling = counted ?? inlineCounted;
+    if (ceiling !== undefined && rows.length > ceiling) {
+      const counter = counted === undefined ? "$inlinecount" : "/$count";
+      throw new Error(`OLIS sent more rows than the ${ceiling} it counted for ${entitySet} (${counter})`);
     }
     if (body.value.length === 0 && body["odata.nextLink"] !== undefined) {
       throw new Error(`OLIS sent an empty page of ${entitySet} with a next link`);
     }
-    if (inlineCounted === undefined && body["odata.count"] !== undefined) inlineCounted = Number(body["odata.count"]);
     // The next link is relative to the page it came with (`../odataservice.svc/...`).
     url = body["odata.nextLink"] === undefined ? undefined : new URL(body["odata.nextLink"], url);
   }
 
   if (inlineCounted === undefined) throw new Error(`OLIS did not report an $inlinecount for ${entitySet}`);
-  if (rows.length !== counted || rows.length !== inlineCounted) {
+  if (rows.length !== (counted ?? inlineCounted) || rows.length !== inlineCounted) {
     throw new Error(
-      `Short read of ${entitySet}: OLIS counted ${counted} rows (/$count) and ${inlineCounted} ($inlinecount); read ${rows.length}`,
+      `Short read of ${entitySet}: OLIS counted ${counted ?? "no"} rows (/$count) and ${inlineCounted} ($inlinecount); read ${rows.length}`,
     );
   }
   return rows;
 }
 
 /**
- * Reads the rows of one Session of an entity set. The feed is asked for one Session, but a row of
- * another one is never taken for it: measure numbers restart every Session, so SB 69 of one Session
- * is not SB 69 of another, and a Legislator Code can name a different person in another Session.
+ * A read narrowed to one Measure, for the live lookup: the filter names the Session, the prefix and
+ * the number, and the read counts with the first page's `$inlinecount` alone, one request for each
+ * set. `also` adds one more term to the filter.
  */
-export async function readSessionRows<Row extends { SessionKey: string }>(
+export type MeasureScope = {
+  measure: MeasureKey;
+  /** A further `$filter` term, such as `MeetingDate ge datetime'2025-01-29T09:00:00'`. */
+  also?: string;
+};
+
+/** An OData string literal: single quotes doubled. */
+function literal(text: string): string {
+  return `'${text.replaceAll("'", "''")}'`;
+}
+
+/**
+ * Reads the rows of one Session of an entity set, or with a `scope`, the rows of one Measure of it. The
+ * feed is asked for one Session, but a row of another one is never taken for it: measure numbers restart
+ * every Session, so SB 69 of one Session is not SB 69 of another, and a Legislator Code can name a
+ * different person in another Session. Nor is a row of another Measure taken for the scope's.
+ */
+export async function readSessionRows<
+  Row extends { SessionKey: string; MeasurePrefix?: string | null; MeasureNumber?: number | null },
+>(
   options: OlisClientOptions,
   entitySet: string,
   session: SessionKey,
   rowSchema: z.ZodType<Row>,
   signal: AbortSignal,
+  scope?: MeasureScope,
 ): Promise<Row[]> {
-  const rows = await readEntitySet(options, entitySet, `SessionKey eq '${session}'`, rowSchema, signal);
-  return rows.filter((row) => row.SessionKey === session);
+  if (scope === undefined) {
+    const rows = await readEntitySet(options, entitySet, `SessionKey eq ${literal(session)}`, rowSchema, signal);
+    return rows.filter((row) => row.SessionKey === session);
+  }
+  const { measure } = scope;
+  const terms = [
+    `SessionKey eq ${literal(session)}`,
+    `MeasurePrefix eq ${literal(measure.prefix)}`,
+    `MeasureNumber eq ${String(measure.number)}`,
+    ...(scope.also === undefined ? [] : [scope.also]),
+  ];
+  const rows = await readEntitySet(options, entitySet, terms.join(" and "), rowSchema, signal, "inlinecount");
+  return rows.filter(
+    (row) => row.SessionKey === session && row.MeasurePrefix === measure.prefix && row.MeasureNumber === measure.number,
+  );
 }

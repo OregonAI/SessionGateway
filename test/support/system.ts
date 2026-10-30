@@ -55,6 +55,7 @@ export async function startSystem(options: SystemOptions): Promise<System> {
   const clock = createSimulatedClock(options.clockAt);
   const olis = await startFakeOlis({ clock, ...options.olis });
   const database = createTempDatabase();
+  const shutdown = new AbortController();
   const env = {
     SESSION_KEY: options.sessionKey ?? "2025R1",
     OLIS_BASE_URL: options.olisBaseUrl === undefined ? olis.baseUrl : options.olisBaseUrl(olis.baseUrl),
@@ -70,7 +71,12 @@ export async function startSystem(options: SystemOptions): Promise<System> {
   try {
     await pull();
     const serverConfig = loadServerConfig({ ...env, ...options.serverEnv });
-    const handler = createSessionGatewayHandler(serverConfig, { clock });
+    const handler = createSessionGatewayHandler(serverConfig, {
+      clock,
+      fetch,
+      signal: shutdown.signal,
+      onLiveLookupFailed: () => {},
+    });
     return {
       clock,
       olis,
@@ -79,6 +85,7 @@ export async function startSystem(options: SystemOptions): Promise<System> {
       handler,
       pullAgain: pull,
       stop: async () => {
+        shutdown.abort();
         await handler.close();
         await olis.close();
         database.remove();

@@ -1,17 +1,18 @@
 // The OLIS client: the only code that sees the feed's own shapes (src/CLAUDE.md, "Shape"). It reads
 // the OData v3 feed and hands everything else domain types named as GLOSSARY.md names them.
-import type { HistoryAction, Measure, SessionKey } from "#/packages/domain/index.ts";
+import type { HistoryAction, Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
 import type { LegislatorRow, Sponsorship } from "#/packages/domain/legislators.ts";
 import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
 import { readCommitteeVoteRows } from "./lib/committee-votes.ts";
 import { readFloorVoteRows } from "./lib/floor-votes.ts";
 import { readHistoryActionRows } from "./lib/history.ts";
 import { readLegislatorRows } from "./lib/legislators.ts";
+import { readMeasureLive, type MeasureLiveRead } from "./lib/live.ts";
 import { readMeasureRows } from "./lib/measures.ts";
 import type { OlisClientOptions } from "./lib/options.ts";
 import { readSponsorshipRows } from "./lib/sponsors.ts";
 
-export type { OlisClientOptions };
+export type { OlisClientOptions, MeasureLiveRead };
 
 export type OlisClient = {
   /** Every Measure of the Session, as the feed lists them. */
@@ -26,6 +27,11 @@ export type OlisClient = {
   readCommitteeVotes(session: SessionKey, signal: AbortSignal): Promise<CommitteeVoteEntry[]>;
   /** Every MeasureVotes row of the Session: one entry for each Legislator in each floor vote, in the feed's order. */
   readFloorVotes(session: SessionKey, signal: AbortSignal): Promise<FloorVoteEntry[]>;
+  /**
+   * What OLIS says now about one Measure (the live lookup, ticket #21): only that Measure's rows, one
+   * request for each kind of row. It reads no other Measure and never pulls a whole set.
+   */
+  readMeasureLive(key: MeasureKey, signal: AbortSignal): Promise<MeasureLiveRead>;
 };
 
 export function createOlisClient(options: OlisClientOptions): OlisClient {
@@ -36,5 +42,6 @@ export function createOlisClient(options: OlisClientOptions): OlisClient {
     readHistoryActions: (session, signal) => readHistoryActionRows(options, session, signal),
     readCommitteeVotes: (session, signal) => readCommitteeVoteRows(options, session, signal),
     readFloorVotes: (session, signal) => readFloorVoteRows(options, session, signal),
+    readMeasureLive: (key, signal) => readMeasureLive(options, key, signal),
   };
 }

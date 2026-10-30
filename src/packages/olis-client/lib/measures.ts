@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Measure, SessionKey } from "#/packages/domain/index.ts";
-import { readSessionRows } from "./feed.ts";
+import { readSessionRows, type MeasureScope } from "./feed.ts";
 import type { OlisClientOptions } from "./options.ts";
 import { feedTimestamp } from "./timestamps.ts";
 
@@ -19,8 +19,9 @@ export async function readMeasureRows(
   options: OlisClientOptions,
   session: SessionKey,
   signal: AbortSignal,
+  scope?: MeasureScope,
 ): Promise<Measure[]> {
-  const rows = await readSessionRows(options, "Measures", session, measureRow, signal);
+  const rows = await readSessionRows(options, "Measures", session, measureRow, signal, scope);
   return rows.map((row) => ({
     session,
     prefix: row.MeasurePrefix,

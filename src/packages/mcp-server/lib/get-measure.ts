@@ -1,7 +1,15 @@
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
-import { measureIdOf, olisPageUrlOf, parseMeasureReference, type SessionKey } from "#/packages/domain/index.ts";
+import {
+  measureIdOf,
+  olisPageUrlOf,
+  parseMeasureReference,
+  type HistoryAction,
+  type MeasureLocation,
+  type SessionKey,
+} from "#/packages/domain/index.ts";
 import type { LegislatorVote } from "#/packages/domain/votes.ts";
+import type { LiveLookup, LiveStatusReader } from "./live-status.ts";
 
 /** The notice every result carries (ADR-0002, spec #1 "What every result must carry"). */
 export const NON_OFFICIAL_NOTICE =
@@ -21,6 +29,45 @@ const legislatorVoteOutput = z.object({
   legislator: legislatorOutput,
   vote: z.string().describe('The vote in the feed\'s word, such as "Aye", "Nay" or "Excused".'),
 });
+
+/** One line of a Measure's history. */
+const historyActionOutput = z.object({
+  chamber: z.enum(["house", "senate"]).describe("The chamber the action happened in."),
+  date: z.string().describe("When the action happened, in Pacific time with its UTC offset."),
+  text: z.string().describe("The action as OLIS prints it."),
+});
+
+/** The live status block: the Measure's location, history, schedule and votes from OLIS now, or from the cache. */
+const liveStatusOutput = z
+  .object({
+    source: z
+      .enum(["olis", "cache"])
+      .describe(
+        '"olis" when the values were read from OLIS when this call arrived. "cache" when the live lookup failed and the values are the cache\'s, as of the last full pull.',
+      ),
+    lookup_failed: z.boolean().describe("True when the live lookup of OLIS failed and the values come from the cache."),
+    as_of: z
+      .string()
+      .describe(
+        'What the values are as of, in Pacific time with its UTC offset: the time of the read when source is "olis", and the index\'s as-of time (the last full pull) when source is "cache".',
+      ),
+    notice: z.string().describe("Says in words where the values in this block come from, and why."),
+    location: z
+      .object({
+        current: z.string().describe("Where the Measure is, as OLIS says it."),
+        committee_code: z
+          .string()
+          .nullable()
+          .describe("The committee code OLIS gives with the location, or null. See the top-level location."),
+      })
+      .describe("The Measure's location (see as_of)."),
+    history: z
+      .array(historyActionOutput)
+      .describe("The Measure's history (see as_of), oldest action first as OLIS prints it."),
+  })
+  .describe(
+    "The Measure's current status, read from OLIS when the call arrived. If OLIS could not be read, the same fields come from the cache, and source and notice say so.",
+  );
 
 export const getMeasureInput = z.object({
   measure: z.string().describe('A Measure\'s id, such as "measure-2025r1-sb69", or its citation, such as "SB 69".'),
@@ -72,13 +119,7 @@ export const getMeasureOutput = z.object({
       'The messages of the Measure\'s presession rows as OLIS publishes them, in print order, such as "(Presession filed.)". Empty when OLIS has none. A presession row names no Legislator.',
     ),
   history: z
-    .array(
-      z.object({
-        chamber: z.enum(["house", "senate"]).describe("The chamber the action happened in."),
-        date: z.string().describe("When the action happened, in Pacific time with its UTC offset."),
-        text: z.string().describe("The action as OLIS prints it."),
-      }),
-    )
+    .array(historyActionOutput)
     .describe(
       "The Measure's history as of the last full pull (see as_of), oldest action first as OLIS prints it, so the last entry is the latest action.",
     ),
@@ -109,6 +150,7 @@ export const getMeasureOutput = z.object({
     .describe(
       "The Measure's committee votes as of the last full pull (see as_of), in the order the committees met. A roll that OLIS gives under two reports, as it does for a joint committee, is listed once; two different rolls of one committee at one meeting are two entries. OLIS creates these rows before the meeting is held, so a vote whose meeting_date is later than as_of can already list answers; the feed does not say whether that vote has been taken.",
     ),
+  live_status: liveStatusOutput,
   as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
   notice: z.string().describe("A reminder that this is not the official record."),
 });
@@ -123,11 +165,45 @@ function legislatorVoteShown(cast: LegislatorVote): z.infer<typeof legislatorVot
 export type GetMeasureResult =
   { kind: "found"; measure: GetMeasureOutput } | { kind: "unknown"; reference: string; session: SessionKey };
 
-export function getMeasure(
+/** The live block of a call whose lookup answered, or the cache's values when it did not. */
+function liveStatusOf(
+  live: LiveLookup,
+  cached: { location: MeasureLocation; history: readonly HistoryAction[]; asOf: string },
+): z.infer<typeof liveStatusOutput> {
+  switch (live.kind) {
+    case "answered":
+      return {
+        source: "olis",
+        lookup_failed: false,
+        as_of: live.asOf,
+        notice: `Read from OLIS when this call arrived, as of ${live.asOf}.`,
+        location: { current: live.location.current, committee_code: live.location.committeeCode },
+        history: live.history.map(historyShown),
+      };
+    case "failed":
+      return {
+        source: "cache",
+        lookup_failed: true,
+        as_of: cached.asOf,
+        notice: `The live lookup of OLIS failed (${live.reason}). The location and history in this block come from the cache, as of ${cached.asOf}, the index's as-of time, and may be out of date.`,
+        location: { current: cached.location.current, committee_code: cached.location.committeeCode },
+        history: cached.history.map(historyShown),
+      };
+    default:
+      return live satisfies never;
+  }
+}
+
+function historyShown(action: HistoryAction): z.infer<typeof historyActionOutput> {
+  return { chamber: action.chamber, date: action.date, text: action.text };
+}
+
+export async function getMeasure(
   reader: IndexReader,
+  liveStatus: LiveStatusReader,
   session: SessionKey,
   input: z.infer<typeof getMeasureInput>,
-): GetMeasureResult {
+): Promise<GetMeasureResult> {
   const key = parseMeasureReference(input.measure, session);
   const measure = key === undefined ? undefined : reader.findMeasure(key);
   if (measure === undefined) return { kind: "unknown", reference: input.measure, session };
@@ -135,6 +211,9 @@ export function getMeasure(
   if (asOf === undefined) {
     throw new Error(`The index holds Measures of ${session} but no completed full pull to date them by`);
   }
+  const history = reader.findHistory(measure);
+  // The Measure is in the index, so OLIS is asked about it; a reference the index does not know never reaches OLIS.
+  const live = await liveStatus.lookup(measure);
   return {
     kind: "found",
     measure: {
@@ -153,11 +232,7 @@ export function getMeasure(
         .findCommitteeSponsors(measure)
         .map((committeeCode) => ({ committee_code: committeeCode })),
       presession_messages: reader.findPresessionMessages(measure),
-      history: reader.findHistory(measure).map((action) => ({
-        chamber: action.chamber,
-        date: action.date,
-        text: action.text,
-      })),
+      history: history.map(historyShown),
       floor_votes: reader.findFloorVotes(measure).map((vote) => ({
         chamber: vote.chamber,
         date: vote.date,
@@ -169,6 +244,7 @@ export function getMeasure(
         meeting_date: vote.meetingDate,
         votes: vote.votes.map(legislatorVoteShown),
       })),
+      live_status: liveStatusOf(live, { location: measure.location, history, asOf }),
       as_of: asOf,
       notice: NON_OFFICIAL_NOTICE,
     },
