@@ -374,17 +374,41 @@ export type Unresolved = {
   reason: string;
 };
 
-export function makeUnresolved(entitySet: string, row: Row, ref: Ref, target: Record<string, unknown>): Unresolved {
+// The references the full cache itself cannot resolve. Only these are recorded in unresolved.json
+// and only these does verify accept, so a broken reference cannot be waved through by editing
+// the file: it has to be a documented gap with the documented reason.
+//
+// The one documented gap: Legislators is a current snapshot, so the Legislator Codes "Rep Neron"
+// and "Sen Woods", which 2025R1 votes, sponsorships and floor carriers use, have no row
+// (docs/research/olis-odata.md section 8, gotcha 4). A scan of every reference in every row of the
+// full 2025R1 feed cache on 2026-10-29 (791,744 of them) found no other that fails, apart from
+// the non-legislator names in CommitteeMembers.LegislatorCode (gotcha 5), which no fixture row
+// reaches. A new gap is for a person to look at: add it here with the evidence.
+export const legislatorCodesWithoutRow: readonly string[] = ["Rep Neron", "Sen Woods"];
+
+const legislatorGapReason =
+  "No Legislators row with this LegislatorCode in the full 2025R1 feed cache: Legislators is a current snapshot (docs/research/olis-odata.md section 8, gotcha 4).";
+
+/** The reason the full cache cannot resolve this reference, or null when it is not a documented gap. */
+export function documentedGapReason(refersTo: string, target: Record<string, unknown>): string | null {
+  const code = target.LegislatorCode;
+  if (refersTo === "Legislators" && target.SessionKey === "2025R1" && typeof code === "string" && legislatorCodesWithoutRow.includes(code)) {
+    return legislatorGapReason;
+  }
+  return null;
+}
+
+/** The entry for a reference the full cache cannot resolve, or null when that is not a documented gap. */
+export function makeUnresolved(entitySet: string, row: Row, ref: Ref, target: Record<string, unknown>): Unresolved | null {
+  const reason = documentedGapReason(ref.to, target);
+  if (reason === null) return null;
   return {
     entity_set: entitySet,
     row_key: rowKeyOf(entitySet, row),
     property: ref.property,
     refers_to: ref.to,
     target_key: target,
-    reason:
-      ref.to === "Legislators"
-        ? "No Legislators row with this LegislatorCode in the full 2025R1 feed cache: Legislators is a current snapshot (docs/research/olis-odata.md section 8, gotcha 4)."
-        : `No ${ref.to} row with this key in the full 2025R1 feed cache.`,
+    reason,
   };
 }
 

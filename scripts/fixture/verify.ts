@@ -21,12 +21,14 @@ import { argv, exit } from "node:process";
 import {
   absentProperties,
   describeKey,
+  documentedGapReason,
   documentLinks,
   entitySets,
   isLinkedBy,
   isRecord,
   isUnresolved,
   keyString,
+  legislatorCodesWithoutRow,
   linkedDocumentUrl,
   requiredManifestStrings,
   rowKeyOf,
@@ -206,6 +208,15 @@ function loadUnresolved(): Map<string, { entry: Unresolved; used: boolean }> {
     }
     if (entitySets[entry.entity_set] === undefined) {
       problem(`unresolved.json unresolved[${index}]: unknown entity set "${entry.entity_set}"`);
+      return;
+    }
+    // Only a gap of the full cache that the research documents, with its documented reason. Verify
+    // has no cache to look in, so this is all that stops a hand edit from excusing a broken reference.
+    if (documentedGapReason(entry.refers_to, entry.target_key) !== entry.reason) {
+      problem(
+        `unresolved.json unresolved[${index}]: ${describeKey(entry.refers_to, entry.target_key)} is not a documented gap of the full cache, or its reason is not the documented one. ` +
+          `The only documented gaps are the Legislator Codes ${legislatorCodesWithoutRow.join(" and ")} (olis-odata.md section 8, gotcha 4).`,
+      );
       return;
     }
     entries.set(unresolvedId(entry.entity_set, entry.row_key, entry.property, entry.refers_to), { entry, used: false });

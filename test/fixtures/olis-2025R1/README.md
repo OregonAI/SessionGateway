@@ -21,7 +21,9 @@ point at, and every document they link.
   because they share a meeting, and the build stops if a reference would pull one in.
 - **Not in the slice.** `CommitteeMembers`, `CommitteeStaffMembers`, `ConveneTimes` and
   `LegislativeSessions`: no row about a Measure points at them. `verify.ts` still knows what
-  refers to what in the first three, so adding them later needs no change there.
+  refers to what in the first three. Adding `CommitteeMembers` would need a decision first: its
+  `LegislatorCode` holds the personal names of non-legislator members (`olis-odata.md` section 8,
+  gotcha 5), which no Legislators row matches, and the build stops on a gap that is not documented.
 - **Documents.** Versions and Printed Amendments, analysis documents (Fiscal and Revenue Impact
   Statements, staff measure summaries), Proposed Amendments, meeting documents, agendas, and
   Testimony from `/Downloads/PublicTestimonyDocument/{CommTestId}` (the feed's `DocumentUrl` for
@@ -33,9 +35,12 @@ point at, and every document they link.
 - **Documents with no text layer:** `documents/committee-meeting-documents/288141.pdf` (SB 64) and
   the two photographs `documents/testimony/148731.pdf` and `148734.pdf` (SB 921).
 - **References the full cache cannot resolve.** `Rep Neron` and `Sen Woods` have no Legislators
-  row (`olis-odata.md` section 8, gotcha 4). The build writes each such reference to
-  `unresolved.json` with its reason. `verify.ts` accepts exactly those and fails on any other, and
-  on an entry that matches no reference.
+  row (`olis-odata.md` section 8, gotcha 4), and a scan of every reference in the full cache found
+  no other gap. The build writes each such reference to `unresolved.json` with its reason, and
+  stops on any other reference the cache cannot resolve. `verify.ts` accepts only those two
+  Legislator Codes with that reason, and fails on any other reference, on an entry with another
+  target or reason, and on an entry that matches no reference. A new gap is added to
+  `scripts/fixture/schema.ts` by a person, with the evidence.
 - **Alias coverage.** No Fiscal Impact Statement in the slice spells "ODHS" in its "Government
   Unit(s) Affected:" line. HB 3795's says "Department of Human Services", its Testimony row 209256
   gives the Organization as "ODHS", and SB 921's statement uses "OBDD" for the Agency its unit line

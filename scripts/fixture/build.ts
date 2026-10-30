@@ -29,9 +29,11 @@ import { dirname, join } from "node:path";
 import { argv, exit } from "node:process";
 import {
   absentProperties,
+  describeKey,
   documentLinks,
   entitySets,
   keyString,
+  legislatorCodesWithoutRow,
   linkedDocumentUrl,
   makeUnresolved,
   rowKeyOf,
@@ -215,7 +217,15 @@ function select(feed: Map<string, Row[]>, chosen: Chosen[]): Selection {
       const targetSpec = entitySets[ref.to] as (typeof entitySets)[string];
       const targetIndex = indexOf(ref.to).get(keyString(targetSpec.key.map((p) => target[p])));
       if (targetIndex === undefined) {
-        unresolved.push({ rowIndex, gap: makeUnresolved(entitySet, row, ref, target) });
+        const gap = makeUnresolved(entitySet, row, ref, target);
+        if (gap === null) {
+          throw new BuildError(
+            `${describeKey(entitySet, rowKeyOf(entitySet, row))}.${ref.property} refers to ${describeKey(ref.to, target)}, which the full ${SESSION} feed cache does not hold either. ` +
+              `The only documented gaps are the Legislator Codes ${legislatorCodesWithoutRow.join(" and ")} (olis-odata.md section 8, gotcha 4): ` +
+              "find out why this one is missing, then record it in schema.ts with the evidence.",
+          );
+        }
+        unresolved.push({ rowIndex, gap });
         continue;
       }
       const targetRow = (feed.get(ref.to) as Row[])[targetIndex] as Row;
