@@ -56,20 +56,12 @@ export type LiveStatusDeps = {
   onFailure: (failure: LiveLookupFailure) => void;
 };
 
-/** The error's own code when it has one (a refused connection has `ECONNREFUSED`), for the reason an agent reads. */
-function codeOf(error: unknown): string | undefined {
-  const cause = error instanceof Error ? error.cause : undefined;
-  const code = cause instanceof Error && "code" in cause ? cause.code : undefined;
-  return typeof code === "string" ? code : undefined;
-}
-
-/** Says in a few words why a lookup failed, for an agent to read. */
+/**
+ * Says in a few words why a lookup failed, for an agent to read. The lookup's own timeout is the one
+ * failure this module explains; for any other the OLIS client's error already says it in its message.
+ */
 function reasonOf(error: unknown, timedOut: boolean, timeoutMs: number): string {
   if (timedOut) return `OLIS did not answer within ${timeoutMs / 1000} seconds`;
-  if (error instanceof TypeError && error.message === "fetch failed") {
-    const code = codeOf(error);
-    return code === undefined ? "the connection to OLIS failed" : `the connection to OLIS failed (${code})`;
-  }
   return error instanceof Error ? error.message : "OLIS could not be read";
 }
 

@@ -12,6 +12,32 @@ function bounded(signal: AbortSignal): AbortSignal {
   return AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]);
 }
 
+/** The error's own code when it has one (a refused connection has `ECONNREFUSED`). */
+function codeOf(error: Error): string | undefined {
+  const cause = error.cause;
+  const code = cause instanceof Error && "code" in cause ? cause.code : undefined;
+  return typeof code === "string" ? code : undefined;
+}
+
+/**
+ * Sends one request. A transport failure (Node's fetch rejects with a TypeError "fetch failed" and the
+ * system error as its cause) is rethrown with the reason in words, the code of the cause in brackets,
+ * and the original as the cause, so whoever reports it need not know how fetch words its errors.
+ * An abort (a timeout or a shutdown) is the caller's to explain, and passes through as it is.
+ */
+async function sendToOlis(options: OlisClientOptions, url: URL, init: RequestInit): Promise<Response> {
+  try {
+    return await options.fetch(url, init);
+  } catch (error) {
+    if (init.signal?.aborted !== true && error instanceof TypeError && error.message === "fetch failed") {
+      const code = codeOf(error);
+      const reason = code === undefined ? "the connection to OLIS failed" : `the connection to OLIS failed (${code})`;
+      throw new Error(reason, { cause: error });
+    }
+    throw error;
+  }
+}
+
 async function readCount(options: OlisClientOptions, url: URL, signal: AbortSignal): Promise<number> {
   // /$count answers 415 to a JSON Accept header (docs/research/olis-odata.md section 1, verified for a
   // request that sent no Accept header). This request names no type of its own, but fetch adds
@@ -19,7 +45,7 @@ async function readCount(options: OlisClientOptions, url: URL, signal: AbortSign
   // OLIS answers `*/*` with the count is therefore NOT verified: the fake OLIS accepts it because it is
   // what this client sends, so no seam-1 test can show it. The by-hand contract test against live OLIS
   // (test/CLAUDE.md, "Hermetic") is the check.
-  const response = await options.fetch(url, { signal: bounded(signal) });
+  const response = await sendToOlis(options, url, { signal: bounded(signal) });
   if (!response.ok) throw new Error(`OLIS answered ${response.status} to ${url.pathname}`);
   const text = (await response.text()).trim();
   if (!/^\d+$/.test(text)) throw new Error(`OLIS answered ${url.pathname} with something other than a count`);
@@ -66,7 +92,7 @@ export async function readEntitySet<Row>(
   const rows: Row[] = [];
   let inlineCounted: number | undefined;
   for (let url: URL | undefined = firstUrl; url !== undefined;) {
-    const response = await options.fetch(url, {
+    const response = await sendToOlis(options, url, {
       // Without a JSON Accept header an entity set comes back as Atom XML.
       headers: { accept: "application/json;odata=nometadata" },
       signal: bounded(signal),
