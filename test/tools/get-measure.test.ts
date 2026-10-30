@@ -73,4 +73,12 @@ describe.for(eras)("get_measure for a %s client", (era) => {
     expect(outcome.text).toContain(reference);
     expect(outcome.text).toContain("2025R1");
   });
+
+  it("advertises get_measure as the one read-only tool, with an output schema", async () => {
+    const { tools } = await connected.client.listTools();
+
+    expect(tools.map((tool) => tool.name)).toEqual(["get_measure"]);
+    expect(tools[0]?.annotations?.readOnlyHint).toBe(true);
+    expect(tools[0]?.outputSchema).toBeDefined();
+  });
 });
