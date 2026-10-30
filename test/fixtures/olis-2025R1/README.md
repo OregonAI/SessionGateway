@@ -73,12 +73,21 @@ node scripts/fixture/build.ts --cache .cache --offline
 node scripts/fixture/verify.ts
 ```
 
-`--offline` never fetches: a document missing from the download cache is an error that names it.
-Once the cache holds every document, a rebuild produces no diff: row order, JSON formatting and
-every timestamp come from the inputs, never from now. Without `--offline` the build fetches only
-what the download cache lacks, from `https://olis.oregonlegislature.gov/` and nowhere else.
-`--plan` prints what it would fetch and an estimate, and changes nothing. The build refuses to
-fetch more than 500 documents, or an estimated 100 MB.
+The build needs the whole feed cache, a file for every entity set, and stops naming the file if
+one is missing. `--offline` never fetches: a document missing from the download cache is an error
+that names it. Once the cache holds every document, a rebuild produces no diff: row order, JSON
+formatting and every timestamp come from the inputs, never from now. Without `--offline` the build
+fetches only what the download cache lacks, from `https://olis.oregonlegislature.gov/` and nowhere
+else. `--plan` prints what it would fetch and an estimate, and changes nothing. The build refuses
+to fetch more than 500 documents, or an estimated 100 MB, and stops a download run that would take
+the whole fixture past 100 MB.
+
+`verify.ts` needs no cache. It recomputes every document hash; checks that each manifest file
+exists and every file under `documents/` is listed; resolves every key a fixture row refers to
+inside the fixture (apart from the documented gaps above); resolves each manifest entry's
+`linked_by` to fixture rows that link that document, and requires every document except the
+Statutes Affected Table to be linked; and fails on a row that lacks a property the schema reads,
+or on an entity set it does not know.
 
 Do not edit the generated files by hand. The hash check would still pass, and the slice could no
 longer be reproduced.
