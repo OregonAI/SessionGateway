@@ -370,8 +370,23 @@ describe("the alias file the worker is given", () => {
 
       const neron = sponsorsOf(outcome)?.find((sponsor) => sponsor.legislator_code === "Rep Neron");
       expect(neron).toEqual({ level: "chief", legislator_code: "Rep Neron", legislator: null });
-      expect(pull.unresolvedLegislatorCodes).toEqual([
-        { code: "Rep Neron", references: [{ source: "MeasureSponsors", count: 1 }] },
+      // The report counts every source of codes (#15 added the votes): the fixture's one MeasureSponsors
+      // row for "Rep Neron" (HB 3131's chief sponsor) and its three MeasureVotes rows for the code,
+      // 1443750 (HB 3027), 1456830 (HB 3795) and 1468790 (SB 69). The sources are compared sorted,
+      // so the report may list them in any order.
+      expect(
+        pull.unresolvedLegislatorCodes.map((entry) => ({
+          ...entry,
+          references: [...entry.references].sort((a, b) => a.source.localeCompare(b.source)),
+        })),
+      ).toEqual([
+        {
+          code: "Rep Neron",
+          references: [
+            { source: "MeasureSponsors", count: 1 },
+            { source: "MeasureVotes", count: 3 },
+          ],
+        },
       ]);
     } finally {
       await connected.close();

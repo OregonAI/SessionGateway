@@ -2,7 +2,7 @@
 // it imports reader.ts only.
 import type { HistoryAction, Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
 import type { Legislator, LegislatorId, SponsorLevel } from "#/packages/domain/legislators.ts";
-import type { CommitteeVoteRecord } from "#/packages/domain/votes.ts";
+import type { CommitteeVoteRecord, FloorVoteRecord } from "#/packages/domain/votes.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openWriteConnection } from "./lib/connection.ts";
 
@@ -31,6 +31,7 @@ export type PeopleRecord = {
   legislators: readonly Legislator[];
   sponsors: readonly SponsorRecord[];
   committeeVotes: readonly CommitteeVoteRecord[];
+  floorVotes: readonly FloorVoteRecord[];
 };
 
 /** The columns of the sponsor table that only some kinds of row fill; the others stay NULL. */
@@ -90,6 +91,15 @@ export function openIndexWriter(path: string): IndexWriter {
            legislator_id = excluded.legislator_id, committee_code = excluded.committee_code,
            presession_message = excluded.presession_message`,
       );
+      const upsertFloorVote = database.prepare(
+        `INSERT INTO floor_vote (session_key, vote_id, history_id, prefix, number, chamber, action_date, action_text,
+                                 legislator_code, legislator_id, vote)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (session_key, vote_id) DO UPDATE SET
+           history_id = excluded.history_id, prefix = excluded.prefix, number = excluded.number,
+           chamber = excluded.chamber, action_date = excluded.action_date, action_text = excluded.action_text,
+           legislator_code = excluded.legislator_code, legislator_id = excluded.legislator_id, vote = excluded.vote`,
+      );
       const upsertCommitteeVote = database.prepare(
         `INSERT INTO committee_vote (session_key, vote_id, report_id, prefix, number, committee_code, meeting_date,
                                      legislator_code, legislator_id, vote)
@@ -139,6 +149,21 @@ export function openIndexWriter(path: string): IndexWriter {
             columns.legislatorId,
             columns.committeeCode,
             columns.message,
+          );
+        }
+        for (const entry of people.floorVotes) {
+          upsertFloorVote.run(
+            session,
+            entry.id,
+            entry.historyId,
+            entry.measure.prefix,
+            entry.measure.number,
+            entry.chamber,
+            entry.date,
+            entry.action,
+            entry.legislatorCode,
+            entry.legislatorId,
+            entry.vote,
           );
         }
         for (const entry of people.committeeVotes) {

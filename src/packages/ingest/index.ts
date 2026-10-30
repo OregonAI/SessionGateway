@@ -4,7 +4,12 @@
 import type { IngestConfig } from "#/packages/config/index.ts";
 import { openIndexWriter, type SponsorRecord } from "#/packages/database/writer.ts";
 import type { LegislatorId, Sponsorship } from "#/packages/domain/legislators.ts";
-import type { CommitteeVoteEntry, CommitteeVoteRecord } from "#/packages/domain/votes.ts";
+import type {
+  CommitteeVoteEntry,
+  CommitteeVoteRecord,
+  FloorVoteEntry,
+  FloorVoteRecord,
+} from "#/packages/domain/votes.ts";
 import type { LegislatorAlias } from "#/packages/legislators/aliases.ts";
 import {
   createLegislatorResolver,
@@ -72,6 +77,11 @@ function sponsorRecordOf(sponsorship: Sponsorship, resolver: LegislatorResolver)
   }
 }
 
+/** What the database keeps of one entry of a floor vote: the entry and the Legislator its code names. */
+function floorVoteRecordOf(entry: FloorVoteEntry, resolver: LegislatorResolver): FloorVoteRecord {
+  return { ...entry, legislatorId: legislatorIdOfResolution(resolver.resolve("MeasureVotes", entry.legislatorCode)) };
+}
+
 /** What the database keeps of one entry of a committee vote: the entry and the Legislator its code names. */
 function committeeVoteRecordOf(entry: CommitteeVoteEntry, resolver: LegislatorResolver): CommitteeVoteRecord {
   return { ...entry, legislatorId: legislatorIdOfResolution(resolver.resolve("CommitteeVotes", entry.legislatorCode)) };
@@ -85,6 +95,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
   const sponsorships = await olis.readSponsorships(config.session, deps.signal);
   const history = await olis.readHistoryActions(config.session, deps.signal);
   const committeeVotes = await olis.readCommitteeVotes(config.session, deps.signal);
+  const floorVotes = await olis.readFloorVotes(config.session, deps.signal);
 
   // A Member sponsor names a Legislator by a Legislator Code; the resolver says who that is.
   const resolver = createLegislatorResolver({
@@ -93,6 +104,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     aliases: deps.legislatorAliases,
   });
   const sponsors = sponsorships.map((sponsorship) => sponsorRecordOf(sponsorship, resolver));
+  const floorVoteRecords = floorVotes.map((entry) => floorVoteRecordOf(entry, resolver));
   const committeeVoteRecords = committeeVotes.map((entry) => committeeVoteRecordOf(entry, resolver));
 
   const writer = openIndexWriter(config.databasePath);
@@ -101,7 +113,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       config.session,
       measures,
       asOf,
-      { legislators: resolver.people, sponsors, committeeVotes: committeeVoteRecords },
+      { legislators: resolver.people, sponsors, floorVotes: floorVoteRecords, committeeVotes: committeeVoteRecords },
       history,
     );
   } finally {

@@ -80,6 +80,18 @@ export const getMeasureOutput = z.object({
     .describe(
       "The Measure's history as of the last full pull (see as_of), oldest action first as OLIS prints it, so the last entry is the latest action.",
     ),
+  floor_votes: z
+    .array(
+      z.object({
+        chamber: z.enum(["house", "senate"]).describe("The chamber that voted."),
+        date: z.string().describe("When the chamber voted, in Pacific time with its UTC offset."),
+        action: z.string().describe('The history action the vote was taken at, such as "Third reading.  Passed.".'),
+        votes: z.array(legislatorVoteOutput).describe("Each Legislator's vote, in the feed's order."),
+      }),
+    )
+    .describe(
+      "The Measure's floor votes as of the last full pull (see as_of), in the order they were taken. A Legislator who changed Legislator Code during the Session is one Legislator in every vote.",
+    ),
   committee_votes: z
     .array(
       z.object({
@@ -139,6 +151,12 @@ export function getMeasure(
         chamber: action.chamber,
         date: action.date,
         text: action.text,
+      })),
+      floor_votes: reader.findFloorVotes(measure).map((vote) => ({
+        chamber: vote.chamber,
+        date: vote.date,
+        action: vote.action,
+        votes: vote.votes.map(legislatorVoteShown),
       })),
       committee_votes: reader.findCommitteeVotes(measure).map((vote) => ({
         committee_code: vote.committeeCode,

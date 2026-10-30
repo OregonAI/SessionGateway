@@ -2,7 +2,7 @@
 // the feed records it (an entry) and as the server shows it. The vote itself is the feed's own word
 // ("Aye", "Nay", "Excused"; floor votes also have "Excused for Business" and "Absent"), kept as a
 // string because nothing branches on it and a closed set would stop a pull on the first new word.
-import type { MeasureKey } from "./index.ts";
+import type { Chamber, MeasureKey } from "./index.ts";
 import type { Legislator, LegislatorId } from "./legislators.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 
@@ -28,6 +28,19 @@ export type CommitteeVoteEntry = EntryFields & {
   meetingDate: Timestamp;
 };
 
+/**
+ * One Legislator's entry in a floor vote, as a MeasureVotes row records it. The rows of one floor
+ * vote share a `MeasureHistoryId`: the history action the chamber voted at.
+ */
+export type FloorVoteEntry = EntryFields & {
+  historyId: number;
+  chamber: Chamber;
+  /** When the chamber voted, in Pacific time with its offset. */
+  date: Timestamp;
+  /** The history action's text, such as "Third reading.  Carried by Bonham.  Passed.". */
+  action: string;
+};
+
 /** A Legislator's vote as the server shows it. `legislator` is null while the code is unresolved. */
 export type LegislatorVote = {
   legislatorCode: string;
@@ -41,6 +54,17 @@ export type CommitteeVote = {
   meetingDate: Timestamp;
   votes: LegislatorVote[];
 };
+
+/** One chamber's roll call on a Measure, each Legislator's vote in the feed's order. */
+export type FloorVote = {
+  chamber: Chamber;
+  date: Timestamp;
+  action: string;
+  votes: LegislatorVote[];
+};
+
+/** What the worker stores of a floor vote entry: the entry and the Legislator its code resolved to, if any. */
+export type FloorVoteRecord = FloorVoteEntry & { legislatorId: LegislatorId | null };
 
 /** What the worker stores of a committee vote entry: the entry and the Legislator its code resolved to, if any. */
 export type CommitteeVoteRecord = CommitteeVoteEntry & { legislatorId: LegislatorId | null };

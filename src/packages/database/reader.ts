@@ -2,7 +2,7 @@
 import { z } from "zod";
 import type { HistoryAction, Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
 import { comparePrintOrder, type LegislatorId, type Sponsor } from "#/packages/domain/legislators.ts";
-import type { CommitteeVote } from "#/packages/domain/votes.ts";
+import type { CommitteeVote, FloorVote } from "#/packages/domain/votes.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openReadConnection } from "./lib/connection.ts";
 
@@ -16,6 +16,11 @@ export type IndexReader = {
   findPresessionMessages(key: MeasureKey): string[];
   /** A Measure's history, oldest action first: by the time it happened, then by the feed's id. */
   findHistory(key: MeasureKey): HistoryAction[];
+  /**
+   * A Measure's floor votes, in the order they were taken (then by the feed's history id), each with the
+   * Legislators' votes in the feed's order.
+   */
+  findFloorVotes(key: MeasureKey): FloorVote[];
   /**
    * A Measure's committee votes, in the order the committees met (then by the feed's report id), each
    * with the members' votes in the feed's order.
@@ -40,6 +45,16 @@ const historyRow = z.object({
   chamber: z.enum(["house", "senate"]),
   action_date: z.string(),
   action_text: z.string(),
+});
+const floorVoteRow = z.object({
+  history_id: z.number(),
+  chamber: z.enum(["house", "senate"]),
+  action_date: z.string(),
+  action_text: z.string(),
+  legislator_code: z.string(),
+  legislator_id: z.string().nullable(),
+  legislator_name: z.string().nullable(),
+  vote: z.string(),
 });
 const committeeVoteRow = z.object({
   report_id: z.number(),
@@ -84,6 +99,14 @@ export function openIndexReader(path: string): IndexReader {
   const selectHistory = database.prepare(
     `SELECT history_id, chamber, action_date, action_text FROM history_action
      WHERE session_key = ? AND prefix = ? AND number = ? ORDER BY action_date, history_id`,
+  );
+  const selectFloorVotes = database.prepare(
+    `SELECT floor_vote.history_id, floor_vote.chamber, floor_vote.action_date, floor_vote.action_text,
+            floor_vote.legislator_code, floor_vote.legislator_id, legislator.name AS legislator_name, floor_vote.vote
+     FROM floor_vote LEFT JOIN legislator
+       ON legislator.session_key = floor_vote.session_key AND legislator.id = floor_vote.legislator_id
+     WHERE floor_vote.session_key = ? AND floor_vote.prefix = ? AND floor_vote.number = ?
+     ORDER BY floor_vote.action_date, floor_vote.history_id, floor_vote.vote_id`,
   );
   const selectCommitteeVotes = database.prepare(
     `SELECT committee_vote.report_id, committee_vote.committee_code, committee_vote.meeting_date,
@@ -146,6 +169,32 @@ export function openIndexReader(path: string): IndexReader {
           text: stored.action_text,
         };
       });
+    },
+    findFloorVotes(key) {
+      const votes: FloorVote[] = [];
+      let currentHistory: number | undefined;
+      for (const row of selectFloorVotes.all(key.session, key.prefix, key.number)) {
+        const stored = floorVoteRow.parse(row);
+        // The rows come ordered by time and history id, so a new history id starts a new floor vote.
+        if (stored.history_id !== currentHistory || votes.length === 0) {
+          votes.push({
+            chamber: stored.chamber,
+            date: stored.action_date as Timestamp,
+            action: stored.action_text,
+            votes: [],
+          });
+          currentHistory = stored.history_id;
+        }
+        votes[votes.length - 1]?.votes.push({
+          legislatorCode: stored.legislator_code,
+          legislator:
+            stored.legislator_id === null || stored.legislator_name === null
+              ? null
+              : { id: stored.legislator_id as LegislatorId, name: stored.legislator_name },
+          vote: stored.vote,
+        });
+      }
+      return votes;
     },
     findCommitteeVotes(key) {
       const votes: CommitteeVote[] = [];

@@ -9,7 +9,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";
-import { committeeVotesOf, tuplesOf, type VoteTuple } from "../support/votes.ts";
+import { committeeVotesOf, floorVotesOf, tuplesOf, type ToolVote, type VoteTuple } from "../support/votes.ts";
 
 let system: System;
 
@@ -67,6 +67,128 @@ const hb3795Shs: VoteTuple[] = [
   ["Sen Reynolds", "Aye", "legislator-2025r1-reynolds", "Lisa Reynolds"],
 ];
 
+// A floor vote's roll is long (30 Senators, 60 Representatives), so a case states it the way OLIS's own
+// tally does: how many voted Aye, and who did not. The tally is the `VoteText` of the floor vote's
+// MeasureHistoryActions row, a different entity set from the MeasureVotes rows the tool shows, so it
+// is an independent oracle. OLIS writes the names it prints without the chamber word, in alphabetical
+// order ("Ayes, 24; Nays, 5--Girod, Linthicum, Robinson, Smith DB, Thatcher; Excused, 1--Starr."); the
+// literals below add the chamber word to make the Legislator Codes, and are compared sorted.
+type Roll = { ayes: number; others: Record<string, string[]> };
+
+function rollOf(votes: readonly ToolVote[]): Roll {
+  const others: Record<string, string[]> = {};
+  for (const cast of votes) {
+    if (cast.vote !== "Aye") (others[cast.vote] ??= []).push(cast.legislator_code);
+  }
+  for (const codes of Object.values(others)) codes.sort();
+  return { ayes: votes.filter((cast) => cast.vote === "Aye").length, others };
+}
+
+//   SB 69, MeasureHistoryId 620916 (Senate, 2025-02-06T11:21:32):
+//     "Ayes, 24; Nays, 5--Girod, Linthicum, Robinson, Smith DB, Thatcher; Excused, 1--Starr."
+//   SB 69, MeasureHistoryId 644481 (House, 2025-05-05T11:30:33):
+//     "Ayes, 42; Nays, 10--Boice, Cate, Diehl, Edwards, Harbick, Lewis, Osborne, Skarlatos, Wright,
+//      Yunker; Excused, 7--Drazan, Hartman, Nguyen H, Ruiz, Sosa, Tran, Wallan; Excused for Business
+//      of the House, 1--Speaker Fahey."
+const sb69FloorVotes = [
+  {
+    chamber: "senate",
+    date: "2025-02-06T11:21:32-08:00",
+    action: "Third reading.  Carried by Bonham.  Passed.",
+    roll: {
+      ayes: 24,
+      others: {
+        Nay: ["Sen Girod", "Sen Linthicum", "Sen Robinson", "Sen Smith DB", "Sen Thatcher"],
+        Excused: ["Sen Starr"],
+      },
+    },
+  },
+  {
+    chamber: "house",
+    date: "2025-05-05T11:30:33-07:00",
+    action: "Third reading. Carried by Grayber. Passed.",
+    roll: {
+      ayes: 42,
+      others: {
+        Nay: [
+          "Rep Boice",
+          "Rep Cate",
+          "Rep Diehl",
+          "Rep Edwards",
+          "Rep Harbick",
+          "Rep Lewis",
+          "Rep Osborne",
+          "Rep Skarlatos",
+          "Rep Wright",
+          "Rep Yunker",
+        ],
+        Excused: ["Rep Drazan", "Rep Hartman", "Rep Nguyen H", "Rep Ruiz", "Rep Sosa", "Rep Tran", "Rep Wallan"],
+        "Excused for Business": ["Rep Speaker Fahey"],
+      },
+    },
+  },
+];
+
+//   HB 3795, MeasureHistoryId 640320 (House, 2025-04-14T14:20:19):
+//     "Ayes, 44; Nays, 11--Boice, Boshart Davis, Diehl, Elmer, Harbick, Lewis, Osborne, Reschke, Scharf,
+//      Skarlatos, Yunker; Excused, 4--Cate, Evans, Nguyen H, Walters; Excused for Business of the
+//      House, 1--Drazan."
+//   HB 3795, MeasureHistoryId 653537 (Senate, 2025-06-11T11:29:13):
+//     "Ayes, 26; Nays, 3--Bonham, Linthicum, Robinson; Excused, 1--Nash."
+//   HB 3795, MeasureHistoryId 654707 (House, 2025-06-16T11:56:31), the House agreeing to the Senate's
+//   amendments:
+//     "Ayes, 47; Nays, 5--Cate, Diehl, Harbick, Skarlatos, Yunker; Excused, 5--Boshart Davis, Chaichi,
+//      Nguyen H, Osborne, Wallan; Excused for Business of the House, 3--Helfrich, McLain, Reschke."
+const hb3795FloorVotes = [
+  {
+    chamber: "house",
+    date: "2025-04-14T14:20:19-07:00",
+    action: "Third reading. Carried by Ruiz. Passed.",
+    roll: {
+      ayes: 44,
+      others: {
+        Nay: [
+          "Rep Boice",
+          "Rep Boshart Davis",
+          "Rep Diehl",
+          "Rep Elmer",
+          "Rep Harbick",
+          "Rep Lewis",
+          "Rep Osborne",
+          "Rep Reschke",
+          "Rep Scharf",
+          "Rep Skarlatos",
+          "Rep Yunker",
+        ],
+        Excused: ["Rep Cate", "Rep Evans", "Rep Nguyen H", "Rep Walters"],
+        "Excused for Business": ["Rep Drazan"],
+      },
+    },
+  },
+  {
+    chamber: "senate",
+    date: "2025-06-11T11:29:13-07:00",
+    action: "Third reading.  Carried by Gelser Blouin.  Passed.",
+    roll: {
+      ayes: 26,
+      others: { Nay: ["Sen Bonham", "Sen Linthicum", "Sen Robinson"], Excused: ["Sen Nash"] },
+    },
+  },
+  {
+    chamber: "house",
+    date: "2025-06-16T11:56:31-07:00",
+    action: "House concurred in Senate amendments and repassed bill.",
+    roll: {
+      ayes: 47,
+      others: {
+        Nay: ["Rep Cate", "Rep Diehl", "Rep Harbick", "Rep Skarlatos", "Rep Yunker"],
+        Excused: ["Rep Boshart Davis", "Rep Chaichi", "Rep Nguyen H", "Rep Osborne", "Rep Wallan"],
+        "Excused for Business": ["Rep Helfrich", "Rep McLain", "Rep Reschke"],
+      },
+    },
+  },
+];
+
 describe.for(eras)("get_measure committee votes for a %s client", (era) => {
   let connected: ConnectedClient;
 
@@ -113,5 +235,70 @@ describe.for(eras)("get_measure committee votes for a %s client", (era) => {
     const outcome = await callTool(connected, "get_measure", { measure: "HB 3131" });
 
     expect(committeeVotesOf(outcome)?.map((vote) => [vote.committee_code, vote.votes.length])).toEqual([["HALNRW", 9]]);
+  });
+});
+
+describe.for(eras)("get_measure floor votes for a %s client", (era) => {
+  let connected: ConnectedClient;
+
+  beforeAll(async () => {
+    connected = await connectClient(era, system.handler);
+  });
+
+  afterAll(async () => {
+    await connected.close();
+  });
+
+  it.for([
+    ["SB 69", sb69FloorVotes],
+    ["HB 3795", hb3795FloorVotes],
+  ] as const)(
+    "lists %s's floor votes in the order they were taken, who did not vote Aye in each",
+    async ([measure, expected]) => {
+      const outcome = await callTool(connected, "get_measure", { measure });
+
+      expect(outcome.isError).toBe(false);
+      const listed = floorVotesOf(outcome)?.map((vote) => ({
+        chamber: vote.chamber,
+        date: vote.date,
+        action: vote.action,
+        roll: rollOf(vote.votes),
+      }));
+      expect(listed).toEqual(expected);
+    },
+  );
+
+  it("gives every voter of SB 69's and HB 3795's floor votes as the one Legislator their code names", async () => {
+    const sb69 = await callTool(connected, "get_measure", { measure: "SB 69" });
+    const hb3795 = await callTool(connected, "get_measure", { measure: "HB 3795" });
+
+    const rolls = [...(floorVotesOf(sb69) ?? []), ...(floorVotesOf(hb3795) ?? [])];
+    expect(rolls).toHaveLength(5);
+    for (const roll of rolls) {
+      expect(roll.votes.filter((cast) => cast.legislator === null)).toEqual([]);
+      // One person, one vote in a roll: the 30 Senators and 60 Representatives are 30 and 60 people.
+      const ids = new Set(roll.votes.map((cast) => cast.legislator?.id));
+      expect(ids.size).toBe(roll.votes.length);
+    }
+    expect(rolls.map((roll) => roll.votes.length)).toEqual([30, 60, 60, 30, 60]);
+  });
+
+  it("names the Legislator behind a code that carries an office: the President and the Speaker", async () => {
+    // "Sen President Wagner" is the first row of every Senate roll, and "Rep Speaker Fahey" is among the
+    // House's (excused for the business of the House on SB 69, above). The Legislators rows give Rob
+    // Wagner and Julie Fahey; the ids leave the office out (GLOSSARY.md, "Legislator").
+    const outcome = await callTool(connected, "get_measure", { measure: "SB 69" });
+
+    const [senate, house] = floorVotesOf(outcome) ?? [];
+    expect(senate?.votes[0]).toEqual({
+      legislator_code: "Sen President Wagner",
+      legislator: { id: "legislator-2025r1-wagner", name: "Rob Wagner" },
+      vote: "Aye",
+    });
+    expect(house?.votes.find((cast) => cast.legislator_code === "Rep Speaker Fahey")).toEqual({
+      legislator_code: "Rep Speaker Fahey",
+      legislator: { id: "legislator-2025r1-fahey", name: "Julie Fahey" },
+      vote: "Excused for Business",
+    });
   });
 });
