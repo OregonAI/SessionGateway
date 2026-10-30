@@ -5,7 +5,8 @@ Researched 2026-10-30 (Pacific), for ticket #21. Every count is over the 2025R1 
 Labels used below:
 - **local measurement**: I ran the command named in the Source column on the cache and read its output. The line numbers (for example "output 2") are the numbered lines the script prints.
 - **inferred**: my reading of measured evidence, not stated by the source.
-- **not verified**: a fact about live OLIS that nothing run for this ticket could check, because the tests reach only the fake OLIS and no query was sent to the feed.
+
+What nothing run for this ticket could check, because the tests reach only the fake OLIS and no query was sent to the feed, is not a claim. It is in section 3 as open questions, in the style of `olis-odata.md`.
 
 ## 1. How many rows one Measure has
 
@@ -27,15 +28,13 @@ The live lookup asks for one Measure's rows in each of five entity sets, narrowe
 | `PrintOrder` is a JSON string in all 9,275 rows ("6"); `CommitteeAgendaItemId` is a number and `MeetingDate` a string with no offset. | local measurement | `live.mjs`, output 2 |
 | No `MeetingDate` of a row with a Measure has a fractional second or a second other than 00. | local measurement | `live.mjs`, output 2 |
 
-## 3. What no test could check
+## 3. Open questions
 
-| Fact | Status | Source |
-|---|---|---|
-| Live OLIS accepts `$filter=SessionKey eq '2025R1' and MeasurePrefix eq 'SB' and MeasureNumber eq 69` with `$inlinecount=allpages` on each of the five sets. `olis-odata.md` section 1 verified `eq`, `and`, `ge` and `datetime'...'` in `$filter`, and `$inlinecount=allpages`, on other queries. | not verified for these five | no feed query was sent |
-| Live OLIS accepts `MeetingDate ge datetime'2025-01-29T09:00:00'` on CommitteeAgendaItems, and reads the wall-clock reading as Pacific local time. `olis-odata.md` section 6 verified `datetime'...'` filters on `ModifiedDate` and `CreatedDate`, and infers that the feed's times are Pacific local time. | not verified for `MeetingDate` | no feed query was sent |
-| The client builds the query with `URLSearchParams`, which writes a space as `+` (`$filter=SessionKey+eq+'2025R1'`). That is how the full pull has always sent its filter; live OLIS's reading of `+` as a space is not among the facts verified. | not verified | `olis-client/lib/feed.ts` |
+No query was sent to the feed for this ticket, so these are asked of live OLIS and not answered here. The by-hand contract test against live OLIS (`test/CLAUDE.md`, "Hermetic") is the check for all three.
 
-The by-hand contract test against live OLIS (`test/CLAUDE.md`, "Hermetic") is the check for all three.
+1. **The filter on each of the five sets.** Does live OLIS accept `$filter=SessionKey eq '2025R1' and MeasurePrefix eq 'SB' and MeasureNumber eq 69` with `$inlinecount=allpages` on Measures, MeasureHistoryActions, MeasureVotes, CommitteeVotes and CommitteeAgendaItems? `olis-odata.md` §1 ("Query options that work") verified `eq`, `and`, `ge`, `datetime'...'` literals and `$inlinecount` on other queries, which makes it likely (inferred), but none of those queries named these five sets with this filter.
+2. **`MeetingDate ge datetime'...'`.** Does live OLIS accept `MeetingDate ge datetime'2025-01-29T09:00:00'` on CommitteeAgendaItems, and does it compare the reading as Pacific local time? `olis-odata.md` §6 ("`$filter` on dates") verified `datetime'...'` filters on `ModifiedDate` and `CreatedDate`, and says the feed's times appear to be Pacific local time ("Timestamps": time zone inferred; its open question 5). `MeetingDate` was not among the properties filtered.
+3. **The way the client writes the query.** The client builds each request's query with `URLSearchParams`, which writes `$` as `%24`, a quote as `%27` and a space as `+`: `?%24filter=SessionKey+eq+%272025R1%27+and+MeasurePrefix+eq+%27SB%27+and+MeasureNumber+eq+69&%24inlinecount=allpages`. This is a local measurement (`new URL(...).searchParams.set("$filter", ...)` under Node 26, then `.search`; every request of `olis-client/lib/feed.ts` is built this way, the full pull's too). Does live OLIS read `%24filter` as `$filter`, and `+` as a space? The facts in `olis-odata.md` were gathered with `%20` and a literal `$` (§1, "nextLink form"), not with this form.
 
 ## Commands
 
