@@ -3,7 +3,7 @@
 import { createMcpHandler, McpServer, type McpHttpHandler } from "@modelcontextprotocol/server";
 import type { ServerConfig } from "#/packages/config/index.ts";
 import { openIndexReader, type IndexReader } from "#/packages/database/reader.ts";
-import { getMeasure, getMeasureInput, getMeasureOutput } from "./lib/get-measure.ts";
+import { getMeasure, getMeasureInput, getMeasureOutput, unknownMeasureMessage } from "./lib/get-measure.ts";
 
 export type SessionGatewayHandler = {
   fetch: McpHttpHandler["fetch"];
@@ -23,8 +23,21 @@ function buildServer(reader: IndexReader, config: ServerConfig): McpServer {
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     (input) => {
-      const output = getMeasure(reader, config.session, input);
-      return { content: [{ type: "text", text: JSON.stringify(output) }], structuredContent: output };
+      const result = getMeasure(reader, config.session, input);
+      switch (result.kind) {
+        case "found":
+          return {
+            content: [{ type: "text", text: JSON.stringify(result.measure) }],
+            structuredContent: result.measure,
+          };
+        case "unknown":
+          return {
+            isError: true,
+            content: [{ type: "text", text: unknownMeasureMessage(result.reference, result.session) }],
+          };
+        default:
+          return result satisfies never;
+      }
     },
   );
   return server;

@@ -59,4 +59,18 @@ describe.for(eras)("get_measure for a %s client", (era) => {
     expect(outcome.isError).toBe(false);
     expect(outcome.structured).toMatchObject({ id });
   });
+
+  it.for([
+    ["a Measure the Session does not have", "SB 9999"],
+    ["an id the Session does not have", "measure-2025r1-hb9999"],
+    ["an id from another Session", "measure-2025s1-sb69"],
+    ["words that are neither", "the paid leave bill"],
+  ])("reports %s as a tool error, not as a result", async ([, reference]) => {
+    const outcome = await callTool(connected, "get_measure", { measure: reference });
+
+    expect(outcome.isError).toBe(true);
+    expect(outcome.structured).toBeUndefined();
+    expect(outcome.text).toContain(reference);
+    expect(outcome.text).toContain("2025R1");
+  });
 });

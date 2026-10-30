@@ -20,20 +20,36 @@ export const getMeasureOutput = z.object({
 
 export type GetMeasureOutput = z.infer<typeof getMeasureOutput>;
 
+/** An unknown Measure is an expected outcome, so it is a value; the MCP edge decides it is a tool error. */
+export type GetMeasureResult =
+  { kind: "found"; measure: GetMeasureOutput } | { kind: "unknown"; reference: string; session: SessionKey };
+
 export function getMeasure(
   reader: IndexReader,
   session: SessionKey,
   input: z.infer<typeof getMeasureInput>,
-): GetMeasureOutput {
-  const reference = parseMeasureReference(input.measure, session);
-  const measure = reference === undefined ? undefined : reader.findMeasure(reference);
+): GetMeasureResult {
+  const key = parseMeasureReference(input.measure, session);
+  const measure = key === undefined ? undefined : reader.findMeasure(key);
+  if (measure === undefined) return { kind: "unknown", reference: input.measure, session };
   const asOf = reader.asOf(session);
-  if (measure === undefined || asOf === undefined) throw new Error("not found");
+  if (asOf === undefined) {
+    throw new Error(`The index holds Measures of ${session} but no completed full pull to date them by`);
+  }
   return {
-    id: measureIdOf(measure),
-    catchline: measure.catchline,
-    source_url: olisPageUrlOf(measure),
-    as_of: asOf,
-    notice: NON_OFFICIAL_NOTICE,
+    kind: "found",
+    measure: {
+      id: measureIdOf(measure),
+      catchline: measure.catchline,
+      source_url: olisPageUrlOf(measure),
+      as_of: asOf,
+      notice: NON_OFFICIAL_NOTICE,
+    },
   };
+}
+
+/** What an agent is told when no Measure matches, so it can correct the call. */
+export function unknownMeasureMessage(reference: string, session: SessionKey): string {
+  const example = `measure-${session.toLowerCase()}-sb69`;
+  return `No Measure "${reference}" in the ${session} Session. Give a Measure id such as ${example} or a citation such as SB 69.`;
 }
