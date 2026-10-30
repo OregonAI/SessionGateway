@@ -366,6 +366,13 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
         source_url: document.sourceUrl,
       })),
       documents_not_fetched: notFetched,
+      search_index: {
+        model: deps.embedder.modelId,
+        passages: passageCounts.passages,
+        keyword_only_passages: passageCounts.keywordOnly,
+        embedded: passageCounts.embedded,
+        reused: passageCounts.reused,
+      },
     });
   } finally {
     writer.close();
