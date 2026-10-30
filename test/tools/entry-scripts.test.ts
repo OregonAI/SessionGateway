@@ -2,6 +2,8 @@
 // containers run them, with their configuration in the environment. The fake OLIS is the only
 // thing in this process; the worker and the server are child processes.
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { connect, createServer } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { startFakeOlis, type FakeOlis } from "../support/fake-olis.ts";
@@ -149,6 +151,40 @@ describe("the entry scripts", () => {
     expect(String(outcome.structured?.["text"])).toContain("SECTION 2. Section 1 of this 2025 Act is repealed");
     expect(overview.structured).toMatchObject({ session: "2025R1" });
     expect(await exited).toBe(0);
+  }, 30_000);
+
+  // A broken install of the extractor: Node cannot resolve "unpdf/pdfjs", the PDF.js bundle unpdf loads for
+  // the first document. A resolve hook, passed in NODE_OPTIONS as a data: URL so that no file is needed,
+  // throws for that specifier alone.
+  const withoutPdfjsBundle = (() => {
+    const registrar =
+      'import { registerHooks } from "node:module"; registerHooks({ resolve(specifier, context, next) { if (specifier === "unpdf/pdfjs") throw new Error("the bundle is not installed"); return next(specifier, context); } });';
+    return `--import=data:text/javascript,${encodeURIComponent(registrar)}`;
+  })();
+
+  it("ingest.ts stops and says why when the PDF extractor cannot load, and does not report every document as not a PDF", async () => {
+    const olis = await startFakeOlis({ clock: createSimulatedClock("2025-01-29T17:00:00Z"), documents: true });
+    const database = createTempDatabase();
+    cleanups.push(async () => {
+      await olis.close();
+      database.remove();
+    });
+    const env = {
+      SESSION_KEY: "2025R1",
+      OLIS_BASE_URL: olis.baseUrl,
+      OLIS_DOCUMENT_ORIGIN: olis.origin,
+      DATABASE_PATH: database.path,
+      NODE_OPTIONS: withoutPdfjsBundle,
+    };
+
+    const finished = await run("src/bin/ingest.ts", env);
+
+    // A bug or a failed install is not an outcome to report per document: the pull fails, and the
+    // error says what broke and for which document.
+    expect(finished.code).not.toBe(0);
+    expect(finished.stderr).toContain("Serverless PDF.js bundle could not be resolved");
+    expect(finished.stderr).toContain("version-2025r1-");
+    expect(existsSync(join(dirname(database.path), "build-report.json"))).toBe(false);
   }, 30_000);
 
   describe("src/bin/server.ts logs", () => {

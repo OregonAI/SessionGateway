@@ -6,7 +6,8 @@ import { createHash } from "node:crypto";
 import type { IngestConfig } from "#/packages/config/index.ts";
 import { openIndexWriter } from "#/packages/database/writer.ts";
 import { buildReportPath, writeBuildReport, type BuildReport } from "./lib/build-report.ts";
-import { createOlisClient } from "#/packages/olis-client/index.ts";
+import type { DocumentLink } from "#/packages/domain/documents.ts";
+import { createOlisClient, type OlisClient } from "#/packages/olis-client/index.ts";
 import { extractPdfText, type ExtractedPdf } from "#/packages/pdf-text/index.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
@@ -34,15 +35,40 @@ export type FullPullResult = {
 /** A document that takes longer than this is an outage, not a slow answer (olis-odata.md gotcha 15). */
 const DEFAULT_DOCUMENT_TIMEOUT_MS = 60_000;
 
-/** A file OLIS served that is not a PDF the extractor can open is an expected outcome, not a crash. */
-async function readPdf(
-  bytes: Uint8Array,
-): Promise<{ kind: "read"; pdf: ExtractedPdf } | { kind: "unreadable"; reason: string }> {
+/** What a pull made of one linked document: its file and text, or why it is left out of the store. */
+type Fetched = { kind: "fetched"; bytes: Uint8Array; pdf: ExtractedPdf } | { kind: "left_out"; reason: string };
+
+/**
+ * Fetches one document and reads its text. A document OLIS will not give, or a file that is not a PDF,
+ * is an expected outcome and is left out with its reason. A failure of the extractor is not: it throws,
+ * naming the document, so a broken install stops the pull instead of filling the report.
+ */
+async function fetchAndRead(olis: OlisClient, link: DocumentLink, signal: AbortSignal): Promise<Fetched> {
+  const download = await olis.downloadDocument(link, signal);
+  switch (download.kind) {
+    case "fetched": {
+      const extraction = await readPdf(link, download.bytes);
+      switch (extraction.kind) {
+        case "read":
+          return { kind: "fetched", bytes: download.bytes, pdf: extraction.pdf };
+        case "unreadable":
+          return { kind: "left_out", reason: extraction.reason };
+        default:
+          return extraction satisfies never;
+      }
+    }
+    case "failed":
+      return { kind: "left_out", reason: download.reason };
+    default:
+      return download satisfies never;
+  }
+}
+
+async function readPdf(link: DocumentLink, bytes: Uint8Array): ReturnType<typeof extractPdfText> {
   try {
-    return { kind: "read", pdf: await extractPdfText(bytes) };
+    return await extractPdfText(bytes);
   } catch (error) {
-    const why = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-    return { kind: "unreadable", reason: `The file is not a PDF the extractor can read (${why})` };
+    throw new Error(`The PDF extractor failed on ${link.id} (${link.sourceUrl})`, { cause: error });
   }
 }
 
@@ -73,23 +99,18 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     const stored = writer.storedDocumentIds(config.session);
     for (const link of links) {
       if (stored.has(link.id)) continue;
-      const download = await olis.downloadDocument(link, deps.signal);
-      if (download.kind === "failed") {
-        notFetched.push({ id: link.id, source_url: link.sourceUrl, reason: download.reason });
-        continue;
-      }
-      const extracted = await readPdf(download.bytes);
-      if (extracted.kind === "unreadable") {
-        notFetched.push({ id: link.id, source_url: link.sourceUrl, reason: extracted.reason });
+      const fetched = await fetchAndRead(olis, link, deps.signal);
+      if (fetched.kind === "left_out") {
+        notFetched.push({ id: link.id, source_url: link.sourceUrl, reason: fetched.reason });
         continue;
       }
       writer.storeDocument(config.session, {
         ...link,
         retrievedAt: formatPacific(deps.clock.now()),
-        contentHash: createHash("sha256").update(download.bytes).digest("hex"),
-        pageCount: extracted.pdf.pageCount,
-        hasTextLayer: extracted.pdf.hasTextLayer,
-        text: extracted.pdf.text,
+        contentHash: createHash("sha256").update(fetched.bytes).digest("hex"),
+        pageCount: fetched.pdf.pageCount,
+        hasTextLayer: fetched.pdf.hasTextLayer,
+        text: fetched.pdf.text,
       });
       stored.add(link.id);
       documentsFetched += 1;

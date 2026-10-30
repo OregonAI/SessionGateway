@@ -1,4 +1,4 @@
-import { getDocumentProxy } from "unpdf";
+import { getDocumentProxy, getResolvedPDFJS } from "unpdf";
 import { z } from "zod";
 
 export type ExtractedPdf = {
@@ -8,6 +8,12 @@ export type ExtractedPdf = {
   /** False when the extractor found no character but whitespace on any page: a scan or a photograph. */
   hasTextLayer: boolean;
 };
+
+/**
+ * What reading a file came to. A file that is not a PDF is an expected outcome, so it is a value; a
+ * failure of the extractor itself is not, and throws.
+ */
+export type PdfExtraction = { kind: "read"; pdf: ExtractedPdf } | { kind: "unreadable"; reason: string };
 
 /** pdf.js writes its own warnings (a font with an odd hint program, say) to the console unless told not to. */
 const ERRORS_ONLY = 0;
@@ -40,7 +46,7 @@ async function readPage(page: Page, pageNumber: number): Promise<string> {
     .join("");
 }
 
-export async function extractPdfText(bytes: Uint8Array): Promise<ExtractedPdf> {
+async function readDocument(bytes: Uint8Array): Promise<ExtractedPdf> {
   // pdf.js takes over the array it is given, so it gets a copy and the caller's bytes stay whole.
   const document = await getDocumentProxy(new Uint8Array(bytes), { verbosity: ERRORS_ONLY });
   try {
@@ -56,5 +62,20 @@ export async function extractPdfText(bytes: Uint8Array): Promise<ExtractedPdf> {
     return { pageCount: pages.length, text: hasTextLayer ? text : "", hasTextLayer };
   } finally {
     await document.loadingTask.destroy();
+  }
+}
+
+export async function extractPdfText(bytes: Uint8Array): Promise<PdfExtraction> {
+  // Loaded first and outside the try: a bundle that cannot be resolved is a broken install, not a file.
+  const pdfjs = await getResolvedPDFJS();
+  try {
+    return { kind: "read", pdf: await readDocument(bytes) };
+  } catch (error) {
+    // pdf.js throws InvalidPDFException when the bytes are not a PDF it can open (empty, truncated,
+    // random). Anything else is a bug or a failure of the machine, and is not told apart per document.
+    if (error instanceof Error && error instanceof pdfjs.InvalidPDFException) {
+      return { kind: "unreadable", reason: `The file is not a PDF the extractor can read (${error.message})` };
+    }
+    throw error;
   }
 }
