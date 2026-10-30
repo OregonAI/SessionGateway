@@ -86,8 +86,10 @@ function parseArgs(args: string[]): Args {
     else if (arg === "--fixture" && i + 1 < args.length) parsed.fixture = args[++i] as string;
     else throw new BuildError(`unknown argument ${String(arg)}`);
   }
-  if (parsed.cache === "") throw new BuildError("usage: node scripts/fixture/build.ts --cache <dir> [--offline] [--plan] [--fixture <dir>]");
-  if (parsed.offline && parsed.plan) throw new BuildError("--offline and --plan do not combine: --plan already fetches nothing");
+  if (parsed.cache === "")
+    throw new BuildError("usage: node scripts/fixture/build.ts --cache <dir> [--offline] [--plan] [--fixture <dir>]");
+  if (parsed.offline && parsed.plan)
+    throw new BuildError("--offline and --plan do not combine: --plan already fetches nothing");
   return parsed;
 }
 
@@ -108,7 +110,9 @@ function readMeasures(path: string): Chosen[] {
     if (match === null) throw new BuildError(`measures.txt line ${index + 1}: expected "SB 69  # why", got "${line}"`);
     const [, prefix, number, comment] = match;
     if (comment === undefined || comment.trim() === "") {
-      throw new BuildError(`measures.txt line ${index + 1}: ${prefix} ${number} has no comment saying why it was chosen`);
+      throw new BuildError(
+        `measures.txt line ${index + 1}: ${prefix} ${number} has no comment saying why it was chosen`,
+      );
     }
     const entry = { prefix: (prefix as string).toUpperCase(), number: Number(number) };
     if (chosen.some((c) => c.prefix === entry.prefix && c.number === entry.number)) {
@@ -164,14 +168,22 @@ function rejectAbsentProperties(entitySet: string, path: string, rows: Row[]): v
     }
   });
   if (absent.size === 0) return;
-  const lines = [...absent].map(([property, { why, count, first }]) => `${count} row(s) lack ${property} (schema.ts reads it as: ${why}), the first at index ${first}`);
+  const lines = [...absent].map(
+    ([property, { why, count, first }]) =>
+      `${count} row(s) lack ${property} (schema.ts reads it as: ${why}), the first at index ${first}`,
+  );
   throw new BuildError(`${path}: ${lines.join("; ")}. Did OLIS rename a property? Fix schema.ts before building.`);
 }
 
 function select(feed: Map<string, Row[]>, chosen: Chosen[]): Selection {
   const chosenKeys = new Set(chosen.map((c) => `${c.prefix} ${c.number}`));
-  const isChosen = (row: Row): boolean => row.SessionKey === SESSION && chosenKeys.has(`${String(row.MeasurePrefix)} ${String(row.MeasureNumber)}`);
-  const hasMeasure = (row: Row): boolean => row.MeasurePrefix !== null && row.MeasurePrefix !== undefined && row.MeasureNumber !== null && row.MeasureNumber !== undefined;
+  const isChosen = (row: Row): boolean =>
+    row["SessionKey"] === SESSION && chosenKeys.has(`${String(row["MeasurePrefix"])} ${String(row["MeasureNumber"])}`);
+  const hasMeasure = (row: Row): boolean =>
+    row["MeasurePrefix"] !== null &&
+    row["MeasurePrefix"] !== undefined &&
+    row["MeasureNumber"] !== null &&
+    row["MeasureNumber"] !== undefined;
 
   const included = new Map<string, Set<number>>();
   const queue: Array<[string, number]> = [];
@@ -191,8 +203,11 @@ function select(feed: Map<string, Row[]>, chosen: Chosen[]): Selection {
     });
   }
   for (const c of chosen) {
-    const exists = (feed.get("Measures") as Row[]).some((r) => isChosen(r) && r.MeasurePrefix === c.prefix && r.MeasureNumber === c.number);
-    if (!exists) throw new BuildError(`measures.txt: ${c.prefix} ${c.number} has no Measures row in the ${SESSION} feed cache`);
+    const exists = (feed.get("Measures") as Row[]).some(
+      (r) => isChosen(r) && r["MeasurePrefix"] === c.prefix && r["MeasureNumber"] === c.number,
+    );
+    if (!exists)
+      throw new BuildError(`measures.txt: ${c.prefix} ${c.number} has no Measures row in the ${SESSION} feed cache`);
   }
 
   // Follow references. Lookup indexes are built on first use, for the target sets only.
@@ -237,7 +252,7 @@ function select(feed: Map<string, Row[]>, chosen: Chosen[]): Selection {
       if (targetSpec.aboutMeasure && hasMeasure(targetRow) && !isChosen(targetRow)) {
         throw new BuildError(
           `${entitySet} ${JSON.stringify(rowKeyOf(entitySet, row))} refers to ${ref.to} ${JSON.stringify(target)}, ` +
-            `which is about ${String(targetRow.MeasurePrefix)} ${String(targetRow.MeasureNumber)}, not in measures.txt. ` +
+            `which is about ${String(targetRow["MeasurePrefix"])} ${String(targetRow["MeasureNumber"])}, not in measures.txt. ` +
             "The closure does not pull in other Measures: add that Measure on purpose, or drop the chosen one.",
         );
       }
@@ -246,7 +261,11 @@ function select(feed: Map<string, Row[]>, chosen: Chosen[]): Selection {
   }
 
   const sorted = new Map<string, number[]>();
-  for (const [entitySet, members] of included) sorted.set(entitySet, [...members].sort((a, b) => a - b));
+  for (const [entitySet, members] of included)
+    sorted.set(
+      entitySet,
+      [...members].sort((a, b) => a - b),
+    );
   // Stable order for the unresolved list: entity set order of the schema, then cache row order.
   const setOrder = Object.keys(entitySets);
   unresolved.sort(
@@ -281,15 +300,20 @@ function collectDocuments(feed: Map<string, Row[]>, selection: Selection): Doc[]
       try {
         url = linkedDocumentUrl(entitySet, row);
       } catch {
-        throw new BuildError(`${entitySet} ${JSON.stringify(rowKeyOf(entitySet, row))}: document URL "${link.url(row)}" is not a valid URL`);
+        throw new BuildError(
+          `${entitySet} ${JSON.stringify(rowKeyOf(entitySet, row))}: document URL "${link.url(row)}" is not a valid URL`,
+        );
       }
       if (url === null) continue;
       if (!url.startsWith(OLIS_ORIGIN)) {
-        throw new BuildError(`${entitySet} ${JSON.stringify(rowKeyOf(entitySet, row))}: ${url} is not under ${OLIS_ORIGIN}; only OLIS URLs are fetched`);
+        throw new BuildError(
+          `${entitySet} ${JSON.stringify(rowKeyOf(entitySet, row))}: ${url} is not under ${OLIS_ORIGIN}; only OLIS URLs are fetched`,
+        );
       }
       const stem = `${link.kind}/${link.stem(row)}`;
       const clash = byStem.get(stem);
-      if (clash !== undefined && clash !== url) throw new BuildError(`documents ${clash} and ${url} would both be stored as ${stem}`);
+      if (clash !== undefined && clash !== url)
+        throw new BuildError(`documents ${clash} and ${url} would both be stored as ${stem}`);
       byStem.set(stem, url);
       const doc = byUrl.get(url) ?? { stem, url, meanBytes: link.meanBytes, linkedBy: [] };
       doc.linkedBy.push({ entity_set: entitySet, row_key: rowKeyOf(entitySet, row) });
@@ -382,7 +406,9 @@ async function fetchOnce(url: string, budget: number): Promise<Fetched> {
       const declared = response.headers.get("content-length");
       if (declared !== null && Number(declared) > budget) {
         await response.body?.cancel();
-        throw new StopError(`STOP: ${current} declares ${declared} bytes, but the fixture has only ${Math.max(budget, 0)} of its ${MAX_FIXTURE_BYTES} bytes left. Nothing more was fetched.`);
+        throw new StopError(
+          `STOP: ${current} declares ${declared} bytes, but the fixture has only ${Math.max(budget, 0)} of its ${MAX_FIXTURE_BYTES} bytes left. Nothing more was fetched.`,
+        );
       }
       const body = Buffer.from(await response.arrayBuffer());
       const contentType = response.headers.get("content-type") ?? "application/octet-stream";
@@ -435,7 +461,9 @@ async function fetchMissing(downloadsDir: string, missing: Doc[], stats: RunStat
       stats.failures.push(`${doc.url}: ${lastProblem}`);
       console.log(`[${done}/${missing.length}] FAILED ${doc.stem}: ${lastProblem}`);
       if (++streak >= MAX_FAILURES_IN_A_ROW) {
-        throw new BuildError(`${streak} documents in a row failed (last: ${lastProblem}): stopping the run. Failed so far:\n  ${stats.failures.join("\n  ")}`);
+        throw new BuildError(
+          `${streak} documents in a row failed (last: ${lastProblem}): stopping the run. Failed so far:\n  ${stats.failures.join("\n  ")}`,
+        );
       }
       continue;
     }
@@ -458,7 +486,9 @@ async function fetchMissing(downloadsDir: string, missing: Doc[], stats: RunStat
     renameSync(`${file}.meta.json.part`, `${file}.meta.json`);
     stats.fetched++;
     stats.bytes += fetched.body.length;
-    console.log(`[${done}/${missing.length}] fetched ${doc.stem} ${fetched.body.length} B in ${Date.now() - started} ms`);
+    console.log(
+      `[${done}/${missing.length}] fetched ${doc.stem} ${fetched.body.length} B in ${Date.now() - started} ms`,
+    );
     if (held + stats.bytes > MAX_FIXTURE_BYTES) {
       throw new StopError(
         `STOP: the fixture would hold ${held + stats.bytes} bytes (${held} already held, ${stats.bytes} fetched now), over the ${MAX_FIXTURE_BYTES} byte limit. Nothing more was fetched.`,
@@ -486,7 +516,7 @@ const extensionFor = (contentType: string, bytes: Buffer): string => {
     "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
     "text/plain": ".txt",
   };
-  if (known[type] !== undefined) return known[type] as string;
+  if (known[type] !== undefined) return known[type];
   return bytes.subarray(0, 5).toString("latin1") === "%PDF-" ? ".pdf" : ".bin";
 };
 
@@ -494,7 +524,10 @@ function readArtables(reportsDir: string): { entry: ManifestEntry; file: string 
   const file = join(reportsDir, ARTABLES.file);
   const headers = join(reportsDir, "artables2025R1.hdr");
   for (const needed of [file, headers]) {
-    if (!existsSync(needed)) throw new BuildError(`${needed} is missing: the Statutes Affected Table comes from the reports cache and is never fetched`);
+    if (!existsSync(needed))
+      throw new BuildError(
+        `${needed} is missing: the Statutes Affected Table comes from the reports cache and is never fetched`,
+      );
   }
   const header = (name: string): string | undefined => {
     const line = readFileSync(headers, "utf8")
@@ -503,7 +536,8 @@ function readArtables(reportsDir: string): { entry: ManifestEntry; file: string 
     return line?.slice(name.length + 1).trim();
   };
   const date = header("Date");
-  if (date === undefined || Number.isNaN(Date.parse(date))) throw new BuildError(`${headers} has no usable Date header`);
+  if (date === undefined || Number.isNaN(Date.parse(date)))
+    throw new BuildError(`${headers} has no usable Date header`);
   const bytes = readFileSync(file);
   const length = header("Content-Length");
   if (length !== undefined && Number(length) !== bytes.length) {
@@ -601,7 +635,9 @@ async function main(): Promise<void> {
       );
     }
     if (stats.failures.length > 0) {
-      throw new BuildError(`${stats.failures.length} document(s) could not be fetched; run again to fetch only those:\n  ${stats.failures.join("\n  ")}`);
+      throw new BuildError(
+        `${stats.failures.length} document(s) could not be fetched; run again to fetch only those:\n  ${stats.failures.join("\n  ")}`,
+      );
     }
     for (const doc of missing) {
       const hit = cachedDocument(downloadsDir, doc);
@@ -639,7 +675,10 @@ async function main(): Promise<void> {
   const unresolvedText = jsonFile({ unresolved: selection.unresolved });
   const documentBytes = entries.reduce((sum, entry) => sum + entry.bytes, 0);
   const total = documentBytes + feedBytes + Buffer.byteLength(manifestText) + Buffer.byteLength(unresolvedText);
-  if (total > MAX_FIXTURE_BYTES) throw new StopError(`STOP: the fixture would be ${total} bytes, over the ${MAX_FIXTURE_BYTES} byte limit. Nothing was written.`);
+  if (total > MAX_FIXTURE_BYTES)
+    throw new StopError(
+      `STOP: the fixture would be ${total} bytes, over the ${MAX_FIXTURE_BYTES} byte limit. Nothing was written.`,
+    );
 
   // Write: the generated parts are replaced wholesale; measures.txt and README.md stay.
   rmSync(join(args.fixture, "feed"), { recursive: true, force: true });
@@ -650,7 +689,8 @@ async function main(): Promise<void> {
     const destination = join(args.fixture, ...to.split("/"));
     mkdirSync(dirname(destination), { recursive: true });
     copyFileSync(from, destination);
-    if (statSync(destination).size !== statSync(from).size) throw new BuildError(`copy of ${from} to ${destination} is the wrong size`);
+    if (statSync(destination).size !== statSync(from).size)
+      throw new BuildError(`copy of ${from} to ${destination} is the wrong size`);
   }
   writeFileSync(join(args.fixture, "manifest.json"), manifestText);
   writeFileSync(join(args.fixture, "unresolved.json"), unresolvedText);

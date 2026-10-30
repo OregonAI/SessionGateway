@@ -88,11 +88,11 @@ let documentCount = 0;
 function checkManifest(): void {
   const manifest = readJson(join(fixtureDir, "manifest.json"), "manifest.json");
   if (manifest === undefined) return;
-  if (!isRecord(manifest) || !Array.isArray(manifest.documents)) {
+  if (!isRecord(manifest) || !Array.isArray(manifest["documents"])) {
     problem('manifest.json: expected {"documents": [...]}');
     return;
   }
-  manifest.documents.forEach((entry: unknown, index: number) => {
+  manifest["documents"].forEach((entry: unknown, index: number) => {
     const at = `manifest.json documents[${index}]`;
     if (!isRecord(entry)) {
       problem(`${at}: not an object`);
@@ -102,19 +102,20 @@ function checkManifest(): void {
     for (const field of requiredManifestStrings) {
       if (typeof entry[field] !== "string" || entry[field] === "") problem(`${at}: ${field} is missing`);
     }
-    const linkedBy = entry.linked_by;
+    const linkedBy = entry["linked_by"];
     const linkedByOk = Array.isArray(linkedBy) && linkedBy.every(isLinkedBy);
-    if (!linkedByOk) problem(`${at}: linked_by must list {entity_set, row_key} objects, empty for a document no row links`);
-    const path = entry.path;
+    if (!linkedByOk)
+      problem(`${at}: linked_by must list {entity_set, row_key} objects, empty for a document no row links`);
+    const path = entry["path"];
     if (typeof path !== "string" || path === "") return;
     const name = `manifest entry ${path}`;
-    if (typeof entry.source_url === "string") {
-      manifestUrls.add(entry.source_url);
-      if (linkedByOk) linkedEntries.push({ path, sourceUrl: entry.source_url, linkedBy: linkedBy as LinkedBy[] });
+    if (typeof entry["source_url"] === "string") {
+      manifestUrls.add(entry["source_url"]);
+      if (linkedByOk) linkedEntries.push({ path, sourceUrl: entry["source_url"], linkedBy });
     }
-    if (typeof entry.retrieved_at === "string") {
-      if (!offsetTimestamp.test(entry.retrieved_at) || Number.isNaN(Date.parse(entry.retrieved_at))) {
-        problem(`${name}: retrieved_at "${entry.retrieved_at}" is not ISO 8601 with an offset`);
+    if (typeof entry["retrieved_at"] === "string") {
+      if (!offsetTimestamp.test(entry["retrieved_at"]) || Number.isNaN(Date.parse(entry["retrieved_at"]))) {
+        problem(`${name}: retrieved_at "${entry["retrieved_at"]}" is not ISO 8601 with an offset`);
       }
     }
     const segments = path.split("/");
@@ -130,11 +131,13 @@ function checkManifest(): void {
     }
     const bytes = readFileSync(file);
     const actual = createHash("sha256").update(bytes).digest("hex");
-    if (typeof entry.sha256 === "string" && entry.sha256 !== actual) {
-      problem(`${name}: sha256 mismatch (manifest ${entry.sha256.slice(0, 12)}..., file ${actual.slice(0, 12)}...)`);
+    if (typeof entry["sha256"] === "string" && entry["sha256"] !== actual) {
+      problem(`${name}: sha256 mismatch (manifest ${entry["sha256"].slice(0, 12)}..., file ${actual.slice(0, 12)}...)`);
     }
-    if (entry.bytes !== undefined && entry.bytes !== bytes.length) {
-      problem(`${name}: bytes mismatch (manifest ${String(entry.bytes)}, file ${bytes.length})`);
+    if (entry["bytes"] !== undefined && entry["bytes"] !== bytes.length) {
+      problem(
+        `${name}: bytes mismatch (manifest ${typeof entry["bytes"] === "number" ? entry["bytes"] : JSON.stringify(entry["bytes"])}, file ${bytes.length})`,
+      );
     }
   });
 }
@@ -197,13 +200,15 @@ function loadUnresolved(): Map<string, { entry: Unresolved; used: boolean }> {
   if (!existsSync(path)) return entries;
   const content = readJson(path, "unresolved.json");
   if (content === undefined) return entries;
-  if (!isRecord(content) || !Array.isArray(content.unresolved)) {
+  if (!isRecord(content) || !Array.isArray(content["unresolved"])) {
     problem('unresolved.json: expected {"unresolved": [...]}');
     return entries;
   }
-  content.unresolved.forEach((entry: unknown, index: number) => {
+  content["unresolved"].forEach((entry: unknown, index: number) => {
     if (!isUnresolved(entry)) {
-      problem(`unresolved.json unresolved[${index}]: needs entity_set, row_key, property, refers_to, target_key and a reason`);
+      problem(
+        `unresolved.json unresolved[${index}]: needs entity_set, row_key, property, refers_to, target_key and a reason`,
+      );
       return;
     }
     if (entitySets[entry.entity_set] === undefined) {
@@ -240,11 +245,14 @@ function checkReferences(): { references: number; accepted: number } {
       }
       if (spec === undefined || lacking.some(({ property }) => spec.key.includes(property))) return;
       const values = valuesOf(row, spec.key);
-      if (values === null) problem(`feed/${entitySet}.json row ${index}: a key property (${spec.key.join(", ")}) is null`);
+      if (values === null)
+        problem(`feed/${entitySet}.json row ${index}: a key property (${spec.key.join(", ")}) is null`);
       else present.set(keyString(values), row);
     });
     for (const [property, { why, count, first }] of absent) {
-      problem(`feed/${entitySet}.json: ${count} row(s) lack the property ${property}, which the schema reads as: ${why} (the first is row ${first}). A property that is null is fine; one that is absent means the row is not the feed's own.`);
+      problem(
+        `feed/${entitySet}.json: ${count} row(s) lack the property ${property}, which the schema reads as: ${why} (the first is row ${first}). A property that is null is fine; one that is absent means the row is not the feed's own.`,
+      );
     }
     rowsByKey.set(entitySet, present);
   }
@@ -264,19 +272,27 @@ function checkReferences(): { references: number; accepted: number } {
         references++;
         const targetSpec = entitySets[ref.to];
         const present = rowsByKey.get(ref.to);
-        const found = targetSpec !== undefined && present !== undefined && present.has(keyString(targetSpec.key.map((p) => target[p])));
+        const found =
+          targetSpec !== undefined &&
+          present !== undefined &&
+          present.has(keyString(targetSpec.key.map((p) => target[p])));
         const rowKey = rowKeyOf(entitySet, row);
         const id = unresolvedId(entitySet, rowKey, ref.property, ref.to);
         const listed = unresolved.get(id);
         if (found) {
-          if (listed !== undefined) problem(`unresolved.json lists ${describeKey(entitySet, rowKey)}.${ref.property} -> ${ref.to}, but it resolves inside the fixture: remove the entry`);
+          if (listed !== undefined)
+            problem(
+              `unresolved.json lists ${describeKey(entitySet, rowKey)}.${ref.property} -> ${ref.to}, but it resolves inside the fixture: remove the entry`,
+            );
           continue;
         }
         if (listed !== undefined) {
           listed.used = true;
           accepted++;
           if (JSON.stringify(listed.entry.target_key) !== JSON.stringify(target)) {
-            problem(`unresolved.json entry for ${describeKey(entitySet, rowKey)}.${ref.property} names target_key ${JSON.stringify(listed.entry.target_key)}, but the row refers to ${JSON.stringify(target)}`);
+            problem(
+              `unresolved.json entry for ${describeKey(entitySet, rowKey)}.${ref.property} names target_key ${JSON.stringify(listed.entry.target_key)}, but the row refers to ${JSON.stringify(target)}`,
+            );
           }
           continue;
         }
@@ -291,10 +307,15 @@ function checkReferences(): { references: number; accepted: number } {
   for (const { target, key, sources } of dangling.values()) {
     const examples = sources.slice(0, 2).join("; ");
     const more = sources.length > 2 ? `; and ${sources.length - 2} more` : "";
-    problem(`${describeKey(target, key)} is not in the fixture, but ${sources.length} row(s) refer to it: ${examples}${more}`);
+    problem(
+      `${describeKey(target, key)} is not in the fixture, but ${sources.length} row(s) refer to it: ${examples}${more}`,
+    );
   }
   for (const { entry, used } of unresolved.values()) {
-    if (!used) problem(`unresolved.json lists ${describeKey(entry.entity_set, entry.row_key)}.${entry.property} -> ${entry.refers_to}, but no fixture row has that unresolved reference: remove the entry`);
+    if (!used)
+      problem(
+        `unresolved.json lists ${describeKey(entry.entity_set, entry.row_key)}.${entry.property} -> ${entry.refers_to}, but no fixture row has that unresolved reference: remove the entry`,
+      );
   }
   return { references, accepted };
 }
@@ -323,7 +344,8 @@ function checkLinkedDocuments(): void {
         continue;
       }
       if (url === null) continue;
-      if (!manifestUrls.has(url)) problem(`${describeKey(entitySet, rowKeyOf(entitySet, row))} links ${url}, which has no manifest entry`);
+      if (!manifestUrls.has(url))
+        problem(`${describeKey(entitySet, rowKeyOf(entitySet, row))} links ${url}, which has no manifest entry`);
       linking.set(url, [...(linking.get(url) ?? []), { entitySet, row }]);
     }
   }
@@ -334,21 +356,28 @@ function checkLinkedDocuments(): void {
     for (const { entity_set: entitySet, row_key: rowKey } of linkedBy) {
       const spec = entitySets[entitySet];
       if (spec === undefined || documentLinks[entitySet] === undefined) {
-        problem(`manifest entry ${path}: linked_by names "${entitySet}", which is not an entity set whose rows link documents`);
+        problem(
+          `manifest entry ${path}: linked_by names "${entitySet}", which is not an entity set whose rows link documents`,
+        );
         continue;
       }
       const id = keyString(spec.key.map((p) => rowKey[p]));
       named.add(`${entitySet}|${id}`);
       const row = rowsByKey.get(entitySet)?.get(id);
       if (row === undefined) {
-        const seen = absentRows.get(entitySet) ?? { count: 0, example: `${describeKey(entitySet, rowKey)} (for ${path})` };
+        const seen = absentRows.get(entitySet) ?? {
+          count: 0,
+          example: `${describeKey(entitySet, rowKey)} (for ${path})`,
+        };
         seen.count++;
         absentRows.set(entitySet, seen);
         continue;
       }
       const url = linkedUrl(entitySet, row);
       if (url !== sourceUrl) {
-        problem(`manifest entry ${path}: linked_by names ${describeKey(entitySet, rowKey)}, but that row links ${url === null ? "no document" : String(url)}, not ${sourceUrl}`);
+        problem(
+          `manifest entry ${path}: linked_by names ${describeKey(entitySet, rowKey)}, but that row links ${url === null ? "no document" : String(url)}, not ${sourceUrl}`,
+        );
       }
     }
     const rows = linking.get(sourceUrl) ?? [];
@@ -356,15 +385,21 @@ function checkLinkedDocuments(): void {
       const rowKey = rowKeyOf(entitySet, row);
       const spec = entitySets[entitySet] as { key: string[] };
       if (!named.has(`${entitySet}|${keyString(spec.key.map((p) => rowKey[p]))}`)) {
-        problem(`manifest entry ${path}: ${describeKey(entitySet, rowKey)} links this document, but linked_by does not name it`);
+        problem(
+          `manifest entry ${path}: ${describeKey(entitySet, rowKey)} links this document, but linked_by does not name it`,
+        );
       }
     }
     if (linkedBy.length === 0 && rows.length === 0 && path !== statutesAffectedTablePath) {
-      problem(`manifest entry ${path}: no fixture row links ${sourceUrl}, and only ${statutesAffectedTablePath} may be unlinked`);
+      problem(
+        `manifest entry ${path}: no fixture row links ${sourceUrl}, and only ${statutesAffectedTablePath} may be unlinked`,
+      );
     }
   }
   for (const [entitySet, { count, example }] of absentRows) {
-    problem(`manifest.json: linked_by names ${count} row(s) of ${entitySet} that are not in the fixture, e.g. ${example}`);
+    problem(
+      `manifest.json: linked_by names ${count} row(s) of ${entitySet} that are not in the fixture, e.g. ${example}`,
+    );
   }
 }
 

@@ -5,7 +5,7 @@ Rules for everything under `src/`. Spec #1's "Modules" section lists the modules
 ## Shape
 
 - Code lives in deep modules under `src/packages/<name>/`. A package's root files are its entry points, and everything in its subfolders is hidden: implementation in `lib/`, its tests in `tests/`. dependency-cruiser enforces this over `src` and `test` (`npm run lint:boundaries`), and `src/packages/README.md` has the rules. `/codebase-design` has the vocabulary. The lead set the rules up with `/setup-ts-deep-modules`, which is user-invoked, so agents don't run it.
-- Which spec modules become which packages is a design call. The ticket that first splits them records the split in an ADR.
+- Which spec modules become which packages is a design call. The ticket that first splits them records the split in an ADR; ADR-0009 records the first one, and a ticket that adds a package or an entry point extends it.
 - Only one package imports `node:sqlite`, and the other modules reach the database through its entry points. The API is Stability 1.2 (release candidate), so keeping it behind one module keeps a swap to better-sqlite3 local if an adopter refuses release-candidate APIs. The writer opens with `timeout: 5000` and WAL; the server opens `readOnly: true, timeout: 5000`. The default timeout of 0 fails at once on a busy database.
 - Only the OLIS client sees the feed's own shapes: misspelled property names (`CommitteCode`, `LegislatoreCode`), decimal keys as strings, timestamps with no offset (read as Pacific, exposed with an offset). It hands everything else domain types named as `GLOSSARY.md` names them.
 - One module mints and parses ids, in the forms spec #1 and ADR-0004 give (`measure-2025r1-sb69`, `ors-468.130`, `ors-chapter-657b`). Ids are branded types, so a `MeasureId` can't stand in for an `OrsSectionId`.
@@ -34,7 +34,7 @@ The clock, `fetch`, the OLIS base URL, file paths and randomness are parameters.
 
 Results are facts only: no predictions, advice or opinions on a Measure's merits.
 
-Documents are served exactly as published (ADR-0002); extraction may split text into parts but never rewrites it. Nothing calls OregonAI while serving (ADR-0004), and OregonAI data comes only from the build-time snapshot.
+Documents are served exactly as published (ADR-0002); extraction may split text into parts but never rewrites it. Nothing calls OregonAI while serving (ADR-0004), and OregonAI data comes only from the build-time snapshot. Rules check it (ADR-0012). In `.dependency-cruiser.cjs`: the server never reaches the `oregonai-snapshot` package, nothing under `src/` imports `scripts/`, nothing under `src/` imports a `devDependencies` package, and the server path imports no built-in that opens a connection (`https`, `net`, `tls`, ...). In `eslint.config.js`: only the entry scripts under `src/bin/` name the global `fetch` or `WebSocket`, and `node:http` is for `createServer` alone. Only the ingest worker reads the snapshot file; the server learns its version from the database.
 
 ## MCP
 
