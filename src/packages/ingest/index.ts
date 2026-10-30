@@ -1,5 +1,6 @@
-// The ingest worker. A full pull reads every Measure of the deployment's Session from OLIS and
-// stores it, with the time the pull started as the index's "as of" time.
+// The ingest worker. A full pull reads every Measure, Legislator and sponsor row of the deployment's
+// Session from OLIS and stores them, with the time the pull started as the index's "as of" time. It
+// resolves each sponsor's Legislator Code to a Legislator on the way and reports the codes it could not.
 import type { IngestConfig } from "#/packages/config/index.ts";
 import { openIndexWriter, type SponsorRecord } from "#/packages/database/writer.ts";
 import type { LegislatorAlias } from "#/packages/legislators/aliases.ts";

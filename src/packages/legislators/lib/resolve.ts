@@ -31,6 +31,12 @@ export type ResolverInput = {
   aliases: readonly LegislatorAlias[];
 };
 
+/** Orders text by its code units, so the report reads the same on every machine. */
+function compareText(a: string, b: string): number {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+}
+
 /**
  * A Legislator Code that has a Legislators row is that row's Legislator. One that has none is looked
  * up in the alias file. One in neither stays unresolved: the resolver never guesses a person from a
@@ -55,6 +61,9 @@ export function createLegislatorResolver(input: ResolverInput): LegislatorResolv
   }
 
   for (const row of input.rows) add(row.code, row.lastName, `${row.firstName} ${row.lastName}`);
+  // An alias can name only a code that has a Legislators row, never another alias, so the order of
+  // the alias file does not matter.
+  const rowCodes = new Map(byCode);
 
   for (const alias of input.aliases) {
     if (alias.session !== input.session || byCode.has(alias.code)) continue;
@@ -63,7 +72,7 @@ export function createLegislatorResolver(input: ResolverInput): LegislatorResolv
     } else {
       // The person the alias names may not be in the feed yet (the Legislators snapshot lags): then
       // the code stays unresolved until their row appears.
-      const person = byCode.get(alias.target.code);
+      const person = rowCodes.get(alias.target.code);
       if (person !== undefined) byCode.set(alias.code, person);
     }
   }
@@ -83,7 +92,7 @@ export function createLegislatorResolver(input: ResolverInput): LegislatorResolv
     },
     unresolved() {
       return [...unresolvedCounts.entries()]
-        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .sort(([a], [b]) => compareText(a, b))
         .map(([code, sources]) => ({
           code,
           references: [...sources.entries()].map(([source, count]) => ({ source, count })),
