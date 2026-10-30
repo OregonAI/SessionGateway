@@ -93,9 +93,9 @@ describe.for(eras)("get_measure for a %s client", (era) => {
     expect(unknown.text).toContain(String(found.structured?.["id"]));
   });
 
-  // The cache's Measures rows keep a CurrentCommitteeCode where CurrentLocation says the Measure is at the
-  // President's desk (8 of 3,466) and give none for one that is "In House Committee" (docs/research/
-  // olis-votes.md section 6), so the code says nothing about where the Measure is by itself.
+  // The cache's Measures rows keep a CurrentCommitteeCode on some Measures whose CurrentLocation says they are
+  // at the President's desk and give none for one that is "In House Committee" (docs/research/olis-votes.md
+  // section 6), so the code says nothing about where the Measure is by itself.
   it("tells an agent that the committee code is the feed's and can be set where the Measure is no longer in committee", async () => {
     const { tools } = await connected.client.listTools();
 

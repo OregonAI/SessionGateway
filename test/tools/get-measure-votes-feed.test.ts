@@ -274,11 +274,11 @@ describe("committee votes that share a meeting", () => {
     ]);
   }
 
-  // The cache has 209 agenda items (of its 1,947 with votes) that the feed gives two reports, and in each
-  // the two reports hold one and the same roll, created together: HB 2232's JCT item 204180 (reports
-  // 37557 and 37689) is twelve Aye rows twice, all created 2025-02-10T15:02:49. The committees are
-  // joint ones (191 JWM, 14 JCT, 1 JLAUD, 1 JLCIMT and two conference committees); the fixture holds none, so
-  // this case gives SB 69's SLB roll a second report of the same shape.
+  // Where the feed gives an agenda item two reports, the two hold one and the same roll, created together, and
+  // the committee is a joint or conference one (docs/research/olis-votes.md section 3, for every such item of
+  // the cache). HB 2232's JCT item 204180 (reports 37557 and 37689) is twelve Aye rows twice, all created
+  // 2025-02-10T15:02:49. The fixture holds no such item, so this case gives SB 69's SLB roll a second report
+  // of the same shape.
   it("lists a roll the feed reports under two reports once", async () => {
     const outcome = await getMeasure(
       { clockAt: afterTheSession, olis: { strayRows: { CommitteeVotes: slbRollAgain } } },
@@ -303,7 +303,7 @@ describe("committee votes that share a meeting", () => {
     ]);
   });
 
-  // No such case is in the cache (none of the 209 has two different rolls). The case is made up to show
+  // No such case is in the cache (section 3 of the same file: no item has two different rolls). The case is made up to show
   // that two rolls that differ are never merged into one and none of a report's rows is dropped.
   it("keeps two different rolls of one committee at one meeting as two votes, so no member votes twice in one", async () => {
     const outcome = await getMeasure(
