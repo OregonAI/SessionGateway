@@ -113,23 +113,31 @@ export function agenciesNamedIn(
   return [...named].sort(compare);
 }
 
-export type Counts = { agencies: number; orsSections: number; chaptersWithAgencies: number };
+const countsSchema = z.strictObject({
+  agencies: z.number().int(),
+  orsSections: z.number().int(),
+  chaptersWithAgencies: z.number().int(),
+});
+
+export type Counts = z.infer<typeof countsSchema>;
 
 /** What was kept of the snapshot and why: written beside the trimmed snapshot (`trim.json`). */
-export type TrimRecord = {
+export const trimRecordSchema = z.strictObject({
   /** The fixture the snapshot was trimmed to, as the command line gave it. */
-  derivedFrom: string;
+  derivedFrom: z.string(),
   /** Every ORS chapter the fixture cites. */
-  orsChaptersCited: string[];
+  orsChaptersCited: z.array(z.string()),
   /** Cited chapters of which the snapshot holds no section, so there is nothing to keep. */
-  orsChaptersNotInSnapshot: string[];
+  orsChaptersNotInSnapshot: z.array(z.string()),
   /** The Agencies whose name or alias the fixture's texts contain. */
-  agenciesNamedInText: string[];
-  kept: Counts;
-  of: Counts;
+  agenciesNamedInText: z.array(z.string()),
+  kept: countsSchema,
+  of: countsSchema,
   /** The SHA-256 of the trimmed snapshot file, so a hand edit shows. */
-  snapshotSha256: string;
-};
+  snapshotSha256: z.string().regex(/^[0-9a-f]{64}$/),
+});
+
+export type TrimRecord = z.infer<typeof trimRecordSchema>;
 
 function countsOf(file: SnapshotFile): Counts {
   return {

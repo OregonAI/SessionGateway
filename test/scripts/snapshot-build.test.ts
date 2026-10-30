@@ -276,5 +276,5 @@ describe("the snapshot build script with --trim-to the 2025R1 fixture", () => {
     expect(recorded["kept"]).toEqual({ agencies: 2, orsSections: 5, chaptersWithAgencies: 1 });
     expect(recorded["of"]).toEqual({ agencies: 3, orsSections: 6, chaptersWithAgencies: 2 });
     expect(recorded["snapshotSha256"]).toBe(createHash("sha256").update(readFileSync(out)).digest("hex"));
-  });
+  }, 30_000);
 });

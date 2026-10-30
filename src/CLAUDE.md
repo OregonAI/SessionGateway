@@ -34,7 +34,7 @@ The clock, `fetch`, the OLIS base URL, file paths and randomness are parameters.
 
 Results are facts only: no predictions, advice or opinions on a Measure's merits.
 
-Documents are served exactly as published (ADR-0002); extraction may split text into parts but never rewrites it. Nothing calls OregonAI while serving (ADR-0004), and OregonAI data comes only from the build-time snapshot.
+Documents are served exactly as published (ADR-0002); extraction may split text into parts but never rewrites it. Nothing calls OregonAI while serving (ADR-0004), and OregonAI data comes only from the build-time snapshot. Three rules in `.dependency-cruiser.cjs` check it (ADR-0012): the server never reaches the `oregonai-snapshot` package, nothing under `src/` imports `scripts/`, and nothing under `src/` imports a `devDependencies` package. Only the ingest worker reads the snapshot file; the server learns its version from the database.
 
 ## MCP
 

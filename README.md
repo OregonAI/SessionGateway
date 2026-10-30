@@ -31,7 +31,7 @@ Two entry scripts, run by Node 26 straight from the `.ts` source, share one SQLi
 their configuration from the environment and fail at start-up, naming the variable, if it is wrong.
 
 ```
-SESSION_KEY=2025R1 DATABASE_PATH=data/index.db node src/bin/ingest.ts   # one full pull, then exit
+SESSION_KEY=2025R1 DATABASE_PATH=data/index.db SNAPSHOT_PATH=data/snapshot.json node src/bin/ingest.ts   # one full pull, then exit
 SESSION_KEY=2025R1 DATABASE_PATH=data/index.db node src/bin/server.ts   # serves it at http://127.0.0.1:3000/mcp
 ```
 
@@ -39,6 +39,7 @@ SESSION_KEY=2025R1 DATABASE_PATH=data/index.db node src/bin/server.ts   # serves
 |---|---|---|---|
 | `SESSION_KEY` | both | none | The one Session this deployment serves (ADR-0003), such as `2025R1`. |
 | `DATABASE_PATH` | both | none | The SQLite file. The worker writes it and the server reads it. |
+| `SNAPSHOT_PATH` | worker | none | The OregonAI snapshot file the build uses (see "Building the OregonAI snapshot"). The worker reads it before it reads OLIS and stores its version with the full pull; the server never reads it. |
 | `OLIS_BASE_URL` | worker | none | The OLIS OData service root, such as `https://api.oregonlegislature.gov/odata/odataservice.svc` (a trailing slash is added if it is missing). |
 | `OLIS_DOCUMENT_ORIGIN` | worker | `https://olis.oregonlegislature.gov` | Where the worker fetches the documents the feed links. They are not on the feed's host. Only a test sets it. |
 | `MCP_PATH` | server | `/mcp` | Where the endpoint is mounted. |
@@ -50,6 +51,21 @@ SESSION_KEY=2025R1 DATABASE_PATH=data/index.db node src/bin/server.ts   # serves
 A full pull also fetches every document the feed links that the database does not hold yet, once each,
 and writes `build-report.json` beside the database: the documents that are scans with no text layer, and
 the ones it could not get or read (ADR-0011).
+
+## Building the OregonAI snapshot
+
+The agency registry, the list of ORS section ids and the table of which Agencies' rules implement each
+ORS chapter come from OregonAI's published data, copied once when a database is built and never looked
+up while serving (ADR-0004, ADR-0012). The build step reads a local checkout of OregonAI's
+`executive-regulatory-frameworks` repository, whose path is an argument, and writes the snapshot as one
+JSON file named by the checkout's commit:
+
+```
+node scripts/snapshot/build.ts --erf <checkout of executive-regulatory-frameworks> --out data/snapshot.json
+```
+
+The checkout is only read, and the build stops if a file it reads has uncommitted changes. Needs no network.
+`session_overview` reports the commit and its date.
 
 A full pull against the live feed is allowed only between 5 pm and 6 am Pacific (ADR-0005). Nothing
 schedules it yet, so run it by hand inside that window.

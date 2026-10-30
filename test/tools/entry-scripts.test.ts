@@ -10,7 +10,7 @@ import { startFakeOlis, type FakeOlis } from "../support/fake-olis.ts";
 import { createSimulatedClock } from "../support/clock.ts";
 import { callTool, connectClientToUrl } from "../support/mcp-clients.ts";
 import { createTempDatabase, type TempDatabase } from "../support/temp-database.ts";
-import { createMadeUpSnapshot } from "../support/made-up-snapshot.ts";
+import { snapshotFixturePath } from "../support/oregonai-snapshot.ts";
 
 type Finished = { code: number | null; stdout: string; stderr: string };
 
@@ -92,12 +92,8 @@ async function fakeOlisAndDatabase(
  * rows the feed holds and whether or not the fake serves the files (test/CLAUDE.md, "Hermetic").
  */
 function workerEnvironment(olis: FakeOlis, databasePath: string): Record<string, string> {
-  const snapshot = createMadeUpSnapshot();
-  cleanups.push(() => {
-    snapshot.remove();
-  });
   return {
-    SNAPSHOT_PATH: snapshot.path,
+    SNAPSHOT_PATH: snapshotFixturePath,
     SESSION_KEY: "2025R1",
     OLIS_BASE_URL: olis.baseUrl,
     OLIS_DOCUMENT_ORIGIN: olis.origin,

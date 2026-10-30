@@ -18,7 +18,7 @@
     "typecheck": "tsc --noEmit",
     "guard:tsc": "node scripts/guard.ts tsc-version",
     "lint:boundaries": "node scripts/guard.ts boundaries",
-    "fixture:verify": "node scripts/fixture/verify.ts",
+    "fixture:verify": "node scripts/fixture/verify.ts && node scripts/snapshot/verify.ts",
     "test": "vitest run",
     "license:check": "node scripts/license-check.ts"
   },

@@ -7,3 +7,7 @@ A trimmed slice of the 2025R1 Session, committed so CI can replay it (ticket #3)
 - **Manifested.** The manifest gives each document's `source_url`, retrieval time and sha256. The fixture verify script recomputes every hash and resolves every referenced key inside the fixture. It is a dependency-free `.ts` file run by Node 26, and `npm run check` runs it (`fixture:verify`).
 - **Small.** Add a document only when a test needs it. GitHub warns at 50 MiB per file and wants the repo well under 1 GB.
 - **Read through the fake OLIS.** Seam-1 tests reach the fixture only through the fake OLIS, so they see exactly what the ingest worker sees.
+
+## The OregonAI snapshot fixture
+
+`oregonai-snapshot/` is the OregonAI snapshot (ADR-0012) cut down to what the 2025R1 fixture touches, made by `scripts/snapshot/build.ts` from a local checkout of OregonAI's repository, and never edited by hand. Its README says what it kept, how the list was taken and how to rebuild it. `scripts/snapshot/verify.ts` checks it in `npm run check` without the checkout (`fixture:verify`), and fails when a Measure added above cites a chapter it lacks: rebuild it then.
