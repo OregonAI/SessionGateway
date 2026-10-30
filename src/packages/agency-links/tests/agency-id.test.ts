@@ -22,13 +22,9 @@ describe("Agency ids", () => {
     if (session === undefined) throw new Error("2025R1 is a Session key");
     const measure = measureIdOf({ session, prefix: "SB", number: 69 });
     // @ts-expect-error a MeasureId is not an AgencyId
-    const link: AgencyLink = { agency: measure, evidence: { kind: "testimony", organization: "ODHS" } };
+    const fromMeasure: AgencyLink["agency"] = measure;
     // @ts-expect-error a plain string is not an AgencyId
-    const row: RegistryAgency = {
-      slug: "department-of-human-services",
-      name: "Department of Human Services",
-      aliases: [],
-    };
-    expect([link.agency, row.slug]).toEqual(["measure-2025r1-sb69", "department-of-human-services"]);
+    const fromString: RegistryAgency["slug"] = "department-of-human-services";
+    expect([fromMeasure, fromString]).toEqual(["measure-2025r1-sb69", "department-of-human-services"]);
   });
 });
