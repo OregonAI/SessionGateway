@@ -10,7 +10,12 @@ import { orsSectionList } from "./section-ids.ts";
 
 type Expected = [kind: string, targetId: string, measureSection: string | null];
 
-type RelatingClauseEdit = { deleted: string | null; inserted: string; insertedSections: string[] };
+type RelatingClauseEdit = {
+  deleted: string | null;
+  deletedLines: string[];
+  inserted: string | null;
+  insertedSections: string[];
+};
 
 type Row = {
   name: string;
@@ -102,6 +107,7 @@ proper for the administration of those sections.
     relatingClauseEdits: [
       {
         deleted: null,
+        deletedLines: [],
         inserted:
           "; creating new provisions; amending ORS 653.616, 653.626, 657B.060, 657B.070, 657B.400, 659A.156, 659A.159 and 659A.165; and prescribing an effective date",
         insertedSections: [
@@ -118,7 +124,7 @@ proper for the administration of those sections.
     ],
   },
   {
-    name: "HB 3795-1: an edit that inserts '; amending ORS 409.711' after a word of the title, and the section that amends it",
+    name: "HB 3795-1: an edit that inserts '; amending ORS 409.711' after a word of the relating clause, and the section that amends it",
     source: "proposed-amendments/27966.pdf (HB 3795-1), lines 1-169. Statutes Affected Table: 409.711 A §1 HB 3795 B",
     text: `HB 3795-1
 (LC 1688)
@@ -292,7 +298,9 @@ Page 2`,
       ["amends", "ors-409.711", "1"],
       ["cites", "ors-192.245", "1"],
     ],
-    relatingClauseEdits: [{ deleted: null, inserted: "; amending ORS 409.711", insertedSections: ["ors-409.711"] }],
+    relatingClauseEdits: [
+      { deleted: null, deletedLines: [], inserted: "; amending ORS 409.711", insertedSections: ["ors-409.711"] },
+    ],
   },
   {
     name: "HB 3795-A3: an edit that inserts a bare section number, 'and 418.808', and a section that amends it and cites a range",
@@ -387,7 +395,9 @@ without an investigation being commenced.”.
       ["cites", "ors-418.811", "2"],
       ["cites", "ors-418.816", "2"],
     ],
-    relatingClauseEdits: [{ deleted: null, inserted: "and 418.808", insertedSections: ["ors-418.808"] }],
+    relatingClauseEdits: [
+      { deleted: null, deletedLines: [], inserted: "and 418.808", insertedSections: ["ors-418.808"] },
+    ],
   },
   {
     name: "SB 983-1: a relating clause edit that names no statute, and an inserted section that cites none",
@@ -423,7 +433,9 @@ declared to exist, and this 2025 Act takes effect on its passage.”.
 
 7`,
     links: [],
-    relatingClauseEdits: [{ deleted: null, inserted: "; and declaring an emergency", insertedSections: [] }],
+    relatingClauseEdits: [
+      { deleted: null, deletedLines: [], inserted: "; and declaring an emergency", insertedSections: [] },
+    ],
   },
   {
     name: "SB 921-2: no relating clause edit, and a range in an inserted section",
@@ -677,6 +689,7 @@ In line 7, delete “charter school, as defined in ORS 338.005, and”.`,
     relatingClauseEdits: [
       {
         deleted: "amending ORS 468.130",
+        deletedLines: [],
         inserted: "amending ORS 468.130 and 468.140",
         insertedSections: ["ors-468.130", "ors-468.140"],
       },

@@ -104,7 +104,14 @@ const pieces = [
   "On page 1 of the printed A-engrossed bill, line 2, ",
   "delete ",
   " and insert ",
+  "delete lines 3 and 4 and insert ",
+  "delete the rest of the line and lines 3 through 6 and insert ",
+  "Delete lines 5 through 25",
+  "In line 3, ",
+  "line 2, ",
+  "insert a comma",
   "before the period insert ",
+  "after the semicolon insert ",
   "after “services” insert ",
   "amending ORS 409.711",
   "Page 13",
@@ -146,5 +153,9 @@ describe("the parser", () => {
       }
     }
     if (documentKind === "version") expect(parsed.relatingClauseEdits).toEqual([]);
+    for (const edit of parsed.relatingClauseEdits) {
+      for (const id of edit.insertedSections) expect(parseOrsSectionId(id)).toBe(id);
+      if (edit.inserted === null) expect(edit.insertedSections).toEqual([]);
+    }
   });
 });
