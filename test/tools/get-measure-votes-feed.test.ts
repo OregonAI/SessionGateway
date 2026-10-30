@@ -491,6 +491,12 @@ describe("a Legislator Code that no row and no alias names", () => {
     expect(inCommittee).toEqual({ legislator_code: "Sen Woods", legislator: null, vote: "Excused" });
   });
 
+  // This case reads the worker's build report (the `unresolvedLegislatorCodes` of its result), not a tool, and so
+  // departs from "assert only what get_measure returns". Spec #1 story 54 wants the build to list the codes it
+  // could not resolve, no tool shows that list, and the report is the ingest entry point's own result, not a
+  // table, SQL or an internal type (test/CLAUDE.md, "Seam-1 tests read state back through the tools"). The
+  // sponsor cases of #8 read it the same way (get-measure-sponsors-feed.test.ts), and `pullAgain()` is the
+  // harness's way to get it (test/CLAUDE.md, "One system"). What an agent sees of the same codes is the case above.
   it("is listed in the build report, with how many floor and committee vote rows name it", async () => {
     const system = await startSystem({
       clockAt: afterTheSession,
