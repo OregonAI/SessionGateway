@@ -31,10 +31,17 @@ function modelIdOf(lock: ModelLock): string {
 
 /** The ONNX session of the q8 model: CLS pooling (the vector of the first token), then L2 normalization. */
 async function startOnnxRunner(modelPath: string, lock: ModelLock, intraOpThreads: number): Promise<ModelRunner> {
+  // onnxruntime's native logger writes its warnings to stderr, and the server's stderr is kept for a failed
+  // start-up (root CLAUDE.md, "Toolchain"). On a GitHub Actions runner, a Hyper-V VM, the device discovery
+  // that runs when onnxruntime starts warns about a VMBus path that is not a PCI bus id, which failed the
+  // entry-script tests in CI on PR #42. The level is read once, when the first session starts it, so it is
+  // set before then; errors still print.
+  ort.env.logLevel = "error";
   const session = await ort.InferenceSession.create(join(modelPath, MODEL_FILE), {
     executionProviders: ["cpu"],
     intraOpNumThreads: intraOpThreads,
     interOpNumThreads: 1,
+    logSeverityLevel: 3,
   });
   return {
     modelId: modelIdOf(lock),
