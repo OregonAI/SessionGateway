@@ -1,12 +1,12 @@
 // The live lookup of get_measure (ticket #21; spec #1, module 11; ADR-0005): when a call arrives, one
 // Measure's location, history, schedule and votes are read from OLIS and dated by the injected clock.
 // A lookup that fails is a value, not an error: the cache still answers (src/CLAUDE.md, "Errors").
-import type { SessionKey } from "#/packages/domain/index.ts";
 import {
   compareHistoryActions,
   type HistoryAction,
   type MeasureKey,
   type MeasureLocation,
+  type SessionKey,
 } from "#/packages/domain/index.ts";
 import type { Legislator } from "#/packages/domain/legislators.ts";
 import { compareAgendaItems, type AgendaItem } from "#/packages/domain/schedule.ts";
@@ -97,7 +97,12 @@ export function createLiveStatusReader(deps: LiveStatusDeps): LiveStatusReader {
       if (read.measure === undefined) {
         return failed(new Error(`OLIS lists no Measure ${key.prefix} ${key.number} in ${key.session}`));
       }
-      const legislatorOf = (code: string): Legislator | null => deps.legislatorOfCode(key.session, code) ?? null;
+      // A roll names each Legislator Code once, and a Measure's rolls repeat the same few dozen, so each is looked up once.
+      const legislators = new Map<string, Legislator | null>();
+      const legislatorOf = (code: string): Legislator | null => {
+        if (!legislators.has(code)) legislators.set(code, deps.legislatorOfCode(key.session, code) ?? null);
+        return legislators.get(code) ?? null;
+      };
       return {
         kind: "answered",
         asOf: formatPacific(readAt),
