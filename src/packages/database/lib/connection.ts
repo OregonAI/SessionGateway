@@ -44,6 +44,7 @@ const schema = `
     page_count INTEGER NOT NULL,
     has_text_layer INTEGER NOT NULL,
     posted_at TEXT,
+    analysis_version_label TEXT,
     text TEXT NOT NULL
   ) STRICT;
   CREATE INDEX IF NOT EXISTS document_node ON document (node_id);
@@ -55,6 +56,7 @@ const schema = `
     provenance TEXT NOT NULL,
     PRIMARY KEY (document_id, relation, to_id)
   ) STRICT;
+  CREATE INDEX IF NOT EXISTS document_relation_to ON document_relation (to_id, relation);
 `;
 
 /** The default timeout of 0 fails at once on a busy database, so both sides wait up to 5 seconds. */

@@ -1,8 +1,10 @@
 // The MCP server's side of the database: read-only.
 import { z } from "zod";
+import type { StoredAnalysis } from "#/packages/domain/analysis.ts";
 import {
   documentKinds,
   type AmendmentId,
+  type CommitteeId,
   type DocumentId,
   type DocumentKind,
   type DocumentView,
@@ -11,7 +13,7 @@ import {
   type Relation,
   type RelatedNode,
 } from "#/packages/domain/documents.ts";
-import type { Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
+import { measureIdOf, type Measure, type MeasureKey, type SessionKey } from "#/packages/domain/index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openReadConnection } from "./lib/connection.ts";
 
@@ -24,6 +26,11 @@ export type IndexReader = {
    * nodes all its postings point at.
    */
   findDocument(id: DocumentId | AmendmentId): DocumentView | undefined;
+  /**
+   * The analysis documents the store holds for a Measure: the ones whose files the worker fetched, so
+   * that each is a document `findDocument` resolves.
+   */
+  analysisDocuments(key: MeasureKey): StoredAnalysis[];
   /** What the index holds of the Session. */
   counts(session: SessionKey): IndexCounts;
   close(): void;
@@ -48,6 +55,12 @@ const documentRow = z.object({
   has_text_layer: z.number(),
   posted_at: z.string().nullable(),
   text: z.string(),
+});
+const analysisRow = z.object({
+  id: z.string(),
+  label: z.string(),
+  source_url: z.string(),
+  analysis_version_label: z.string(),
 });
 const countRow = z.object({ n: z.number() });
 const kindCountRow = z.object({ kind: z.string(), n: z.number() });
@@ -74,6 +87,12 @@ export function openIndexReader(path: string): IndexReader {
   const selectRelations = database.prepare(
     "SELECT relation, to_id, meaning FROM document_relation WHERE document_id = ? ORDER BY rowid",
   );
+  const selectAnalyses = database.prepare(
+    `SELECT d.id, d.label, d.source_url, d.analysis_version_label
+       FROM document d JOIN document_relation r ON r.document_id = d.id
+      WHERE d.kind = 'analysis' AND r.relation = 'measure' AND r.to_id = ?
+      ORDER BY d.id`,
+  );
   function documentOf(row: unknown): DocumentView["document"] {
     const stored = documentRow.parse(row);
     return {
@@ -97,6 +116,21 @@ export function openIndexReader(path: string): IndexReader {
     });
   }
   return {
+    analysisDocuments(key) {
+      return selectAnalyses.all(measureIdOf(key)).map((row) => {
+        const stored = analysisRow.parse(row);
+        const id = stored.id as DocumentId;
+        const related = relationsOf(id);
+        return {
+          id,
+          type: stored.label,
+          versionLabel: stored.analysis_version_label,
+          sourceUrl: stored.source_url,
+          committeeId: (related.find((node) => node.relation === "committee")?.to as CommitteeId | undefined) ?? null,
+          versionIds: related.filter((node) => node.relation === "version").map((node) => node.to as DocumentId),
+        };
+      });
+    },
     counts(session) {
       const documentsByKind = Object.fromEntries(documentKinds.map((kind) => [kind, 0])) as Record<
         DocumentKind,

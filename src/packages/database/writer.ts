@@ -15,7 +15,8 @@ export type IndexWriter = {
   storedDocumentIds(session: SessionKey): Set<DocumentId>;
   /**
    * Brings what the feed says about documents already stored up to date, in one transaction: each one's
-   * label, the node it belongs to, when it was posted and the nodes it points at. A fetched file is
+   * label, the node it belongs to, when it was posted, an analysis document's Version label and the
+   * nodes it points at. A fetched file is
    * unchanging (ADR-0005), so its text, hash and retrieval time are left alone. A link whose document is
    * not stored is ignored.
    */
@@ -102,7 +103,7 @@ export function openIndexWriter(path: string): IndexWriter {
     },
     refreshDocuments(session, links) {
       const updateDocument = database.prepare(
-        "UPDATE document SET node_id = ?, label = ?, posted_at = ? WHERE id = ? AND session_key = ?",
+        "UPDATE document SET node_id = ?, label = ?, posted_at = ?, analysis_version_label = ? WHERE id = ? AND session_key = ?",
       );
       const deleteRelations = database.prepare("DELETE FROM document_relation WHERE document_id = ?");
       const insertRelation = database.prepare(
@@ -111,7 +112,14 @@ export function openIndexWriter(path: string): IndexWriter {
       database.exec("BEGIN IMMEDIATE");
       try {
         for (const link of links) {
-          const updated = updateDocument.run(link.nodeId, link.label, link.postedAt, link.id, session);
+          const updated = updateDocument.run(
+            link.nodeId,
+            link.label,
+            link.postedAt,
+            link.versionLabel ?? null,
+            link.id,
+            session,
+          );
           if (updated.changes === 0) continue;
           deleteRelations.run(link.id);
           for (const relation of link.relations) {
@@ -127,8 +135,8 @@ export function openIndexWriter(path: string): IndexWriter {
     storeDocument(session, document) {
       const insertDocument = database.prepare(
         `INSERT INTO document (id, node_id, session_key, kind, label, source_url, retrieved_at, content_hash,
-                               page_count, has_text_layer, posted_at, text)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                               page_count, has_text_layer, posted_at, analysis_version_label, text)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       const insertRelation = database.prepare(
         `INSERT INTO document_relation (document_id, relation, to_id, meaning, provenance) VALUES (?, ?, ?, ?, ?)`,
@@ -147,6 +155,7 @@ export function openIndexWriter(path: string): IndexWriter {
           document.pageCount,
           document.hasTextLayer ? 1 : 0,
           document.postedAt,
+          document.versionLabel ?? null,
           document.text,
         );
         for (const relation of document.relations) {

@@ -165,6 +165,8 @@ export type DocumentLink = {
   sourceUrl: string;
   /** When it was posted to a meeting, for a posting. */
   postedAt: Timestamp | null;
+  /** For an analysis document: the feed's own `Version` label, "" when the feed gives none. */
+  versionLabel?: string;
   relations: DocumentRelation[];
 };
 

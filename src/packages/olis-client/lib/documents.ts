@@ -1,6 +1,7 @@
 // The documents the feed links (spec #1, "OLIS client"): which rows link one, what each document is
 // called in the graph, and how it is fetched. The rows are the feed's own shapes and stay in here.
 import { z } from "zod";
+import { placeAnalysis } from "#/packages/domain/analysis.ts";
 import { measureIdOf, type MeasureKey, type SessionKey } from "#/packages/domain/index.ts";
 import {
   amendedVersionDescriptionOf,
@@ -161,17 +162,6 @@ const analysisRow = z.looseObject({
   DocumentUrl: z.string(),
 });
 
-/**
- * The description of the Version an analysis document is of, from the feed's `Version` label: "INTRO"
- * is "Introduced" and a single letter is that letter's Engrossed Version ("A" is "A-Engrossed"). A
- * label that is blank, or that more than one description could answer ("B*", "MRA"), names no Version.
- */
-function versionDescriptionOfAnalysisLabel(label: string | null | undefined): string | undefined {
-  if (label === "INTRO") return "Introduced";
-  if (label !== null && label !== undefined && /^[A-Z]$/.test(label)) return `${label}-Engrossed`;
-  return undefined;
-}
-
 async function readAnalyses(
   options: OlisClientOptions,
   session: SessionKey,
@@ -184,10 +174,11 @@ async function readAnalyses(
     const id = analysisIdOf(session, row.MeasureAnalysisId);
     const provenance = `MeasureAnalysisDocuments ${row.MeasureAnalysisId}`;
     const relations = [measureRelation(key, provenance), committeeRelation(session, row.CommittteCode, provenance)];
-    // Only a Version the feed lists for the Measure: a label that names a Version it lacks points nowhere.
-    const described = versionDescriptionOfAnalysisLabel(row.Version);
-    const version = described === undefined ? undefined : versionIdOf(key, described);
-    if (version !== undefined && versions.has(version)) relations.push(versionRelation(version, provenance));
+    // The one reading of the label, which get_measure shares (domain/analysis.ts). A Version is a node
+    // only when the feed lists it for the Measure, so a label that names a Version it lacks points nowhere.
+    const versionLabel = row.Version ?? "";
+    const placement = placeAnalysis(key, versionLabel, (version) => versions.has(version));
+    if (placement.kind === "version") relations.push(versionRelation(placement.versionId, provenance));
     return {
       id,
       nodeId: id,
@@ -195,6 +186,7 @@ async function readAnalyses(
       label: row.DocumentType,
       sourceUrl: sourceUrlOf(row.DocumentUrl),
       postedAt: null,
+      versionLabel,
       relations,
     };
   });
