@@ -4,9 +4,14 @@
 // and not from the code. Each case builds its own database, because the cases change the snapshot.
 import { rmSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
+import { loadIngestConfig } from "#/packages/config/index.ts";
+import { runFullPull } from "#/packages/ingest/index.ts";
+import { createSimulatedClock } from "../support/clock.ts";
+import { startFakeOlis } from "../support/fake-olis.ts";
 import { callTool, connectClient, eras } from "../support/mcp-clients.ts";
 import { createMadeUpSnapshot, type MadeUpSnapshot } from "../support/made-up-snapshot.ts";
 import { startSystem, type System } from "../support/system.ts";
+import { createTempDatabase } from "../support/temp-database.ts";
 
 const cleanups: (() => Promise<void> | void)[] = [];
 
@@ -101,10 +106,46 @@ describe("the snapshot version", () => {
 });
 
 describe("a build whose snapshot cannot be used", () => {
-  it("fails before it reads OLIS when the snapshot file is not there, naming the file", async () => {
+  it("fails, naming the file, when the snapshot file is not there", async () => {
     await expect(
       startSystem({ clockAt: "2025-01-29T17:00:00Z", snapshot: "/nonexistent/snapshot.json" }),
     ).rejects.toThrow('Could not read the OregonAI snapshot at "/nonexistent/snapshot.json"');
+  });
+
+  // ADR-0012: the worker reads the snapshot before it reads OLIS, so a build with no usable snapshot stops
+  // at once and a failed build has not spent a pull on the feed. The fetch the worker is given records
+  // what it was asked to reach, and a fake OLIS answers it as it would a real pull (F6).
+  it("fails before it asks OLIS for anything when the snapshot file is not there", async () => {
+    const clock = createSimulatedClock("2025-01-29T17:00:00Z");
+    const olis = await startFakeOlis({ clock, documents: false });
+    cleanups.push(() => olis.close());
+    const database = createTempDatabase();
+    cleanups.push(() => {
+      database.remove();
+    });
+    const asked: string[] = [];
+    const recordingFetch: typeof fetch = (input, init) => {
+      asked.push(input instanceof Request ? input.url : String(input));
+      return fetch(input, init);
+    };
+    const config = loadIngestConfig({
+      SESSION_KEY: "2025R1",
+      OLIS_BASE_URL: olis.baseUrl,
+      DATABASE_PATH: database.path,
+      OLIS_DOCUMENT_ORIGIN: olis.origin,
+      SNAPSHOT_PATH: "/nonexistent/snapshot.json",
+    });
+
+    await expect(
+      runFullPull(config, {
+        fetch: recordingFetch,
+        clock,
+        signal: AbortSignal.timeout(30_000),
+        pause: () => Promise.resolve(),
+      }),
+    ).rejects.toThrow('Could not read the OregonAI snapshot at "/nonexistent/snapshot.json"');
+
+    expect(asked).toEqual([]);
   });
 
   it("fails and names the problem when the file is not a snapshot: its commit is not a commit SHA", async () => {
