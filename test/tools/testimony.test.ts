@@ -10,8 +10,15 @@ import { startSystem, type System } from "../support/system.ts";
 
 let system: System;
 
+// The cases of both clients make about 130 calls, 42 of them to get_document, and the simulated clock never moves, so
+// the default 120 calls a minute would refuse the last ones. The ceiling is raised here and is tested in
+// meetings-pull.test.ts.
 beforeAll(async () => {
-  system = await startSystem({ clockAt: "2025-07-15T17:00:00Z", documents: true });
+  system = await startSystem({
+    clockAt: "2025-07-15T17:00:00Z",
+    documents: true,
+    serverEnv: { MCP_RATE_LIMIT: "1000" },
+  });
 }, 60_000);
 
 afterAll(async () => {
@@ -139,9 +146,9 @@ describe.for(eras)("testimony for a %s client", (era) => {
   });
 
   // The ticket's fourth box: "Each item has an id that `get_document` resolves". Every one of HB 3131's 42 ids
-  // resolves to Testimony at the Legislature's /Downloads/PublicTestimonyDocument/{CommTestId} (spec #1,
-  // module 1), the same source_url the item shows. One id is also asserted whole, as a literal.
-  it("gives every item an id that get_document resolves, to the item's own source_url", async () => {
+  // resolves to a Testimony with a text layer (spec #1, module 1: the file is at
+  // /Downloads/PublicTestimonyDocument/{CommTestId}).
+  it("gives every item an id that get_document resolves", async () => {
     const outcome = await callTool(connected, "testimony", { measure: "HB 3131" });
     const items = (outcome.structured?.["positions"] as Position[])
       .flatMap((position) => position.organizations)
@@ -151,21 +158,32 @@ describe.for(eras)("testimony for a %s client", (era) => {
     for (const item of items) {
       const document = await callTool(connected, "get_document", { id: item.id });
       expect(document.isError, item.id).toBe(false);
-      expect(document.structured, item.id).toMatchObject({
-        id: item.id,
-        kind: "testimony",
-        source_url: `https://olis.oregonlegislature.gov/liz/2025R1/Downloads/PublicTestimonyDocument/${item.id.replace("testimony-2025r1-", "")}`,
-        has_text_layer: true,
-      });
-      expect(document.structured?.["source_url"], item.id).toBe(item["source_url"]);
+      expect(document.structured, item.id).toMatchObject({ id: item.id, kind: "testimony", has_text_layer: true });
     }
+  });
 
-    const first = await callTool(connected, "get_document", { id: "testimony-2025r1-117165" });
-    expect(first.structured).toMatchObject({
-      id: "testimony-2025r1-117165",
-      source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/PublicTestimonyDocument/117165",
-    });
-    expect(items.map((item) => item.id)).toContain("testimony-2025r1-117165");
+  // The Legislature's own address for three of those files, as literals: the `source_url` that
+  // test/fixtures/olis-2025R1/manifest.json records for CommTestId 117165 (Sophie Els), 117167 (Andrea Kreiner) and
+  // 117368 (David Wall, the one oppose row). `get_document` is asked for the id and answers with that address. It is
+  // not compared with what `testimony` says, because both read one DocumentLink and would agree on a wrong URL.
+  it.for([
+    [
+      "testimony-2025r1-117165",
+      "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/PublicTestimonyDocument/117165",
+    ],
+    [
+      "testimony-2025r1-117167",
+      "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/PublicTestimonyDocument/117167",
+    ],
+    [
+      "testimony-2025r1-117368",
+      "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/PublicTestimonyDocument/117368",
+    ],
+  ] as const)("resolves %s to the Legislature's file at %s", async ([id, sourceUrl]) => {
+    const document = await callTool(connected, "get_document", { id });
+
+    expect(document.isError).toBe(false);
+    expect(document.structured).toMatchObject({ id, kind: "testimony", source_url: sourceUrl });
   });
 
   // The lead checked HB 3131's 42 files by bytes, and `pdftotext -raw` over all 84 fixture files finds the same two
