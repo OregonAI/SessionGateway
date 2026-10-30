@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { startFakeOlis, type FakeOlis, type FakeOlisOptions } from "../support/fake-olis.ts";
 import { createSimulatedClock } from "../support/clock.ts";
 import { callTool, connectClientToUrl } from "../support/mcp-clients.ts";
+import { memberSponsorRow } from "../support/sponsors.ts";
 import { createTempDatabase, type TempDatabase } from "../support/temp-database.ts";
 
 type Finished = { code: number | null; stdout: string; stderr: string };
@@ -114,20 +115,7 @@ describe("the entry scripts", () => {
   it("src/bin/ingest.ts writes the Legislator Codes it could not resolve to a report beside the database", async () => {
     // A sponsor row (SB 69) whose code has no Legislators row and no alias; the cache's real codes
     // all resolve, so the report would otherwise be empty.
-    const stray = {
-      MeasureSponsorId: "900001",
-      SessionKey: "2025R1",
-      MeasurePrefix: "SB",
-      MeasureNumber: 69,
-      SponsorType: "Member",
-      LegislatoreCode: "Rep Fahey",
-      CommitteeCode: null,
-      SponsorLevel: "Chief",
-      PrintOrder: "1",
-      PresessionFiledMessage: null,
-      CreatedDate: "2024-12-30T16:16:37",
-      ModifiedDate: null,
-    };
+    const stray = memberSponsorRow("900001", "Rep Fahey", "Chief", "1");
     const { olis, database } = await fakeOlisAndDatabase({ strayRows: { MeasureSponsors: [stray] } });
     const env = { SESSION_KEY: "2025R1", OLIS_BASE_URL: olis.baseUrl, DATABASE_PATH: database.path };
 

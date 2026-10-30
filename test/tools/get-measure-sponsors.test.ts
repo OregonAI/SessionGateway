@@ -8,6 +8,7 @@
 // rows (test/fixtures/olis-2025R1/feed/), and the id form is the one GLOSSARY.md gives.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
+import { sponsorsOf } from "../support/sponsors.ts";
 import { startSystem, type System } from "../support/system.ts";
 
 let system: System;
@@ -68,16 +69,6 @@ const hb3131Sponsors = [
   ["Rep Fragala", "regular", "legislator-2025r1-fragala", "Lisa Fragala"],
   ["Rep McDonald", "regular", "legislator-2025r1-mcdonald", "Sarah McDonald"],
 ] as const;
-
-type Sponsor = {
-  level: string;
-  legislator_code: string;
-  legislator: { id: string; name: string } | null;
-};
-
-function sponsorsOf(outcome: { structured: Record<string, unknown> | undefined }): Sponsor[] | undefined {
-  return outcome.structured?.["sponsors"] as Sponsor[] | undefined;
-}
 
 describe.for(eras)("get_measure sponsors for a %s client", (era) => {
   let connected: ConnectedClient;

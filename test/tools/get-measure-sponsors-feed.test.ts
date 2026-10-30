@@ -8,6 +8,7 @@
 // at SB 69 so that the fixture holds the Measure it names.
 import { afterEach, describe, expect, it } from "vitest";
 import { callTool, connectClient, type ToolOutcome } from "../support/mcp-clients.ts";
+import { legislatorRow, memberSponsorRow, sponsorsOf } from "../support/sponsors.ts";
 import { startSystem, type System, type SystemOptions } from "../support/system.ts";
 
 const started: System[] = [];
@@ -34,42 +35,8 @@ async function getMeasure(options: SystemOptions, reference: string): Promise<To
   return (await getMeasures(options, [reference]))[0] as ToolOutcome;
 }
 
-/** A Member row of MeasureSponsors in the feed's own shape, on SB 69. */
-function sb69MemberRow(id: string, code: string, level: "Chief" | "Regular", printOrder: string) {
-  return {
-    MeasureSponsorId: id,
-    SessionKey: "2025R1",
-    MeasurePrefix: "SB",
-    MeasureNumber: 69,
-    SponsorType: "Member",
-    LegislatoreCode: code,
-    CommitteeCode: null,
-    SponsorLevel: level,
-    PrintOrder: printOrder,
-    PresessionFiledMessage: null,
-    CreatedDate: "2024-12-30T16:16:37",
-    ModifiedDate: null,
-  };
-}
-
 // 2025-12-15, after the newest Legislators row was created (2025-06-07).
 const afterTheSession = "2025-12-15T17:00:00Z";
-
-/** A Legislators row in the feed's own shape. */
-function legislatorRow(session: string, code: string, firstName: string, lastName: string) {
-  return {
-    SessionKey: session,
-    LegislatorCode: code,
-    FirstName: firstName,
-    LastName: lastName,
-    Title: "Representative",
-    Chamber: "H",
-    CreatedDate: "2024-11-06T11:52:47",
-    ModifiedDate: null,
-  };
-}
-
-type Sponsor = { level: string; legislator_code: string; legislator: { id: string; name: string } | null };
 
 describe("Legislator Codes that carry a leadership title", () => {
   // The codes are the cache's own: "Rep Speaker Fahey" is the chief sponsor of HB 2010 (MeasureSponsorId
@@ -84,12 +51,12 @@ describe("Legislator Codes that carry a leadership title", () => {
       const outcome = await getMeasure(
         {
           clockAt: afterTheSession,
-          olis: { strayRows: { MeasureSponsors: [sb69MemberRow("143197", code as string, "Chief", "1")] } },
+          olis: { strayRows: { MeasureSponsors: [memberSponsorRow("143197", code as string, "Chief", "1")] } },
         },
         "SB 69",
       );
 
-      expect((outcome.structured?.["sponsors"] as Sponsor[])[0]).toEqual({
+      expect(sponsorsOf(outcome)?.[0]).toEqual({
         level: "chief",
         legislator_code: code,
         legislator: { id, name },
@@ -103,8 +70,8 @@ describe("a Legislator Code that has no Legislators row and no alias", () => {
   // snapshot's row for her is "Rep Speaker Fahey" (Julie Fahey). A resolver that guessed from the look
   // of a code would name her here. The feed gives no reason to, so the code stays unresolved.
   const strayRows = [
-    sb69MemberRow("900001", "Rep Fahey", "Chief", "1"),
-    sb69MemberRow("900002", "Rep Fahey", "Regular", "20"),
+    memberSponsorRow("900001", "Rep Fahey", "Chief", "1"),
+    memberSponsorRow("900002", "Rep Fahey", "Regular", "20"),
   ];
 
   it("shows the sponsor under its code with no Legislator, and does not guess one", async () => {
@@ -113,7 +80,7 @@ describe("a Legislator Code that has no Legislators row and no alias", () => {
       "SB 69",
     );
 
-    expect(outcome.structured?.["sponsors"]).toEqual([
+    expect(sponsorsOf(outcome)).toEqual([
       { level: "chief", legislator_code: "Rep Fahey", legislator: null },
       { level: "regular", legislator_code: "Rep Fahey", legislator: null },
     ]);
@@ -150,7 +117,7 @@ describe("a Legislator Code that has no Legislators row", () => {
     // a stray one is added (a real code: the cache's HB 3592 names "Sen Woods" as a chief sponsor).
     const system = await startSystem({
       clockAt: afterTheSession,
-      olis: { strayRows: { MeasureSponsors: [sb69MemberRow("150301", "Sen Woods", "Chief", "2")] } },
+      olis: { strayRows: { MeasureSponsors: [memberSponsorRow("150301", "Sen Woods", "Chief", "2")] } },
     });
     started.push(system);
     const connected = await connectClient("2026-07-28", system.handler);
@@ -158,7 +125,7 @@ describe("a Legislator Code that has no Legislators row", () => {
       const outcome = await callTool(connected, "get_measure", { measure: "SB 69" });
       const pull = await system.pullAgain();
 
-      expect(outcome.structured?.["sponsors"]).toEqual([
+      expect(sponsorsOf(outcome)).toEqual([
         {
           level: "chief",
           legislator_code: "Sen Woods",
@@ -177,15 +144,13 @@ describe("a Legislator Code that has no Legislators row", () => {
     const [hb3131, sb69] = await getMeasures(
       {
         clockAt: afterTheSession,
-        olis: { strayRows: { MeasureSponsors: [sb69MemberRow("900010", "Sen Neron Misslin", "Regular", "20")] } },
+        olis: { strayRows: { MeasureSponsors: [memberSponsorRow("900010", "Sen Neron Misslin", "Regular", "20")] } },
       },
       ["HB 3131", "SB 69"],
     );
 
-    const neron = (hb3131?.structured?.["sponsors"] as Sponsor[]).find(
-      (sponsor) => sponsor.legislator_code === "Rep Neron",
-    );
-    const neronMisslin = (sb69?.structured?.["sponsors"] as Sponsor[])[0];
+    const neron = sponsorsOf(hb3131)?.find((sponsor) => sponsor.legislator_code === "Rep Neron");
+    const neronMisslin = sponsorsOf(sb69)?.[0];
     expect(neron?.legislator).toEqual({ id: "legislator-2025r1-neron-misslin", name: "Courtney Neron Misslin" });
     expect(neronMisslin?.legislator).toEqual(neron?.legislator);
   });
@@ -200,9 +165,7 @@ describe("a Legislator Code that has no Legislators row", () => {
       const outcome = await callTool(connected, "get_measure", { measure: "HB 3131" });
       const pull = await system.pullAgain();
 
-      const neron = (outcome.structured?.["sponsors"] as Sponsor[]).find(
-        (sponsor) => sponsor.legislator_code === "Rep Neron",
-      );
+      const neron = sponsorsOf(outcome)?.find((sponsor) => sponsor.legislator_code === "Rep Neron");
       expect(neron).toEqual({ level: "chief", legislator_code: "Rep Neron", legislator: null });
       expect(pull.unresolvedLegislatorCodes).toEqual([
         { code: "Rep Neron", references: [{ source: "MeasureSponsors", count: 1 }] },
@@ -232,7 +195,7 @@ describe("rows the resolver refuses to build on", () => {
   });
 
   it("stops the pull for a Member sponsor row that names no Legislator Code", async () => {
-    const row = { ...sb69MemberRow("900020", "Rep Helm", "Chief", "1"), LegislatoreCode: null };
+    const row = { ...memberSponsorRow("900020", "Rep Helm", "Chief", "1"), LegislatoreCode: null };
 
     const pull = startSystem({ clockAt: afterTheSession, olis: { strayRows: { MeasureSponsors: [row] } } });
 
@@ -250,18 +213,18 @@ describe("rows of another Session", () => {
         olis: {
           strayRows: {
             Legislators: [legislatorRow("2025S1", "Rep Owens", "Another", "Owens")],
-            MeasureSponsors: [{ ...sb69MemberRow("900030", "Rep Owens", "Chief", "1"), SessionKey: "2025S1" }],
+            MeasureSponsors: [{ ...memberSponsorRow("900030", "Rep Owens", "Chief", "1"), SessionKey: "2025S1" }],
           },
         },
       },
       ["HB 3131", "SB 69"],
     );
 
-    expect((hb3131?.structured?.["sponsors"] as Sponsor[])[0]?.legislator).toEqual({
+    expect(sponsorsOf(hb3131)?.[0]?.legislator).toEqual({
       id: "legislator-2025r1-owens",
       name: "Mark Owens",
     });
-    expect(sb69?.structured?.["sponsors"]).toEqual([]);
+    expect(sponsorsOf(sb69)).toEqual([]);
   });
 });
 
@@ -274,8 +237,8 @@ describe("sponsors with the same print order", () => {
         olis: {
           strayRows: {
             MeasureSponsors: [
-              sb69MemberRow("900002", "Sen President Wagner", "Regular", "20"),
-              sb69MemberRow("900001", "Rep Speaker Fahey", "Regular", "20"),
+              memberSponsorRow("900002", "Sen President Wagner", "Regular", "20"),
+              memberSponsorRow("900001", "Rep Speaker Fahey", "Regular", "20"),
             ],
           },
         },
@@ -283,7 +246,7 @@ describe("sponsors with the same print order", () => {
       "SB 69",
     );
 
-    const codes = (outcome.structured?.["sponsors"] as Sponsor[]).map((sponsor) => sponsor.legislator_code);
+    const codes = sponsorsOf(outcome)?.map((sponsor) => sponsor.legislator_code);
     expect(codes).toEqual(["Rep Speaker Fahey", "Sen President Wagner"]);
   });
 });
