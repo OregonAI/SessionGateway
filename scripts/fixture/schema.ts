@@ -196,46 +196,52 @@ export const documentLinks: Record<string, DocumentLink> = {
   MeasureDocuments: {
     kind: "measure-documents",
     meanBytes: 42_415,
-    url: (r) => String(r.DocumentUrl),
-    stem: (r) => `${slug(r.MeasurePrefix)}${slug(r.MeasureNumber)}/${slug(r.VersionDescription)}`,
+    url: (r) => String(r["DocumentUrl"]),
+    stem: (r) => `${slug(r["MeasurePrefix"])}${slug(r["MeasureNumber"])}/${slug(r["VersionDescription"])}`,
   },
   MeasureAnalysisDocuments: {
     kind: "measure-analysis-documents",
     meanBytes: 500_075,
-    url: (r) => String(r.DocumentUrl),
-    stem: (r) => slug(r.MeasureAnalysisId),
+    url: (r) => String(r["DocumentUrl"]),
+    stem: (r) => slug(r["MeasureAnalysisId"]),
   },
   CommitteeProposedAmendments: {
     kind: "proposed-amendments",
     meanBytes: 40_907,
-    url: (r) => String(r.ProposedAmendmentUrl),
-    stem: (r) => slug(r.ProposedAmendmentId),
+    url: (r) => String(r["ProposedAmendmentUrl"]),
+    stem: (r) => slug(r["ProposedAmendmentId"]),
   },
   CommitteeMeetingDocuments: {
     kind: "committee-meeting-documents",
     meanBytes: 218_262,
-    url: (r) => String(r.DocumentUrl),
-    stem: (r) => slug(r.CommitteeMeetingDocumentId),
+    url: (r) => String(r["DocumentUrl"]),
+    stem: (r) => slug(r["CommitteeMeetingDocumentId"]),
   },
   CommitteeMeetings: {
     kind: "committee-agendas",
     meanBytes: 101_925,
-    url: (r) => String(r.AgendaUrl),
-    stem: (r) => `${slug(r.CommitteeCode)}/${slug(String(r.MeetingDate).replace("T", "-").replace(/:\d\d$/, ""))}`,
+    url: (r) => String(r["AgendaUrl"]),
+    stem: (r) =>
+      `${slug(r["CommitteeCode"])}/${slug(
+        String(r["MeetingDate"])
+          .replace("T", "-")
+          .replace(/:\d\d$/, ""),
+      )}`,
   },
   // The feed's DocumentUrl for Testimony is always the session root (olis-odata.md section 8,
   // gotcha 2); the file lives under PublicTestimonyDocument/{CommTestId}.
   CommitteePublicTestimonies: {
     kind: "testimony",
     meanBytes: 77_397,
-    url: (r) => `https://olis.oregonlegislature.gov/liz/${r.SessionKey}/Downloads/PublicTestimonyDocument/${r.CommTestId}`,
-    stem: (r) => slug(r.CommTestId),
+    url: (r) =>
+      `https://olis.oregonlegislature.gov/liz/${String(r["SessionKey"])}/Downloads/PublicTestimonyDocument/${String(r["CommTestId"])}`,
+    stem: (r) => slug(r["CommTestId"]),
   },
   FloorLetters: {
     kind: "floor-letters",
     meanBytes: 250_000,
-    url: (r) => String(r.FloorLetterUrl),
-    stem: (r) => slug(r.FloorLetterId),
+    url: (r) => String(r["FloorLetterUrl"]),
+    stem: (r) => slug(r["FloorLetterId"]),
   },
 };
 
@@ -275,7 +281,9 @@ function readsOf(entitySet: string): Array<{ property: string; why: string }> {
   };
   if (spec !== undefined) {
     for (const property of spec.key) read(property, "part of its key");
-    if (spec.aboutMeasure) for (const property of ["SessionKey", "MeasurePrefix", "MeasureNumber"]) read(property, "says which Measure it is about");
+    if (spec.aboutMeasure)
+      for (const property of ["SessionKey", "MeasurePrefix", "MeasureNumber"])
+        read(property, "says which Measure it is about");
     for (const ref of spec.refs) for (const property of Object.values(ref.match)) read(property, `refers to ${ref.to}`);
   }
   const reads = [...whys].map(([property, why]) => ({ property, why: [...why].join(", ") }));
@@ -340,7 +348,7 @@ export function describeKey(entitySet: string, key: Record<string, unknown>): st
 export type LinkedBy = { entity_set: string; row_key: Record<string, unknown> };
 
 export const isLinkedBy = (value: unknown): value is LinkedBy =>
-  isRecord(value) && typeof value.entity_set === "string" && isRecord(value.row_key);
+  isRecord(value) && typeof value["entity_set"] === "string" && isRecord(value["row_key"]);
 
 /**
  * The one document in the fixture that no feed row links: the Statutes Affected Table, which
@@ -362,7 +370,12 @@ export type ManifestEntry = {
 };
 
 /** The string fields every manifest entry must carry. The type checks the names. */
-export const requiredManifestStrings = ["path", "source_url", "retrieved_at", "sha256"] as const satisfies readonly (keyof ManifestEntry)[];
+export const requiredManifestStrings = [
+  "path",
+  "source_url",
+  "retrieved_at",
+  "sha256",
+] as const satisfies readonly (keyof ManifestEntry)[];
 
 /** One entry of unresolved.json: a reference the full cache cannot resolve either. */
 export type Unresolved = {
@@ -391,15 +404,25 @@ const legislatorGapReason =
 
 /** The reason the full cache cannot resolve this reference, or null when it is not a documented gap. */
 export function documentedGapReason(refersTo: string, target: Record<string, unknown>): string | null {
-  const code = target.LegislatorCode;
-  if (refersTo === "Legislators" && target.SessionKey === "2025R1" && typeof code === "string" && legislatorCodesWithoutRow.includes(code)) {
+  const code = target["LegislatorCode"];
+  if (
+    refersTo === "Legislators" &&
+    target["SessionKey"] === "2025R1" &&
+    typeof code === "string" &&
+    legislatorCodesWithoutRow.includes(code)
+  ) {
     return legislatorGapReason;
   }
   return null;
 }
 
 /** The entry for a reference the full cache cannot resolve, or null when that is not a documented gap. */
-export function makeUnresolved(entitySet: string, row: Row, ref: Ref, target: Record<string, unknown>): Unresolved | null {
+export function makeUnresolved(
+  entitySet: string,
+  row: Row,
+  ref: Ref,
+  target: Record<string, unknown>,
+): Unresolved | null {
   const reason = documentedGapReason(ref.to, target);
   if (reason === null) return null;
   return {
@@ -414,16 +437,21 @@ export function makeUnresolved(entitySet: string, row: Row, ref: Ref, target: Re
 
 export const isUnresolved = (value: unknown): value is Unresolved =>
   isRecord(value) &&
-  typeof value.entity_set === "string" &&
-  isRecord(value.row_key) &&
-  typeof value.property === "string" &&
-  typeof value.refers_to === "string" &&
-  isRecord(value.target_key) &&
-  typeof value.reason === "string" &&
-  value.reason !== "";
+  typeof value["entity_set"] === "string" &&
+  isRecord(value["row_key"]) &&
+  typeof value["property"] === "string" &&
+  typeof value["refers_to"] === "string" &&
+  isRecord(value["target_key"]) &&
+  typeof value["reason"] === "string" &&
+  value["reason"] !== "";
 
 /** Identifies one reference of one row, so a listed gap can be matched to the reference it covers. */
-export function unresolvedId(entitySet: string, rowKey: Record<string, unknown>, property: string, refersTo: string): string {
+export function unresolvedId(
+  entitySet: string,
+  rowKey: Record<string, unknown>,
+  property: string,
+  refersTo: string,
+): string {
   const spec = entitySets[entitySet];
   const keyValues = spec === undefined ? [] : spec.key.map((p) => rowKey[p]);
   return `${entitySet}|${keyString(keyValues)}|${property}|${refersTo}`;
