@@ -250,13 +250,17 @@ export type MeetingDocument = {
 };
 
 /**
- * What a meeting holds: its agenda items in print order, the Proposed Amendments posted to it by Measure
- * and number, and its Exhibits.
+ * What a meeting holds: its agenda document, its agenda items in print order, the Proposed Amendments
+ * posted to it by Measure and number, its Exhibits and its Recording Logs. The feed has a Recording Log for
+ * most meetings and more than one for a few.
  */
 export type MeetingContents = {
+  /** The agenda document, when the feed links one and the store holds it. */
+  agenda: MeetingDocument | null;
   agendaItems: AgendaItem[];
   amendments: PostedAmendment[];
   exhibits: MeetingDocument[];
+  recordingLogs: MeetingDocument[];
 };
 
 /**

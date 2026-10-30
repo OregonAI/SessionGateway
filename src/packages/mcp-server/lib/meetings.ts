@@ -28,6 +28,14 @@ const meetingOutput = z.object({
     .describe(
       "The meeting's page on OLIS, where its agenda, documents and recording are. This service links it and never opens it.",
     ),
+  agenda: z
+    .object({
+      id: z.string().describe("The agenda's id, such as agenda-2025r1-slb-2025-01-30-0800. Give it to get_document."),
+      label: z.string().describe("What OLIS calls it: Agenda."),
+      source_url: z.string().describe("Where the Legislature publishes the file."),
+    })
+    .nullable()
+    .describe("The meeting's agenda document, when OLIS links one and this index holds it."),
   agenda_items: z
     .array(
       z.object({
@@ -64,6 +72,19 @@ const meetingOutput = z.object({
       }),
     )
     .describe("The Exhibits posted to this meeting, whichever Measure they are filed under."),
+  recording_logs: z
+    .array(
+      z.object({
+        id: z
+          .string()
+          .describe("The Recording Log's id, such as recording-log-2025r1-288741. Give it to get_document."),
+        label: z.string().describe("What OLIS calls it: Recording Log."),
+        source_url: z.string().describe("Where the Legislature publishes the file."),
+      }),
+    )
+    .describe(
+      "The committee's timecoded index of the meeting's recording: agenda items, motions, votes and speakers. Empty before it is posted, and sometimes more than one.",
+    ),
   proposed_amendments: z
     .array(
       z.object({
@@ -133,6 +154,10 @@ export function meetings(
           status: meeting.status,
           upcoming: meeting.upcoming,
           olis_page_url: olisMeetingPageUrlOf(session, meeting.committee.code, meeting.at),
+          agenda:
+            contents.agenda === null
+              ? null
+              : { id: contents.agenda.id, label: contents.agenda.label, source_url: contents.agenda.sourceUrl },
           agenda_items: contents.agendaItems.map((item) => ({
             print_order: item.printOrder,
             measure_id: item.measure === null ? null : measureIdOf(item.measure),
@@ -147,6 +172,11 @@ export function meetings(
             label: exhibit.label,
             measure_id: exhibit.measureId,
             source_url: exhibit.sourceUrl,
+          })),
+          recording_logs: contents.recordingLogs.map((log) => ({
+            id: log.id,
+            label: log.label,
+            source_url: log.sourceUrl,
           })),
           proposed_amendments: contents.amendments.map((amendment) => ({
             id: amendment.id,

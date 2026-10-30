@@ -196,6 +196,76 @@ describe.for(eras)("meetings for a %s client", (era) => {
     ]);
   });
 
+  // A meeting's agenda is a document of its own (GLOSSARY.md): the file at the AgendaUrl of the meeting's row in
+  // feed/CommitteeMeetings.json. Its id is named like the meeting's.
+  it("links each meeting's agenda document", async () => {
+    const outcome = await callTool(connected, "meetings", { measure: "SB 69" });
+
+    const meetings = outcome.structured?.["meetings"] as { id: string; agenda: unknown }[];
+    expect(meetings.map((meeting) => [meeting.id, meeting.agenda])).toEqual([
+      [
+        "meeting-2025r1-slb-2025-01-21-0800",
+        {
+          id: "agenda-2025r1-slb-2025-01-21-0800",
+          label: "Agenda",
+          source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeAgenda/SLB/2025-01-21-08-00",
+        },
+      ],
+      [
+        "meeting-2025r1-slb-2025-01-28-0800",
+        {
+          id: "agenda-2025r1-slb-2025-01-28-0800",
+          label: "Agenda",
+          source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeAgenda/SLB/2025-01-28-08-00",
+        },
+      ],
+      [
+        "meeting-2025r1-slb-2025-01-30-0800",
+        {
+          id: "agenda-2025r1-slb-2025-01-30-0800",
+          label: "Agenda",
+          source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeAgenda/SLB/2025-01-30-08-00",
+        },
+      ],
+    ]);
+  });
+
+  // The brief: "Every document a meeting lists has an id get_document resolves", and it is the document the
+  // meeting says it is, at the address the meeting gives. A Proposed Amendment lists two: the amendment
+  // (the node, which serves its latest posting) and the posting (the text posted to this meeting).
+  it("lists only documents that get_document resolves, each at the source_url the meeting gives", async () => {
+    const outcome = await callTool(connected, "meetings", { measure: "SB 69" });
+
+    type Listed = { id: string; source_url: string };
+    const meetings = outcome.structured?.["meetings"] as {
+      agenda: Listed | null;
+      exhibits: Listed[];
+      recording_logs: Listed[];
+      proposed_amendments: { id: string; document_id: string; source_url: string }[];
+    }[];
+    const listed: Listed[] = meetings.flatMap((meeting) => [
+      ...(meeting.agenda === null ? [] : [meeting.agenda]),
+      ...meeting.exhibits,
+      ...meeting.recording_logs,
+      ...meeting.proposed_amendments.map((amendment) => ({
+        id: amendment.document_id,
+        source_url: amendment.source_url,
+      })),
+    ]);
+    // 3 agendas, 4 Exhibits and 5 postings (-1 three times, -2 twice).
+    expect(listed).toHaveLength(12);
+    for (const document of listed) {
+      const served = await callTool(connected, "get_document", { id: document.id });
+      expect(served.isError, document.id).toBe(false);
+      expect(served.structured?.["source_url"], document.id).toBe(document.source_url);
+    }
+    const amendmentIds = [...new Set(meetings.flatMap((meeting) => meeting.proposed_amendments.map((a) => a.id)))];
+    expect(amendmentIds).toEqual(["amendment-2025r1-sb69-1", "amendment-2025r1-sb69-2"]);
+    for (const id of amendmentIds) {
+      expect((await callTool(connected, "get_document", { id })).isError, id).toBe(false);
+    }
+  });
+
   // The URL form is docs/research/hearing-video.md section 2: /liz/{session}/Committees/{CommitteeCode}/
   // {yyyy-MM-dd-HH-mm}/Agenda, "exactly" the feed's CommitteeCode and MeetingDate. The 01-30 agenda link
   // in feed/CommitteeMeetings.json (.../Downloads/CommitteeAgenda/SLB/2025-01-30-08-00) writes the same

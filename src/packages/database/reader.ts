@@ -289,7 +289,13 @@ export function openIndexReader(path: string): IndexReader {
           numbersInOrder.compare(a.number, b.number) ||
           numbersInOrder.compare(a.documentId, b.documentId),
       );
-      return { agendaItems, amendments, exhibits: meetingDocumentsOf(meeting, "exhibit") };
+      return {
+        agenda: meetingDocumentsOf(meeting, "agenda")[0] ?? null,
+        agendaItems,
+        amendments,
+        exhibits: meetingDocumentsOf(meeting, "exhibit"),
+        recordingLogs: meetingDocumentsOf(meeting, "recording_log"),
+      };
     },
     findMeasure(key) {
       const row = selectMeasure.get(key.session, key.prefix, key.number);
