@@ -42,6 +42,101 @@ describe("Agencies named in Version and Proposed Amendment text", () => {
       },
     ])("$source", expectLinks);
   });
+  describe("several Agencies, and an alias, in one Version", () => {
+    test.for<TextRow>([
+      {
+        source:
+          'measure-documents/SB69/A-Engrossed.pdf (SB 69, A-Engrossed): four Agencies in order, "State Treasurer" being an alias of Oregon State Treasury and used with an apostrophe',
+        text: [
+          "10",
+          "",
+          "Department of Human Services or the Oregon Health Authority.",
+          "",
+          "11",
+          "",
+          "(i) To the State Treasurer useful for the purpose of performing the State Treasurer’s duties un-",
+          "",
+          "12",
+          "",
+          "der ORS 98.302 to 98.436, 98.992, 113.235 and 116.253. The information disclosed is confidential and",
+          "",
+          "13",
+          "",
+          "may not be used by the State Treasurer for any other purpose. If the information disclosed under",
+          "",
+          "14",
+          "",
+          "this paragraph is not prepared for the use of the Employment Department, the costs of disclosing",
+          "",
+          "15",
+          "",
+          "the information shall be paid by the State Treasurer.",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [
+          { slug: "department-of-human-services", terms: ["Department of Human Services"] },
+          { slug: "oregon-health-authority", terms: ["Oregon Health Authority"] },
+          { slug: "oregon-state-treasury", terms: ["State Treasurer"] },
+          { slug: "employment-department", terms: ["Employment Department"] },
+        ],
+      },
+      {
+        source: "measure-documents/HB3131/Introduced.pdf (HB 3131, Introduced): one Agency named in the summary",
+        text: [
+          "Digest: The Act gives money to a state agency for uses related to working lands. The Act goes",
+          "into effect when the Governor signs it. (Flesch Readability Score: 71.2).",
+          "Appropriates moneys to the Oregon Watershed Enhancement Board, out of the General Fund,",
+          "for deposit in the Oregon Agricultural Heritage Fund.",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [
+          {
+            slug: "oregon-watershed-enhancement-board",
+            terms: ["Oregon Watershed Enhancement Board"],
+          },
+        ],
+      },
+    ])("$source", expectLinks);
+  });
+
+  describe("Proposed Amendment text", () => {
+    test.for<TextRow>([
+      {
+        source:
+          "proposed-amendments/27966.pdf (HB 3795-1, Proposed Amendment): the Department of Human Services in the text of an amended section",
+        text: [
+          "“SECTION 1. ORS 409.711 is amended to read:",
+          "",
+          "5",
+          "",
+          "“409.711. (1) The Department of Human Services shall adopt by rule a",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [{ slug: "department-of-human-services", terms: ["Department of Human Services"] }],
+      },
+      {
+        source:
+          "proposed-amendments/26843.pdf (SB 921-3, Proposed Amendment): an appropriation to the Oregon Business Development Department",
+        text: [
+          "12",
+          "",
+          "2025, from the Administrative Services Economic Development Fund,",
+          "",
+          "13",
+          "",
+          "to the Oregon Business Development Department, the amount of",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [
+          {
+            slug: "oregon-business-development-department",
+            terms: ["Oregon Business Development Department"],
+          },
+        ],
+      },
+    ])("$source", expectLinks);
+  });
+
   describe("a name that the printed line wraps", () => {
     test.for<TextRow>([
       {
