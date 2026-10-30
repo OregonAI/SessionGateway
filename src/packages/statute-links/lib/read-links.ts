@@ -3,10 +3,14 @@ import { orsChapterIdOf, orsSectionIdOf } from "#/packages/domain/statute-links.
 import { normalizeExtractedText } from "./normalize.ts";
 import type { RangeExpander } from "./ranges.ts";
 import { createRangeExpander } from "./ranges.ts";
+import type { RelatingClauseEdit } from "./relating-clause.ts";
+import { readRelatingClauseEdits } from "./relating-clause.ts";
 import type { OrsItem, OrsReference } from "./references.ts";
 import { findOrsReferences } from "./references.ts";
 
 const sectionHeader = /\bSECTION (\d+[a-z]?)\. /g;
+// Inserted text opens with a curly quote: “SECTION 3. ORS 657B.070 is amended to read:
+const insertedSectionHeader = /“\s*(?=SECTION (\d+[a-z]?)\. )/g;
 
 /** One measure section of the document: its number as printed, and its running text. */
 type MeasureSection = { number: string | null; text: string };
@@ -56,11 +60,22 @@ function targetsOf(item: OrsItem, expandRange: RangeExpander): StatuteTarget[] {
   }
 }
 
-/** Reads the Statute Links of running text, each once per kind, target and measure section, in the order the text names them. */
-export function readStatuteLinks(text: string, orsSections: readonly OrsSectionId[]): StatuteLink[] {
-  const expandRange = createRangeExpander(orsSections);
+/** Splits a Proposed Amendment into the sections it inserts. The amendment's instructions between them hold no links. */
+function insertedSections(body: string): MeasureSection[] {
+  const headers = [...body.matchAll(insertedSectionHeader)];
+  return headers.map((header, index) => {
+    const start = header.index + header[0].length;
+    const closingQuote = body.indexOf("”", start);
+    const next = headers[index + 1]?.index;
+    const end = Math.min(next ?? body.length, closingQuote < 0 ? body.length : closingQuote);
+    return { number: header[1] ?? null, text: body.slice(start, end) };
+  });
+}
+
+/** Reads the links of the sections, each once per kind, target and measure section, in the order the text names them. */
+function linksOf(sections: MeasureSection[], expandRange: RangeExpander): StatuteLink[] {
   const links = new Map<string, StatuteLink>();
-  for (const section of splitIntoSections(normalizeExtractedText(text))) {
+  for (const section of sections) {
     for (const reference of findOrsReferences(section.text)) {
       const kind = kindOf(section.text, reference);
       for (const item of reference.items) {
@@ -72,4 +87,20 @@ export function readStatuteLinks(text: string, orsSections: readonly OrsSectionI
     }
   }
   return [...links.values()];
+}
+
+/** What a document's text says: its Statute Links, and for a Proposed Amendment its relating clause edits. */
+export function readDocument(
+  documentKind: "version" | "proposed-amendment",
+  text: string,
+  orsSections: readonly OrsSectionId[],
+): { links: StatuteLink[]; relatingClauseEdits: RelatingClauseEdit[] } {
+  const expandRange = createRangeExpander(orsSections);
+  const body = normalizeExtractedText(text);
+  if (documentKind === "version")
+    return { links: linksOf(splitIntoSections(body), expandRange), relatingClauseEdits: [] };
+  return {
+    links: linksOf(insertedSections(body), expandRange),
+    relatingClauseEdits: readRelatingClauseEdits(body, expandRange),
+  };
 }

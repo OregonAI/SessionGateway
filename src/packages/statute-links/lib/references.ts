@@ -94,3 +94,22 @@ export function findOrsReferences(text: string): OrsReference[] {
   }
   return references;
 }
+
+const sectionToken = /(?<![\w.])\d{1,3}[A-Z]?\.\d{3,4}(?!\d)/g;
+
+/**
+ * Finds every section and range of sections in the text, with or without "ORS" before it. A
+ * relating clause edit can insert a bare number ("and 418.808") whose "ORS" is in the title.
+ */
+export function findSectionItems(text: string): OrsItem[] {
+  const items: OrsItem[] = [];
+  let readUpTo = 0;
+  for (const token of text.matchAll(sectionToken)) {
+    if (token.index < readUpTo) continue;
+    const list = readSectionList(text, token.index);
+    if (list === undefined) continue;
+    items.push(...list.items);
+    readUpTo = list.end;
+  }
+  return items;
+}
