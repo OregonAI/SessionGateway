@@ -101,7 +101,7 @@ export const getMeasureOutput = z.object({
       }),
     )
     .describe(
-      "The Measure's committee votes as of the last full pull (see as_of), in the order the committees met. A committee that voted twice at one meeting has two entries.",
+      "The Measure's committee votes as of the last full pull (see as_of), in the order the committees met. A committee that voted twice at one meeting has two entries. OLIS creates these rows before the meeting is held, so a meeting_date later than as_of can already have votes listed.",
     ),
   as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
   notice: z.string().describe("A reminder that this is not the official record."),
