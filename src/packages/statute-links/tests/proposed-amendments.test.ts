@@ -676,3 +676,102 @@ describe("SB 69-2's Statute Links agree with the Statutes Affected Table", () =>
     expect(links.map((link): Expected => [link.kind, link.target.id, link.measureSection])).toEqual([expected]);
   });
 });
+
+// "ORS X, as amended by section N of this 2025 Act, is amended to read": Legislative Counsel's form for a
+// section that another section of the same Act, or of a Proposed Amendment, has already amended (#6 F2).
+// No committed fixture document has it. These rows quote the research cache (.cache/olis-2025R1/, not
+// committed: the Acceptable Use Agreement grants no redistribution license), as `pdftotext <file> -`
+// prints it. The 'HB 3544-B8' rows' expected links are the Statutes Affected Table's rows for HB 3544 C
+// (documents/reports/artables2025R1.pdf, `pdftotext -layout`, continuation rows under 537.153, 537.621
+// and 540.520): the section is amended, and the parenthetical mention of it is a cite.
+const amendedByThisActRows: { name: string; source: string; text: string; expected: Expected[] }[] = [
+  {
+    name: "HB 3435-1: 'as amended by section 1 of this 2025 Act', the sentence wrapped over a line number",
+    source:
+      "research cache documents-sample-2/CommitteeProposedAmendments_37.pdf (HB 3435-1, not in the committed fixture), lines 255-259",
+    text: `“SECTION 3. ORS 327.531, as amended by section 1 of this 2025 Act, is
+
+13
+
+amended to read:`,
+    expected: [["amends", "ors-327.531", "3"]],
+  },
+  {
+    name: "HB 3544-B8 §5a: 537.153. Statutes Affected Table: 537.153 A §5a HB 3544 C",
+    source:
+      "research cache documents-sample-2/CommitteeProposedAmendments_49.pdf (HB 3544-B8, not in the committed fixture), lines 282-294",
+    text: `“SECTION 5a. If House Bill 3342 becomes law, section 32, chapter
+
+24
+
+282, Oregon Laws 2025 (Enrolled House Bill 3342) (amending ORS
+
+25
+
+537.153), is repealed and ORS 537.153, as amended by section 5 of this
+
+26
+
+2025 Act, is amended to read:`,
+    expected: [
+      ["cites", "ors-537.153", "5a"],
+      ["amends", "ors-537.153", "5a"],
+    ],
+  },
+  {
+    name: "HB 3544-B8 §16a: 537.621. Statutes Affected Table: 537.621 A §16a HB 3544 C",
+    source:
+      "research cache documents-sample-2/CommitteeProposedAmendments_49.pdf (HB 3544-B8, not in the committed fixture), lines 580-592",
+    text: `“SECTION 16a. If House Bill 3342 becomes law, section 33, chapter
+
+16
+
+282, Oregon Laws 2025 (Enrolled House Bill 3342) (amending ORS
+
+17
+
+537.621), is repealed and ORS 537.621, as amended by section 16 of this
+
+18
+
+2025 Act, is amended to read:`,
+    expected: [
+      ["cites", "ors-537.621", "16a"],
+      ["amends", "ors-537.621", "16a"],
+    ],
+  },
+  {
+    name: "HB 3544-B8 §20a: 540.520, with a page footer between 'of this' and '2025 Act'. Statutes Affected Table: 540.520 A §20a HB 3544 C",
+    source:
+      "research cache documents-sample-2/CommitteeProposedAmendments_49.pdf (HB 3544-B8, not in the committed fixture), lines 966-983",
+    text: `“SECTION 20a. If House Bill 3342 becomes law, section 5, chapter
+
+29
+
+282, Oregon Laws 2025 (Enrolled House Bill 3342) (amending ORS
+
+30
+
+540.520), is repealed and ORS 540.520, as amended by section 20 of this
+
+HB 3544-B8 6/26/25
+Proposed Amendments to B-Eng. HB 3544 (A to RC)
+
+Page 9
+
+\f1
+
+2025 Act, is amended to read:`,
+    expected: [
+      ["cites", "ors-540.520", "20a"],
+      ["amends", "ors-540.520", "20a"],
+    ],
+  },
+];
+
+describe("ORS X, as amended by section N of this 2025 Act, is amended to read", () => {
+  test.for(amendedByThisActRows)("$name ($source)", ({ text, expected }) => {
+    const { links } = parseStatuteLinks({ documentKind: "proposed-amendment", text, orsSections: [] });
+    expect(links.map((link): Expected => [link.kind, link.target.id, link.measureSection])).toEqual(expected);
+  });
+});

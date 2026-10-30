@@ -32,7 +32,9 @@ function splitIntoSections(body: string): MeasureSection[] {
 }
 
 const addedTo = /(?:is|are) added to and made a part of\s*$/;
-const asAmendedBy = String.raw`(?:,?\s*as amended by [^.;:]{1,400}?Oregon Laws[^.;:]{0,200}?)?`;
+// Legislative Counsel's history of a section, in whichever form: "as amended by section 8, chapter 20,
+// Oregon Laws 2024," or "as amended by section 5 of this 2025 Act," (#6 F2).
+const asAmendedBy = String.raw`(?:,?\s*as amended by [^.;:]{1,400}?)?`;
 const amendedAfter = new RegExp(String.raw`^${asAmendedBy},?\s*(?:is|are) amended\b`);
 const repealedAfter = /^\s*(?:is|are) repealed\b/;
 

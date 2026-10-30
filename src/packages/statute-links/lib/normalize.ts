@@ -2,10 +2,12 @@
 //   SB 69-1 1/17/25
 //   Proposed Amendments to SB 69
 //   Page 13
+// An amendment to an engrossed bill names it, and may add a note:
+//   Proposed Amendments to B-Eng. HB 3544 (A to RC)
 // A citation can run over a page break, so the footer has to go for "ORS" and its number to meet.
 const pageFooterLines = [
   /^[A-Z]{1,3} \d{1,4}-[A-Z]?\d{1,3} \d{1,2}\/\d{1,2}\/\d{2}$/,
-  /^Proposed Amendments to [A-Z]{1,3} \d{1,4}$/,
+  /^Proposed Amendments to (?:[A-Z]-Eng\. )?[A-Z]{1,3} \d{1,4}(?: \([^)]{1,20}\))?$/,
   /^Page \d{1,3}$/,
 ];
 
