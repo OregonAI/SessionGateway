@@ -3,7 +3,7 @@
 // is of: its `Version` label and its `IsMinority` flag. The ingest worker reads them through
 // `placeAnalysis` to write the Version a document points at (what `get_document` lists), and
 // `get_measure` reads them through the same function to group the documents, so the two tools can never
-// disagree. docs/adr/0012 has the labels of the 2025R1 feed and what each one is read as.
+// disagree. docs/adr/0013 has the labels of the 2025R1 feed and what each one is read as.
 
 import type { MeasureKey } from "./index.ts";
 import { versionIdOf, type CommitteeId, type DocumentId } from "./documents.ts";

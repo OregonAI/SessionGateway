@@ -1,6 +1,6 @@
 // Seam 1: what get_measure says of the analysis documents the worker could not fetch. The index holds
 // only the documents whose files the worker fetched, so that every id get_measure lists resolves in
-// get_document (ADR-0012). The Measure must not read as having no statement when the feed lists one
+// get_document (ADR-0013). The Measure must not read as having no statement when the feed lists one
 // and the worker has not got it, so get_measure counts the feed's analysis documents it does not hold.
 // Cases here change what the fake OLIS answers, so each builds its own system; cases that only read the
 // fixture are in get-measure-analysis.test.ts, and cases that add feed rows are in

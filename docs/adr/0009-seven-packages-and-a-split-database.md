@@ -26,7 +26,7 @@ Dependencies point one way. `time` is at the bottom, `domain` is on it, `config`
 - ADR-0011 records the shape of the documents themselves.
 
 **Extended by ticket #12, analysis documents in `get_measure`.** No package is added.
-- `domain` gains a third entry point, `analysis.ts`: the one reading of the feed's `Version` label and `IsMinority` flag on an analysis document (`placeAnalysis`), which the OLIS client uses to write the Version an analysis points at and `mcp-server` uses to group a Measure's analysis documents (ADR-0012).
+- `domain` gains a third entry point, `analysis.ts`: the one reading of the feed's `Version` label and `IsMinority` flag on an analysis document (`placeAnalysis`), which the OLIS client uses to write the Version an analysis points at and `mcp-server` uses to group a Measure's analysis documents (ADR-0013).
 - `Measure` gains `digest` (the feed's `MeasureSummary`), `DocumentLink` gains an optional `versionLabel` and `isMinority`, and `database` stores them (`measure.digest`, `document.analysis_version_label`, `document.analysis_is_minority`) and answers `analysisDocuments(measure)` through `reader.ts`. `writer.ts` records the analysis documents the feed lists for each Measure before it fetches any file (`recordListedAnalyses`, table `analysis_listing`), and `reader.ts` counts the ones the store does not hold (`analysisNotHeld`).
 - `mcp-server` adds `digest` and `analysis_documents` (by Version, the unmapped ones, and `not_held`) to `get_measure`'s output (`lib/analysis.ts`).
 
