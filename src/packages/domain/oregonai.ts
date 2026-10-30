@@ -1,16 +1,21 @@
 // The words of the OregonAI side of the pairing (ADR-0004) as types: the ids of Agencies and of ORS
 // sections and chapters, and the version of the snapshot copied from OregonAI at build time. Like
 // index.ts, this is where the ids are minted and parsed (src/CLAUDE.md, "Shape"): the snapshot, the
-// Statute Link parser (statute-links.ts) and the build scripts all take OregonAI's id forms from here.
+// Statute Link parser (statute-links.ts), the Agency Link extractor and the build scripts all take
+// OregonAI's id forms from here.
 import type { Timestamp } from "#/packages/time/pacific.ts";
 
-/** An Agency's id: the slug of the OregonAI agency registry, such as `department-of-environmental-quality`. */
-export type AgencySlug = string & { readonly brand: "AgencySlug" };
+/**
+ * An Agency's id (GLOSSARY.md, "Agency"): its slug in the OregonAI agency registry, such as
+ * `department-of-environmental-quality`. The snapshot and the Agency Link extractor both use this one.
+ */
+export type AgencyId = string & { readonly brand: "AgencyId" };
 
-const agencySlugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const agencyIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-export function parseAgencySlug(text: string): AgencySlug | undefined {
-  return agencySlugPattern.test(text) ? (text as AgencySlug) : undefined;
+/** Reads a registry slug such as `department-of-human-services` as an Agency id, or undefined if it is not one. */
+export function parseAgencyId(text: string): AgencyId | undefined {
+  return agencyIdPattern.test(text) ? (text as AgencyId) : undefined;
 }
 
 /** An ORS section's id in OregonAI's form: lower-case chapter, a dot, the section, as in `ors-468.130` or `ors-163a.040`. */

@@ -3,14 +3,14 @@
 // package parses the snapshot file at the edge into domain types. The script that builds the file from a
 // checkout of OregonAI's repository is scripts/snapshot/build.ts, and only that script knows that repository.
 import { readFile } from "node:fs/promises";
-import type { AgencySlug, OrsChapterId, OrsSectionId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
+import type { AgencyId, OrsChapterId, OrsSectionId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
 import { snapshotSchema, type SnapshotFile } from "./lib/schema.ts";
 
 export type { SnapshotFile };
 
 /** One row of OregonAI's agency registry. A sub-unit of an Agency (a division with its own OAR chapter) has a row of its own. */
 export type Agency = {
-  slug: AgencySlug;
+  slug: AgencyId;
   /** The name the registry gives the body. */
   name: string;
   /** Other names the same body is known by, including former names. */
@@ -32,7 +32,7 @@ export type Snapshot = {
    * For an ORS chapter, the Agencies whose rules implement its sections, by slug. A chapter that no rule
    * implements has no entry.
    */
-  chapterAgencies: ReadonlyMap<OrsChapterId, AgencySlug[]>;
+  chapterAgencies: ReadonlyMap<OrsChapterId, AgencyId[]>;
 };
 
 /** Parses what a snapshot file holds. Throws, naming each problem, if it is not a snapshot. */

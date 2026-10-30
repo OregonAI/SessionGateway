@@ -1,10 +1,10 @@
 import { z } from "zod";
 import {
   orsChaptersOf,
-  parseAgencySlug,
+  parseAgencyId,
   parseOrsChapterId,
   parseOrsSectionId,
-  type AgencySlug,
+  type AgencyId,
   type OrsChapterId,
   type OrsSectionId,
   type SnapshotVersion,
@@ -12,7 +12,7 @@ import {
 import type { Timestamp } from "#/packages/time/pacific.ts";
 
 const agencySlug = z.string().transform((text, context) => {
-  const slug = parseAgencySlug(text);
+  const slug = parseAgencyId(text);
   if (slug === undefined) {
     context.addIssue({
       code: "custom",
@@ -66,7 +66,7 @@ export const snapshotSchema = z
     chapterAgencies: z.record(z.string(), z.array(agencySlug).min(1)),
   })
   .transform((file, context) => {
-    const slugs = new Set<AgencySlug>();
+    const slugs = new Set<AgencyId>();
     for (const agency of file.agencies) {
       if (slugs.has(agency.slug)) {
         context.addIssue({ code: "custom", path: ["agencies"], message: `the agency ${agency.slug} is listed twice` });
@@ -81,7 +81,7 @@ export const snapshotSchema = z
       sections.add(section);
     }
     const chaptersWithSections = orsChaptersOf(file.orsSections);
-    const chapterAgencies = new Map<OrsChapterId, AgencySlug[]>();
+    const chapterAgencies = new Map<OrsChapterId, AgencyId[]>();
     for (const [chapter, agencies] of Object.entries(file.chapterAgencies)) {
       const id = parseOrsChapterId(chapter);
       if (id === undefined) {
