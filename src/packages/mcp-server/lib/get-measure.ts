@@ -88,7 +88,9 @@ export const getMeasureOutput = z.object({
         chamber: z.enum(["house", "senate"]).describe("The chamber that voted."),
         date: z.string().describe("When the chamber voted, in Pacific time with its UTC offset."),
         action: z.string().describe('The history action the vote was taken at, such as "Third reading.  Passed.".'),
-        votes: z.array(legislatorVoteOutput).describe("Each Legislator's vote, in the feed's order."),
+        votes: z
+          .array(legislatorVoteOutput)
+          .describe("Each Legislator's vote, in the order of the ids the feed gives the entries."),
       }),
     )
     .describe(
@@ -99,7 +101,9 @@ export const getMeasureOutput = z.object({
       z.object({
         committee_code: z.string().describe("The code of the committee that voted, such as SLB."),
         meeting_date: z.string().describe("When the committee met, in Pacific time with its UTC offset."),
-        votes: z.array(legislatorVoteOutput).describe("Each member's vote, in the feed's order."),
+        votes: z
+          .array(legislatorVoteOutput)
+          .describe("Each member's vote, in the order of the ids the feed gives the entries."),
       }),
     )
     .describe(

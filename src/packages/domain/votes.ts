@@ -48,14 +48,14 @@ export type LegislatorVote = {
   vote: string;
 };
 
-/** A committee's vote on a Measure at one meeting, each member's vote in the feed's order. */
+/** A committee's vote on a Measure at one meeting, each member's vote in the order of the feed's ids for the entries. */
 export type CommitteeVote = {
   committeeCode: string;
   meetingDate: Timestamp;
   votes: LegislatorVote[];
 };
 
-/** One chamber's roll call on a Measure, each Legislator's vote in the feed's order. */
+/** One chamber's roll call on a Measure, each Legislator's vote in the order of the feed's ids for the entries. */
 export type FloorVote = {
   chamber: Chamber;
   date: Timestamp;

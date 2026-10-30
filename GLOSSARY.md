@@ -105,7 +105,7 @@ The text of a MeasureSponsors row of type Presession, as OLIS publishes it: "(Pr
 One Legislator's answer in a floor vote or a committee vote, in the feed's own word. Committee votes have "Aye", "Nay" and "Excused"; floor votes add "Excused for Business" and "Absent" (`docs/research/olis-votes.md` §2 has the counts). The voter is named by a Legislator Code, so it resolves to a Legislator like a Sponsor does.
 
 **Floor vote**:
-One chamber's roll call on a Measure, taken at one action of its History: the feed's MeasureVotes rows that share a `MeasureHistoryId`, with the chamber, when it voted and the action's text ("Third reading.  Carried by Bonham.  Passed."). `get_measure` lists a Measure's floor votes in the order they were taken, each with every Legislator's Vote in the feed's order.
+One chamber's roll call on a Measure, taken at one action of its History: the feed's MeasureVotes rows that share a `MeasureHistoryId`, with the chamber, when it voted and the action's text ("Third reading.  Carried by Bonham.  Passed."). `get_measure` lists a Measure's floor votes in the order they were taken, each with every Legislator's Vote in the order of the feed's ids for the entries. In the cache that is the order the feed lists them in (`docs/research/olis-votes.md` §5).
 _Avoid_: roll call, when the chamber matters
 
 **Committee vote**:

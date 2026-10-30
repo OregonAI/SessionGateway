@@ -12,10 +12,13 @@ import { startSystem, type System } from "../support/system.ts";
 const sb69Catchline =
   "Specifies that the Bureau of Labor and Industries is responsible for certain administrative and regulatory oversight regarding certain provisions under the laws governing paid family and medical leave that relate to retaliation and discrimination.";
 
-/** The description of a property of a JSON schema, found by the names of its properties from the root. */
+/**
+ * The description of a property of a JSON schema, found by the names of its properties from the root
+ * ("[]" steps into the items of an array).
+ */
 function describedAs(schema: unknown, path: readonly string[]): string {
-  let node = schema as { properties?: Record<string, unknown>; description?: unknown } | undefined;
-  for (const name of path) node = node?.properties?.[name] as typeof node;
+  let node = schema as { properties?: Record<string, unknown>; items?: unknown; description?: unknown } | undefined;
+  for (const name of path) node = (name === "[]" ? node?.items : node?.properties?.[name]) as typeof node;
   return typeof node?.description === "string" ? node.description : "";
 }
 
@@ -108,6 +111,16 @@ describe.for(eras)("get_measure for a %s client", (era) => {
     expect(description).toContain("meeting_date is later than as_of");
     expect(description).toContain("the feed does not say whether that vote has been taken");
   });
+
+  it.for([["floor_votes"], ["committee_votes"]])(
+    "says that the votes of a roll in %s come in the order of the ids the feed gives the entries",
+    async ([votes]) => {
+      const { tools } = await connected.client.listTools();
+
+      const description = describedAs(tools[0]?.outputSchema, [votes as string, "[]", "votes"]);
+      expect(description).toContain("in the order of the ids the feed gives the entries");
+    },
+  );
 
   it("advertises get_measure as the one read-only tool, with an output schema", async () => {
     const { tools } = await connected.client.listTools();

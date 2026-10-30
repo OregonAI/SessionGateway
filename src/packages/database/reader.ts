@@ -18,12 +18,12 @@ export type IndexReader = {
   findHistory(key: MeasureKey): HistoryAction[];
   /**
    * A Measure's floor votes, in the order they were taken (then by the feed's history id), each with the
-   * Legislators' votes in the feed's order.
+   * Legislators' votes in the order of the feed's ids for the entries (`MeasureVoteId`).
    */
   findFloorVotes(key: MeasureKey): FloorVote[];
   /**
    * A Measure's committee votes, in the order the committees met (then by the feed's report id), each
-   * with the members' votes in the feed's order.
+   * with the members' votes in the order of the feed's ids for the entries (`CommitteeVoteId`).
    */
   findCommitteeVotes(key: MeasureKey): CommitteeVote[];
   /** When the last completed full pull started, or undefined if none has completed. */

@@ -226,7 +226,7 @@ describe("history the feed sends out of order", () => {
 
 describe("votes the feed sends out of order", () => {
   // Two floor entries for SB 69 sent highest id first, on a date before every real floor vote
-  // (2025-01-03) though their ids are above the real ones: the feed's order is the id order, so "Sen
+  // (2025-01-03) though their ids are above the real ones: entries are listed by the feed's id, so "Sen
   // Hayden" (9000011) comes before "Sen Pham" (9000012).
   const floorEntries = [
     floorVoteRow(9000012, "Sen Pham", "Nay", { historyId: 900001, actionDate: "2025-01-03T10:00:00" }),
