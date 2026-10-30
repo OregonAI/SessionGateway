@@ -12,11 +12,23 @@ import {
   unknownDocumentMessage,
 } from "./lib/get-document.ts";
 import { getMeasure, getMeasureInput, getMeasureOutput, unknownMeasureMessage } from "./lib/get-measure.ts";
+import {
+  backwardsRangeMessage,
+  MAX_MEETINGS_CHARACTERS,
+  meetings,
+  meetingsInput,
+  meetingsOutput,
+  NO_FILTER_MESSAGE,
+  unknownCommitteeMessage,
+} from "./lib/meetings.ts";
 import { sessionOverview, sessionOverviewInput, sessionOverviewOutput } from "./lib/session-overview.ts";
 import { createRateLimiter, rateLimitMessage, type RateLimiter } from "./lib/rate-limit.ts";
 
 export type HandlerDeps = {
-  /** Times the rate limit's window. */
+  /**
+   * The time the server answers by: it times the rate limit's window, and `meetings` measures "upcoming"
+   * and the next meeting from it. A test that freezes or moves it moves both.
+   */
   clock: Clock;
 };
 
@@ -43,7 +55,7 @@ function refuseOverRateLimit(
   };
 }
 
-function buildServer(reader: IndexReader, config: ServerConfig, limiter: RateLimiter): McpServer {
+function buildServer(reader: IndexReader, config: ServerConfig, limiter: RateLimiter, clock: Clock): McpServer {
   const server = new McpServer({ name: "session-gateway", version: "0.0.0" });
   server.registerTool(
     "get_measure",
@@ -111,11 +123,49 @@ function buildServer(reader: IndexReader, config: ServerConfig, limiter: RateLim
     },
   );
   server.registerTool(
+    "meetings",
+    {
+      title: "Committee meetings",
+      description: `Lists committee meetings of the Session, earliest first, for a Measure (meetings with an agenda item about it), a committee, a date range, or all three together. Each meeting has when it starts, the status OLIS gives it (Scheduled, Cancelled), whether it is still ahead of the service's clock, its agenda items, the Proposed Amendments posted to it, its Exhibits (each with OLIS's title for it), its Recording Logs, its agenda document and a link to its OLIS page. next_meeting_id names the next scheduled meeting. Every document OLIS lists for a meeting is listed, and each says whether this service has fetched the file yet (fetched): only a fetched one can be read with get_document. A call returns whole days of meetings, as many as fit in about ${MAX_MEETINGS_CHARACTERS} characters; when truncated is true, ask again with from set to the day after the last meeting returned. It is not the official record.`,
+      inputSchema: meetingsInput,
+      outputSchema: meetingsOutput,
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    (input) => {
+      const refused = refuseOverRateLimit(limiter, config);
+      if (refused !== undefined) return refused;
+      const result = meetings(reader, config.session, clock.now(), input);
+      switch (result.kind) {
+        case "found":
+          return {
+            content: [{ type: "text", text: JSON.stringify(result.meetings) }],
+            structuredContent: result.meetings,
+          };
+        case "unknown_measure":
+          return {
+            isError: true,
+            content: [{ type: "text", text: unknownMeasureMessage(result.reference, result.session) }],
+          };
+        case "unknown_committee":
+          return {
+            isError: true,
+            content: [{ type: "text", text: unknownCommitteeMessage(result.reference, result.session) }],
+          };
+        case "no_filter":
+          return { isError: true, content: [{ type: "text", text: NO_FILTER_MESSAGE }] };
+        case "backwards_range":
+          return { isError: true, content: [{ type: "text", text: backwardsRangeMessage(result.from, result.to) }] };
+        default:
+          return result satisfies never;
+      }
+    },
+  );
+  server.registerTool(
     "session_overview",
     {
       title: "Overview of the Session",
       description:
-        "Returns which Session this service holds, how many Measures, committees, meetings and documents it has (and how many documents are scans with no text layer), and when the index was last refreshed. It is not the official record.",
+        "Returns which Session this service holds, how many Measures, committees, meetings and documents it has (and how many documents are scans with no text layer), when the index was last refreshed, and which version of the OregonAI snapshot it was built with (the commit of OregonAI's executive-regulatory-frameworks repository the registry and ORS data were copied from, and the commit's date). It is not the official record.",
       inputSchema: sessionOverviewInput,
       outputSchema: sessionOverviewOutput,
       annotations: { readOnlyHint: true, openWorldHint: false },
@@ -139,7 +189,7 @@ export function createSessionGatewayHandler(config: ServerConfig, deps: HandlerD
     windowSeconds: config.rateWindowSeconds,
     clock: deps.clock,
   });
-  const handler = createMcpHandler(() => buildServer(reader, config, limiter));
+  const handler = createMcpHandler(() => buildServer(reader, config, limiter, deps.clock));
   return {
     fetch: handler.fetch,
     close: async () => {

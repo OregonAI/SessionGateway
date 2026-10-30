@@ -25,8 +25,15 @@ Dependencies point one way. `time` is at the bottom, `domain` is on it, `config`
 - `OLIS_DOCUMENT_ORIGIN` (optional, `https://olis.oregonlegislature.gov` by default) is where the worker fetches documents from, because they are not on the feed's host. Only a test sets it.
 - ADR-0011 records the shape of the documents themselves.
 
+**Extended by ticket #10, the OregonAI snapshot (ADR-0012).**
+- A ninth package, `oregonai-snapshot` (`index.ts`), parses the snapshot file at the edge: `parseSnapshot` and `loadSnapshot`, and the types `Snapshot` and `Agency`. Only the ingest worker imports it; a `dependency-cruiser` rule keeps the server from reaching it.
+- `domain` gains a third entry point, `oregonai.ts`: the ids of Agencies and of ORS sections and chapters, and `SnapshotVersion`. `index.ts` and `documents.ts` stay as they were.
+- `database` records the version of the snapshot with the full pull (`snapshot_state`, written in the same transaction as the as-of time) and `reader.ts` reads it back.
+- `config` adds `SNAPSHOT_PATH` to the worker's configuration, and `mcp-server`'s `session_overview` reports the version.
+- Four more layering rules in `.dependency-cruiser.cjs` keep OregonAI out of the server path: the server never reaches `oregonai-snapshot`, nothing under `src/` imports `scripts/`, nothing under `src/` imports a `devDependencies` package, and the server path imports no built-in that opens a connection. Three ESLint rules close the rest (the global `fetch`, `node:http` beyond `createServer`); ADR-0012 has them.
+
 **Extended by ticket #12, analysis documents in `get_measure`.** No package is added.
-- `domain` gains a third entry point, `analysis.ts`: the one reading of the feed's `Version` label and `IsMinority` flag on an analysis document (`placeAnalysis`), which the OLIS client uses to write the Version an analysis points at and `mcp-server` uses to group a Measure's analysis documents (ADR-0013).
+- `domain` gains a fourth entry point, `analysis.ts`: the one reading of the feed's `Version` label and `IsMinority` flag on an analysis document (`placeAnalysis`), which the OLIS client uses to write the Version an analysis points at and `mcp-server` uses to group a Measure's analysis documents (ADR-0013).
 - `Measure` gains `digest` (the feed's `MeasureSummary`), `DocumentLink` gains an optional `versionLabel` and `isMinority`, and `database` stores them (`measure.digest`, `document.analysis_version_label`, `document.analysis_is_minority`) and answers `analysisDocuments(measure)` through `reader.ts`. `writer.ts` records the analysis documents the feed lists for each Measure before it fetches any file (`recordListedAnalyses`, table `analysis_listing`), and `reader.ts` counts the ones the store does not hold (`analysisNotHeld`).
 - `mcp-server` adds `digest` and `analysis_documents` (by Version, the unmapped ones, and `not_held`) to `get_measure`'s output (`lib/analysis.ts`).
 

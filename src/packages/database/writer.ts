@@ -1,16 +1,44 @@
 // The ingest worker's side of the database. The server has no way to reach this file's functions:
 // it imports reader.ts only.
 import { z } from "zod";
-import type { Committee, DocumentId, DocumentLink, Meeting, StoredDocument } from "#/packages/domain/documents.ts";
+import {
+  meetingDocumentKinds,
+  type AgendaItem,
+  type Committee,
+  type DocumentId,
+  type DocumentKind,
+  type DocumentLink,
+  type Meeting,
+  type StoredDocument,
+} from "#/packages/domain/documents.ts";
 import type { Measure, SessionKey } from "#/packages/domain/index.ts";
+import type { SnapshotVersion } from "#/packages/domain/oregonai.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openWriteConnection } from "./lib/connection.ts";
 
 export type IndexWriter = {
-  /** Stores what a full pull read, and when, in one transaction. A full pull never deletes (ADR-0005). */
-  recordFullPull(session: SessionKey, measures: readonly Measure[], asOf: Timestamp): void;
-  /** Stores the committees and meetings a full pull read, in one transaction. A full pull never deletes (ADR-0005). */
-  recordMeetings(session: SessionKey, committees: readonly Committee[], meetings: readonly Meeting[]): void;
+  /**
+   * Stores what a full pull read, when, and the version of the OregonAI snapshot the build used, in one
+   * transaction. A full pull never deletes (ADR-0005).
+   */
+  recordFullPull(session: SessionKey, measures: readonly Measure[], asOf: Timestamp, snapshot: SnapshotVersion): void;
+  /**
+   * Stores the committees, meetings and agenda items a full pull read, in one transaction. A meeting's
+   * status and an item's action are the feed's latest. A full pull never deletes (ADR-0005).
+   */
+  recordMeetings(
+    session: SessionKey,
+    committees: readonly Committee[],
+    meetings: readonly Meeting[],
+    agendaItems: readonly AgendaItem[],
+  ): void;
+  /**
+   * Stores what the feed lists for each meeting (its agenda, Exhibits, Recording Logs and the postings of
+   * Proposed Amendments), in one transaction, whether or not the files are fetched: a document that was
+   * not fetched is still listed. The label, Measure and a posting's Meaning are the feed's latest. A full
+   * pull never deletes (ADR-0005). A link to any other kind of document, or to no meeting, is ignored.
+   */
+  recordMeetingDocuments(session: SessionKey, links: readonly DocumentLink[]): void;
   /** The ids of the documents already stored for the Session: a stored document is never fetched again. */
   storedDocumentIds(session: SessionKey): Set<DocumentId>;
   /**
@@ -41,10 +69,19 @@ function minorityColumn(isMinority: boolean | undefined): 0 | 1 | null {
   return isMinority === undefined ? null : isMinority ? 1 : 0;
 }
 
+/** The meeting a link is listed under and, for a posting, what the committee did with it there. */
+function meetingListingOf(link: DocumentLink): { meetingId: string; meaning: string | null } | undefined {
+  if (!(meetingDocumentKinds as readonly DocumentKind[]).includes(link.kind)) return undefined;
+  const bound =
+    link.relations.find((relation) => relation.relation === "posted_to") ??
+    link.relations.find((relation) => relation.relation === "meeting");
+  return bound === undefined ? undefined : { meetingId: bound.to, meaning: bound.meaning };
+}
+
 export function openIndexWriter(path: string): IndexWriter {
   const database = openWriteConnection(path);
   return {
-    recordFullPull(session, measures, asOf) {
+    recordFullPull(session, measures, asOf, snapshot) {
       const upsertMeasure = database.prepare(
         `INSERT INTO measure (session_key, prefix, number, catchline, digest, created_at, modified_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -55,6 +92,11 @@ export function openIndexWriter(path: string): IndexWriter {
       const recordAsOf = database.prepare(
         `INSERT INTO index_state (session_key, full_pull_as_of) VALUES (?, ?)
          ON CONFLICT (session_key) DO UPDATE SET full_pull_as_of = excluded.full_pull_as_of`,
+      );
+      const recordSnapshot = database.prepare(
+        `INSERT INTO snapshot_state (session_key, source, commit_sha, commit_date) VALUES (?, ?, ?, ?)
+         ON CONFLICT (session_key) DO UPDATE SET
+           source = excluded.source, commit_sha = excluded.commit_sha, commit_date = excluded.commit_date`,
       );
       database.exec("BEGIN IMMEDIATE");
       try {
@@ -70,27 +112,92 @@ export function openIndexWriter(path: string): IndexWriter {
           );
         }
         recordAsOf.run(session, asOf);
+        recordSnapshot.run(session, snapshot.source, snapshot.commit, snapshot.commitDate);
         database.exec("COMMIT");
       } catch (error) {
         database.exec("ROLLBACK");
         throw error;
       }
     },
-    recordMeetings(session, committees, meetings) {
+    recordMeetings(session, committees, meetings, agendaItems) {
       const upsertCommittee = database.prepare(
         `INSERT INTO committee (session_key, code, id, name) VALUES (?, ?, ?, ?)
          ON CONFLICT (session_key, code) DO UPDATE SET id = excluded.id, name = excluded.name`,
       );
       const upsertMeeting = database.prepare(
-        `INSERT INTO meeting (id, session_key, committee_code, committee_id, at) VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO meeting (id, session_key, committee_code, committee_id, at, status) VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET committee_code = excluded.committee_code,
-           committee_id = excluded.committee_id, at = excluded.at`,
+           committee_id = excluded.committee_id, at = excluded.at, status = excluded.status`,
+      );
+      const upsertAgendaItem = database.prepare(
+        `INSERT INTO agenda_item (id, meeting_id, session_key, measure_prefix, measure_number, meeting_type, action,
+                                  print_order, comments, board_name, executive_appointee)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET meeting_id = excluded.meeting_id, measure_prefix = excluded.measure_prefix,
+           measure_number = excluded.measure_number, meeting_type = excluded.meeting_type, action = excluded.action,
+           print_order = excluded.print_order, comments = excluded.comments, board_name = excluded.board_name,
+           executive_appointee = excluded.executive_appointee`,
       );
       database.exec("BEGIN IMMEDIATE");
       try {
         for (const committee of committees) upsertCommittee.run(session, committee.code, committee.id, committee.name);
         for (const meeting of meetings) {
-          upsertMeeting.run(meeting.id, session, meeting.committeeCode, meeting.committeeId, meeting.at);
+          upsertMeeting.run(
+            meeting.id,
+            session,
+            meeting.committeeCode,
+            meeting.committeeId,
+            meeting.at,
+            meeting.status,
+          );
+        }
+        for (const item of agendaItems) {
+          upsertAgendaItem.run(
+            item.itemId,
+            item.meetingId,
+            session,
+            item.measure?.prefix ?? null,
+            item.measure?.number ?? null,
+            item.meetingType,
+            item.action,
+            item.printOrder,
+            item.comments,
+            item.boardName,
+            item.executiveAppointee,
+          );
+        }
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    recordMeetingDocuments(session, links) {
+      const upsertListing = database.prepare(
+        `INSERT INTO meeting_document (document_id, meeting_id, session_key, kind, node_id, label, source_url,
+                                       title, measure_id, meaning)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (document_id) DO UPDATE SET meeting_id = excluded.meeting_id, kind = excluded.kind,
+           node_id = excluded.node_id, label = excluded.label, source_url = excluded.source_url,
+           title = excluded.title, measure_id = excluded.measure_id, meaning = excluded.meaning`,
+      );
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        for (const link of links) {
+          const listing = meetingListingOf(link);
+          if (listing === undefined) continue;
+          upsertListing.run(
+            link.id,
+            listing.meetingId,
+            session,
+            link.kind,
+            link.nodeId,
+            link.label,
+            link.sourceUrl,
+            link.title ?? null,
+            link.relations.find((relation) => relation.relation === "measure")?.to ?? null,
+            listing.meaning,
+          );
         }
         database.exec("COMMIT");
       } catch (error) {

@@ -1,14 +1,16 @@
 // The ingest worker. A full pull reads the deployment's Session from OLIS (its Measures, committees,
-// meetings and the documents they link) and stores the feed with the time the pull started as the
-// index's "as of" time. It refreshes what the feed says about the documents it already holds, fetches
-// every linked document the store does not hold yet, once each, keeps its text, and writes the build
-// report (docs/adr/0011-an-amendment-is-a-node-and-its-postings-are-documents.md).
+// meetings, their agenda items and the documents they link) and stores the feed, with which documents
+// each meeting lists and the time the pull started as the index's "as of" time. It refreshes what the
+// feed says about the documents it already holds, fetches every linked document the store does not hold
+// yet, once each, keeps its text, and writes the build report
+// (docs/adr/0011-an-amendment-is-a-node-and-its-postings-are-documents.md).
 import { createHash } from "node:crypto";
 import type { IngestConfig } from "#/packages/config/index.ts";
 import { openIndexWriter } from "#/packages/database/writer.ts";
 import { buildReportPath, writeBuildReport, type BuildReport } from "./lib/build-report.ts";
 import type { DocumentLink } from "#/packages/domain/documents.ts";
 import { createOlisClient, type OlisClient } from "#/packages/olis-client/index.ts";
+import { loadSnapshot } from "#/packages/oregonai-snapshot/index.ts";
 import { extractPdfText, type ExtractedPdf } from "#/packages/pdf-text/index.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
@@ -74,6 +76,8 @@ async function readPdf(link: DocumentLink, bytes: Uint8Array): ReturnType<typeof
 }
 
 export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promise<FullPullResult> {
+  // The snapshot is read before OLIS is: a build with no usable snapshot fails at once, naming the file.
+  const snapshot = await loadSnapshot(config.snapshotPath);
   const asOf = formatPacific(deps.clock.now());
   const olis = createOlisClient({
     baseUrl: config.olisBaseUrl,
@@ -87,6 +91,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
   const measures = await olis.readMeasures(config.session, deps.signal);
   const committees = await olis.readCommittees(config.session, deps.signal);
   const meetings = await olis.readMeetings(config.session, deps.signal);
+  const agendaItems = await olis.readAgendaItems(config.session, deps.signal);
   const links = [
     ...(await olis.readDocumentLinks(config.session, deps.signal)),
     ...meetings.flatMap((meeting) => (meeting.agenda === null ? [] : [meeting.agenda])),
@@ -95,10 +100,13 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
   let documentsFetched = 0;
   const notFetched: BuildReport["documents_not_fetched"] = [];
   try {
-    writer.recordFullPull(config.session, measures, asOf);
-    writer.recordMeetings(config.session, committees, meetings);
+    writer.recordFullPull(config.session, measures, asOf, snapshot.version);
+    writer.recordMeetings(config.session, committees, meetings, agendaItems);
     // Before any file is fetched, so that the server can say a Measure has a statement it does not hold yet.
     writer.recordListedAnalyses(config.session, links);
+    // What each meeting lists is the feed's, so it is stored before any file is fetched: a file that fails
+    // to come is still listed, as not fetched.
+    writer.recordMeetingDocuments(config.session, links);
     const stored = writer.storedDocumentIds(config.session);
     // A fetched file is unchanging (ADR-0005) but its feed row is not: OLIS changes a posting's Meaning,
     // a Testimony's Measure. What the row says about a stored document is refreshed without fetching it.

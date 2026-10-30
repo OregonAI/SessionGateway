@@ -3,6 +3,7 @@ dist/
 coverage/
 data/*.db
 data/*.db-*
+data/snapshot.json
 .env
 .cache/
 CLAUDE.local.md

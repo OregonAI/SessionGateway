@@ -14,6 +14,7 @@ Seam-1 tests read state back through the tools, never through tables, SQL or int
 ## Expected values
 
 Expected values are literals from an independent source:
+
 - the spec's worked examples, such as HB 3131's 42 Testimony rows (41 support, 1 oppose), or SB 69-2, adopted by SLB on 2025-01-30;
 - the Statutes Affected Table;
 - the document itself.
@@ -31,15 +32,17 @@ Expected values are literals from an independent source:
   - Keep the two kinds in separate files.
 - **MCP client.** Drive `createMcpHandler` in-process through `handler.fetch`, once with a 2026-07-28 client and once with a legacy client. Call `listTools()` first so the client validates `structuredContent`. One test runs on a real port for the Node adapter, the `Host` and `Origin` guards, and the mount path.
 - **One system.** `startSystem` (`test/support/system.ts`) starts the fake OLIS at a simulated time, runs the ingest worker's full pull into a temp database and builds the MCP handler, wiring the packages through their entry points the way `src/bin/` does. It refuses to run under the Pacific zone, so a lost `TZ` setting fails loudly. Its `documents` option turns the documents on (default off), `documentTimeoutMs` shortens the worker's wait for a hung document, and the worker never pauses between attempts. `buildReport()` reads the `build-report.json` the worker wrote beside the database. Its `pullAgain()` runs the full pull again after a test moves the clock or changes the fake (for example `olis.withholdLastRows(1)`, so the pull is refused and the test reads the tools to see the index stayed as it was).
+- **The snapshot.** `startSystem` gives the worker the committed snapshot fixture (`test/fixtures/oregonai-snapshot/`, ticket #10) as `SNAPSHOT_PATH`; its `snapshot` option gives another path. A test that needs a snapshot with a version of its own writes a made-up one (`test/support/made-up-snapshot.ts`) and says so.
 - **Entry scripts.** One test file runs `src/bin/ingest.ts` and `src/bin/server.ts` as child processes against the fake OLIS, because nothing else executes them.
 - **Hermetic.** The suite reaches only localhost. A contract test of the OLIS client against live OLIS is run by hand, outside `npm test`.
 
 ## Layout
 
 The layout is the deep-module one in `src/packages/README.md`:
+
 - seam 2 in the parser package's own `tests/` folder, next to the parser it tests;
-- seam 1 in `test/tools/`, one file per kind of database use: `get-measure.test.ts` shares one read-only database, `get-measure-feed.test.ts` builds its own for each case, `get-document.test.ts` shares one database of the whole fixture and `get-document-pull.test.ts` builds its own for each case (fetch counts, failures, rows the fixture lacks), `get-measure-analysis.test.ts` shares one database of the whole fixture for the digest and the analysis documents and `get-measure-analysis-labels.test.ts` builds its own for the feed labels the fixture lacks (made-up rows) and `get-measure-analysis-pull.test.ts` builds its own for each case of an analysis document or a Version the worker could not fetch, and the real-port and entry-script tests are files of their own;
-- the shared harness (fake OLIS, clock, MCP client) in `test/support/`;
+- seam 1 in `test/tools/`, one file per kind of database use: `get-measure.test.ts` shares one read-only database, `get-measure-feed.test.ts` builds its own for each case, `get-document.test.ts` shares one database of the whole fixture and `get-document-pull.test.ts` builds its own for each case (fetch counts, failures, rows the fixture lacks), `meetings.test.ts` shares one database at the clock of spec #1's case (c), `meetings-past.test.ts` one at a clock after the whole fixture exists, and `meetings-pull.test.ts` builds its own for each case (another clock, a clock moved after the pull, a failed fetch, a made-up row), `get-measure-analysis.test.ts` shares one database of the whole fixture for the digest and the analysis documents and `get-measure-analysis-labels.test.ts` builds its own for the feed labels the fixture lacks (made-up rows) and `get-measure-analysis-pull.test.ts` builds its own for each case of an analysis document or a Version the worker could not fetch, and the real-port and entry-script tests are files of their own;
+- the shared harness (fake OLIS, clock, MCP client, snapshot) in `test/support/`;
 - fixtures in `test/fixtures/`.
 
 Seam 1 and the harness span packages, so they live at the top. Every test imports packages only through their entry points, and dependency-cruiser checks both `src` and `test` for it.
@@ -49,6 +52,7 @@ Seam 1 and the harness span packages, so they live at the top. Every test import
 `npm test` should finish in under a minute, so it runs before every commit. The evaluation run against a full local build (#23) has its own script and never runs in `npm test`.
 
 fast-check (`@fast-check/vitest`) covers invariants that tables can't enumerate:
+
 - an expanded ORS range stays inside the snapshot's section list, sorted, with both ends present;
 - a parser never throws on arbitrary text.
 

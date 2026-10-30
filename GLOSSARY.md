@@ -93,6 +93,13 @@ One sitting of a Committee, identified by the Committee and its start time in Pa
 **Agenda**:
 A Meeting's published agenda, a Document of its own.
 
+**Agenda item**:
+One line of a Meeting's agenda: a Measure the Committee takes up (a Public Hearing, a Work Session) or another item, such as an executive appointment. The feed's `CommitteeAgendaItems` rows give them, and the Action says what the Committee did with each.
+_Avoid_: agenda entry
+
+**Meeting status**:
+What the feed's `MeetingStatus` says of a Meeting: Scheduled, Cancelled or No Meeting Scheduled. It is shown as the feed writes it.
+
 **Recording Log**:
 A committee's timecoded index of one meeting's recording: agenda items, motions, votes and each speaker.
 _Avoid_: minutes
@@ -134,3 +141,11 @@ _Avoid_: department, issuing body
 **Agency Link**:
 A connection from a Measure, Version or Proposed Amendment to an Agency, of one kind: named in a Fiscal Impact Statement, named in the text, submitted Testimony, or derived through a Statute Link.
 _Avoid_: affected agency, unqualified
+
+**Snapshot**:
+The slice of OregonAI's data copied at build time, from a checkout of its executive-regulatory-frameworks repository: the agency registry, the list of ORS section ids and the Chapter table. It is named by the commit it was read from and the commit's date, which `session_overview` reports. Nothing looks it up again while serving (ADR-0004, ADR-0012).
+_Avoid_: cache, mirror
+
+**Chapter table**:
+The Snapshot's table from an ORS chapter to the Agencies whose rules implement its sections, found from the rules' links to ORS sections and each rule's OAR chapter. It is how a Statute Link to a chapter reaches an Agency.
+_Avoid_: statute-to-agency map
