@@ -112,6 +112,9 @@ export function statuteLinksShown(links: readonly StatuteLink[]): StatuteLinksOu
   return Object.fromEntries(statuteLinkKinds.map((kind) => [kind, shown(kind)])) as StatuteLinksOutput;
 }
 
+/** The links of a document with none, or one that was not read. */
+export const noLinks: StatuteLinksOutput = statuteLinksShown([]);
+
 export function relatingClauseEditShown(edit: RelatingClauseEdit): RelatingClauseEditOutput {
   return {
     deleted: edit.deleted,
@@ -126,6 +129,39 @@ export function notReadReasonOf(parse: StatuteParse): string | null {
   return parse.textRead
     ? null
     : "This index did not read the file for Statute Links: it has no text layer (a scan or a photograph), or the index has not read it yet. The empty list does not mean the document has none.";
+}
+
+const textReadDescription =
+  "True when this index read the document's text for Statute Links. False when it did not (no text layer, or not read yet): statute_links is then empty, and that does not mean the document has none.";
+
+/**
+ * What was read of one document (a Version, or a file posted for a Proposed Amendment), as three fields. The one
+ * block every tool that shows a reading takes its fields from, with `parseResultShown` as the one renderer.
+ */
+export const parseResultFields = {
+  text_read: z.boolean().describe(textReadDescription),
+  not_read_reason: z
+    .string()
+    .nullable()
+    .describe("Why the text was not read. Null when text_read is true, or when there was no document to read."),
+  statute_links: statuteLinksOutput.describe(
+    "The document's Statute Links, by kind (amends, repeals, adds-to, cites), each target once with the measure sections it is linked in. For a Proposed Amendment they are the links in the sections it inserts: a link of the Version that the amendment deletes is not among them.",
+  ),
+};
+export const parseResultOutput = z.object(parseResultFields);
+
+/** The same fields for a Version that may not be known: nothing was read then, so text_read is null. */
+export const maybeParseResultFields = {
+  ...parseResultFields,
+  text_read: z.boolean().nullable().describe(`${textReadDescription} Null when the Version is not known.`),
+};
+
+export function parseResultShown(parse: StatuteParse): z.infer<typeof parseResultOutput> {
+  return {
+    text_read: parse.textRead,
+    not_read_reason: notReadReasonOf(parse),
+    statute_links: statuteLinksShown(parse.links),
+  };
 }
 
 export const postingOutput = z.object({
@@ -227,39 +263,18 @@ export const fileOutput = z.object({
     .describe(
       "The postings (ids that get_document resolves) whose files read the same. Postings of one amendment usually share one file, or hold files that differ only in how the PDF was saved; when a committee posted a revised text, each distinct reading is listed on its own. Files that were not read (text_read false) are never listed together unless they are the same file.",
     ),
-  text_read: z
-    .boolean()
-    .describe(
-      "True when this index read the file's text for Statute Links. False when it did not (no text layer, or not read yet): statute_links is then empty, and that does not mean the amendment has none.",
-    ),
-  not_read_reason: z.string().nullable().describe("Why the file was not read. Null when text_read is true."),
-  statute_links: statuteLinksOutput.describe(
-    "The Statute Links in the sections the amendment inserts, by kind (amends, repeals, adds-to, cites), each target once with the measure sections it is linked in. A link of the Version that the amendment deletes is not among them.",
-  ),
+  ...parseResultFields,
 });
 
 export function fileShown(file: AmendmentFile): z.infer<typeof fileOutput> {
-  return {
-    posting_ids: file.postingIds,
-    text_read: file.parse.textRead,
-    not_read_reason: notReadReasonOf(file.parse),
-    statute_links: statuteLinksShown(file.parse.links),
-  };
+  return { posting_ids: file.postingIds, ...parseResultShown(file.parse) };
 }
 
 const versionEntryOutput = z.object({
   id: z.string().describe("The Version's id, which get_document resolves."),
   label: z.string().describe('The Version as the Legislature describes it: "Introduced", "A-Engrossed", "Enrolled"...'),
   source_url: z.string().describe("Where the Legislature publishes the Version."),
-  text_read: z
-    .boolean()
-    .describe(
-      "True when this index read the Version's text for Statute Links. False when it did not (no text layer, or not read yet): statute_links is then empty, and that does not mean the Version has none.",
-    ),
-  not_read_reason: z.string().nullable().describe("Why the text was not read. Null when text_read is true."),
-  statute_links: statuteLinksOutput.describe(
-    "The Version's Statute Links, by kind (amends, repeals, adds-to, cites), each target once with the measure sections it is linked in.",
-  ),
+  ...parseResultFields,
 });
 
 /** A Version named in superseded_amendments: the one the amendment amends (which may not be held), or the one that replaces it. */
@@ -411,9 +426,7 @@ export function statuteLinksBySourceOf(
       id: version.id,
       label: version.label,
       source_url: version.sourceUrl,
-      text_read: version.parse.textRead,
-      not_read_reason: notReadReasonOf(version.parse),
-      statute_links: statuteLinksShown(version.parse.links),
+      ...parseResultShown(version.parse),
     })),
     proposed_amendments: current,
     superseded_amendments: superseded,
