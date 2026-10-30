@@ -44,9 +44,27 @@ let shared: Promise<Embedder> | undefined;
 
 /**
  * The fake embedder: the real tokenizer and a fake session. The tokenizer's files are read once for each test
- * file. It fails, naming `npm run model:fetch`, when the model's files are missing.
+ * file. It fails, naming `npm run model:fetch`, when the model's files are missing. A test file pulls the same
+ * documents again and again, one system for each case, and cutting a document into passages counts the tokens of
+ * every line of it with the real tokenizer, so the count of a line is remembered: it is the real tokenizer's count,
+ * asked once.
  */
 export function createFakeEmbedder(): Promise<Embedder> {
-  shared ??= loadEmbedder({ modelPath: modelPath(), lockPath: modelLockPath }, () => Promise.resolve(fakeRunner));
+  shared ??= loadEmbedder({ modelPath: modelPath(), lockPath: modelLockPath }, () => Promise.resolve(fakeRunner)).then(
+    (real) => {
+      const counted = new Map<string, number>();
+      return {
+        ...real,
+        countTokens(text) {
+          let count = counted.get(text);
+          if (count === undefined) {
+            count = real.countTokens(text);
+            counted.set(text, count);
+          }
+          return count;
+        },
+      };
+    },
+  );
   return shared;
 }
