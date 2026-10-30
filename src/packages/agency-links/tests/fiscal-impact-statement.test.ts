@@ -63,6 +63,24 @@ describe("Fiscal Impact Statement: Government Unit(s) Affected", () => {
         agencies: [{ slug: "department-of-human-services", unit: "Department of Human Services" }],
         unresolved: [],
       },
+      {
+        // The statement's body then calls the same Agency "OBDD"; the unit line spells it out.
+        source: "measure-analysis-documents/87631.pdf (Fiscal Impact Statement, SB 921, A-Engrossed)",
+        text: [
+          "Bill Title: Relating to shipyards.",
+          "Government Unit(s) Affected: Oregon Business Development Department",
+          "Summary of Fiscal Impact",
+          "2025-27 Biennium",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [
+          {
+            slug: "oregon-business-development-department",
+            unit: "Oregon Business Development Department",
+          },
+        ],
+        unresolved: [],
+      },
     ])("$source", expectUnits);
   });
 
@@ -175,5 +193,35 @@ describe("Fiscal Impact Statement: Government Unit(s) Affected", () => {
         unresolved: ["Judicial Department"],
       },
     ])("$source", expectUnits);
+  });
+  describe("a document with no unit line", () => {
+    test("a Revenue Impact Statement says so instead of listing nothing", () => {
+      // measure-analysis-documents/90375.pdf (Revenue Impact Statement, SB 121, Introduced), lines 1 to 22.
+      const text = [
+        "REVENUE IMPACT OF",
+        "PROPOSED LEGISLATION",
+        "",
+        "Bill Number:",
+        "Revenue Area:",
+        "Economist:",
+        "Date:",
+        "",
+        "83rd Oregon Legislative Assembly",
+        "2025 Regular Session",
+        "Legislative Revenue Office",
+        "",
+        "SB 121",
+        "Personal Income Tax",
+        "Kyle Easton",
+        "4/10/2025",
+        "",
+        "Only Impacts on Original or Engrossed",
+        "Versions are Considered Official",
+        "____________________________________________________________________________________________________",
+        "",
+        "Measure Description:",
+      ].join("\n");
+      expect(fiscalImpactAgencyLinks(text, testRegistry)).toEqual({ kind: "no-unit-line" });
+    });
   });
 });

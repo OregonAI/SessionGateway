@@ -29,3 +29,8 @@ export type FiscalImpactUnits = {
   /** Units the registry does not name, as written. */
   unresolvedUnits: string[];
 };
+
+/** The text has no "Government Unit(s) Affected:" line, as in a Revenue Impact Statement. */
+export type NoUnitLine = { kind: "no-unit-line" };
+
+export type FiscalImpactResult = FiscalImpactUnits | NoUnitLine;
