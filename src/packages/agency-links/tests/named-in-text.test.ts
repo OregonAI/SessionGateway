@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from "vitest";
 import { textAgencyLinks, type RegistryAgency } from "../index.ts";
-import { testRegistry } from "./registry.ts";
+import { testAgencyId, testRegistry } from "./registry.ts";
 
 type TextRow = {
   /** The fixture document the lines are quoted from, in a label short enough for a test name. */
@@ -30,6 +30,26 @@ function expectLinks({ text, registry, agencies }: TextRow): void {
     })),
   );
 }
+
+/** HB 3795 Introduced (measure-documents/HB3795/Introduced.pdf), lines 1 to 16 as `pdftotext` prints them. */
+const hb3795IntroducedOpening: readonly string[] = [
+  "83rd OREGON LEGISLATIVE ASSEMBLY--2025 Regular Session",
+  "",
+  "House Bill 3795",
+  "Sponsored by COMMITTEE ON EARLY CHILDHOOD AND HUMAN SERVICES (at the request of Representative",
+  "Annessa Hartman)",
+  "",
+  "SUMMARY",
+  "The following summary is not prepared by the sponsors of the measure and is not a part of the body thereof subject",
+  "to consideration by the Legislative Assembly. It is an editor’s brief statement of the essential features of the",
+  "measure as introduced. The statement includes a measure digest written in compliance with applicable readability",
+  "standards.",
+  "",
+  "Digest: The Act tells ODHS to study human services. (Flesch Readability Score: 82.3).",
+  "Requires the Department of Human Services to study human services. Directs the department",
+  "to submit findings to the interim committees of the Legislative Assembly related to human services",
+  "not later than September 15, 2026.",
+];
 
 describe("Agencies named in Version and Proposed Amendment text", () => {
   describe("a name, and an alias in the same Digest", () => {
@@ -268,25 +288,23 @@ describe("Agencies named in Version and Proposed Amendment text", () => {
         document: "HB 3795 Introduced",
         variant: '"Legislative Assembly" boilerplate',
         path: "measure-documents/HB3795/Introduced.pdf",
-        text: [
-          "83rd OREGON LEGISLATIVE ASSEMBLY--2025 Regular Session",
-          "",
-          "House Bill 3795",
-          "Sponsored by COMMITTEE ON EARLY CHILDHOOD AND HUMAN SERVICES (at the request of Representative",
-          "Annessa Hartman)",
-          "",
-          "SUMMARY",
-          "The following summary is not prepared by the sponsors of the measure and is not a part of the body thereof subject",
-          "to consideration by the Legislative Assembly. It is an editor’s brief statement of the essential features of the",
-          "measure as introduced. The statement includes a measure digest written in compliance with applicable readability",
-          "standards.",
-          "",
-          "Digest: The Act tells ODHS to study human services. (Flesch Readability Score: 82.3).",
-          "Requires the Department of Human Services to study human services. Directs the department",
-          "to submit findings to the interim committees of the Legislative Assembly related to human services",
-          "not later than September 15, 2026.",
-        ].join("\n"),
+        text: hb3795IntroducedOpening.join("\n"),
         registry: testRegistry,
+        agencies: [{ slug: "department-of-human-services", terms: ["ODHS", "Department of Human Services"] }],
+      },
+      {
+        // The same text read with a registry that gives the Legislative Assembly row another slug.
+        // Which Agencies a registry holds is the registry's to say; that the Assembly is not one is
+        // spec #1's (story 34), so the rule follows the name the documents print, not the slug.
+        document: "HB 3795 Introduced",
+        variant: '"Legislative Assembly" row under another slug',
+        path: "measure-documents/HB3795/Introduced.pdf",
+        text: hb3795IntroducedOpening.join("\n"),
+        registry: testRegistry.map((agency) =>
+          agency.slug === testAgencyId("legislative-assembly")
+            ? { ...agency, slug: testAgencyId("oregon-legislative-assembly") }
+            : agency,
+        ),
         agencies: [{ slug: "department-of-human-services", terms: ["ODHS", "Department of Human Services"] }],
       },
       {
