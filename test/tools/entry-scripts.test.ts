@@ -2,7 +2,7 @@
 // containers run them, with their configuration in the environment. The fake OLIS is the only
 // thing in this process; the worker and the server are child processes.
 import { spawn } from "node:child_process";
-import { createServer, connect } from "node:net";
+import { connect, createServer } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { startFakeOlis, type FakeOlis } from "../support/fake-olis.ts";
 import { createSimulatedClock } from "../support/clock.ts";
@@ -106,6 +106,86 @@ describe("the entry scripts", () => {
     expect(outcome.structured?.["as_of"]).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-0[78]:00$/);
     expect(await exited).toBe(0);
   }, 20_000);
+
+  describe("src/bin/server.ts logs", () => {
+    /** Pulls into a fresh database, starts the server on a free port and waits until it listens. */
+    async function runningServer(): Promise<{
+      port: number;
+      stdout: () => string;
+      stderr: () => string;
+      stop: () => Promise<number | null>;
+    }> {
+      const { olis, database } = await fakeOlisAndDatabase();
+      const env = { SESSION_KEY: "2025R1", OLIS_BASE_URL: olis.baseUrl, DATABASE_PATH: database.path };
+      const pulled = await run("src/bin/ingest.ts", env);
+      expect(pulled.code, pulled.stderr).toBe(0);
+      const port = await freePort();
+      const child = spawn(process.execPath, ["src/bin/server.ts"], {
+        env: childEnvironment({ ...env, MCP_PORT: String(port), MCP_PATH: "/session-gateway/mcp" }),
+      });
+      let out = "";
+      let err = "";
+      child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
+      child.stderr.on("data", (chunk: Buffer) => (err += chunk.toString()));
+      const exited = new Promise<number | null>((resolve) => child.once("close", resolve));
+      cleanups.push(() => {
+        child.kill("SIGKILL");
+      });
+      await listening(port);
+      return {
+        port,
+        stdout: () => out,
+        stderr: () => err,
+        stop: () => {
+          child.kill("SIGTERM");
+          return exited;
+        },
+      };
+    }
+
+    /** Every line the server wrote to stdout, each parsed as JSON (a line that is not JSON throws). */
+    function jsonLines(stdout: string): Record<string, unknown>[] {
+      return stdout
+        .split("\n")
+        .filter((line) => line !== "")
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+    }
+
+    it("as JSON lines on stdout, with nothing on stderr: where it listens", async () => {
+      const server = await runningServer();
+
+      await server.stop();
+
+      expect(server.stderr()).toBe("");
+      expect(jsonLines(server.stdout())[0]).toMatchObject({
+        msg: "MCP server listening",
+        port: server.port,
+        path: "/session-gateway/mcp",
+      });
+    }, 20_000);
+
+    it("an error the Node adapter reports as a JSON line with the error and its stack, not text on stderr", async () => {
+      const server = await runningServer();
+
+      // A client that hangs up in the middle of its request body: the adapter reports an error.
+      const socket = connect(server.port, "127.0.0.1");
+      await new Promise((resolve) => socket.once("connect", resolve));
+      socket.write(
+        "POST /session-gateway/mcp HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 1000\r\n\r\n{",
+      );
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      socket.destroy();
+      for (let wait = 0; wait < 50 && !server.stdout().includes('"level":50'); wait += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      await server.stop();
+
+      expect(server.stderr()).toBe("");
+      const failure = jsonLines(server.stdout()).find((line) => line["level"] === 50);
+      expect(failure).toMatchObject({ msg: "The MCP adapter reported an error", err: { message: "aborted" } });
+      expect(String((failure?.["err"] as Record<string, unknown> | undefined)?.["stack"])).toContain("aborted");
+    }, 20_000);
+  });
 
   // [script, variable, a value the variable must refuse]
   const badVariables: readonly (readonly [string, string, string])[] = [
