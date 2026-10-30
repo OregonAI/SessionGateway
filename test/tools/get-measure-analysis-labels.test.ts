@@ -13,11 +13,15 @@
 // Cases that only read the fixture are in get-measure-analysis.test.ts.
 // The last case is a made-up Measure with no digest and no analysis documents. Every case runs once
 // with a 2026-07-28 client and once with a legacy client (test/CLAUDE.md, "MCP client").
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient, type ToolOutcome } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";
 
 const clockAt = "2026-08-01T17:00:00Z";
+
+// A case that builds its own system and serves the documents pulls the fixture's 278 files, about four
+// seconds on its own and more with the other files' workers running beside it (the default is five).
+vi.setConfig({ testTimeout: 60_000 });
 const root = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads";
 
 /** A made-up MeasureAnalysisDocuments row, shaped like the feed's (with `CommittteCode` and the string key). */
