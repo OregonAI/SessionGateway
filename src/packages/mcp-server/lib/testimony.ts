@@ -15,14 +15,20 @@ export const testimonyInput = z.object({
 });
 
 /**
- * How many Testimony rows one page lists. The 2025R1 feed has Measures with 14,223 rows (SB 210) and 4,204 (HB 2025),
- * and 17 with more than 1,000 (counted over the full local cache on 2026-10-30), so a Measure's whole Testimony would
- * overflow an agent's context. An item is about 525 characters of JSON (measured 2026-10-30: HB 3131's 42 items are
- * 22,045 characters, and a page of 100 made-up items with short fields was 48,347), so 100 items would be about
- * 50,000 characters, two and a half `get_document` parts (PART_SIZE_CHARACTERS, 20,000, "a few percent of an agent's
- * context"). 50 items are about 26,000 characters, a part and a third, and keep HB 3131's 42 rows, the Measure spec #1
+ * How many Testimony rows one page lists. The 2025R1 feed has Measures with 14,223 rows (SB 210), 4,204 (HB 2025) and
+ * 3,668 (HB 3075), and 17 with more than 1,000 (counted over the full local cache of 99,665 rows on 2026-10-30), so
+ * a Measure's whole Testimony would overflow an agent's context.
+ *
+ * Measured the same day through the tool: HB 3131's whole answer, 42 items in 33 groups, is 23,124 characters of
+ * JSON, and a page of 50 made-up items in 7 groups is 24,678, so an item is about 470 characters (HB 3131's
+ * longest, 514) plus the header of its group, and a page of 50 is about 25,000 to 27,500 characters. That is a
+ * part and a quarter to a part and a third of a `get_document` part (PART_SIZE_CHARACTERS, 20,000, "a few percent of
+ * an agent's context"). 100 items would have been 2.5 parts. 50 also keeps HB 3131's 42 rows, the Measure spec #1
  * uses as its example, on one page. Every tool here sends the JSON as text and as structured content, so a client
  * may hold it twice.
+ *
+ * A page is rows and not groups, because a group can be larger than a page (SB 210's Portland under oppose has 4,431
+ * rows), so a group can run across a break and is on both pages with its whole count.
  */
 export const TESTIMONY_PAGE_SIZE = 50;
 const PAGE_SIZE = TESTIMONY_PAGE_SIZE;
@@ -55,6 +61,8 @@ const positionCountOutput = z.object({
   count: z.number().describe("How many of the Measure's Testimony rows take this position."),
 });
 
+// An item carries no letter text: `get_document` serves it in parts (ADR-0011). The Session's text is about 357 M
+// characters (docs/research/olis-odata.md §7), and a form letter's words would come once for each row.
 const itemOutput = z.object({
   id: z.string().describe("The Testimony's id, such as testimony-2025r1-117165. Give it to get_document."),
   source_url: z.string().describe("Where the Legislature publishes the file."),
@@ -204,6 +212,19 @@ export type TestimonyResult =
 /**
  * What makes two Organization values one group: trimmed, every run of white space one space, capitals
  * ignored. An empty result is the group of rows that give no organization.
+ *
+ * Organization is free text typed by the submitter and often a city (spec #1, "Further Notes"), and BehalfOf often
+ * names the real organization (117167: BehalfOf "Oregon Association of Conservation Districts", Organization
+ * "Portland"). Groups still go by Organization, as the ticket says, and nothing tries to tell a city from an
+ * organization or to group by BehalfOf: BehalfOf is also a role or a slogan ("Self", "teachers ", "taxpayers", "Mr
+ * Oregon Opposes HB 3131"), "Oregon City" is a city and "Oregon Seed Council" is not, and a list of cities would
+ * still miss "Southern Oregon". A guess shown as a group is worse than a noisy field shown as it is, so BehalfOf is
+ * on every item instead.
+ *
+ * Counted over the full 2025R1 cache on 2026-10-30 (the 16 rows that name no Measure left out), by Measure,
+ * position and value: 39,651 groups by exact value, 37,252 after trimming, 34,634 after trimming and ignoring
+ * capitals, and 34,625 with the white-space rule too ("Grants  Pass" is the same words as "grants pass"). The key is
+ * made for each call from the values as stored, as published (ADR-0002), so changing the rule changes no stored data.
  */
 function organizationKey(organization: string | null): string {
   return (organization ?? "").trim().replace(/\s+/g, " ").toLowerCase();

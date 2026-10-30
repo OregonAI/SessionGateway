@@ -92,11 +92,11 @@ _Avoid_: stance, vote
 The feed's `Organization` of a Testimony row: free text typed by whoever submitted it, often a city ("Portland", "grants pass") and not an organization. `BehalfOf` is the other free-text field, and often names the real organization. Both are shown as written.
 
 **Organization group**:
-The Testimony of one Measure under one Position whose Organization matches after trimming, collapsing runs of white space and ignoring capitals ("Portland" and "PORTLAND"). It is shown by the spelling that comes first in CommTestId order, with every spelling it holds. The rows that give no Organization are one group, listed last (ADR-0016).
+The Testimony of one Measure under one Position whose Organization matches after trimming, collapsing runs of white space and ignoring capitals ("Portland" and "PORTLAND"). It is shown by the spelling that comes first in CommTestId order, with every spelling it holds. The rows that give no Organization are one group, listed last.
 _Avoid_: organization, unqualified
 
 **Identical letters**:
-Two or more Testimony rows of a Measure whose files have the same extracted text, exactly as stored, whatever their bytes. `testimony` reports them once with a count and the id to read (the lowest CommTestId), and each of their items points at it. A file with no Text layer is never identical to another (ADR-0016).
+Two or more Testimony rows of a Measure whose files have the same extracted text, exactly as stored, whatever their bytes. `testimony` lists the 10 largest sets, each once, as the id to read (the lowest CommTestId) and a count, and every item of a set, on any page, carries both. A file with no Text layer is never identical to another (ADR-0016).
 _Avoid_: duplicates, form letters
 
 **Exhibit**:

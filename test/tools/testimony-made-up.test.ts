@@ -74,7 +74,7 @@ describe.for(eras)("testimony on rows the fixture lacks, for a %s client", (era)
     });
 
     // Ticket #14, box 4: "Each item has an id that get_document resolves". It holds for every item whose file is fetched.
-    // The tool still lists a Testimony whose download failed (ADR-0016, listing before fetch: a person who testified
+    // The tool still lists a Testimony whose download failed (ADR-0017, listing before fetch: a person who testified
     // must not vanish from the answer because a download failed), and get_document answers for it with an error that
     // says what is true: the id is the Testimony's, the index does not hold the file, and the next pull fetches it
     // again. It must not say what it says of an id that is no document's, "Give a document id such as ...", which
