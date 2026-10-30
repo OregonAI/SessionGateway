@@ -76,6 +76,15 @@ export function amendedVersionDescriptionOf(printedAmendmentDescription: string)
 }
 
 /**
+ * The description the feed gives a Version, from the letter an amendment number or a header names it by: no
+ * letter is the Introduced Version, "A" the "A-Engrossed" one. The one place a Version's description is
+ * minted from a letter; `versionRankOf` reads one back.
+ */
+export function versionDescriptionOfLetter(letter: string | null): string {
+  return letter === null ? "Introduced" : `${letter.toUpperCase()}-Engrossed`;
+}
+
+/**
  * Where a Version sits in the order Versions are printed in: Introduced first, then A-Engrossed, B-Engrossed and
  * so on by letter, then Enrolled. Undefined for a description that sits nowhere in that chain ("Minority Report
  * A-Engrossed"): nothing is guessed about where it falls (ADR-0013's rule).
@@ -93,9 +102,33 @@ export function versionIdOf(key: MeasureKey, versionDescription: string): Docume
   return `${kind}-${measureSlug(key)}-${slug(versionDescription)}` as DocumentId;
 }
 
-/** SB 69-2 is `amendment-2025r1-sb69-2`; the feed writes the number "-2" or "-A3", and once "-2 " with a space. */
+/** An amendment number read: the letter of the Version it names (null for Introduced) and its digits. */
+export type AmendmentNumber = { letter: string | null; digits: string };
+
+const amendmentNumberPattern = /^(?:-\s*)?([A-Za-z])?(\d+)$/;
+
+/**
+ * Reads an amendment number as the feed spells it: a number with an optional Version letter, with or without the
+ * hyphen before it ("-2", "2", "- 2", "-A3", "A3"; 2025R1's feed writes all of these, some of them for one
+ * amendment). Undefined for any other spelling, such as a minority report's "-AMR10". This is the one place an
+ * amendment number is parsed: the id (`amendmentIdOf`) and the Version it names (`versionDescriptionOfLetter`)
+ * both come from it.
+ */
+export function parseAmendmentNumber(spelling: string): AmendmentNumber | undefined {
+  const parts = amendmentNumberPattern.exec(spelling.trim());
+  if (parts?.[2] === undefined) return undefined;
+  return { letter: parts[1]?.toUpperCase() ?? null, digits: parts[2] };
+}
+
+/**
+ * SB 69-2 is `amendment-2025r1-sb69-2`. The feed spells one amendment's number more than one way ("-1", "1" and
+ * "- 1" for HB 2344's first), and they are one node: the id has the number's letter and digits and nothing else.
+ * A spelling that is not a number with an optional Version letter ("-AMR10") has its words as the id.
+ */
 export function amendmentIdOf(key: MeasureKey, amendmentNumber: string): AmendmentId {
-  return `amendment-${measureSlug(key)}-${slug(amendmentNumber)}` as AmendmentId;
+  const number = parseAmendmentNumber(amendmentNumber);
+  const named = number === undefined ? slug(amendmentNumber) : `${number.letter?.toLowerCase() ?? ""}${number.digits}`;
+  return `amendment-${measureSlug(key)}-${named}` as AmendmentId;
 }
 
 /** One posting of a Proposed Amendment to a meeting, by the feed's `ProposedAmendmentId`. */
@@ -142,16 +175,18 @@ export function parseDocumentReference(text: string, session: SessionKey): Docum
     : (trimmed.toLowerCase() as DocumentId);
 }
 
-/**
- * The Version an amendment's number says it amends, in the words the feed describes Versions in. Legislative
- * Counsel numbers an amendment to the Introduced Version with digits alone ("-2") and an amendment to an
- * engrossed Version with that Version's letter before them ("-A3" amends A-Engrossed, "-B1" B-Engrossed).
- * Undefined for a number in neither form.
- */
-export function versionDescriptionOfAmendmentNumber(number: string): string | undefined {
-  if (/^-\d+$/.test(number)) return "Introduced";
-  const letter = /^-([A-Z])\d+$/.exec(number)?.[1];
-  return letter === undefined ? undefined : `${letter}-Engrossed`;
+/** The Version an amendment number names, or undefined for a spelling that is not a number with an optional letter. */
+function versionNamedByNumber(spelling: string): string | undefined {
+  const number = parseAmendmentNumber(spelling);
+  return number === undefined ? undefined : versionDescriptionOfLetter(number.letter);
+}
+
+/** "-9", "-9 and --9", "-1, 1 and - 1": the spellings in a sentence. */
+function spelled(spellings: readonly string[]): string {
+  const last = spellings.at(-1);
+  return spellings.length < 2 || last === undefined
+    ? spellings.join("")
+    : `${spellings.slice(0, -1).join(", ")} and ${last}`;
 }
 
 /** Where a Proposed Amendment's Version is, as far as the evidence goes, and why (ADR-0015). */
@@ -166,7 +201,7 @@ export type AmendmentPlacement =
  */
 export function placeAmendment(
   key: MeasureKey,
-  number: string,
+  spellings: readonly string[],
   headers: readonly (string | null)[],
   isHeld: (versionId: DocumentId) => boolean,
 ): AmendmentPlacement {
@@ -189,15 +224,22 @@ export function placeAmendment(
       `The headers of the amendment's files name different Versions (${distinct.join(" and ")}), so which Version it amends is not known.`,
     );
   }
-  const fromNumber = versionDescriptionOfAmendmentNumber(number);
+  // Every posting spells the number, and they may spell it differently; the Version they name must be one.
+  const fromNumbers = [...new Set(spellings.map(versionNamedByNumber))];
+  if (fromNumbers.length > 1) {
+    return unknown(
+      `The postings of the amendment write its number as ${spelled(spellings)}, which do not name one Version, so which Version it amends is not known.`,
+    );
+  }
+  const [fromNumber] = fromNumbers;
   if (fromNumber === undefined) {
     return unknown(
-      `The amendment's number ${number} names no Version (a number of digits alone names Introduced, and a letter names that engrossed Version), so which Version it amends is not known.`,
+      `The amendment's number ${spelled(spellings)} is not a number with an optional Version letter (a number alone, as in -2, names Introduced, and a letter before it, as in -A3, names that engrossed Version), so which Version it amends is not known.`,
     );
   }
   if (fromNumber !== fromHeader) {
     return unknown(
-      `The amendment's header names the ${fromHeader} Version but its number ${number} names the ${fromNumber} Version, so which Version it amends is not known.`,
+      `The amendment's header names the ${fromHeader} Version but its number ${spelled(spellings)} names the ${fromNumber} Version, so which Version it amends is not known.`,
     );
   }
   const versionId = versionIdOf(key, fromHeader);
@@ -210,23 +252,25 @@ export function placeAmendment(
     kind: "version",
     versionId,
     description: fromHeader,
-    reason: `The amendment's header names the ${fromHeader} Version and its number ${number} agrees.`,
+    reason: `The amendment's header names the ${fromHeader} Version and its number ${spelled(spellings)} agrees.`,
   };
 }
 
-const amendmentCitationPattern = /^([A-Za-z]+)\s*(\d+)\s*(-\s*(?:[A-Za-z]\d+|\d+))$/;
+const amendmentCitationPattern = /^([A-Za-z]+)\s*(\d+)\s*(-.*)$/;
 
 /**
  * Reads what a caller wrote as a Proposed Amendment of the deployment's Session: its citation ("SB 69-2",
  * "HB 3795-A3") or its id (`amendment-2025r1-sb69-2`). The id comes back as minted, from the citation or from
  * the id in lower case. A document's id, a Measure's, another Session's or no form at all is not one: undefined.
+ * The citation's number is read by `parseAmendmentNumber`, so one it cannot read ("SB 69-AMR10") is asked for by id.
  */
 export function parseAmendmentReference(text: string, session: SessionKey): AmendmentId | undefined {
   const trimmed = text.trim();
   const citation = amendmentCitationPattern.exec(trimmed);
   if (citation?.[1] !== undefined && citation[2] !== undefined && citation[3] !== undefined) {
+    if (parseAmendmentNumber(citation[3]) === undefined) return undefined;
     const key = { session, prefix: citation[1].toUpperCase(), number: Number(citation[2]) };
-    return amendmentIdOf(key, citation[3].replace(/\s+/g, ""));
+    return amendmentIdOf(key, citation[3]);
   }
   const reference = parseDocumentReference(trimmed, session);
   return reference?.startsWith("amendment-") === true ? (reference as AmendmentId) : undefined;

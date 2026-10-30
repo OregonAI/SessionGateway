@@ -361,3 +361,58 @@ describe.for(eras)("a Version with no place in the order of printing is the only
     expect(block.superseded_amendments).toEqual([]);
   });
 });
+
+// MADE UP, as above: ids 990021 and 990022, two postings of SB 69's amendment "7", the first written "7" (the
+// way the feed writes HB 2344's 27679, SB 108's 28657 and HB 2741's 28785) and the second "-7", both served with
+// SB 69-2's file. The amendment is one node, its number names the Introduced Version whichever posting is first,
+// and A-Engrossed and Enrolled are held, so its links are replaced and it is listed as superseded, not as current.
+describe.for(eras)("an amendment whose earliest posting writes its number with no hyphen, for a %s client", (era) => {
+  let system: System;
+  let connected: ConnectedClient;
+  const posting = (id: number, number: string, meetingDate: string): Record<string, unknown> => ({
+    ProposedAmendmentId: id,
+    CommitteeAgendaItemId: 202165,
+    SessionKey: "2025R1",
+    CommitteeCode: "SLB",
+    MeetingDate: meetingDate,
+    MeasurePrefix: "SB",
+    MeasureNumber: 69,
+    AmendmentNumber: number,
+    Meaning: "Proposed",
+    ProposedAmendmentUrl: `${root}/ProposedAmendment/26286`,
+    CreatedDate: "2025-01-23T16:00:00",
+    ModifiedDate: null,
+  });
+
+  beforeAll(async () => {
+    system = await startSystem({
+      clockAt: "2026-08-01T17:00:00Z",
+      documents: true,
+      serverEnv: { MCP_RATE_LIMIT: "1000" },
+      olis: {
+        strayRows: {
+          CommitteeProposedAmendments: [
+            posting(990021, "7", "2025-01-21T08:00:00"),
+            posting(990022, "-7", "2025-01-30T08:00:00"),
+          ],
+        },
+      },
+    });
+    connected = await connectClient(era, system.handler);
+  }, 60_000);
+
+  afterAll(async () => {
+    await connected.close();
+    await system.stop();
+  });
+
+  it("replaces its links with A-Engrossed's, and does not list it as current", async () => {
+    const block = await blockOf(connected, "SB 69");
+
+    expect(block.proposed_amendments).toEqual([]);
+    expect(block.superseded_amendments.find((amendment) => amendment.id === "amendment-2025r1-sb69-7")).toMatchObject({
+      number: "7",
+      later_version: { label: "A-Engrossed" },
+    });
+  });
+});

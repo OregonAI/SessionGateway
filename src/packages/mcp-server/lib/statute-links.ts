@@ -160,7 +160,7 @@ export function placeStoredAmendment(
 ): { placement: AmendmentPlacement; version: StoredVersion | undefined; shown: z.infer<typeof amendedVersionOutput> } {
   const placement = placeAmendment(
     key,
-    amendment.number,
+    amendment.spellings,
     amendment.files.map((file) => file.parse.amendedVersionHeader),
     (versionId) => versions.some((version) => version.id === versionId),
   );
