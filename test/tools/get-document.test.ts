@@ -67,6 +67,8 @@ describe.for(eras)("get_document for a %s client", (era) => {
   // from (test/fixtures/olis-2025R1/feed/) and gives the id (spec #1, "Session graph"), the label and
   // the link as that row writes them, and the nodes the row points at.
   type Row = {
+    /** False for the fixture's three scans. */
+    hasTextLayer?: boolean;
     document: string;
     id: string;
     kind: string;
@@ -124,6 +126,88 @@ describe.for(eras)("get_document for a %s client", (era) => {
       ],
     },
     {
+      document: "MeasureDocuments row for HB 3795, B-Engrossed (a Version)",
+      id: "version-2025r1-hb3795-b-engrossed",
+      kind: "version",
+      label: "B-Engrossed",
+      sourceUrl: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/HB3795/B-Engrossed",
+      related: [["measure", "measure-2025r1-hb3795"]],
+    },
+    {
+      document: "MeasureDocuments row for HB 3795, Enrolled (a Version)",
+      id: "version-2025r1-hb3795-enrolled",
+      kind: "version",
+      label: "Enrolled",
+      sourceUrl: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/HB3795/Enrolled",
+      related: [["measure", "measure-2025r1-hb3795"]],
+    },
+    {
+      document: "MeasureDocuments row for HB 3795, House Amendments to Introduced (a Printed Amendment)",
+      id: "printed-amendment-2025r1-hb3795-house-amendments-to-introduced",
+      kind: "printed_amendment",
+      label: "House Amendments to Introduced",
+      sourceUrl:
+        "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/HB3795/House%20Amendments%20to%20Introduced",
+      related: [["measure", "measure-2025r1-hb3795"]],
+    },
+    {
+      document: "MeasureDocuments row for SB 69, Senate Amendments to Introduced (a Printed Amendment)",
+      id: "printed-amendment-2025r1-sb69-senate-amendments-to-introduced",
+      kind: "printed_amendment",
+      label: "Senate Amendments to Introduced",
+      sourceUrl:
+        "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/Senate%20Amendments%20to%20Introduced",
+      related: [["measure", "measure-2025r1-sb69"]],
+    },
+    {
+      document: "MeasureAnalysisDocuments row 85719, HB 3131's Revenue Impact Statement",
+      id: "analysis-2025r1-85719",
+      kind: "analysis",
+      label: "Revenue Impact Statement",
+      sourceUrl: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureAnalysisDocument/85719",
+      related: [
+        ["measure", "measure-2025r1-hb3131"],
+        ["committee", "committee-2025r1-halnrw"],
+      ],
+    },
+    {
+      // The row's Version is blank, as it is on 688 of the Session's rows (olis-odata.md gotcha 9).
+      document: "MeasureAnalysisDocuments row 90799, SB 64's Staff Measure Summary",
+      id: "analysis-2025r1-90799",
+      kind: "analysis",
+      label: "Staff Measure Summary",
+      sourceUrl: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureAnalysisDocument/90799",
+      related: [
+        ["measure", "measure-2025r1-sb64"],
+        ["committee", "committee-2025r1-shs"],
+      ],
+    },
+    {
+      document: "CommitteeMeetingDocuments row 288487, a Witness Registration list for HALNRW on 2025-01-27",
+      id: "exhibit-2025r1-288487",
+      kind: "exhibit",
+      label: "Witness Registration",
+      sourceUrl: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/288487",
+      related: [
+        ["measure", "measure-2025r1-hb3131"],
+        ["committee", "committee-2025r1-halnrw"],
+        ["meeting", "meeting-2025r1-halnrw-2025-01-27-0800"],
+      ],
+    },
+    {
+      hasTextLayer: false,
+      document: "CommitteePublicTestimonies row 148731, a Photo submitted on SB 921 to SLB on 2025-03-11",
+      id: "testimony-2025r1-148731",
+      kind: "testimony",
+      label: "Photo",
+      sourceUrl: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/PublicTestimonyDocument/148731",
+      related: [
+        ["measure", "measure-2025r1-sb921"],
+        ["committee", "committee-2025r1-slb"],
+        ["meeting", "meeting-2025r1-slb-2025-03-11-0800"],
+      ],
+    },
+    {
       document: "CommitteeMeetings row for SLB on 2025-01-30 at 08:00, whose AgendaUrl is the agenda",
       id: "agenda-2025r1-slb-2025-01-30-0800",
       kind: "agenda",
@@ -145,7 +229,7 @@ describe.for(eras)("get_document for a %s client", (era) => {
       kind: row.kind,
       label: row.label,
       source_url: row.sourceUrl,
-      has_text_layer: true,
+      has_text_layer: row.hasTextLayer ?? true,
     });
     const related = (outcome.structured?.["related"] as { id: string; relation: string }[]).map(
       (node) => [node.relation, node.id] as const,
@@ -236,6 +320,23 @@ describe.for(eras)("get_document for a %s client", (era) => {
       expect(postings).toEqual([
         ["meeting-2025r1-slb-2025-01-28-0800", "Proposed"],
         ["meeting-2025r1-slb-2025-01-30-0800", "Adopted"],
+      ]);
+    });
+
+    // HB 3795's -A3 (spec #1, case (b)) is numbered with a letter: rows 28997 (SHS, 2025-05-15, Proposed),
+    // 29108 (2025-05-20, Adopted) and 29109 (2025-05-22, Proposed).
+    it("keeps the letter of an amendment number in its id", async () => {
+      const outcome = await callTool(connected, "get_document", { id: "amendment-2025r1-hb3795-a3" });
+
+      expect(outcome.isError).toBe(false);
+      expect(outcome.structured).toMatchObject({ label: "-A3", kind: "proposed_amendment" });
+      const postings = (outcome.structured?.["related"] as { relation: string; id: string; meaning: string | null }[])
+        .filter((node) => node.relation === "posted_to")
+        .map((node) => [node.id, node.meaning]);
+      expect(postings).toEqual([
+        ["meeting-2025r1-shs-2025-05-15-0800", "Proposed"],
+        ["meeting-2025r1-shs-2025-05-20-0800", "Adopted"],
+        ["meeting-2025r1-shs-2025-05-22-0800", "Proposed"],
       ]);
     });
 
@@ -374,9 +475,10 @@ describe.for(eras)("get_document for a %s client", (era) => {
 describe("the build report", () => {
   // The same three documents (test/fixtures/olis-2025R1/README.md), by the id and source_url the manifest
   // gives them. The report is a file beside the database, which the harness reads.
-  it("lists every document with no text layer", () => {
+  it("lists every document with no text layer, and no document it failed to get", () => {
     const report = system.buildReport();
 
+    expect(report["documents_not_fetched"]).toEqual([]);
     expect(report["documents_without_text_layer"]).toEqual([
       {
         id: "exhibit-2025r1-288141",
