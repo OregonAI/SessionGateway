@@ -12,6 +12,16 @@ import { startSystem, type System } from "../support/system.ts";
 const sb69Catchline =
   "Specifies that the Bureau of Labor and Industries is responsible for certain administrative and regulatory oversight regarding certain provisions under the laws governing paid family and medical leave that relate to retaliation and discrimination.";
 
+/**
+ * The description of a property of a JSON schema, found by the names of its properties from the root
+ * ("[]" steps into the items of an array).
+ */
+function describedAs(schema: unknown, path: readonly string[]): string {
+  let node = schema as { properties?: Record<string, unknown>; items?: unknown; description?: unknown } | undefined;
+  for (const name of path) node = (name === "[]" ? node?.items : node?.properties?.[name]) as typeof node;
+  return typeof node?.description === "string" ? node.description : "";
+}
+
 let system: System;
 
 beforeAll(async () => {
@@ -83,11 +93,56 @@ describe.for(eras)("get_measure for a %s client", (era) => {
     expect(unknown.text).toContain(String(found.structured?.["id"]));
   });
 
+  // The cache's Measures rows keep a CurrentCommitteeCode on some Measures whose CurrentLocation says they are
+  // at the President's desk and give none for one that is "In House Committee" (docs/research/olis-votes.md
+  // section 6), so the code says nothing about where the Measure is by itself.
+  it("tells an agent that the committee code is the feed's and can be set where the Measure is no longer in committee", async () => {
+    const { tools } = await connected.client.listTools();
+
+    const description = describedAs(tools[0]?.outputSchema, ["location", "committee_code"]);
+    expect(description).toContain("At Presidents Desk Upon Adjournment");
+    expect(description).not.toMatch(/the committee the Measure is in/i);
+  });
+
+  it("tells an agent that a committee vote's meeting can be later than as_of, with answers already listed", async () => {
+    const { tools } = await connected.client.listTools();
+
+    const description = describedAs(tools[0]?.outputSchema, ["committee_votes"]);
+    expect(description).toContain("meeting_date is later than as_of");
+    expect(description).toContain("the feed does not say whether that vote has been taken");
+  });
+
+  it.for([["floor_votes"], ["committee_votes"]])(
+    "says that the votes of a roll in %s come in the order of the ids the feed gives the entries",
+    async ([votes]) => {
+      const { tools } = await connected.client.listTools();
+
+      const description = describedAs(tools[0]?.outputSchema, [votes as string, "[]", "votes"]);
+      expect(description).toContain("in the order of the ids the feed gives the entries");
+    },
+  );
+
   it("advertises get_measure as the one read-only tool, with an output schema", async () => {
     const { tools } = await connected.client.listTools();
 
     expect(tools.map((tool) => tool.name)).toEqual(["get_measure"]);
     expect(tools[0]?.annotations?.readOnlyHint).toBe(true);
     expect(tools[0]?.outputSchema).toBeDefined();
+  });
+
+  // The tool reads OLIS when a call arrives (ticket #21), so it touches a world outside the index.
+  it("advertises get_measure as open-world: it reads OLIS when a call arrives", async () => {
+    const { tools } = await connected.client.listTools();
+
+    expect(tools[0]?.annotations?.openWorldHint).toBe(true);
+  });
+
+  it("tells an agent that a live_status from the cache means the live lookup failed, and that the cache has no schedule", async () => {
+    const { tools } = await connected.client.listTools();
+    const schema = tools[0]?.outputSchema;
+
+    expect(describedAs(schema, ["live_status", "source"])).toContain('"cache" when the live lookup failed');
+    expect(describedAs(schema, ["live_status", "schedule"])).toContain('Null when source is "cache"');
+    expect(describedAs(tools[0], [])).toMatch(/live/i);
   });
 });

@@ -109,6 +109,14 @@ describe("the entry scripts", () => {
     expect(outcome.structured).toMatchObject({ id: "measure-2025r1-sb69" });
     // The worker dated the pull with the system clock: Pacific time, an offset of -08:00 or -07:00.
     expect(outcome.structured?.["as_of"]).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-0[78]:00$/);
+    // The server read the Measure from OLIS with the `fetch`, the base URL and the system clock the entry
+    // script gave it, and dated the read.
+    expect(outcome.structured?.["live_status"]).toMatchObject({
+      source: "olis",
+      lookup_failed: false,
+      as_of: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-0[78]:00$/) as unknown,
+      location: { current: "Chapter Number Assigned", committee_code: null },
+    });
     expect(await exited).toBe(0);
   }, 20_000);
 
@@ -135,7 +143,7 @@ describe("the entry scripts", () => {
 
   describe("src/bin/server.ts logs", () => {
     /** Pulls into a fresh database, starts the server on a free port and waits until it listens. */
-    async function runningServer(): Promise<{
+    async function runningServer(serverEnv: Record<string, string> = {}): Promise<{
       port: number;
       stdout: () => string;
       stderr: () => string;
@@ -147,7 +155,7 @@ describe("the entry scripts", () => {
       expect(pulled.code, pulled.stderr).toBe(0);
       const port = await freePort();
       const child = spawn(process.execPath, ["src/bin/server.ts"], {
-        env: childEnvironment({ ...env, MCP_PORT: String(port), MCP_PATH: "/session-gateway/mcp" }),
+        env: childEnvironment({ ...env, MCP_PORT: String(port), MCP_PATH: "/session-gateway/mcp", ...serverEnv }),
       });
       let out = "";
       let err = "";
@@ -211,6 +219,38 @@ describe("the entry scripts", () => {
       expect(failure).toMatchObject({ msg: "The MCP adapter reported an error", err: { message: "aborted" } });
       expect(String((failure?.["err"] as Record<string, unknown> | undefined)?.["stack"])).toContain("aborted");
     }, 20_000);
+    it("a live lookup that fails, as a JSON line with the Measure and the error, while get_measure answers from the cache", async () => {
+      // Nothing listens on this port, so the server's connection to "OLIS" is refused.
+      const nothingListens = await freePort();
+      const server = await runningServer({
+        OLIS_BASE_URL: `http://127.0.0.1:${nothingListens}/odata/odataservice.svc/`,
+      });
+      const connected = await connectClientToUrl(
+        "2026-07-28",
+        new URL(`http://127.0.0.1:${server.port}/session-gateway/mcp`),
+      );
+
+      const outcome = await callTool(connected, "get_measure", { measure: "SB 69" });
+      await connected.close();
+      await server.stop();
+
+      expect(outcome.isError).toBe(false);
+      expect(outcome.structured?.["live_status"]).toMatchObject({
+        source: "cache",
+        lookup_failed: true,
+        // The reason an agent reads says what went wrong, and leaves out the address that was refused.
+        notice: expect.stringMatching(
+          /live lookup of OLIS failed: the connection to OLIS failed \(ECONNREFUSED\)\./,
+        ) as unknown,
+      });
+      expect(server.stderr()).toBe("");
+      const failure = jsonLines(server.stdout()).find((line) => line["level"] === 40);
+      expect(failure).toMatchObject({
+        msg: "The live lookup of OLIS failed; get_measure answered from the cache",
+        measure: { session: "2025R1", prefix: "SB", number: 69 },
+        err: { message: expect.stringContaining("ECONNREFUSED") as unknown },
+      });
+    }, 20_000);
   });
 
   // [script, variable, a value the variable must refuse]
@@ -218,11 +258,29 @@ describe("the entry scripts", () => {
     ["src/bin/ingest.ts", "SESSION_KEY", "not-a-session-key"],
     ["src/bin/ingest.ts", "OLIS_BASE_URL", "not a url at all"],
     ["src/bin/server.ts", "SESSION_KEY", "not-a-session-key"],
+    ["src/bin/server.ts", "OLIS_BASE_URL", "not a url at all"],
+    ["src/bin/server.ts", "OLIS_LIVE_TIMEOUT_MS", "soon"],
+    // Over the bound the lookup may take (30 seconds: half the 60 seconds an MCP client waits for a tool
+    // by default, so the cache's answer still reaches it), and over what a Node timer can count (2^31 - 1
+    // ms), which it would take for 1 ms.
+    ["src/bin/server.ts", "OLIS_LIVE_TIMEOUT_MS", "30001"],
+    ["src/bin/server.ts", "OLIS_LIVE_TIMEOUT_MS", "3000000000"],
     ["src/bin/server.ts", "MCP_PORT", "seventy"],
     ["src/bin/server.ts", "MCP_PATH", "no-leading-slash"],
     ["src/bin/server.ts", "MCP_RATE_LIMIT", "plenty"],
     ["src/bin/server.ts", "MCP_RATE_WINDOW_SECONDS", "never"],
   ];
+
+  it("src/bin/server.ts fails at start-up when OLIS_BASE_URL is missing, naming the variable", async () => {
+    // The server reads OLIS for the live status of get_measure, so a deployment without it would answer
+    // every call from the cache. It is refused at start-up instead (src/CLAUDE.md, "Configuration").
+    const { database } = await fakeOlisAndDatabase();
+
+    const finished = await run("src/bin/server.ts", { SESSION_KEY: "2025R1", DATABASE_PATH: database.path });
+
+    expect(finished.code).not.toBe(0);
+    expect(finished.stderr).toContain("OLIS_BASE_URL");
+  });
 
   it.for(badVariables)(
     "%s fails at start-up on a bad %s, naming the variable and never its value",

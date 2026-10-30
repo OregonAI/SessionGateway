@@ -300,6 +300,46 @@ describe("sponsors with the same print order", () => {
   });
 });
 
+describe("Legislators who sponsor a Measure whose fixture sponsor is not one", () => {
+  // Ticket #15, box 1. HB 3795's one fixture sponsor row is a Committee row (HECHS) and SB 69's a
+  // Presession row; neither is a Legislator. When Legislator rows are added (made up, with Legislator
+  // Codes in a form the feed uses, ids 900050 and 900051), the chief sponsor stands first and the
+  // regular one after, whatever order the feed sends them in, and the committee and the presession
+  // message stay where they were.
+  const regular = (measure: { prefix: string; number: number }) =>
+    memberSponsorRow("900050", "Rep Nosse", "Regular", "20", { measure });
+  const chief = (measure: { prefix: string; number: number }) =>
+    memberSponsorRow("900051", "Rep Hartman", "Chief", "10", { measure });
+
+  it("puts HB 3795's chief sponsor before its regular one, beside its committee sponsor", async () => {
+    const measure = { prefix: "HB", number: 3795 };
+    const outcome = await getMeasure(
+      { clockAt: afterTheSession, olis: { strayRows: { MeasureSponsors: [regular(measure), chief(measure)] } } },
+      "HB 3795",
+    );
+
+    expect(sponsorsOf(outcome)?.map((sponsor) => [sponsor.level, sponsor.legislator_code])).toEqual([
+      ["chief", "Rep Hartman"],
+      ["regular", "Rep Nosse"],
+    ]);
+    expect(outcome.structured?.["committee_sponsors"]).toEqual([{ committee_code: "HECHS" }]);
+  });
+
+  it("puts SB 69's chief sponsor before its regular one, beside its presession message", async () => {
+    const measure = { prefix: "SB", number: 69 };
+    const outcome = await getMeasure(
+      { clockAt: afterTheSession, olis: { strayRows: { MeasureSponsors: [regular(measure), chief(measure)] } } },
+      "SB 69",
+    );
+
+    expect(sponsorsOf(outcome)?.map((sponsor) => [sponsor.level, sponsor.legislator_code])).toEqual([
+      ["chief", "Rep Hartman"],
+      ["regular", "Rep Nosse"],
+    ]);
+    expect(outcome.structured?.["presession_messages"]).toHaveLength(1);
+  });
+});
+
 describe("sponsors whose codes carry a title", () => {
   // HB 3838's eleven chief sponsors are real rows of the cache, moved to HB 3027 (a House Measure
   // with no Member sponsor of its own): ids 151358 to 151368, all created 2025-02-26T17:50:06. The
@@ -370,8 +410,23 @@ describe("the alias file the worker is given", () => {
 
       const neron = sponsorsOf(outcome)?.find((sponsor) => sponsor.legislator_code === "Rep Neron");
       expect(neron).toEqual({ level: "chief", legislator_code: "Rep Neron", legislator: null });
-      expect(pull.unresolvedLegislatorCodes).toEqual([
-        { code: "Rep Neron", references: [{ source: "MeasureSponsors", count: 1 }] },
+      // The report counts every source of codes (#15 added the votes): the fixture's one MeasureSponsors
+      // row for "Rep Neron" (HB 3131's chief sponsor) and its three MeasureVotes rows for the code,
+      // 1443750 (HB 3027), 1456830 (HB 3795) and 1468790 (SB 69). The sources are compared sorted,
+      // so the report may list them in any order.
+      expect(
+        pull.unresolvedLegislatorCodes.map((entry) => ({
+          ...entry,
+          references: [...entry.references].sort((a, b) => a.source.localeCompare(b.source)),
+        })),
+      ).toEqual([
+        {
+          code: "Rep Neron",
+          references: [
+            { source: "MeasureSponsors", count: 1 },
+            { source: "MeasureVotes", count: 3 },
+          ],
+        },
       ]);
     } finally {
       await connected.close();

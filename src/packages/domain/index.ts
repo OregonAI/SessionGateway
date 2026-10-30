@@ -19,13 +19,47 @@ export type MeasureKey = {
   number: number;
 };
 
+/** Where a Measure is now, as the feed's Measures row says it (GLOSSARY.md, "Location"). */
+export type MeasureLocation = {
+  /** The feed's `CurrentLocation`, such as "In Senate Committee" or "Chapter Number Assigned". */
+  current: string;
+  /**
+   * The feed's `CurrentCommitteeCode`, as it gives it: null when it gives none. It does not say the Measure is
+   * in that committee, because the feed keeps it for some Measures at the President's desk and gives none for one
+   * in a House committee (docs/research/olis-votes.md §6); `current` says where the Measure is.
+   */
+  committeeCode: string | null;
+};
+
 export type Measure = MeasureKey & {
   catchline: string | null;
+  location: MeasureLocation;
   /** When OLIS created the Measure's row, in Pacific time with its offset. */
   createdAt: Timestamp;
   /** When OLIS last changed it, if it ever did. */
   modifiedAt: Timestamp | null;
 };
+
+/** The two chambers of the Legislative Assembly. */
+export type Chamber = "house" | "senate";
+
+/** One line of a Measure's history: something that happened to it, in one chamber, at one time. */
+export type HistoryAction = {
+  /** The feed's `MeasureHistoryId`. */
+  id: number;
+  measure: MeasureKey;
+  chamber: Chamber;
+  /** When the action happened, in Pacific time with its offset (not when OLIS recorded it). */
+  date: Timestamp;
+  /** The action as OLIS prints it, spaces included. */
+  text: string;
+};
+
+/** Orders history actions oldest first: by when they happened, then by the feed's id. */
+export function compareHistoryActions(a: HistoryAction, b: HistoryAction): number {
+  if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+  return a.id - b.id;
+}
 
 /** A Measure's id in OregonAI's form: lower-case Session and prefix, no leading zeros. */
 export type MeasureId = string & { readonly brand: "MeasureId" };
