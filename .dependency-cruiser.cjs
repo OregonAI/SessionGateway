@@ -106,6 +106,16 @@ module.exports = {
       to: { path: `^${R}/oregonai-snapshot/`, reachable: true },
     },
     {
+      name: "server-never-uses-network-modules",
+      comment:
+        "The MCP server, its entry script and every module they reach, directly or through any chain of imports, import none of the Node built-ins that can open a connection or run a client: https, http2, net, tls, dgram, dns, child_process. node:http stays, because http.ts needs createServer. The ESLint rules in eslint.config.js cover the rest of the way to a network: no global fetch or WebSocket under src/ outside the entry scripts, and nothing but createServer from node:http (ADR-0012).",
+      severity: "error",
+      from: { path: `^(${R}/mcp-server/|src/bin/server\\.ts$)` },
+      // A core module's path is its bare name (`https`, or `dns/promises`), and no file of this repository
+      // is called that, since the paths of files start with src/ or scripts/.
+      to: { path: "^(node:)?(https|http2|net|tls|dgram|dns|child_process)(/promises)?$", reachable: true },
+    },
+    {
       name: "production-never-imports-scripts",
       comment:
         "The snapshot builder (scripts/snapshot/) is the only code that knows OregonAI's repository, and the registry it reads is parsed there by a YAML package the service does not ship. Nothing under src/ may import anything from scripts/, so the builder cannot become part of the server path.",
@@ -116,7 +126,7 @@ module.exports = {
     {
       name: "production-uses-production-dependencies",
       comment:
-        "Code under src/ imports only packages that are in dependencies, never one that is in devDependencies. The MCP client SDK, the one package that could speak to OregonAI's gateway, is a devDependency for the tests, so the server cannot use it.",
+        "Code under src/ imports only packages that are in dependencies, never one that is in devDependencies. The MCP client SDK, the package built to speak to a gateway such as OregonAI's, is a devDependency for the tests, so the server cannot use it.",
       severity: "error",
       from: { path: "^src/", pathNot: `^${R}/[^/]+/tests/` },
       to: { dependencyTypes: ["npm-dev"] },
