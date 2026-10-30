@@ -8,8 +8,12 @@ import { fiscalImpactAgencyLinks, type RegistryAgency } from "../index.ts";
 import { testRegistry } from "./registry.ts";
 
 type UnitRow = {
-  /** The fixture document the lines are quoted from. */
-  source: string;
+  /** The fixture document the lines are quoted from, in a label short enough for a test name. */
+  document: string;
+  /** What is special about this wording. */
+  variant: string;
+  /** The document's path under test/fixtures/olis-2025R1/documents/. */
+  path: string;
   /** Lines as `pdftotext` prints them, joined with newlines. */
   text: string;
   /** The registry the extractor is given. */
@@ -35,7 +39,9 @@ describe("Fiscal Impact Statement: Government Unit(s) Affected", () => {
   describe("one Agency", () => {
     test.for<UnitRow>([
       {
-        source: "measure-analysis-documents/85869.pdf (Fiscal Impact Statement, HB 3131, Introduced)",
+        document: "FIS 85869 (HB 3131, Introduced)",
+        variant: "one Agency",
+        path: "measure-analysis-documents/85869.pdf",
         text: [
           "Bill Title: Relating to the Oregon Agricultural Heritage Fund; declaring an emergency.",
           "Government Unit(s) Affected: Oregon Watershed Enhancement Board",
@@ -52,7 +58,9 @@ describe("Fiscal Impact Statement: Government Unit(s) Affected", () => {
         unresolved: [],
       },
       {
-        source: "measure-analysis-documents/89095.pdf (Fiscal Impact Statement, HB 3795, A-Engrossed)",
+        document: "FIS 89095 (HB 3795, A-Engrossed)",
+        variant: "one Agency",
+        path: "measure-analysis-documents/89095.pdf",
         text: [
           "Bill Title: Relating to human services.",
           "Government Unit(s) Affected: Department of Human Services",
@@ -65,7 +73,9 @@ describe("Fiscal Impact Statement: Government Unit(s) Affected", () => {
       },
       {
         // The statement's body then calls the same Agency "OBDD"; the unit line spells it out.
-        source: "measure-analysis-documents/87631.pdf (Fiscal Impact Statement, SB 921, A-Engrossed)",
+        document: "FIS 87631 (SB 921, A-Engrossed)",
+        variant: "one Agency",
+        path: "measure-analysis-documents/87631.pdf",
         text: [
           "Bill Title: Relating to shipyards.",
           "Government Unit(s) Affected: Oregon Business Development Department",
@@ -81,14 +91,15 @@ describe("Fiscal Impact Statement: Government Unit(s) Affected", () => {
         ],
         unresolved: [],
       },
-    ])("$source", expectUnits);
+    ])("$document: $variant", expectUnits);
   });
 
   describe("several Agencies, the list wrapped onto a second line", () => {
     test.for<UnitRow>([
       {
-        source:
-          "measure-analysis-documents/85414.pdf (Fiscal Impact Statement, SB 69, A-Engrossed): the line breaks after a comma",
+        document: "FIS 85414 (SB 69, A-Engrossed)",
+        variant: "line breaks after a comma",
+        path: "measure-analysis-documents/85414.pdf",
         text: [
           "Bill Title: Relating to laws concerning job-protected leave from work.",
           "Government Unit(s) Affected: Bureau of Labor and Industries, Employment Department, Judicial Department,",
@@ -105,8 +116,9 @@ describe("Fiscal Impact Statement: Government Unit(s) Affected", () => {
         unresolved: [],
       },
       {
-        source:
-          "measure-analysis-documents/85868.pdf (Fiscal Impact Statement, HB 3027, Introduced): the line breaks inside a name",
+        document: "FIS 85868 (HB 3027, Introduced)",
+        variant: "line breaks inside a name",
+        path: "measure-analysis-documents/85868.pdf",
         text: [
           "Bill Title: Relating to injunctions regarding career school regulatory violations.",
           "Government Unit(s) Affected: Higher Education Coordinating Commission, Department of Justice, Judicial",
@@ -124,13 +136,15 @@ describe("Fiscal Impact Statement: Government Unit(s) Affected", () => {
         ],
         unresolved: [],
       },
-    ])("$source", expectUnits);
+    ])("$document: $variant", expectUnits);
   });
 
   describe("several Agencies on one line", () => {
     test.for<UnitRow>([
       {
-        source: "measure-analysis-documents/90573.pdf (Fiscal Impact Statement, SB 121, Introduced)",
+        document: "FIS 90573 (SB 121, Introduced)",
+        variant: "two Agencies",
+        path: "measure-analysis-documents/90573.pdf",
         text: [
           "Bill Title: Relating to earned income tax credits.",
           "Government Unit(s) Affected: Judicial Department, Department of Revenue",
@@ -145,7 +159,9 @@ describe("Fiscal Impact Statement: Government Unit(s) Affected", () => {
         unresolved: [],
       },
       {
-        source: "measure-analysis-documents/85476.pdf (Fiscal Impact Statement, SB 64, Introduced)",
+        document: "FIS 85476 (SB 64, Introduced)",
+        variant: "two Agencies",
+        path: "measure-analysis-documents/85476.pdf",
         text: [
           "Bill Title: Relating to payment of dependent care tax credits in installments; prescribing an effective date.",
           "Government Unit(s) Affected: Department of Human Services, Department of Revenue",
@@ -159,13 +175,14 @@ describe("Fiscal Impact Statement: Government Unit(s) Affected", () => {
         ],
         unresolved: [],
       },
-    ])("$source", expectUnits);
+    ])("$document: $variant", expectUnits);
   });
   describe("units that are not state agencies stay unresolved", () => {
     test.for<UnitRow>([
       {
-        source:
-          "measure-analysis-documents/88044.pdf (Fiscal Impact Statement, SB 983, Introduced): no unit is a state agency",
+        document: "FIS 88044 (SB 983, Introduced)",
+        variant: "no unit is a state agency",
+        path: "measure-analysis-documents/88044.pdf",
         text: [
           "Bill Title: Relating to the adoption of local budgets.",
           "Government Unit(s) Affected: Cities, Counties, School Districts, Special Districts, Metro, TriMet",
@@ -180,8 +197,9 @@ describe("Fiscal Impact Statement: Government Unit(s) Affected", () => {
         // The same line as the SB 121 row above, read with a registry that lacks the Judicial
         // Department. A unit the registry does not name stays in the list in its place, and the
         // unit it does name still resolves.
-        source:
-          "measure-analysis-documents/90573.pdf (Fiscal Impact Statement, SB 121, Introduced): registry without the Judicial Department",
+        document: "FIS 90573 (SB 121, Introduced)",
+        variant: "registry lacks Judicial Department",
+        path: "measure-analysis-documents/90573.pdf",
         text: [
           "Bill Title: Relating to earned income tax credits.",
           "Government Unit(s) Affected: Judicial Department, Department of Revenue",
@@ -192,10 +210,10 @@ describe("Fiscal Impact Statement: Government Unit(s) Affected", () => {
         agencies: [{ slug: "department-of-revenue", unit: "Department of Revenue" }],
         unresolved: ["Judicial Department"],
       },
-    ])("$source", expectUnits);
+    ])("$document: $variant", expectUnits);
   });
   describe("a document with no unit line", () => {
-    test("a Revenue Impact Statement says so instead of listing nothing", () => {
+    test("RIS 90375 (SB 121, Introduced): says there is no unit line instead of listing nothing", () => {
       // measure-analysis-documents/90375.pdf (Revenue Impact Statement, SB 121, Introduced), lines 1 to 22.
       const text = [
         "REVENUE IMPACT OF",

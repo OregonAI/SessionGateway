@@ -12,8 +12,7 @@
 // name it, and the fixture's own documents use it (HB 3795 Testimony 209256, Organization
 // "ODHS"; the Digest of HB 3795 Introduced), but the catalog row for the Department of Human
 // Services has no `aliases` key at that commit. It is added here so the tables can show an alias
-// resolving, and it is a decision for the owner whether the real registry gains it (decisions in
-// the ticket-7 report).
+// resolving. Whether the real registry should list it is for the registry's owner to decide.
 
 import type { RegistryAgency } from "../index.ts";
 
