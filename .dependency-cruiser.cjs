@@ -73,17 +73,25 @@ module.exports = {
       to: { circular: true },
     },
 
-    // --- Layering (optional, off by default) ----------------------------------
-    // Interface-hiding controls HOW you import (through the entry points).
-    // Layering controls WHICH packages may depend on which. Add your own rules
-    // here, e.g.:
-    //
-    // {
-    //   name: "ui-may-not-depend-on-billing",
-    //   severity: "error",
-    //   from: { path: `^${R}/ui/` },
-    //   to:   { path: `^${R}/billing/` },
-    // },
+    // --- Layering ---------------------------------------------------------------
+    // Interface-hiding controls HOW you import (through the entry points). Layering controls WHICH
+    // packages may depend on which (ADR-0009).
+    {
+      name: "server-reads-only",
+      comment:
+        "The MCP server opens the database read-only (ADR-0009): its code and its entry script may import database/reader.ts, never database/writer.ts. A server that cannot reach the writer cannot write by mistake.",
+      severity: "error",
+      from: { path: `^(${R}/mcp-server/|src/bin/server\\.ts$)` },
+      to: { path: `^${R}/database/writer\\.ts$` },
+    },
+    {
+      name: "worker-writes-only",
+      comment:
+        "The ingest worker is the only writer (ADR-0009): its code and its entry script may import database/writer.ts, never database/reader.ts.",
+      severity: "error",
+      from: { path: `^(${R}/ingest/|src/bin/ingest\\.ts$)` },
+      to: { path: `^${R}/database/reader\\.ts$` },
+    },
   ],
   options: {
     doNotFollow: { path: "node_modules" },

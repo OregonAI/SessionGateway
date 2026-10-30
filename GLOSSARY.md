@@ -13,11 +13,34 @@ _Avoid_: biennium, term
 **Live Session**:
 The Session currently meeting, whose measures, documents and votes change during the day.
 
+### The index
+
+**Index**:
+Everything a deployment holds of its Session, pulled from OLIS.
+
+**Full pull**:
+A pass that reads every row of the Session from the OLIS feed. It counts as complete only when every set's rows match the feed's own count (ADR-0005).
+
+**As of**:
+When the Index was last refreshed from OLIS: the moment the latest completed full pull began, shown in Pacific time with its UTC offset. Every result carries it.
+
 ### Measures and their texts
 
 **Measure**:
 A bill, joint resolution, concurrent resolution, memorial or resolution in one Session, identified by Session, prefix and number (HB 3318 in 2025R1).
 _Avoid_: bill, when resolutions and memorials are included
+
+**Catchline**:
+A Measure's one-sentence statement of what it does, as the feed's `CatchLine` gives it.
+_Avoid_: title, summary
+
+**Citation**:
+A Measure written the way people say it, such as "SB 69". The Session is the deployment's.
+_Avoid_: bill number
+
+**Measure id**:
+A Measure's id in OregonAI's form, such as `measure-2025r1-sb69`, which an agent can take to OregonAI.
+_Avoid_: key, slug
 
 **Version**:
 One printed text of a Measure with every adopted amendment folded in: Introduced, A-Engrossed, B-Engrossed and so on, through Enrolled.
