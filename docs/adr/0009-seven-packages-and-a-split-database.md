@@ -12,7 +12,7 @@ Spec #1 lists twelve modules, and `src/CLAUDE.md` asks the ticket that first bui
 | `ingest` | `index.ts` | Spec module 2, the full pull only. |
 | `mcp-server` | `handler.ts`, `http.ts` | The tool contract, and serving it on a port behind the Host and Origin guards. |
 
-Dependencies point one way. `time` and `domain` sit at the bottom; `config`, `olis-client` and `database` build on them; `ingest` and `mcp-server` sit on top. `src/bin/ingest.ts` and `src/bin/server.ts` are the two entry scripts: they create the clock, `fetch` and the shutdown signal once and pass them down.
+Dependencies point one way. `time` is at the bottom, `domain` is on it, `config`, `olis-client` and `database` build on those, and `ingest` and `mcp-server` sit on top. `src/bin/ingest.ts` and `src/bin/server.ts` are the two entry scripts: each loads its configuration and creates what it needs (the clock, `fetch`, the shutdown signal) once, and passes it down.
 
 **The database is two entry points, not one.** The worker writes and the server reads (ADR-0007), and the SQLite connection modes differ: `writer.ts` opens with WAL and `timeout: 5000`, `reader.ts` opens `readOnly` with `timeout: 5000`. Giving each side its own entry point lets the boundary check say that the server's code and entry script may import `reader.ts` and never `writer.ts`, and that the worker may import `writer.ts` and never `reader.ts` (the `server-reads-only` and `worker-writes-only` rules in `.dependency-cruiser.cjs`). A server that cannot reach the writer cannot write by mistake. Later tickets add queries to `reader.ts` and `writer.ts` (or further entry points beside them, such as a search index) rather than a second way into SQLite.
 
