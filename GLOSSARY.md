@@ -72,11 +72,27 @@ _Avoid_: fiscal note
 ### People
 
 **Legislator**:
-One member of the Legislative Assembly, as a person, across every Legislator Code the feed uses for them.
+One member of the Legislative Assembly, as a person, across every Legislator Code the feed uses for them. Its id is `legislator-2025r1-<name>`, where `<name>` is the last name in lower case plus the initials the code carries after it, joined by hyphens: `legislator-2025r1-fahey` for "Rep Speaker Fahey", `legislator-2025r1-smith-db` for "Sen Smith DB", `legislator-2025r1-levy-b` for "Rep Levy B". The chamber word and an office title ("Speaker", "President") are left out, so the id stays with the person when their code changes chamber or office. When the alias file joins two codes of one person, the id is the one the alias file's code makes: `legislator-2025r1-neron` for "Rep Neron", who is also "Sen Neron Misslin", so the id is the same whether the feed lists the old code, the new one or both.
 
 **Legislator Code**:
-The display string the feed uses for a Legislator in votes and sponsorships ("Rep Helm", "Sen Smith DB"). It can change during a Session.
+The display string the feed uses for a Legislator in votes and sponsorships ("Rep Helm", "Sen Smith DB"). It can change during a Session, and it can carry an office title ("Rep Speaker Fahey"). A code with a row in the feed's Legislators set is that row's Legislator; a code with none is looked up in the alias file.
 _Avoid_: legislator id
+
+**Alias file**:
+The small file, kept by hand and committed with the code, that says who a Legislator Code without a Legislators row is: another code of the same person (for example one from before they changed chamber, which joins the two even if the feed still lists both), or a person the Legislators rows do not list. Each entry cites its evidence from the feed itself. A code the feed gives no evidence for is left out of the file, not guessed.
+
+**Unresolved Legislator Code**:
+A Legislator Code that has no Legislators row and no alias-file entry. The ingest worker lists each one after a full pull, with how many rows of each entity set used it, so that the operator can fix the alias file.
+
+**Sponsor**:
+A Legislator named on a Measure's MeasureSponsors row, chief or regular, shown in print order: by the row's PrintOrder, then, among the sponsors who share one, the Measure's own chamber before the other, then by name, as OLIS prints them. A sponsor added after introduction stands in their printed place, not at the end. Committee and presession rows name no Legislator and are not Sponsors; `get_measure` shows them beside the Sponsors, as the Committee sponsors and the Presession messages.
+_Avoid_: author
+
+**Committee sponsor**:
+A committee that sponsors a Measure, from a MeasureSponsors row of type Committee ("Sponsored by COMMITTEE ON EDUCATION"). `get_measure` names it by the committee's code in the feed, such as `SED`; its name waits for the ticket that reads Committees. It is not a Sponsor.
+
+**Presession message**:
+The text of a MeasureSponsors row of type Presession, as OLIS publishes it: "(Presession filed.)", or for SB 69 the Senate Interim Rule 213.28 notice its document opens with. A Measure can have none, one or (13 in 2025R1) two. The row names no Legislator.
 
 ### Statutes and agencies
 

@@ -1,7 +1,16 @@
-// The ingest worker. A full pull reads every Measure of the deployment's Session from OLIS and
-// stores it, with the time the pull started as the index's "as of" time.
+// The ingest worker. A full pull reads every Measure, Legislator and sponsor row of the deployment's
+// Session from OLIS and stores them, with the time the pull started as the index's "as of" time. It
+// resolves each sponsor's Legislator Code to a Legislator on the way and reports the codes it could not.
 import type { IngestConfig } from "#/packages/config/index.ts";
-import { openIndexWriter } from "#/packages/database/writer.ts";
+import { openIndexWriter, type SponsorRecord } from "#/packages/database/writer.ts";
+import type { LegislatorId, Sponsorship } from "#/packages/domain/legislators.ts";
+import type { LegislatorAlias } from "#/packages/legislators/aliases.ts";
+import {
+  createLegislatorResolver,
+  type LegislatorResolver,
+  type Resolution,
+  type UnresolvedLegislatorCode,
+} from "#/packages/legislators/resolver.ts";
 import { createOlisClient } from "#/packages/olis-client/index.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
@@ -11,22 +20,77 @@ export type IngestDeps = {
   clock: Clock;
   /** Aborts the pull on shutdown. */
   signal: AbortSignal;
+  /** The alias file's entries: who the Legislator Codes it lists are, where the Legislators rows do not say. */
+  legislatorAliases: readonly LegislatorAlias[];
 };
 
 export type FullPullResult = {
   measures: number;
   asOf: Timestamp;
+  /**
+   * The build report of Legislator Codes (spec #1, story 54): every code the pull could not resolve,
+   * with how often each entity set used it. Empty when every code resolved.
+   */
+  unresolvedLegislatorCodes: UnresolvedLegislatorCode[];
 };
+
+/** The id of the Legislator a code resolved to, or null while it is unresolved. */
+function legislatorIdOfResolution(resolution: Resolution): LegislatorId | null {
+  switch (resolution.kind) {
+    case "resolved":
+      return resolution.legislator.id;
+    case "unresolved":
+      return null;
+    default:
+      return resolution satisfies never;
+  }
+}
+
+/** What the database keeps of one MeasureSponsors row. A Member row names a Legislator by a code the resolver reads. */
+function sponsorRecordOf(sponsorship: Sponsorship, resolver: LegislatorResolver): SponsorRecord {
+  const common = {
+    id: sponsorship.id,
+    measure: sponsorship.measure,
+    level: sponsorship.level,
+    printOrder: sponsorship.printOrder,
+  };
+  switch (sponsorship.kind) {
+    case "member":
+      return {
+        ...common,
+        kind: "member",
+        legislatorCode: sponsorship.legislatorCode,
+        legislatorId: legislatorIdOfResolution(resolver.resolve("MeasureSponsors", sponsorship.legislatorCode)),
+      };
+    case "committee":
+      return { ...common, kind: "committee", committeeCode: sponsorship.committeeCode };
+    case "presession":
+      return { ...common, kind: "presession", message: sponsorship.message };
+    default:
+      return sponsorship satisfies never;
+  }
+}
 
 export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promise<FullPullResult> {
   const asOf = formatPacific(deps.clock.now());
   const olis = createOlisClient({ baseUrl: config.olisBaseUrl, fetch: deps.fetch });
   const measures = await olis.readMeasures(config.session, deps.signal);
+  const legislatorRows = await olis.readLegislators(config.session, deps.signal);
+  const sponsorships = await olis.readSponsorships(config.session, deps.signal);
+
+  // A Member sponsor names a Legislator by a Legislator Code; the resolver says who that is.
+  const resolver = createLegislatorResolver({
+    session: config.session,
+    rows: legislatorRows,
+    aliases: deps.legislatorAliases,
+  });
+  const sponsors = sponsorships.map((sponsorship) => sponsorRecordOf(sponsorship, resolver));
+
   const writer = openIndexWriter(config.databasePath);
   try {
-    writer.recordFullPull(config.session, measures, asOf);
+    writer.recordFullPull(config.session, measures, asOf, { legislators: resolver.people, sponsors });
   } finally {
     writer.close();
   }
-  return { measures: measures.length, asOf };
+  return { measures: measures.length, asOf, unresolvedLegislatorCodes: resolver.unresolved() };
 }

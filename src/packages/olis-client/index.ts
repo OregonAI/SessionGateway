@@ -1,18 +1,27 @@
 // The OLIS client: the only code that sees the feed's own shapes (src/CLAUDE.md, "Shape"). It reads
 // the OData v3 feed and hands everything else domain types named as GLOSSARY.md names them.
 import type { Measure, SessionKey } from "#/packages/domain/index.ts";
+import type { LegislatorRow, Sponsorship } from "#/packages/domain/legislators.ts";
+import { readLegislatorRows } from "./lib/legislators.ts";
 import { readMeasureRows } from "./lib/measures.ts";
 import type { OlisClientOptions } from "./lib/options.ts";
+import { readSponsorshipRows } from "./lib/sponsors.ts";
 
 export type { OlisClientOptions };
 
 export type OlisClient = {
   /** Every Measure of the Session, as the feed lists them. */
   readMeasures(session: SessionKey, signal: AbortSignal): Promise<Measure[]>;
+  /** Every Legislators row of the Session: the people the feed names, one row per Legislator Code. */
+  readLegislators(session: SessionKey, signal: AbortSignal): Promise<LegislatorRow[]>;
+  /** Every MeasureSponsors row of the Session, in the feed's order. */
+  readSponsorships(session: SessionKey, signal: AbortSignal): Promise<Sponsorship[]>;
 };
 
 export function createOlisClient(options: OlisClientOptions): OlisClient {
   return {
     readMeasures: (session, signal) => readMeasureRows(options, session, signal),
+    readLegislators: (session, signal) => readLegislatorRows(options, session, signal),
+    readSponsorships: (session, signal) => readSponsorshipRows(options, session, signal),
   };
 }

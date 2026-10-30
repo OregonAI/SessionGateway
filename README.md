@@ -49,6 +49,12 @@ SESSION_KEY=2025R1 DATABASE_PATH=data/index.db node src/bin/server.ts   # serves
 A full pull against the live feed is allowed only between 5 pm and 6 am Pacific (ADR-0005). Nothing
 schedules it yet, so run it by hand inside that window.
 
+After a pull, `ingest.ts` writes `unresolved-legislator-codes.json` beside the database file: the
+Legislator Codes it could not resolve through the Legislators rows or the alias file
+(`src/packages/legislators/data/legislator-aliases.json`), with how many rows used each. An empty list
+means every code resolved. An entry in the alias file needs evidence from the feed itself (see the
+file's `about` entry).
+
 ## How the code is written
 
 Test-first, at the two seams spec #1 agreed. The rules agents and people

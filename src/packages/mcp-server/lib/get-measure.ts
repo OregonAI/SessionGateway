@@ -19,6 +19,35 @@ export const getMeasureOutput = z.object({
     .string()
     .nullable()
     .describe("When OLIS last changed the Measure, in Pacific time with its UTC offset."),
+  sponsors: z
+    .array(
+      z.object({
+        level: z.enum(["chief", "regular"]).describe("Whether the Legislator is a chief sponsor or a regular one."),
+        legislator_code: z.string().describe("The Legislator Code the feed gives this sponsor, as the feed writes it."),
+        legislator: z
+          .object({
+            id: z.string().describe("The Legislator's id, the same for every Legislator Code that names them."),
+            name: z.string().describe("The Legislator's first and last name."),
+          })
+          .nullable()
+          .describe("The Legislator the code names, or null when the code could not be resolved."),
+      }),
+    )
+    .describe("The Measure's sponsors who are Legislators, in print order."),
+  committee_sponsors: z
+    .array(
+      z.object({
+        committee_code: z.string().describe("The committee's code in the feed, such as HECHS."),
+      }),
+    )
+    .describe(
+      "The committees that sponsor the Measure, in print order. A committee is not a Legislator, so it is not among the sponsors.",
+    ),
+  presession_messages: z
+    .array(z.string())
+    .describe(
+      'The messages of the Measure\'s presession rows as OLIS publishes them, in print order, such as "(Presession filed.)". Empty when OLIS has none. A presession row names no Legislator.',
+    ),
   as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
   notice: z.string().describe("A reminder that this is not the official record."),
 });
@@ -49,6 +78,15 @@ export function getMeasure(
       source_url: olisPageUrlOf(measure),
       created_at: measure.createdAt,
       modified_at: measure.modifiedAt,
+      sponsors: reader.findSponsors(measure).map((sponsor) => ({
+        level: sponsor.level,
+        legislator_code: sponsor.legislatorCode,
+        legislator: sponsor.legislator,
+      })),
+      committee_sponsors: reader
+        .findCommitteeSponsors(measure)
+        .map((committeeCode) => ({ committee_code: committeeCode })),
+      presession_messages: reader.findPresessionMessages(measure),
       as_of: asOf,
       notice: NON_OFFICIAL_NOTICE,
     },
