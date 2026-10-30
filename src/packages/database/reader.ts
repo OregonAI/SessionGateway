@@ -1,15 +1,15 @@
 // The MCP server's side of the database: read-only.
 import { z } from "zod";
-import type {
-  AmendmentId,
-  DocumentId,
-  DocumentKind,
-  DocumentView,
-  IndexCounts,
-  NodeId,
-  Relation,
-  RelatedNode,
-  StoredDocument,
+import {
+  documentKinds,
+  type AmendmentId,
+  type DocumentId,
+  type DocumentKind,
+  type DocumentView,
+  type IndexCounts,
+  type NodeId,
+  type Relation,
+  type RelatedNode,
 } from "#/packages/domain/documents.ts";
 import type { Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
@@ -73,7 +73,7 @@ export function openIndexReader(path: string): IndexReader {
   const selectRelations = database.prepare(
     "SELECT relation, to_id, meaning FROM document_relation WHERE document_id = ? ORDER BY rowid",
   );
-  function documentOf(row: unknown): StoredDocument {
+  function documentOf(row: unknown): DocumentView["document"] {
     const stored = documentRow.parse(row);
     return {
       id: stored.id as DocumentId,
@@ -87,7 +87,6 @@ export function openIndexReader(path: string): IndexReader {
       hasTextLayer: stored.has_text_layer === 1,
       postedAt: stored.posted_at as Timestamp | null,
       text: stored.text,
-      relations: [],
     };
   }
   function relationsOf(documentId: DocumentId): RelatedNode[] {
@@ -98,16 +97,10 @@ export function openIndexReader(path: string): IndexReader {
   }
   return {
     counts(session) {
-      const documentsByKind: Record<DocumentKind, number> = {
-        version: 0,
-        printed_amendment: 0,
-        proposed_amendment: 0,
-        analysis: 0,
-        exhibit: 0,
-        recording_log: 0,
-        testimony: 0,
-        agenda: 0,
-      };
+      const documentsByKind = Object.fromEntries(documentKinds.map((kind) => [kind, 0])) as Record<
+        DocumentKind,
+        number
+      >;
       for (const row of selectKindCounts.all(session)) {
         const counted = kindCountRow.parse(row);
         documentsByKind[counted.kind as DocumentKind] = counted.n;

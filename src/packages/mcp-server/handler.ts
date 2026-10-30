@@ -25,6 +25,24 @@ export type SessionGatewayHandler = {
   close(): Promise<void>;
 };
 
+/**
+ * The MCP specification requires servers to rate-limit tool calls (src/CLAUDE.md, "MCP"). A refused
+ * call is an expected outcome, so it is a tool error the agent can read and act on.
+ */
+function refuseOverRateLimit(
+  limiter: RateLimiter,
+  config: ServerConfig,
+): { isError: true; content: { type: "text"; text: string }[] } | undefined {
+  const turn = limiter.take();
+  if (turn.allowed) return undefined;
+  return {
+    isError: true,
+    content: [
+      { type: "text", text: rateLimitMessage(config.rateLimit, config.rateWindowSeconds, turn.retryAfterSeconds) },
+    ],
+  };
+}
+
 function buildServer(reader: IndexReader, config: ServerConfig, limiter: RateLimiter): McpServer {
   const server = new McpServer({ name: "session-gateway", version: "0.0.0" });
   server.registerTool(
@@ -38,20 +56,8 @@ function buildServer(reader: IndexReader, config: ServerConfig, limiter: RateLim
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     (input) => {
-      // The MCP specification requires servers to rate-limit tool calls (src/CLAUDE.md, "MCP"). A
-      // refused call is an expected outcome, so it is a tool error the agent can read and act on.
-      const turn = limiter.take();
-      if (!turn.allowed) {
-        return {
-          isError: true,
-          content: [
-            {
-              type: "text",
-              text: rateLimitMessage(config.rateLimit, config.rateWindowSeconds, turn.retryAfterSeconds),
-            },
-          ],
-        };
-      }
+      const refused = refuseOverRateLimit(limiter, config);
+      if (refused !== undefined) return refused;
       const result = getMeasure(reader, config.session, input);
       switch (result.kind) {
         case "found":
@@ -80,18 +86,8 @@ function buildServer(reader: IndexReader, config: ServerConfig, limiter: RateLim
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     (input) => {
-      const turn = limiter.take();
-      if (!turn.allowed) {
-        return {
-          isError: true,
-          content: [
-            {
-              type: "text",
-              text: rateLimitMessage(config.rateLimit, config.rateWindowSeconds, turn.retryAfterSeconds),
-            },
-          ],
-        };
-      }
+      const refused = refuseOverRateLimit(limiter, config);
+      if (refused !== undefined) return refused;
       const result = getDocument(reader, config.session, input);
       switch (result.kind) {
         case "found":
@@ -125,18 +121,8 @@ function buildServer(reader: IndexReader, config: ServerConfig, limiter: RateLim
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     () => {
-      const turn = limiter.take();
-      if (!turn.allowed) {
-        return {
-          isError: true,
-          content: [
-            {
-              type: "text",
-              text: rateLimitMessage(config.rateLimit, config.rateWindowSeconds, turn.retryAfterSeconds),
-            },
-          ],
-        };
-      }
+      const refused = refuseOverRateLimit(limiter, config);
+      if (refused !== undefined) return refused;
       const overview = sessionOverview(reader, config.session);
       return { content: [{ type: "text", text: JSON.stringify(overview) }], structuredContent: overview };
     },

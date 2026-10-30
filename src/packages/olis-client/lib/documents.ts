@@ -21,7 +21,7 @@ import { feedTimestamp } from "./timestamps.ts";
 import type { OlisClientOptions } from "./options.ts";
 
 /** Every document OLIS links is on this origin (docs/research/olis-odata.md section 4). */
-const OLIS_DOCUMENT_ORIGIN = "https://olis.oregonlegislature.gov";
+const OLIS_LINK_ORIGIN = "https://olis.oregonlegislature.gov";
 
 /**
  * The link as OLIS gives it, made safe to use: raw spaces in a MeasureDocuments URL are
@@ -30,8 +30,8 @@ const OLIS_DOCUMENT_ORIGIN = "https://olis.oregonlegislature.gov";
  */
 export function sourceUrlOf(link: string): string {
   const url = new URL(link);
-  if (url.origin !== OLIS_DOCUMENT_ORIGIN) {
-    throw new Error(`OLIS linked a document outside ${OLIS_DOCUMENT_ORIGIN}: ${url.origin}`);
+  if (url.origin !== OLIS_LINK_ORIGIN) {
+    throw new Error(`OLIS linked a document outside ${OLIS_LINK_ORIGIN}: ${url.origin}`);
   }
   return url.href;
 }

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
+import { documentKinds, relations } from "#/packages/domain/documents.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 import { splitIntoParts } from "./parts.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
@@ -12,7 +13,7 @@ export const getDocumentInput = z.object({
 const related = z.object({
   id: z.string().describe("The id of a node this document points at."),
   relation: z
-    .enum(["measure", "committee", "meeting", "posted_to", "amendment"])
+    .enum(relations)
     .describe(
       "How it points at it: the Measure, committee or meeting a document belongs to, the meeting a Proposed Amendment was posted to, or the amendment a posting is of.",
     ),
@@ -33,18 +34,7 @@ export const getDocumentOutput = z.object({
     .describe(
       "The document whose text this is. It differs from id when id names a Proposed Amendment: then it is the latest posting.",
     ),
-  kind: z
-    .enum([
-      "version",
-      "printed_amendment",
-      "proposed_amendment",
-      "analysis",
-      "exhibit",
-      "recording_log",
-      "testimony",
-      "agenda",
-    ])
-    .describe("What the document is."),
+  kind: z.enum(documentKinds).describe("What the document is."),
   label: z.string().describe("The Legislature's own name for it, such as the version or the analysis type."),
   source_url: z.string().describe("Where the Legislature publishes the document."),
   retrieved_at: z.string().describe("When this service fetched it, in Pacific time with its UTC offset."),

@@ -6,17 +6,7 @@ import type { MeasureId, MeasureKey, SessionKey } from "./index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 
 /** What a document is, in the glossary's words. */
-export type DocumentKind =
-  | "version"
-  | "printed_amendment"
-  | "proposed_amendment"
-  | "analysis"
-  | "exhibit"
-  | "recording_log"
-  | "testimony"
-  | "agenda";
-
-export const documentKinds: readonly DocumentKind[] = [
+export const documentKinds = [
   "version",
   "printed_amendment",
   "proposed_amendment",
@@ -25,7 +15,12 @@ export const documentKinds: readonly DocumentKind[] = [
   "recording_log",
   "testimony",
   "agenda",
-];
+] as const;
+export type DocumentKind = (typeof documentKinds)[number];
+
+/** How a document points at a node: the Measure, committee or meeting it belongs to, the meeting a posting was posted to, the amendment a posting is of. */
+export const relations = ["measure", "committee", "meeting", "posted_to", "amendment"] as const;
+export type Relation = (typeof relations)[number];
 
 /** The id of a document the store holds: what `get_document` takes. */
 export type DocumentId = string & { readonly brand: "DocumentId" };
@@ -36,9 +31,6 @@ export type MeetingId = string & { readonly brand: "MeetingId" };
 
 /** A node a document can point at. */
 export type NodeId = MeasureId | AmendmentId | CommitteeId | MeetingId;
-
-/** How a document points at a node. */
-export type Relation = "measure" | "committee" | "meeting" | "posted_to" | "amendment";
 
 /** Lower case, with every run of other characters as one hyphen: "A-Engrossed" is "a-engrossed". */
 function slug(text: string): string {
@@ -156,7 +148,7 @@ export type RelatedNode = {
 /** What `get_document` resolves an id to: a document, and the nodes it (or the amendment's postings) point at. */
 export type DocumentView = {
   /** The document whose text is served: the id asked for, or an amendment's latest posting. */
-  document: StoredDocument;
+  document: Omit<StoredDocument, "relations">;
   related: RelatedNode[];
 };
 

@@ -37,7 +37,7 @@ const schema = `
     session_key TEXT NOT NULL,
     kind TEXT NOT NULL,
     label TEXT NOT NULL,
-    source_url TEXT NOT NULL UNIQUE,
+    source_url TEXT NOT NULL,
     retrieved_at TEXT NOT NULL,
     content_hash TEXT NOT NULL,
     page_count INTEGER NOT NULL,

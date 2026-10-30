@@ -90,6 +90,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
         hasTextLayer: extracted.pdf.hasTextLayer,
         text: extracted.pdf.text,
       });
+      stored.add(link.id);
       documentsFetched += 1;
     }
     writeBuildReport(buildReportPath(config.databasePath), {
