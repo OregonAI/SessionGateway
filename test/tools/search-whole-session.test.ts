@@ -4,6 +4,11 @@
 // (395,000 characters), which the real model would take half a minute to embed. None of these cases is about
 // how well a meaning ranks, so the embedder is the fake (test/support/fake-embedder.ts); the cases that are
 // use the real model on an early clock (search.test.ts, search-keyword-only.test.ts).
+//
+// The citation cases are about which documents a citation names, and that does not depend on meaning: the
+// ranking of an exact citation reads the stored citations and the Measure and amendment ids, never a vector. The
+// fake is the real tokenizer over a fake session, so the documents are cut into the passages production cuts
+// (the cuts decide which citations a passage boundary splits), and that is why it is enough here.
 import { afterAll, beforeAll, describe, expect, it, test } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";
