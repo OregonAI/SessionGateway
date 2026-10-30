@@ -234,8 +234,8 @@ type Position = TestimonyOutput["positions"][number];
 /** What a group is, whatever page its rows are on. */
 type GroupFacts = { organization: string | null; spellings: string[]; count: number };
 
-/** One row in the order the tool lists them, with the group it is in. */
-type Placed = { entry: TestimonyEntry; groupKey: string };
+/** One row in the order the tool lists them, with the group it is in and the key the group is ordered by. */
+type Placed = { entry: TestimonyEntry; groupKey: string; organizationKey: string };
 
 /**
  * The Measure's rows in the order the pages list them: by position (the listed ones first), then by organization
@@ -245,27 +245,23 @@ type Placed = { entry: TestimonyEntry; groupKey: string };
 function placeEntries(entries: readonly TestimonyEntry[]): { ordered: Placed[]; groups: Map<string, GroupFacts> } {
   const groups = new Map<string, GroupFacts>();
   const placed = entries.map((entry): Placed => {
-    const organizationKeyOfEntry = organizationKey(entry.organization);
-    const groupKey = `${entry.positionId} ${organizationKeyOfEntry}`;
+    const key = organizationKey(entry.organization);
+    const groupKey = `${entry.positionId} ${key}`;
     let facts = groups.get(groupKey);
     if (facts === undefined) {
-      facts = {
-        organization: organizationKeyOfEntry === "" ? null : entry.organization,
-        spellings: [],
-        count: 0,
-      };
+      facts = { organization: key === "" ? null : entry.organization, spellings: [], count: 0 };
       groups.set(groupKey, facts);
     }
-    if (entry.organization !== null && organizationKeyOfEntry !== "" && !facts.spellings.includes(entry.organization)) {
+    if (entry.organization !== null && key !== "" && !facts.spellings.includes(entry.organization)) {
       facts.spellings.push(entry.organization);
     }
     facts.count += 1;
-    return { entry, groupKey };
+    return { entry, groupKey, organizationKey: key };
   });
   const ordered = placed.toSorted(
     (a, b) =>
       comparePositions(a.entry.positionId, b.entry.positionId) ||
-      compareGroupKeys(organizationKey(a.entry.organization), organizationKey(b.entry.organization)) ||
+      compareGroupKeys(a.organizationKey, b.organizationKey) ||
       a.entry.commTestId - b.entry.commTestId,
   );
   return { ordered, groups };

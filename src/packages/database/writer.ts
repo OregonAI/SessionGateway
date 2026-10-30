@@ -117,7 +117,8 @@ export type IndexWriter = {
    * transaction. A meeting's status, an agenda item's action, and a listed document's label, Measure and
    * a posting's Meaning are the feed's latest. The listing of analysis documents replaces the Session's,
    * so the server can tell a Measure whose statement the worker could not fetch from one that has none.
-   * A full pull never deletes anything else (ADR-0005).
+   * The same goes for the Testimony rows: what the feed says of each, and the Agency its Organization names,
+   * are the feed's latest, whether or not the file is fetched. A full pull never deletes anything else (ADR-0005).
    */
   recordFullPull(session: SessionKey, asOf: Timestamp, pulled: FullPullRecord): void;
   /** The ids of the documents already stored for the Session: a stored document is never fetched again. */
