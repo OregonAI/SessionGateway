@@ -503,11 +503,15 @@ export function openIndexWriter(path: string): IndexWriter {
       const updateDocument = database.prepare(
         "UPDATE document SET node_id = ?, label = ?, posted_at = ?, analysis_version_label = ?, analysis_is_minority = ? WHERE id = ? AND session_key = ?",
       );
+      // Only a row that differs is written, so that a pull which changes nothing leaves the generation alone.
       const updateSearchDocument = database.prepare(
-        `UPDATE search_document SET node_id = ?, kind = ?, title = ?, measure_id = ?, committee_id = ?, dated_at = ?,
-                keyword_only = ?
-         WHERE document_id = ? AND session_key = ?`,
+        `UPDATE search_document SET node_id = ?1, kind = ?2, title = ?3, measure_id = ?4, committee_id = ?5,
+                dated_at = ?6, keyword_only = ?7
+         WHERE document_id = ?8 AND session_key = ?9
+           AND (node_id IS NOT ?1 OR kind IS NOT ?2 OR title IS NOT ?3 OR measure_id IS NOT ?4
+                OR committee_id IS NOT ?5 OR dated_at IS NOT ?6 OR keyword_only IS NOT ?7)`,
       );
+      const bumpGeneration = database.prepare("UPDATE search_generation SET generation = generation + 1");
       const deleteRelations = database.prepare("DELETE FROM document_relation WHERE document_id = ?");
       const insertRelation = database.prepare(
         `INSERT INTO document_relation (document_id, relation, to_id, meaning, provenance) VALUES (?, ?, ?, ?, ?)`,
@@ -527,7 +531,7 @@ export function openIndexWriter(path: string): IndexWriter {
           if (updated.changes === 0) continue;
           const entry = searchEntries.get(link.id);
           if (entry === undefined) throw new Error(`No search entry was made for the stored document ${link.id}`);
-          updateSearchDocument.run(
+          const filed = updateSearchDocument.run(
             entry.nodeId,
             entry.kind,
             entry.title,
@@ -538,6 +542,7 @@ export function openIndexWriter(path: string): IndexWriter {
             link.id,
             session,
           );
+          if (filed.changes > 0) bumpGeneration.run();
           deleteRelations.run(link.id);
           for (const relation of link.relations) {
             insertRelation.run(link.id, relation.relation, relation.to, relation.meaning, relation.provenance);
@@ -574,6 +579,7 @@ export function openIndexWriter(path: string): IndexWriter {
       const insertVector = database.prepare(
         "INSERT OR IGNORE INTO passage_vector (text_hash, model_id, vector) VALUES (?, ?, ?)",
       );
+      const bumpGeneration = database.prepare("UPDATE search_generation SET generation = generation + 1");
       database.exec("BEGIN IMMEDIATE");
       try {
         insertDocument.run(
@@ -613,6 +619,8 @@ export function openIndexWriter(path: string): IndexWriter {
         });
         for (const citation of search.citations) insertCitation.run(citation.id, document.id, citation.index);
         for (const row of search.vectors.rows) insertVector.run(row.hash, search.vectors.modelId, row.vector);
+        // The vectors of a keyword-only document are not loaded, so storing one changes nothing the server holds.
+        if (!search.entry.keywordOnly && search.passages.length > 0) bumpGeneration.run();
         database.exec("COMMIT");
       } catch (error) {
         database.exec("ROLLBACK");

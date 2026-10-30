@@ -116,6 +116,12 @@ export type SearchIndexReader = {
    * first mention, or the passage it starts in when a boundary cuts it in two.
    */
   citing(citationId: string, filter: SearchFilter, limit: number): CitedDocument[];
+  /**
+   * A number that moves whenever the worker stores or refreshes something the meaning side holds in memory: a
+   * document's vectors, or how a document is filed (its kind, Measure, committee, date, keyword-only flag). Read
+   * it before reading the vectors, and read the vectors again when it has moved.
+   */
+  generation(): number;
   /** How many passages of the Session have a vector under this model id. */
   vectorCount(session: SessionKey, modelId: string): number;
   /**
@@ -135,6 +141,7 @@ const citedRow = z.object({
   cited_at: z.number().nullable().optional(),
 });
 const countRow = z.object({ n: z.number() });
+const generationRow = z.object({ generation: z.number() });
 const vectorRow = z.object({
   passage_id: z.number(),
   document_id: z.string(),
@@ -209,6 +216,7 @@ export function openSearchReader(path: string): SearchIndexReader {
        JOIN search_document sd ON sd.document_id = p.document_id
        JOIN passage_vector v ON v.text_hash = p.text_hash AND v.model_id = ?2
      WHERE sd.session_key = ?1 AND sd.keyword_only = 0`;
+  const selectGeneration = database.prepare("SELECT generation FROM search_generation WHERE id = 1");
   const selectVectorCount = database.prepare(`SELECT COUNT(*) AS n ${vectorSelection}`);
   const selectVectors = database.prepare(
     `SELECT p.id AS passage_id, p.document_id, sd.node_id, sd.kind, sd.measure_id, sd.committee_id, sd.dated_at,
@@ -247,6 +255,9 @@ export function openSearchReader(path: string): SearchIndexReader {
           nodeId: stored.node_id as DocumentId | AmendmentId,
         };
       });
+    },
+    generation() {
+      return generationRow.parse(selectGeneration.get()).generation;
     },
     vectorCount(session, modelId) {
       return countRow.parse(selectVectorCount.get(session, modelId)).n;
