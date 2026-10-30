@@ -1,6 +1,7 @@
 import type { OrsSectionId, StatuteLink, StatuteLinkKind, StatuteTarget } from "#/packages/domain/statute-links.ts";
 import { orsChapterIdOf, orsSectionIdOf } from "#/packages/domain/statute-links.ts";
 import { normalizeExtractedText } from "./normalize.ts";
+import { withoutOmittedMatter } from "./omitted-matter.ts";
 import type { RangeExpander } from "./ranges.ts";
 import { createRangeExpander } from "./ranges.ts";
 import type { RelatingClauseEdit } from "./relating-clause.ts";
@@ -84,8 +85,9 @@ function insertedSections(body: string): MeasureSection[] {
 function linksOf(sections: MeasureSection[], expandRange: RangeExpander): StatuteLink[] {
   const links = new Map<string, StatuteLink>();
   for (const section of sections) {
-    for (const reference of findOrsReferences(section.text)) {
-      const kind = kindOf(section.text, reference);
+    const text = withoutOmittedMatter(section.text);
+    for (const reference of findOrsReferences(text)) {
+      const kind = kindOf(text, reference);
       for (const item of reference.items) {
         for (const target of targetsOf(item, expandRange)) {
           const key = `${kind}|${target.id}|${section.number ?? ""}`;
