@@ -106,7 +106,7 @@ const sectionToken = /(?<![\w.])\d{1,3}[A-Z]?\.\d{3,4}(?!\d)/g;
 
 /**
  * Finds every section and range of sections in the text, with or without "ORS" before it. A
- * relating clause edit can insert a bare number ("and 418.808") whose "ORS" is in the title.
+ * relating clause edit can insert a bare number ("and 418.808") whose "ORS" is earlier in the relating clause.
  */
 export function findSectionItems(text: string): OrsItem[] {
   const items: OrsItem[] = [];

@@ -89,7 +89,7 @@ A numbered section of a Version or Proposed Amendment, printed "SECTION 8." and 
 _Avoid_: section, unqualified (an ORS section is another thing)
 
 **Relating clause**:
-The line of a Measure's text that says what it does to the statutes: "Relating to human services; amending ORS 409.711." A Proposed Amendment can edit it.
+The words of a Measure's text that say what it does to the statutes: "Relating to human services; amending ORS 409.711." They start on line 2 of page 1 and can run over several lines (SB 69's A-Engrossed Version has three). A Proposed Amendment can edit them.
 _Avoid_: title
 
 **Statutes Affected Table**:

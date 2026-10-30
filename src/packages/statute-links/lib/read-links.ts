@@ -22,7 +22,7 @@ export type StatuteLinkDocumentKind = "version" | "proposed-amendment";
 /** One measure section of the document: its number as printed, and its running text. */
 type MeasureSection = { number: string | null; text: string };
 
-/** Splits a Version into its measure sections. Text before the first header is the summary and title, which hold no links. */
+/** Splits a Version into its measure sections. Text before the first header is the Measure's heading and relating clause, which are not read: its sections are. */
 function splitIntoSections(body: string): MeasureSection[] {
   const headers = [...body.matchAll(sectionHeader)];
   if (headers.length === 0) return [{ number: null, text: body }];
