@@ -1,8 +1,8 @@
 // The MCP server's side of the database: read-only.
 import { z } from "zod";
 import type { HistoryAction, Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
-import { comparePrintOrder, type LegislatorId, type Sponsor } from "#/packages/domain/legislators.ts";
-import type { CommitteeVote, FloorVote } from "#/packages/domain/votes.ts";
+import { comparePrintOrder, type Legislator, type LegislatorId, type Sponsor } from "#/packages/domain/legislators.ts";
+import type { CommitteeVote, FloorVote, LegislatorVote } from "#/packages/domain/votes.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openReadConnection } from "./lib/connection.ts";
 
@@ -74,10 +74,46 @@ const sponsorRow = z.object({
   legislator_name: z.string().nullable(),
 });
 
+/** The Legislator a stored row names, or null while the row's code is unresolved. */
+function legislatorOf(stored: { legislator_id: string | null; legislator_name: string | null }): Legislator | null {
+  if (stored.legislator_id === null || stored.legislator_name === null) return null;
+  return { id: stored.legislator_id as LegislatorId, name: stored.legislator_name };
+}
+
+/** A stored vote entry, as the server shows it. */
+function legislatorVoteOf(stored: z.infer<typeof floorVoteRow> | z.infer<typeof committeeVoteRow>): LegislatorVote {
+  return { legislatorCode: stored.legislator_code, legislator: legislatorOf(stored), vote: stored.vote };
+}
+
+/** The rows in order, cut into runs of neighbours that share a key: the rows of one vote come next to each other. */
+function runsOf<Row>(rows: readonly Row[], keyOf: (row: Row) => unknown): [Row, ...Row[]][] {
+  const runs: [Row, ...Row[]][] = [];
+  for (const row of rows) {
+    const last = runs.at(-1);
+    if (last !== undefined && keyOf(last[0]) === keyOf(row)) last.push(row);
+    else runs.push([row]);
+  }
+  return runs;
+}
+
 /** A committee vote's committee, meeting and who voted what, whatever order the feed lists the members in. */
 function rollOf(vote: CommitteeVote): string {
   const cast = vote.votes.map((entry) => `${entry.legislatorCode}\u0000${entry.vote}`).sort();
   return JSON.stringify([vote.committeeCode, vote.meetingDate, cast]);
+}
+
+/**
+ * The cache gives every agenda item that has two reports the same roll twice (docs/research/olis-votes.md
+ * §3), so a roll the feed gives under two reports is listed once. Rolls that differ are never merged.
+ */
+function withoutRepeatedRolls(votes: readonly CommitteeVote[]): CommitteeVote[] {
+  const listed = new Set<string>();
+  return votes.filter((vote) => {
+    const roll = rollOf(vote);
+    if (listed.has(roll)) return false;
+    listed.add(roll);
+    return true;
+  });
 }
 
 export function openIndexReader(path: string): IndexReader {
@@ -146,16 +182,13 @@ export function openIndexReader(path: string): IndexReader {
           level: stored.level,
           legislatorCode: stored.legislator_code,
           legislatorId: stored.legislator_id as LegislatorId | null,
-          legislatorName: stored.legislator_name,
+          legislator: legislatorOf(stored),
         };
       });
       return sponsors.sort(comparePrintOrder(key.prefix)).map((sponsor) => ({
         level: sponsor.level,
         legislatorCode: sponsor.legislatorCode,
-        legislator:
-          sponsor.legislatorId === null || sponsor.legislatorName === null
-            ? null
-            : { id: sponsor.legislatorId, name: sponsor.legislatorName },
+        legislator: sponsor.legislator,
       }));
     },
     findCommitteeSponsors(key) {
@@ -177,63 +210,26 @@ export function openIndexReader(path: string): IndexReader {
       });
     },
     findFloorVotes(key) {
-      const votes: FloorVote[] = [];
-      let currentHistory: number | undefined;
-      for (const row of selectFloorVotes.all(key.session, key.prefix, key.number)) {
-        const stored = floorVoteRow.parse(row);
-        // The rows come ordered by time and history id, so a new history id starts a new floor vote.
-        if (stored.history_id !== currentHistory || votes.length === 0) {
-          votes.push({
-            chamber: stored.chamber,
-            date: stored.action_date as Timestamp,
-            action: stored.action_text,
-            votes: [],
-          });
-          currentHistory = stored.history_id;
-        }
-        votes[votes.length - 1]?.votes.push({
-          legislatorCode: stored.legislator_code,
-          legislator:
-            stored.legislator_id === null || stored.legislator_name === null
-              ? null
-              : { id: stored.legislator_id as LegislatorId, name: stored.legislator_name },
-          vote: stored.vote,
-        });
-      }
-      return votes;
+      const rows = selectFloorVotes.all(key.session, key.prefix, key.number).map((row) => floorVoteRow.parse(row));
+      // The rows come ordered by time and history id, so the rows of a history id are one floor vote.
+      return runsOf(rows, (stored) => stored.history_id).map((run) => ({
+        chamber: run[0].chamber,
+        date: run[0].action_date as Timestamp,
+        action: run[0].action_text,
+        votes: run.map(legislatorVoteOf),
+      }));
     },
     findCommitteeVotes(key) {
-      const reports: CommitteeVote[] = [];
-      let currentReport: number | undefined;
-      for (const row of selectCommitteeVotes.all(key.session, key.prefix, key.number)) {
-        const stored = committeeVoteRow.parse(row);
-        // The rows come ordered by meeting and report, so a new report id starts a new committee vote.
-        if (stored.report_id !== currentReport || reports.length === 0) {
-          reports.push({
-            committeeCode: stored.committee_code,
-            meetingDate: stored.meeting_date as Timestamp,
-            votes: [],
-          });
-          currentReport = stored.report_id;
-        }
-        reports[reports.length - 1]?.votes.push({
-          legislatorCode: stored.legislator_code,
-          legislator:
-            stored.legislator_id === null || stored.legislator_name === null
-              ? null
-              : { id: stored.legislator_id as LegislatorId, name: stored.legislator_name },
-          vote: stored.vote,
-        });
-      }
-      // The cache gives every agenda item that has two reports the same roll twice (docs/research/olis-votes.md
-      // §3), so a roll the feed gives under two reports is listed once. Rolls that differ are never merged.
-      const listed = new Set<string>();
-      return reports.filter((vote) => {
-        const roll = rollOf(vote);
-        if (listed.has(roll)) return false;
-        listed.add(roll);
-        return true;
-      });
+      const rows = selectCommitteeVotes
+        .all(key.session, key.prefix, key.number)
+        .map((row) => committeeVoteRow.parse(row));
+      // The rows come ordered by meeting and report, so the rows of a report id are one roll.
+      const reports = runsOf(rows, (stored) => stored.report_id).map((run) => ({
+        committeeCode: run[0].committee_code,
+        meetingDate: run[0].meeting_date as Timestamp,
+        votes: run.map(legislatorVoteOf),
+      }));
+      return withoutRepeatedRolls(reports);
     },
     asOf(session) {
       const row = selectAsOf.get(session);

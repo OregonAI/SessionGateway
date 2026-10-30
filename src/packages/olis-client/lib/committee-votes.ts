@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { CommitteeVoteEntry } from "#/packages/domain/votes.ts";
-import { readEntitySet } from "./feed.ts";
+import { readSessionRows } from "./feed.ts";
 import type { OlisClientOptions } from "./options.ts";
 import { feedTimestamp } from "./timestamps.ts";
 
@@ -24,17 +24,14 @@ export async function readCommitteeVoteRows(
   session: SessionKey,
   signal: AbortSignal,
 ): Promise<CommitteeVoteEntry[]> {
-  const rows = await readEntitySet(options, "CommitteeVotes", `SessionKey eq '${session}'`, committeeVoteRow, signal);
-  // A row of another Session is never taken for this one: measure numbers restart every Session.
-  return rows
-    .filter((row) => row.SessionKey === session)
-    .map((row) => ({
-      id: row.CommitteeVoteId,
-      measure: { session, prefix: row.MeasurePrefix, number: row.MeasureNumber },
-      reportId: row.CommitteeReportId,
-      committeeCode: row.CommitteeCode,
-      meetingDate: row.MeetingDate,
-      legislatorCode: row.VoteName,
-      vote: row.Meaning,
-    }));
+  const rows = await readSessionRows(options, "CommitteeVotes", session, committeeVoteRow, signal);
+  return rows.map((row) => ({
+    id: row.CommitteeVoteId,
+    measure: { session, prefix: row.MeasurePrefix, number: row.MeasureNumber },
+    reportId: row.CommitteeReportId,
+    committeeCode: row.CommitteeCode,
+    meetingDate: row.MeetingDate,
+    legislatorCode: row.VoteName,
+    vote: row.Meaning,
+  }));
 }

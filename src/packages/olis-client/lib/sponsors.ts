@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { Sponsorship } from "#/packages/domain/legislators.ts";
-import { readEntitySet } from "./feed.ts";
+import { readSessionRows } from "./feed.ts";
 import type { OlisClientOptions } from "./options.ts";
 
 // The feed serializes decimal keys as strings: "MeasureSponsorId":"154809", "PrintOrder":"1"
@@ -59,12 +59,6 @@ export async function readSponsorshipRows(
   session: SessionKey,
   signal: AbortSignal,
 ): Promise<Sponsorship[]> {
-  const rows = await readEntitySet(options, "MeasureSponsors", `SessionKey eq '${session}'`, sponsorRow, signal);
-  const sponsorships: Sponsorship[] = [];
-  for (const row of rows) {
-    // A row of another Session is never taken for this one: measure numbers restart every Session.
-    if (row.SessionKey !== session) continue;
-    sponsorships.push(sponsorshipOf(session, row));
-  }
-  return sponsorships;
+  const rows = await readSessionRows(options, "MeasureSponsors", session, sponsorRow, signal);
+  return rows.map((row) => sponsorshipOf(session, row));
 }

@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { FloorVoteEntry } from "#/packages/domain/votes.ts";
 import { feedChamber } from "./chamber.ts";
-import { readEntitySet } from "./feed.ts";
+import { readSessionRows } from "./feed.ts";
 import type { OlisClientOptions } from "./options.ts";
 import { feedTimestamp } from "./timestamps.ts";
 
@@ -26,18 +26,15 @@ export async function readFloorVoteRows(
   session: SessionKey,
   signal: AbortSignal,
 ): Promise<FloorVoteEntry[]> {
-  const rows = await readEntitySet(options, "MeasureVotes", `SessionKey eq '${session}'`, floorVoteRow, signal);
-  // A row of another Session is never taken for this one: measure numbers restart every Session.
-  return rows
-    .filter((row) => row.SessionKey === session)
-    .map((row) => ({
-      id: row.MeasureVoteId,
-      measure: { session, prefix: row.MeasurePrefix, number: row.MeasureNumber },
-      historyId: row.MeasureHistoryId,
-      chamber: row.Chamber,
-      date: row.ActionDate,
-      action: row.ActionText,
-      legislatorCode: row.VoteName,
-      vote: row.Vote,
-    }));
+  const rows = await readSessionRows(options, "MeasureVotes", session, floorVoteRow, signal);
+  return rows.map((row) => ({
+    id: row.MeasureVoteId,
+    measure: { session, prefix: row.MeasurePrefix, number: row.MeasureNumber },
+    historyId: row.MeasureHistoryId,
+    chamber: row.Chamber,
+    date: row.ActionDate,
+    action: row.ActionText,
+    legislatorCode: row.VoteName,
+    vote: row.Vote,
+  }));
 }

@@ -1,6 +1,7 @@
 // How to read one entity set of the OLIS OData v3 feed, quirks included (docs/research/olis-odata.md
 // section 1 and section 8; spec #1, "OLIS client").
 import { z } from "zod";
+import type { SessionKey } from "#/packages/domain/index.ts";
 import type { OlisClientOptions } from "./options.ts";
 
 /** A page that takes longer than this is an outage, not a slow answer (olis-odata.md gotcha 15). */
@@ -89,4 +90,20 @@ export async function readEntitySet<Row>(
     );
   }
   return rows;
+}
+
+/**
+ * Reads the rows of one Session of an entity set. The feed is asked for one Session, but a row of
+ * another one is never taken for it: measure numbers restart every Session, so SB 69 of one Session
+ * is not SB 69 of another, and a Legislator Code can name a different person in another Session.
+ */
+export async function readSessionRows<Row extends { SessionKey: string }>(
+  options: OlisClientOptions,
+  entitySet: string,
+  session: SessionKey,
+  rowSchema: z.ZodType<Row>,
+  signal: AbortSignal,
+): Promise<Row[]> {
+  const rows = await readEntitySet(options, entitySet, `SessionKey eq '${session}'`, rowSchema, signal);
+  return rows.filter((row) => row.SessionKey === session);
 }
