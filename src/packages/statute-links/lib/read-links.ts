@@ -1,6 +1,8 @@
-import type { StatuteLink, StatuteLinkKind, StatuteTarget } from "#/packages/domain/statute-links.ts";
+import type { OrsSectionId, StatuteLink, StatuteLinkKind, StatuteTarget } from "#/packages/domain/statute-links.ts";
 import { orsChapterIdOf, orsSectionIdOf } from "#/packages/domain/statute-links.ts";
 import { normalizeExtractedText } from "./normalize.ts";
+import type { RangeExpander } from "./ranges.ts";
+import { createRangeExpander } from "./ranges.ts";
 import type { OrsItem, OrsReference } from "./references.ts";
 import { findOrsReferences } from "./references.ts";
 
@@ -32,25 +34,42 @@ function kindOf(text: string, reference: OrsReference): StatuteLinkKind {
   return "cites";
 }
 
-function targetOf(item: OrsItem): StatuteTarget | undefined {
-  if (item.type === "chapter") {
-    const id = orsChapterIdOf(item.chapter);
-    return id === undefined ? undefined : { type: "chapter", id, resolvableOnOregonAi: false };
-  }
-  const id = orsSectionIdOf(item.citation);
-  return id === undefined ? undefined : { type: "section", id, resolvableOnOregonAi: true };
+function sectionTarget(id: OrsSectionId): StatuteTarget {
+  return { type: "section", id, resolvableOnOregonAi: true };
 }
 
-export function readStatuteLinks(text: string): StatuteLink[] {
-  const links: StatuteLink[] = [];
+/** The targets an item names: one for a section or a chapter, one per listed section for a range. */
+function targetsOf(item: OrsItem, expandRange: RangeExpander): StatuteTarget[] {
+  switch (item.type) {
+    case "chapter": {
+      const id = orsChapterIdOf(item.chapter);
+      return id === undefined ? [] : [{ type: "chapter", id, resolvableOnOregonAi: false }];
+    }
+    case "section": {
+      const id = orsSectionIdOf(item.citation);
+      return id === undefined ? [] : [sectionTarget(id)];
+    }
+    case "range":
+      return expandRange(item.from, item.to).map(sectionTarget);
+    default:
+      return item satisfies never;
+  }
+}
+
+/** Reads the Statute Links of running text, each once per kind, target and measure section, in the order the text names them. */
+export function readStatuteLinks(text: string, orsSections: readonly OrsSectionId[]): StatuteLink[] {
+  const expandRange = createRangeExpander(orsSections);
+  const links = new Map<string, StatuteLink>();
   for (const section of splitIntoSections(normalizeExtractedText(text))) {
     for (const reference of findOrsReferences(section.text)) {
       const kind = kindOf(section.text, reference);
       for (const item of reference.items) {
-        const target = targetOf(item);
-        if (target !== undefined) links.push({ kind, target, measureSection: section.number });
+        for (const target of targetsOf(item, expandRange)) {
+          const key = `${kind}|${target.id}|${section.number ?? ""}`;
+          if (!links.has(key)) links.set(key, { kind, target, measureSection: section.number });
+        }
       }
     }
   }
-  return links;
+  return [...links.values()];
 }

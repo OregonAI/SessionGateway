@@ -19,5 +19,5 @@ export type StatuteLinkParse = {
 
 /** Reads Legislative Counsel's fixed wording into Statute Links. Pure: text in, links out. */
 export function parseStatuteLinks(input: ParseStatuteLinksInput): StatuteLinkParse {
-  return { links: readStatuteLinks(input.text) };
+  return { links: readStatuteLinks(input.text, input.orsSections) };
 }

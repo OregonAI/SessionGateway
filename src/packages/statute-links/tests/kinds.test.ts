@@ -253,3 +253,60 @@ describe("Statute Link kinds in a Version", () => {
     expect(linksOf(text)).toEqual(expected);
   });
 });
+
+describe("Statute Link targets", () => {
+  // SB 69 A-Engrossed: "Section 2 of this 2025 Act is added to and made a part of ORS chapter 657B"
+  // (Statutes Affected Table: Ch. 657B Add §1 SB 69 A) and "ORS 657B.070 is amended to read" (657B.070 A §3).
+  const text = `5
+6
+
+Be It Enacted by the People of the State of Oregon:
+SECTION 1. Section 2 of this 2025 Act is added to and made a part of ORS chapter 657B.
+
+7
+
+SECTION 2. Notwithstanding any other provision under this chapter, the Bureau of La-
+
+8
+
+bor and Industries is responsible for administrative and regulatory oversight regarding the
+
+9
+
+requirements under ORS 657B.060, and the provisions of ORS 657B.070 relating to retaliation
+
+10
+
+and discrimination, and shall adopt any rules necessary and proper for the administration
+
+11
+
+of those sections.
+
+NOTE: Matter in boldfaced type in an amended section is new; matter [italic and bracketed] is existing law to be omitted.
+New sections are in boldfaced type.
+LC 1368
+
+\fA-Eng. SB 69
+1
+
+SECTION 3. ORS 657B.070 is amended to read:`;
+
+  test("a chapter target is minted as ors-chapter-657b and marked not resolvable on OregonAI", () => {
+    const { links } = parseStatuteLinks({ documentKind: "version", text, orsSections: [] });
+    expect(links).toContainEqual({
+      kind: "adds-to",
+      target: { type: "chapter", id: "ors-chapter-657b", resolvableOnOregonAi: false },
+      measureSection: "1",
+    });
+  });
+
+  test("a section target is minted as ors-657b.070 and can be taken to OregonAI", () => {
+    const { links } = parseStatuteLinks({ documentKind: "version", text, orsSections: [] });
+    expect(links).toContainEqual({
+      kind: "amends",
+      target: { type: "section", id: "ors-657b.070", resolvableOnOregonAi: true },
+      measureSection: "3",
+    });
+  });
+});
