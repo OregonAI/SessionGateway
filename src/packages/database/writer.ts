@@ -30,14 +30,18 @@ export type FloorVoteRecord = FloorVoteEntry & { legislatorId: LegislatorId | nu
 export type CommitteeVoteRecord = CommitteeVoteEntry & { legislatorId: LegislatorId | null };
 
 /**
- * The people a full pull read: the Legislators the resolver can name, and the rows that name a
- * Legislator by a code (the sponsor rows of the Measures and the entries of their votes).
+ * Everything a full pull read, ready to store: one field for each kind of row. A ticket that makes the
+ * pull read another kind of row adds a field here, not a parameter to `recordFullPull`.
  */
-export type PeopleRecord = {
+export type FullPullRecord = {
+  measures: readonly Measure[];
+  history: readonly HistoryAction[];
+  /** The Legislators the resolver can name. */
   legislators: readonly Legislator[];
+  /** The MeasureSponsors rows, with the Legislator each Member row's code resolved to. */
   sponsors: readonly SponsorRecord[];
-  committeeVotes: readonly CommitteeVoteRecord[];
   floorVotes: readonly FloorVoteRecord[];
+  committeeVotes: readonly CommitteeVoteRecord[];
 };
 
 /** The columns of the sponsor table that only some kinds of row fill; the others stay NULL. */
@@ -62,20 +66,14 @@ function kindColumnsOf(sponsor: SponsorRecord): {
 
 export type IndexWriter = {
   /** Stores what a full pull read, and when, in one transaction. A full pull never deletes (ADR-0005). */
-  recordFullPull(
-    session: SessionKey,
-    measures: readonly Measure[],
-    asOf: Timestamp,
-    people: PeopleRecord,
-    history: readonly HistoryAction[],
-  ): void;
+  recordFullPull(session: SessionKey, asOf: Timestamp, pulled: FullPullRecord): void;
   close(): void;
 };
 
 export function openIndexWriter(path: string): IndexWriter {
   const database = openWriteConnection(path);
   return {
-    recordFullPull(session, measures, asOf, people, history) {
+    recordFullPull(session, asOf, pulled) {
       const upsertMeasure = database.prepare(
         `INSERT INTO measure (session_key, prefix, number, catchline, location, committee_code, created_at, modified_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -128,7 +126,7 @@ export function openIndexWriter(path: string): IndexWriter {
       );
       database.exec("BEGIN IMMEDIATE");
       try {
-        for (const measure of measures) {
+        for (const measure of pulled.measures) {
           upsertMeasure.run(
             measure.session,
             measure.prefix,
@@ -140,8 +138,8 @@ export function openIndexWriter(path: string): IndexWriter {
             measure.modifiedAt,
           );
         }
-        for (const legislator of people.legislators) upsertLegislator.run(session, legislator.id, legislator.name);
-        for (const sponsor of people.sponsors) {
+        for (const legislator of pulled.legislators) upsertLegislator.run(session, legislator.id, legislator.name);
+        for (const sponsor of pulled.sponsors) {
           const columns = kindColumnsOf(sponsor);
           upsertSponsor.run(
             session,
@@ -157,7 +155,7 @@ export function openIndexWriter(path: string): IndexWriter {
             columns.message,
           );
         }
-        for (const entry of people.floorVotes) {
+        for (const entry of pulled.floorVotes) {
           upsertFloorVote.run(
             session,
             entry.id,
@@ -172,7 +170,7 @@ export function openIndexWriter(path: string): IndexWriter {
             entry.vote,
           );
         }
-        for (const entry of people.committeeVotes) {
+        for (const entry of pulled.committeeVotes) {
           upsertCommitteeVote.run(
             session,
             entry.id,
@@ -186,7 +184,7 @@ export function openIndexWriter(path: string): IndexWriter {
             entry.vote,
           );
         }
-        for (const action of history) {
+        for (const action of pulled.history) {
           upsertHistory.run(
             session,
             action.id,

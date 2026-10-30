@@ -184,7 +184,7 @@ old.close();
 const { openIndexWriter } = await import(`${repo}/src/packages/database/writer.ts`);
 const writer = openIndexWriter(path);
 try {
-  writer.recordFullPull("2025R1", [], "2026-10-30T00:00:00-07:00", { legislators: [], sponsors: [], committeeVotes: [], floorVotes: [] }, []);
+  writer.recordFullPull("2025R1", "2026-10-30T00:00:00-07:00", { measures: [], history: [], legislators: [], sponsors: [], floorVotes: [], committeeVotes: [] });
   console.log("pull succeeded");
 } catch (error) {
   console.log("pull failed:", error.message);
