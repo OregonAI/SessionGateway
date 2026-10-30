@@ -56,4 +56,37 @@ describe.for(eras)("search for a %s client", (era) => {
     expect(outcome.structured?.["as_of"]).toBe("2025-01-17T18:00:00-08:00");
     expect(outcome.structured?.["notice"]).toMatch(/not the official record/i);
   });
+
+  // Testimony. HB 3131's Testimony 117165, 117166 and 117167 (CommitteePublicTestimonies rows, all three
+  // written on 2025-01-17 for HB 3131) are letters from the Oregon Climate and Agriculture Network, American
+  // Farmland Trust and the Oregon Association of Conservation Districts about the Oregon Agricultural
+  // Heritage Program. The query is words from them and from HB 3131's Introduced Version, which also holds
+  // "Oregon Agricultural Heritage Fund", so a general search has something to return that is not Testimony.
+  const heritageQuery = "Oregon Agricultural Heritage Fund conservation easements";
+  const idsOf = (outcome: { structured: Record<string, unknown> | undefined }): string[] =>
+    (outcome.structured?.["results"] as { id: string }[]).map((result) => result.id);
+  const kindsOf = (outcome: { structured: Record<string, unknown> | undefined }): string[] =>
+    (outcome.structured?.["results"] as { kind: string }[]).map((result) => result.kind);
+  const letters = ["testimony-2025r1-117165", "testimony-2025r1-117166", "testimony-2025r1-117167"];
+
+  it("leaves Testimony out of a general search", async () => {
+    const outcome = await callTool(connected, "search", { query: heritageQuery });
+
+    expect(idsOf(outcome)).toContain("version-2025r1-hb3131-introduced");
+    expect(kindsOf(outcome)).not.toContain("testimony");
+  });
+
+  it("includes Testimony when the call asks for it", async () => {
+    const outcome = await callTool(connected, "search", { query: heritageQuery, include_testimony: true });
+
+    expect(idsOf(outcome)).toEqual(expect.arrayContaining(letters));
+  });
+
+  it("includes Testimony when the search is scoped to one Measure, by citation or by id", async () => {
+    for (const measure of ["HB 3131", "measure-2025r1-hb3131"]) {
+      const outcome = await callTool(connected, "search", { query: heritageQuery, measure });
+
+      expect(idsOf(outcome), measure).toEqual(expect.arrayContaining(letters));
+    }
+  });
 });

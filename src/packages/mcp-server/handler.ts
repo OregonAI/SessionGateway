@@ -278,7 +278,17 @@ function buildServer(
       const refused = refuseOverRateLimit(limiter, config);
       if (refused !== undefined) return refused;
       const result = search(searchDeps, config.session, input);
-      return { content: [{ type: "text", text: JSON.stringify(result.search) }], structuredContent: result.search };
+      switch (result.kind) {
+        case "found":
+          return { content: [{ type: "text", text: JSON.stringify(result.search) }], structuredContent: result.search };
+        case "unknown_measure":
+          return {
+            isError: true,
+            content: [{ type: "text", text: unknownMeasureMessage(result.reference, result.session) }],
+          };
+        default:
+          return result satisfies never;
+      }
     },
   );
   server.registerTool(

@@ -2,8 +2,9 @@ import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
 import type { SearchIndexReader } from "#/packages/database/search.ts";
 import { documentKinds, type AmendmentId, type DocumentId } from "#/packages/domain/documents.ts";
-import type { SessionKey } from "#/packages/domain/index.ts";
+import { measureIdOf, parseMeasureReference, type SessionKey } from "#/packages/domain/index.ts";
 import { matchExpressionOf, snippetOf, termsOf } from "#/packages/search/text.ts";
+import type { SearchFilter } from "#/packages/database/search.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 
 /** The most hits one call returns, when the call does not say, and the most it may ask for (spec #1; docs/adr/0025). */
@@ -20,6 +21,18 @@ export const searchInput = z.object({
     .max(1000)
     .describe(
       'What to look for: a question in your own words, or words from the document, or a citation such as "HB 3131", "SB 69-2" or "ORS 468.130".',
+    ),
+  measure: z
+    .string()
+    .optional()
+    .describe(
+      'Only documents of this Measure: its id, such as "measure-2025r1-sb69", or its citation, such as "SB 69". Testimony is included when a Measure is given.',
+    ),
+  include_testimony: z
+    .boolean()
+    .optional()
+    .describe(
+      "Whether Testimony may be returned. It is left out of a general search, so that thousands of letters do not crowd out Versions, and included when this is true or when the search is scoped to one Measure.",
     ),
   limit: z
     .number()
@@ -71,7 +84,10 @@ export type SearchDeps = {
   searchIndex: SearchIndexReader;
 };
 
-export type SearchResult = { kind: "found"; search: SearchOutput };
+/** An unknown Measure is an expected outcome, so it is a value; the MCP edge decides it is a tool error. */
+export type SearchResult =
+  | { kind: "found"; search: SearchOutput }
+  | { kind: "unknown_measure"; reference: string; session: SessionKey };
 
 export function search(deps: SearchDeps, session: SessionKey, input: z.infer<typeof searchInput>): SearchResult {
   const asOf = deps.reader.asOf(session);
@@ -79,7 +95,16 @@ export function search(deps: SearchDeps, session: SessionKey, input: z.infer<typ
   const limit = input.limit ?? DEFAULT_LIMIT;
   const terms = termsOf(input.query);
   const match = matchExpressionOf(terms, []);
-  const filter = { session, withTestimony: false };
+  const measure = input.measure === undefined ? undefined : parseMeasureReference(input.measure, session);
+  if (input.measure !== undefined && (measure === undefined || deps.reader.findMeasure(measure) === undefined)) {
+    return { kind: "unknown_measure", reference: input.measure, session };
+  }
+  // Testimony is left out unless the call asks for it or the search is scoped to one Measure (spec #1 story 11).
+  const filter: SearchFilter = {
+    session,
+    withTestimony: input.include_testimony === true || measure !== undefined,
+    ...(measure === undefined ? {} : { measure: measureIdOf(measure) }),
+  };
   const passages = match === undefined ? [] : deps.searchIndex.keyword(match, filter, CANDIDATE_PASSAGES);
   // One hit for each document id a hit carries, at the best passage that matched it.
   const best = new Map<DocumentId | AmendmentId, (typeof passages)[number]>();
