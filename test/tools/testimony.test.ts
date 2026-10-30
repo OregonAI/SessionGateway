@@ -367,6 +367,19 @@ describe.for(eras)("testimony for a %s client", (era) => {
     );
   });
 
+  // The index only adds and updates Testimony rows; one that OLIS stops listing stays until ticket #18 marks removals
+  // (spec #1, module 2). So `total` is the rows this index holds from the feed it last read, which is what the output
+  // schema says, and it does not claim to be what OLIS lists now.
+  it("says in its output schema that total is the rows the index holds from the feed it last read, not what OLIS lists now", async () => {
+    const { tools } = await connected.client.listTools();
+
+    const schema = tools.find((candidate) => candidate.name === "testimony")?.outputSchema as
+      { properties: { total: { description: string } } } | undefined;
+    expect(schema?.properties.total.description).toMatch(/rows this index holds/);
+    expect(schema?.properties.total.description).toMatch(/feed it last read/);
+    expect(schema?.properties.total.description).not.toMatch(/OLIS lists/);
+  });
+
   // An unknown Measure is an MCP error, as for get_measure and meetings (spec #1: "Errors are reported as MCP
   // errors"), and the message names what was asked for and how to ask.
   it("answers an unknown Measure with an error that names it", async () => {

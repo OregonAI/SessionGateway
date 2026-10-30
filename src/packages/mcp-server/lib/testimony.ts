@@ -84,7 +84,7 @@ const itemOutput = z.object({
   fetched: z
     .boolean()
     .describe(
-      "True when this index holds the file, so get_document serves the id. False when OLIS lists the Testimony but the file is not here yet (a failed or not yet reached fetch): get_document then answers with an error that says the next pull fetches it, and source_url is where to read it.",
+      "True when this index holds the file, so get_document serves the id. False when the feed this index last read lists the Testimony but the file is not here yet (a failed or not yet reached fetch): get_document then answers with an error that says the next pull fetches it, and source_url is where to read it.",
     ),
   has_text_layer: z
     .boolean()
@@ -152,7 +152,11 @@ const positionOutput = z.object({
 
 export const testimonyOutput = z.object({
   measure_id: z.string().describe("The Measure's id in OregonAI's form."),
-  total: z.number().describe("How many Testimony rows OLIS lists for the Measure, on every page."),
+  total: z
+    .number()
+    .describe(
+      "How many Testimony rows this index holds for the Measure, from the feed it last read (see as_of), on every page. A row OLIS has stopped listing since is still counted.",
+    ),
   position_counts: z
     .array(positionCountOutput)
     .describe(
