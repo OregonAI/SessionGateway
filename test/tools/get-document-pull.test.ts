@@ -3,11 +3,15 @@
 // database. Cases here build their own system because the feed, the clock or the failures the fake
 // gives are the thing under test; cases that only read are in get-document.test.ts.
 import { readFileSync } from "node:fs";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient } from "../support/mcp-clients.ts";
 import { startSystem, type System, type SystemOptions } from "../support/system.ts";
 
 const started: System[] = [];
+
+// A case that serves the documents pulls the fixture's 278 files, about four seconds on its own and more
+// with the other files' workers running beside it (as get-measure-analysis-pull.test.ts says).
+vi.setConfig({ testTimeout: 60_000 });
 
 afterEach(async () => {
   for (const system of started.splice(0)) await system.stop();

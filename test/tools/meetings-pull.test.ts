@@ -3,11 +3,15 @@
 // row the committed fixture lacks. Each case builds its own system, and the harness serves a made-up row
 // to that one worker; the committed fixture is never edited by hand (test/fixtures/CLAUDE.md). Every
 // case runs for both kinds of MCP client, so the schema check of each one sees every shape here.
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient, type Era } from "../support/mcp-clients.ts";
 import { startSystem, type System, type SystemOptions } from "../support/system.ts";
 
 const started: { system: System; connected: ConnectedClient }[] = [];
+
+// A case that serves the documents pulls the fixture's 278 files, about four seconds on its own and more
+// with the other files' workers running beside it (as get-measure-analysis-pull.test.ts says).
+vi.setConfig({ testTimeout: 60_000 });
 
 async function start(era: Era, options: SystemOptions): Promise<{ system: System; connected: ConnectedClient }> {
   const system = await startSystem(options);
