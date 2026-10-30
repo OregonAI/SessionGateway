@@ -215,7 +215,7 @@ function liveStatusOf(
         source: "cache",
         lookup_failed: true,
         as_of: cached.asOf,
-        notice: `The live lookup of OLIS failed (${live.reason}). The location, history and votes in this block come from the cache, as of ${cached.asOf}, the index's as-of time, and may be out of date. The cache holds no schedule, so schedule is null.`,
+        notice: `The live lookup of OLIS failed: ${live.reason}. The location, history and votes in this block come from the cache, as of ${cached.asOf}, the index's as-of time, and may be out of date. The cache holds no schedule, so schedule is null.`,
         location: { current: cached.location.current, committee_code: cached.location.committeeCode },
         history: cached.history.map(historyShown),
         schedule: null,
