@@ -1,7 +1,7 @@
 import type { Citation } from "#/packages/domain/citations.ts";
 import { orsSectionCitationOf } from "#/packages/domain/oregonai.ts";
 
-/** About how many characters a snippet holds (spec #1 story 13; docs/adr/0025). */
+/** About how many characters a snippet holds (spec #1 story 13; ADR-0025). */
 export const SNIPPET_CHARACTERS = 300;
 
 /** Words that carry nothing a keyword search can use. A question's keywords are what is left. */
@@ -85,7 +85,7 @@ function quoted(text: string): string {
  * keywords, or holds one of the phrases (a phrase is words next to each other, in order). A passage that holds
  * every word of a question is much better evidence than one that holds a few, and a question has words in it that
  * the document has no need of ("must", "year"): the passages that hold every keyword come first
- * (docs/adr/0025). Undefined when there is nothing to look for.
+ * (ADR-0025). Undefined when there is nothing to look for.
  */
 export function matchExpressionOf(terms: readonly string[], phrases: readonly string[]): string | undefined {
   const parts = phrases.map((phrase) => quoted(phrase));

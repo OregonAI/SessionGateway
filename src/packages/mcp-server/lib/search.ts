@@ -24,14 +24,14 @@ import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 import type { VectorCache } from "./vector-cache.ts";
 
-/** The most hits one call returns, when the call does not say, and the most it may ask for (spec #1; docs/adr/0025). */
+/** The most hits one call returns, when the call does not say, and the most it may ask for (spec #1; ADR-0025). */
 export const DEFAULT_LIMIT = 20;
 export const MAX_LIMIT = 50;
 
 /**
  * How many passages each side of the search puts forward before the two are fused: ten for each of the most
  * hits a call may ask for, because one long document can hold dozens of the best passages and the hits are
- * documents (docs/adr/0025).
+ * documents (ADR-0025).
  */
 const CANDIDATE_PASSAGES = 10 * MAX_LIMIT;
 
@@ -213,7 +213,7 @@ function filterOf(
   };
 }
 
-/** What the query names exactly, in the order it names it, each document once (docs/adr/0025, "Exact citations come first"). */
+/** What the query names exactly, in the order it names it, each document once (ADR-0025, "Exact citations come first"). */
 function citedCandidates(
   index: SearchIndexReader,
   citations: readonly Citation[],
@@ -255,7 +255,7 @@ function keywordCandidates(
 }
 
 /**
- * What the words of the question find (docs/adr/0025, "Keyword side"): the documents with a passage that holds
+ * What the words of the question find (ADR-0025, "Keyword side"): the documents with a passage that holds
  * every keyword, or a citation's phrase, and, as a ranking of their own, the keyword-only documents with a
  * passage that holds some of the keywords. A keyword-only document is never embedded, so a question with one
  * word it lacks would never find it; any other document needs all the words, because the meaning of its
@@ -417,7 +417,7 @@ function unplacedCitationNote(citation: Citation): string {
 }
 
 /**
- * The documents a citation names exactly (docs/adr/0025, "Citations"): a Measure's Versions, from Introduced to
+ * The documents a citation names exactly (ADR-0025, "Exact citations come first"): a Measure's Versions, from Introduced to
  * Enrolled; a Proposed Amendment's latest posting; and for an ORS section the documents whose whole text holds
  * the citation, oldest first. Only those that pass the filter.
  */

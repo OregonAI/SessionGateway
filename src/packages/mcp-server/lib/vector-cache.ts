@@ -32,7 +32,7 @@ export type VectorCache = {
 
 /**
  * Holds the vectors of the Session in memory for the exact scan, and reads them again when the index has changed
- * (docs/adr/0025, "Meaning side"). The as-of time and the generation are read on every call, which is two small
+ * (ADR-0025, "Meaning side"). The as-of time and the generation are read on every call, which is two small
  * queries. A full pull records its as-of time before it stores its documents, one by one, and the server serves
  * during the pull (ADR-0007), so the as-of time alone would pin the vectors a search in the middle of a pull read,
  * and the pull's later documents would never reach the meaning side until the next pull; the worker raises the

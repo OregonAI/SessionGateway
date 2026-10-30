@@ -1,5 +1,5 @@
 // The MCP server's side of the search index: read-only, like reader.ts, and a file of its own so that
-// the queries of search (docs/adr/0025) do not grow reader.ts. The worker writes the index through
+// the queries of search (ADR-0025) do not grow reader.ts. The worker writes the index through
 // writer.ts.
 import { z } from "zod";
 import type { AmendmentId, CommitteeId, DocumentId, DocumentKind } from "#/packages/domain/documents.ts";

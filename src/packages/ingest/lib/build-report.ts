@@ -15,7 +15,7 @@ export type BuildReport = {
   documents_without_text_layer: { id: DocumentId; source_url: string }[];
   /** Documents the feed links that this pull did not store: the next pull tries them again. */
   documents_not_fetched: { id: DocumentId; source_url: string; reason: string }[];
-  /** What this pull made of the passages of the documents it stored, or refiled as embeddable (docs/adr/0025). */
+  /** What this pull made of the passages of the documents it stored, or refiled as embeddable (ADR-0025). */
   search_index: {
     /** The embedder's model id: the vectors this pull stored are under it. */
     model: string;
