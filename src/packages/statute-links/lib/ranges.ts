@@ -1,5 +1,4 @@
 import type { OrsSectionId } from "#/packages/domain/statute-links.ts";
-import { orsSectionIdOf } from "#/packages/domain/statute-links.ts";
 
 /** Where an ORS section sorts: chapter number, then the chapter's letter ("163" before "163A"), then the section. */
 type SectionKey = { chapter: number; letter: string; section: number };
@@ -24,8 +23,9 @@ export type RangeExpander = (from: string, to: string) => OrsSectionId[];
 /**
  * Builds the expander for one ORS section list. The list is read once, when the first range comes
  * up, and a document with no range costs nothing. The expansion holds the sections of the list that
- * lie from one end to the other, ends included, in ORS order. The two ends are always in it, listed
- * or not, because the text names them; nothing else is.
+ * lie from one end to the other, ends included, in ORS order, and nothing the list lacks: the list
+ * is the snapshot of the sections OregonAI can resolve (ADR-0004), so an end it does not hold (a
+ * section repealed or renumbered) is no link (#6 F5).
  */
 export function createRangeExpander(orsSections: readonly OrsSectionId[]): RangeExpander {
   let keyed: { id: OrsSectionId; key: SectionKey }[] | undefined;
@@ -39,15 +39,10 @@ export function createRangeExpander(orsSections: readonly OrsSectionId[]): Range
   return (from, to) => {
     const fromKey = keyOf(from);
     const toKey = keyOf(to);
-    const fromId = orsSectionIdOf(from);
-    const toId = orsSectionIdOf(to);
-    if (fromKey === undefined || toKey === undefined || fromId === undefined || toId === undefined) return [];
-    const inside = listed().filter(
-      (entry) => compareKeys(entry.key, fromKey) >= 0 && compareKeys(entry.key, toKey) <= 0,
-    );
+    if (fromKey === undefined || toKey === undefined) return [];
     const found = new Map<string, { id: OrsSectionId; key: SectionKey }>();
-    for (const entry of [{ id: fromId, key: fromKey }, ...inside, { id: toId, key: toKey }]) {
-      found.set(entry.id, entry);
+    for (const entry of listed()) {
+      if (compareKeys(entry.key, fromKey) >= 0 && compareKeys(entry.key, toKey) <= 0) found.set(entry.id, entry);
     }
     return [...found.values()].sort((a, b) => compareKeys(a.key, b.key)).map((entry) => entry.id);
   };

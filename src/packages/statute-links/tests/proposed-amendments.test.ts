@@ -501,11 +501,8 @@ ing Fund, for the purpose of payment of a loan described in section 1
 of this 2025 Act.”.
 
 17`,
-    links: [
-      ["cites", "ors-285a.666", "1"],
-      ["cites", "ors-285a.700", "1"],
-      ["cites", "ors-285a.732", "1"],
-    ],
+    // The list lacks both ends of "ORS 285A.666 to 285A.732", so only the listed section between them is a link (#6 F5).
+    links: [["cites", "ors-285a.700", "1"]],
     relatingClauseEdits: [],
   },
   {

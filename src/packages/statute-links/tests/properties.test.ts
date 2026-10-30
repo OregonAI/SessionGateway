@@ -33,15 +33,24 @@ function byOrsOrder(a: Section, b: Section): number {
 }
 
 describe("an expanded range", () => {
-  test.prop([fc.uniqueArray(sectionArbitrary, { selector: idOf, minLength: 2, maxLength: 40 }), fc.nat(), fc.nat()], {
-    numRuns: 300,
-  })("stays inside the section list, sorted, with both ends present", (sections, one, other) => {
+  // The two ends are drawn from the list and from sections outside it, so a range whose end the
+  // list lacks is met as often as one whose ends it holds (#6 F5).
+  test.prop(
+    [
+      fc.uniqueArray(sectionArbitrary, { selector: idOf, minLength: 1, maxLength: 40 }),
+      fc.array(sectionArbitrary, { maxLength: 10 }),
+      fc.nat(),
+      fc.nat(),
+    ],
+    { numRuns: 500 },
+  )("stays inside the section list, sorted, with both ends present when listed", (sections, outside, one, other) => {
     // `sections` is the list as handed over, in whatever order the generator made it.
-    const inOrsOrder = [...sections].sort(byOrsOrder);
-    const [first = 0, last = 0] = [one % sections.length, other % sections.length].sort((a, b) => a - b);
-    const from = inOrsOrder[first];
-    const to = inOrsOrder[last];
-    if (from === undefined || to === undefined) throw new Error("the generator made an empty list");
+    const listed = new Set(sections.map(idOf));
+    const pool = [...sections, ...outside.filter((section) => !listed.has(idOf(section)))].sort(byOrsOrder);
+    const [first = 0, last = 0] = [one % pool.length, other % pool.length].sort((a, b) => a - b);
+    const from = pool[first];
+    const to = pool[last];
+    if (from === undefined || to === undefined) throw new Error("the generator made an empty pool");
 
     const { links } = parseStatuteLinks({
       documentKind: "version",
@@ -50,11 +59,15 @@ describe("an expanded range", () => {
     });
     const expansion = links.map((link) => link.target.id as string);
 
-    const listed = new Set(sections.map(idOf));
     expect(expansion.every((id) => listed.has(id))).toBe(true);
-    expect(expansion).toContain(idOf(from));
-    expect(expansion).toContain(idOf(to));
-    expect(expansion).toEqual(inOrsOrder.slice(first, last + 1).map(idOf));
+    expect(expansion.includes(idOf(from))).toBe(listed.has(idOf(from)));
+    expect(expansion.includes(idOf(to))).toBe(listed.has(idOf(to)));
+    expect(expansion).toEqual(
+      [...sections]
+        .sort(byOrsOrder)
+        .filter((section) => byOrsOrder(section, from) >= 0 && byOrsOrder(section, to) <= 0)
+        .map(idOf),
+    );
     expect(links.every((link) => link.kind === "cites" && link.measureSection === "1")).toBe(true);
   });
 });

@@ -82,7 +82,9 @@ activity in violation of ORS 345.010 to 345.340 or any rule adopted under the au
     ],
   },
   {
-    name: "the ends of a range are links even when the section list lacks them",
+    // Replaces the row "the ends of a range are links even when the section list lacks them": that
+    // row pinned an expansion that left the list it was given (#6 F5).
+    name: "an end of a range the section list lacks is no link: the expansion stays inside the list",
     source: "measure-documents/SB921/A-Engrossed.pdf, lines 34-40",
     sectionList: ["ors-285a.700"],
     text: `4
@@ -90,11 +92,7 @@ activity in violation of ORS 345.010 to 345.340 or any rule adopted under the au
 SECTION 1. (1) Subject to the provisions of ORS 285A.666 to 285A.732, the Oregon
 
 5`,
-    expected: [
-      ["cites", "ors-285a.666", "1"],
-      ["cites", "ors-285a.700", "1"],
-      ["cites", "ors-285a.732", "1"],
-    ],
+    expected: [["cites", "ors-285a.700", "1"]],
   },
   {
     name: "ranges and chapters in one list: 'ORS 279C.800 to 279C.870, 658.005 to 658.245 or 658.405 to 658.511 or ORS chapter 652, 653 or 659A'",
