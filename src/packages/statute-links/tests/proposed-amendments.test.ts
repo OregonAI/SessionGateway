@@ -509,6 +509,74 @@ of this 2025 Act.”.
     relatingClauseEdits: [],
   },
   {
+    name: "a citation split by the page footer ('notwithstanding ORS' / 'SB 69-1 1/17/25 Proposed Amendments to SB 69 Page 13' / '659A.270 (1)')",
+    source: "proposed-amendments/26284.pdf (SB 69-1), lines 1507-1560. Statutes Affected Table: 653.616 A §8 SB 69 A",
+    text: `“SECTION 8. ORS 653.616 is amended to read:
+
+20
+
+“653.616. An employee may use sick time earned under ORS 653.606:
+
+21
+
+“(1) For an employee’s mental or physical illness, injury or health condi-
+
+22
+
+tion, need for medical diagnosis, care or treatment of a mental or physical
+
+23
+
+illness, injury or health condition or need for preventive medical care.
+
+24
+
+“(2) For care of a family member with a mental or physical illness, injury
+
+25
+
+or health condition, care of a family member who needs medical diagnosis,
+
+26
+
+care, or treatment of a mental or physical illness, injury or health condition
+
+27
+
+or care of a family member who needs preventive medical care.
+
+28
+29
+30
+
+“(3) Notwithstanding ORS 659A.153, for any other purpose specified in
+ORS 659A.159.
+“(4) For a purpose specified in ORS 659A.272, notwithstanding ORS
+
+SB 69-1 1/17/25
+Proposed Amendments to SB 69
+
+Page 13
+
+\f1
+
+659A.270 (1).
+
+2
+
+“ (5) For a purpose specified in ORS 657B.020.`,
+    links: [
+      ["amends", "ors-653.616", "8"],
+      ["cites", "ors-653.606", "8"],
+      ["cites", "ors-659a.153", "8"],
+      ["cites", "ors-659a.159", "8"],
+      ["cites", "ors-659a.272", "8"],
+      ["cites", "ors-659a.270", "8"],
+      ["cites", "ors-657b.020", "8"],
+    ],
+    relatingClauseEdits: [],
+  },
+  {
     // No fixture Proposed Amendment deletes words of the relating clause. ADR-0001 quotes the form:
     // delete 'amending ORS 468.130' and insert 'amending ORS 468.130 and 468.140'. The lead-in is the
     // one SB 69-1 uses, and the quotes are the curly ones every fixture amendment uses.
