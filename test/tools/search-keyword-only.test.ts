@@ -13,7 +13,7 @@
 //   - 900003: DocumentType "Recording Log", with the text of HB 3131's Preliminary SMS (row 287931);
 //   - 900004: DocumentType "Meeting Material", with that same text: the control that IS found by meaning.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { callTool, connectClient, type ConnectedClient } from "../support/mcp-clients.ts";
+import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { loadRealEmbedder } from "../support/real-embedder.ts";
 import { startSystem, type System } from "../support/system.ts";
 
@@ -34,7 +34,6 @@ function exhibitRow(id: number, documentType: string, title: string): Record<str
 }
 
 let system: System;
-let connected: ConnectedClient;
 
 beforeAll(async () => {
   system = await startSystem({
@@ -58,11 +57,9 @@ beforeAll(async () => {
       },
     },
   });
-  connected = await connectClient("2026-07-28", system.handler);
 }, 120_000);
 
 afterAll(async () => {
-  await connected.close();
   await system.stop();
 });
 
@@ -70,7 +67,17 @@ type Hit = { id: string; kind: string; found_by: string[] };
 const hitsOf = (outcome: { structured: Record<string, unknown> | undefined }): Hit[] =>
   outcome.structured?.["results"] as Hit[];
 
-describe("what is found by words and never by meaning", () => {
+describe.for(eras)("what is found by words and never by meaning for a %s client", (era) => {
+  let connected: ConnectedClient;
+
+  beforeAll(async () => {
+    connected = await connectClient(era, system.handler);
+  });
+
+  afterAll(async () => {
+    await connected.close();
+  });
+
   // SLB's agenda for 2025-01-21 (committee-agendas/SLB/2025-01-21-08-00.pdf) lists SB 397: "Provides that laws
   // regarding employee entitlements for recovery of unpaid wages and penalties do not apply to wages and
   // penalties lost as a result of an employer's time-rounding policies". No Version of SB 397 is in the fixture.
@@ -125,7 +132,9 @@ describe("what is found by words and never by meaning", () => {
     // "zzqx" is in no document, so no passage holds every word of either question: the lists have no meaning side to
     // fall back on, and are found by the words they do have. The Exhibit that has the Recording Log's text is not:
     // it is found by its meaning, which is the other half of what ADR-0006 says.
-    const list = await callTool(connected, "search", { query: "Karsyn Kendrick Coalition of Oregon Land Trusts zzqx" });
+    const list = await callTool(connected, "search", {
+      query: "Karsyn Kendrick Coalition of Oregon Land Trusts zzqx",
+    });
     const log = await callTool(connected, "search", {
       query: "grant awards funded conservation easements seven land trust grantees zzqx",
     });
