@@ -2,7 +2,7 @@
 
 An MCP server holding a cited, searchable copy of one Oregon legislative Session. Spec #1 says what to build, and its sub-issues #3–#25 are the tickets. `docs/adr/` says why; `GLOSSARY.md` gives the words.
 
-Each top-level folder has its own CLAUDE.md with the rules for that area: `src/` (production code), `test/` (seam 1 and the shared harness), `test/fixtures/`, `docs/` and `.github/`. Read the one for a folder before planning work in it. Explore and Plan subagents load no CLAUDE.md, so when you delegate to one, paste the rules it needs into its prompt.
+Each top-level folder has its own CLAUDE.md with the rules for that area: `src/` (production code), `test/` (seam 1 and the shared harness), `test/fixtures/`, `docs/` and `.github/`. Read the one for a folder before planning work in it. Packages are deep modules: see `src/packages/README.md` before adding or importing one. Explore and Plan subagents load no CLAUDE.md, so when you delegate to one, paste the rules it needs into its prompt.
 
 ## Building a ticket
 
@@ -20,15 +20,15 @@ A ticket is done when all of these hold:
 - New domain words are in `GLOSSARY.md`. A decision that passes `/domain-modeling`'s three ADR tests is a new ADR (`docs/CLAUDE.md`).
 - `/code-review` against `main` has run, and each finding is fixed or answered in the PR.
 
-Ticket #3 comes before there is a `package.json`, Vitest or CI, because #4 is blocked by it. Its fixture scripts are dependency-free `.ts` files run by Node 26, its gate is the fixture verify script, and its PR pastes their output. #4 adds the verify script to `npm run check`.
-
 ## Commands
 
-Ticket #4 creates these scripts. From then on `package.json` is the source of truth for every other script.
+`package.json` is the source of truth for every script.
 
 - `npm ci`: the only way to install.
-- `npm run check`: the whole gate (format, lint, typecheck, boundaries, fixture check, tests).
+- `npm run check`: the whole gate. It runs `format:check`, `lint`, `typecheck`, `guard:tsc`, `lint:boundaries`, `fixture:verify`, `snapshot:verify` and `test`, keeps going after a failure, prints each step's result, and exits 1 if any failed. CI runs the same command.
 - `npx vitest run <file>`: one test file, for the inner loop.
+- `npm run format`: rewrites src, test and scripts with Prettier. `test/fixtures/` is never formatted.
+- `npm run license:check`: the licence allowlist over the production tree (CI's supply-chain job; it needs no network).
 
 ## Toolchain
 
@@ -36,9 +36,9 @@ ADR-0008 records the picks and why:
 - Node 26 runs the `.ts` source directly, with no build step.
 - `tsc` from TypeScript 7 does type checking.
 - TypeScript 6 is aliased as `typescript`, only for typescript-eslint and dependency-cruiser.
-- ESLint, Prettier, Vitest, zod, pino and MCP SDK v2.
+- ESLint, Prettier, Vitest, zod, pino and MCP SDK v2. (pino logs from `src/bin/server.ts`: where the server listens, the errors the Node adapter reports and the live lookups that fail and fall back to the cache, as JSON lines on stdout. A failed start-up, and the ingest worker, which logs nothing yet, leave Node's own uncaught-error text on stderr.)
 
-`npm run check` fails unless `tsc --version` reports 7.x and the boundary check cruised more than 0 modules. A boundary check that cruised nothing checked nothing.
+`npm run check` fails unless `tsc --version` reports 7.x and the boundary check cruised more than 0 modules. A boundary check that cruised nothing checked nothing. `scripts/guard.ts` runs both commands and reads their output.
 
 ## Dependencies
 

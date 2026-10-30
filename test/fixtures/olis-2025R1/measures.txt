@@ -1,0 +1,20 @@
+# The Measures in the 2025R1 fixture. scripts/fixture/build.ts reads this file, and nothing else
+# decides which rows are committed. One Measure per line: "<prefix> <number>  # why it was chosen".
+# A line without a comment is a build error. To add a case, add its Measure here and rebuild
+# (see README.md).
+
+# Named by spec #1 and ticket #3.
+SB 69    # Spec #1 cases (b), (c), (e), (f): SB 69-2 adopted by SLB on 2025-01-30; Versions Introduced, A-Engrossed, Enrolled and "Senate Amendments to Introduced"; -1 posted to three meetings. Its Fiscal Impact Statement (analysis 85414) names four Agencies: "Government Unit(s) Affected: Bureau of Labor and Industries, Employment Department, Judicial Department, Department of Justice".
+HB 3795  # Spec #1 cases (b), (e), (f): a DHS measure, vetoed, with -A3 amending ORS 409.711 and 418.808. Alias: its Fiscal Impact Statements (analyses 89095 and 92069) say "Government Unit(s) Affected: Department of Human Services", its Staff Measure Summary 92329 writes "Oregon Department of Human Services (ODHS)", and its Testimony 209256 gives Organization "ODHS". No Fiscal Impact Statement in the fixture spells "ODHS" in its unit line; see README.md.
+HB 3131  # Spec #1 cases (d), (e): 42 Testimony rows, 41 support and 1 oppose; Fiscal and Revenue Impact Statements for the Introduced Version (analyses 85869 and 85719). "Government Unit(s) Affected: Oregon Watershed Enhancement Board".
+
+# Measures whose Fiscal Impact Statements name Agencies. Each was chosen by reading a statement in
+# the cached samples (documents-sample-1/ and documents-sample-2/); the quoted line is its
+# "Government Unit(s) Affected:" line as pdftotext printed it, and the downloaded copy says the same.
+SB 121   # Revenue impact statement. Measures.RevenueImpact reads "Revenue impact issued"; Revenue Impact Statement 90375 (Introduced, Personal Income Tax) shows General Fund -$53.0 million for 2025-27. Fiscal Impact Statement 90573 (sample-1 MeasureAnalysisDocuments_20): "Government Unit(s) Affected: Judicial Department, Department of Revenue".
+SB 983   # A unit that is not a state agency. Introduced Fiscal Impact Statement 88044 (sample-1 MeasureAnalysisDocuments_21): "Government Unit(s) Affected: Cities, Counties, School Districts, Special Districts, Metro, TriMet". The A-Engrossed statement 91466 says the same.
+HB 3027  # A statement naming several Agencies. Introduced Fiscal Impact Statement 85868 (sample-1 CommitteeMeetingDocuments_18): "Government Unit(s) Affected: Higher Education Coordinating Commission, Department of Justice, Judicial Department".
+SB 921   # Alias. A-Engrossed Fiscal Impact Statement 87631 (sample-1 MeasureAnalysisDocuments_19): "Government Unit(s) Affected: Oregon Business Development Department", and the statement then says "OBDD" for the same Agency throughout. Its Testimony 148731 and 148734 are photographs with no text layer.
+
+# Chosen for a document, not for a Fiscal Impact Statement.
+SB 64    # A document with no text layer. Exhibit 288141 (a CommitteeMeetingDocuments row), "Working Family Household and Dependent Care - Tax Expenditure Report" (SHS, 2025-01-23), is a 2-page PDF where pdftotext finds no text: one of the two scans behind olis-odata.md section 7's "2 of 344 sampled PDFs" (sample-2 CommitteeMeetingDocuments_24; the downloaded copy has the same sha256). Not strictly needed now: SB 921's two Photo Testimony also have none.
