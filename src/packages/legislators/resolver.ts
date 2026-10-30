@@ -2,4 +2,4 @@
 // Code the feed uses for them. Codes are matched to the feed's Legislators rows; a code with no row
 // is looked up in the alias file (aliases.ts).
 export { createLegislatorResolver } from "./lib/resolve.ts";
-export type { LegislatorResolver, Resolution, ResolverInput } from "./lib/resolve.ts";
+export type { LegislatorResolver, Resolution, ResolverInput, UnresolvedLegislatorCode } from "./lib/resolve.ts";

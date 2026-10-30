@@ -5,10 +5,22 @@ import type { LegislatorAlias } from "./alias-file.ts";
 /** What a Legislator Code comes to: a Legislator, or nothing the resolver may name. */
 export type Resolution = { kind: "resolved"; legislator: Legislator } | { kind: "unresolved"; code: string };
 
+/** A Legislator Code the resolver could not resolve, and how often each source of codes used it. */
+export type UnresolvedLegislatorCode = {
+  code: string;
+  references: { source: string; count: number }[];
+};
+
 export type LegislatorResolver = {
   /** Every Legislator the resolver can name, one entry per person. */
   people: readonly Legislator[];
-  resolve(code: string): Resolution;
+  /**
+   * Resolves a code that `source` (an entity set, such as "MeasureSponsors") used. A code that does not
+   * resolve is counted against its source, for the report.
+   */
+  resolve(source: string, code: string): Resolution;
+  /** Every code that did not resolve so far, by code, with how many times each source used it. */
+  unresolved(): UnresolvedLegislatorCode[];
 };
 
 export type ResolverInput = {
@@ -56,11 +68,26 @@ export function createLegislatorResolver(input: ResolverInput): LegislatorResolv
     }
   }
 
+  // code -> source -> how many times that source used the code
+  const unresolvedCounts = new Map<string, Map<string, number>>();
+
   return {
     people: [...new Set(byCode.values())],
-    resolve(code) {
+    resolve(source, code) {
       const legislator = byCode.get(code);
-      return legislator === undefined ? { kind: "unresolved", code } : { kind: "resolved", legislator };
+      if (legislator !== undefined) return { kind: "resolved", legislator };
+      const sources = unresolvedCounts.get(code) ?? new Map<string, number>();
+      sources.set(source, (sources.get(source) ?? 0) + 1);
+      unresolvedCounts.set(code, sources);
+      return { kind: "unresolved", code };
+    },
+    unresolved() {
+      return [...unresolvedCounts.entries()]
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([code, sources]) => ({
+          code,
+          references: [...sources.entries()].map(([source, count]) => ({ source, count })),
+        }));
     },
   };
 }

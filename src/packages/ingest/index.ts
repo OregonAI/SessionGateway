@@ -3,7 +3,7 @@
 import type { IngestConfig } from "#/packages/config/index.ts";
 import { openIndexWriter, type SponsorRecord } from "#/packages/database/writer.ts";
 import type { LegislatorAlias } from "#/packages/legislators/aliases.ts";
-import { createLegislatorResolver } from "#/packages/legislators/resolver.ts";
+import { createLegislatorResolver, type UnresolvedLegislatorCode } from "#/packages/legislators/resolver.ts";
 import { createOlisClient } from "#/packages/olis-client/index.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
@@ -20,6 +20,11 @@ export type IngestDeps = {
 export type FullPullResult = {
   measures: number;
   asOf: Timestamp;
+  /**
+   * The build report of Legislator Codes (spec #1, story 54): every code the pull could not resolve,
+   * with how often each entity set used it. Empty when every code resolved.
+   */
+  unresolvedLegislatorCodes: UnresolvedLegislatorCode[];
 };
 
 export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promise<FullPullResult> {
@@ -38,7 +43,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
   const sponsors: SponsorRecord[] = [];
   for (const sponsorship of sponsorships) {
     if (sponsorship.kind !== "member") continue;
-    const resolution = resolver.resolve(sponsorship.legislatorCode);
+    const resolution = resolver.resolve("MeasureSponsors", sponsorship.legislatorCode);
     sponsors.push({
       id: sponsorship.id,
       measure: sponsorship.measure,
@@ -55,5 +60,5 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
   } finally {
     writer.close();
   }
-  return { measures: measures.length, asOf };
+  return { measures: measures.length, asOf, unresolvedLegislatorCodes: resolver.unresolved() };
 }
