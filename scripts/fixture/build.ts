@@ -55,8 +55,10 @@ const RETRY_WAITS_MS = [3_000, 9_000, 27_000]; // three retries, each wait longe
 const MAX_REDIRECTS = 3;
 const MAX_FAILURES_IN_A_ROW = 5; // a streak means something systemic: stop instead of hammering OLIS
 
-// The Statutes Affected Table is not on OLIS and no feed row links it. The source_url comes from
-// docs/research/olis-odata.md section 5; the cache's .hdr file has the response headers only.
+// The Statutes Affected Table is not on OLIS and no feed row links it. The cache's .hdr file has the
+// response headers only, so the source_url comes from the link OLIS's own Cumulative Session
+// Publications page carries (cached as .cache/olis-2025R1/pages/cum.html) and from
+// docs/research/olis-odata.md section 5. The host is www.oregonlegislature.gov, not olis.
 const ARTABLES = {
   url: "https://www.oregonlegislature.gov/AutoPubs/artables2025R1.pdf",
   file: "artables2025R1.pdf",

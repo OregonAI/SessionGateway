@@ -32,7 +32,9 @@ point at, and every document they link.
 - **The Statutes Affected Table** (`documents/reports/artables2025R1.pdf`) is copied from the
   reports cache. No feed row links it, and its manifest entry has an empty `linked_by`. Its
   `source_url` is on `www.oregonlegislature.gov`, not `olis.`: the cache's `.hdr` file holds the
-  response headers only, so the URL comes from `docs/research/olis-odata.md` section 5.
+  response headers only, so the URL comes from the link on OLIS's own Cumulative Session
+  Publications page (cached as `.cache/olis-2025R1/pages/cum.html`), which
+  `docs/research/olis-odata.md` section 5 also gives.
 - **Documents with no text layer:** `documents/committee-meeting-documents/288141.pdf` (SB 64) and
   the two photographs `documents/testimony/148731.pdf` and `148734.pdf` (SB 921).
 - **References the full cache cannot resolve.** `Rep Neron` and `Sen Woods` have no Legislators
