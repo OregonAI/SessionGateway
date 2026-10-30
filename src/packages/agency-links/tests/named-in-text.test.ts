@@ -260,6 +260,30 @@ describe("Agencies named in Version and Proposed Amendment text", () => {
       },
     ])("$document: $variant", expectLinks);
   });
+  describe("one registry term that starts another", () => {
+    // The registry lists "Early Learning Division" and "Early Learning Division of the Department
+    // of Education" for one Agency, and 89 pairs like it exist in the catalog (for example
+    // "Department of Agriculture" and "Department of Agriculture, Oregon Albacore Commission").
+    // The cache holds a sentence with the shorter alias ("The Department of Education’s Early
+    // Learning Division shall report to the ...", Human Services Subcommittee orientation, January
+    // 2025) but no text with the longer term, so this row rewords that sentence to use it.
+    test.for<TextRow>([
+      {
+        document: "Exhibit, Human Services Subcommittee orientation, edited",
+        variant: "the longer alias, not the alias that starts it",
+        path: "not in the fixture: a CommitteeMeetingDocument of January 2025, sentence reworded",
+        text: "The Early Learning Division of the Department of Education shall report to the",
+        registry: testRegistry,
+        agencies: [
+          {
+            slug: "oregon-department-of-education-early-learning-division",
+            terms: ["Early Learning Division of the Department of Education"],
+          },
+        ],
+      },
+    ])("$document: $variant", expectLinks);
+  });
+
   describe("words that look like an Agency's name but are not", () => {
     test.for<TextRow>([
       {
@@ -306,6 +330,26 @@ describe("Agencies named in Version and Proposed Amendment text", () => {
             : agency,
         ),
         agencies: [{ slug: "department-of-human-services", terms: ["ODHS", "Department of Human Services"] }],
+      },
+      {
+        // No text in the fixture or the cache has a letter run into the front of an alias, so
+        // this row is HB 3795 Introduced line 13 with one letter put before "ODHS" (the original
+        // is the row "Digest says ODHS, summary the name" above).
+        document: "HB 3795 Introduced, edited",
+        variant: "a letter before the alias",
+        path: "measure-documents/HB3795/Introduced.pdf",
+        text: "Digest: The Act tells XODHS to study human services. (Flesch Readability Score: 82.3).",
+        registry: testRegistry,
+        agencies: [],
+      },
+      {
+        // The same edit with a digit.
+        document: "HB 3795 Introduced, edited",
+        variant: "a digit before the alias",
+        path: "measure-documents/HB3795/Introduced.pdf",
+        text: "Digest: The Act tells 3ODHS to study human services. (Flesch Readability Score: 82.3).",
+        registry: testRegistry,
+        agencies: [],
       },
       {
         // The fixture's Versions hold no name inside a longer word, so this row is a committee

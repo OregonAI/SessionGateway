@@ -63,6 +63,15 @@ const rows: readonly { slug: string; name: string; aliases: readonly string[] }[
     aliases: [],
   },
   { slug: "oregon-department-of-education", name: "Oregon Department of Education", aliases: [] },
+  {
+    slug: "oregon-department-of-education-early-learning-division",
+    name: "Oregon Department of Education, Early Learning Division",
+    aliases: [
+      "Department of Early Learning and Care",
+      "Early Learning Division",
+      "Early Learning Division of the Department of Education",
+    ],
+  },
   { slug: "oregon-health-authority", name: "Oregon Health Authority", aliases: [] },
   {
     slug: "oregon-housing-and-community-services-department",
