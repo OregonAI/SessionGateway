@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
-import { documentKinds, relations } from "#/packages/domain/documents.ts";
+import { documentKinds, parseDocumentReference, relations } from "#/packages/domain/documents.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 import { splitIntoParts } from "./parts.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
@@ -28,7 +28,7 @@ const related = z.object({
 });
 
 export const getDocumentOutput = z.object({
-  id: z.string().describe("The id that was asked for."),
+  id: z.string().describe("The id that was asked for, as the service writes ids: in lower case."),
   document_id: z
     .string()
     .describe(
@@ -64,12 +64,13 @@ export function getDocument(
   session: SessionKey,
   input: z.infer<typeof getDocumentInput>,
 ): GetDocumentResult {
-  const found = reader.findDocument(input.id);
-  if (found === undefined) return { kind: "unknown", id: input.id, session };
+  const id = parseDocumentReference(input.id, session);
+  const found = id === undefined ? undefined : reader.findDocument(id);
+  if (id === undefined || found === undefined) return { kind: "unknown", id: input.id, session };
   const stored = found.document;
   const parts = splitIntoParts(stored.text);
   const part = input.part ?? 1;
-  if (part > parts.length) return { kind: "no_such_part", id: input.id, part, partCount: parts.length };
+  if (part > parts.length) return { kind: "no_such_part", id, part, partCount: parts.length };
   const asOf = reader.asOf(session);
   if (asOf === undefined) {
     throw new Error(`The index holds documents of ${session} but no completed full pull to date them by`);
@@ -77,7 +78,7 @@ export function getDocument(
   return {
     kind: "found",
     document: {
-      id: input.id,
+      id,
       document_id: stored.id,
       kind: stored.kind,
       label: stored.label,

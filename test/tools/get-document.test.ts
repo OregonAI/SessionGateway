@@ -407,6 +407,26 @@ describe.for(eras)("get_document for a %s client", (era) => {
     });
   });
 
+  describe("an id written another way", () => {
+    // Ids are minted in lower case (spec #1, "Session graph"), and get_measure reads "MEASURE-2025R1-SB69" as
+    // the Measure it names. A document id is read the same way, and answered under the id as minted.
+    it.for([
+      ["in capitals", "VERSION-2025R1-SB69-INTRODUCED", "version-2025r1-sb69-introduced"],
+      ["with spaces round it", "  version-2025r1-sb69-introduced  ", "version-2025r1-sb69-introduced"],
+      ["a Proposed Amendment in capitals", "AMENDMENT-2025R1-SB69-2", "amendment-2025r1-sb69-2"],
+      [
+        "a Printed Amendment in capitals",
+        "PRINTED-AMENDMENT-2025R1-SB69-SENATE-AMENDMENTS-TO-INTRODUCED",
+        "printed-amendment-2025r1-sb69-senate-amendments-to-introduced",
+      ],
+    ] as const)("is read as the document it names: %s", async ([, written, minted]) => {
+      const outcome = await callTool(connected, "get_document", { id: written });
+
+      expect(outcome.isError).toBe(false);
+      expect(outcome.structured).toMatchObject({ id: minted });
+    });
+  });
+
   describe("an id that is not a document", () => {
     it.for([
       ["an id the Session does not have", "version-2025r1-sb69-z-engrossed"],

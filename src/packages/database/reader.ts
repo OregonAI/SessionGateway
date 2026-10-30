@@ -23,7 +23,7 @@ export type IndexReader = {
    * A document by its id, or a Proposed Amendment by its id: the text of its latest posting, with the
    * nodes all its postings point at.
    */
-  findDocument(id: string): DocumentView | undefined;
+  findDocument(id: DocumentId | AmendmentId): DocumentView | undefined;
   /** What the index holds of the Session. */
   counts(session: SessionKey): IndexCounts;
   close(): void;

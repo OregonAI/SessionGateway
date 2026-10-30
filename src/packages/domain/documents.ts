@@ -102,6 +102,25 @@ export function testimonyIdOf(session: SessionKey, commTestId: number): Document
   return `testimony-${session.toLowerCase()}-${commTestId}` as DocumentId;
 }
 
+const documentIdPattern =
+  /^(version|printed-amendment|posting|analysis|exhibit|recording-log|testimony|agenda|amendment)-(\d{4}[a-z]\d)-([a-z0-9]+(?:-[a-z0-9]+)*)$/i;
+
+/**
+ * Reads what a caller wrote as the id of a document or of a Proposed Amendment of the deployment's
+ * Session. Ids are minted in lower case, so capitals and spaces round the id are forgiven, as for a
+ * Measure; the id comes back as minted. An id of another Session, of another kind of node (a Measure)
+ * or of no form at all is not one: undefined.
+ */
+export function parseDocumentReference(text: string, session: SessionKey): DocumentId | AmendmentId | undefined {
+  const trimmed = text.trim();
+  const parts = documentIdPattern.exec(trimmed);
+  if (parts?.[1] === undefined || parts[2] === undefined) return undefined;
+  if (parts[2].toUpperCase() !== session) return undefined;
+  return parts[1].toLowerCase() === "amendment"
+    ? (trimmed.toLowerCase() as AmendmentId)
+    : (trimmed.toLowerCase() as DocumentId);
+}
+
 export function committeeIdOf(session: SessionKey, committeeCode: string): CommitteeId {
   return `committee-${session.toLowerCase()}-${slug(committeeCode)}` as CommitteeId;
 }
