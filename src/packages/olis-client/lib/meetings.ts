@@ -8,8 +8,7 @@ import {
   type Committee,
   type Meeting,
 } from "#/packages/domain/documents.ts";
-import { sourceUrlOf } from "./documents.ts";
-import { readEntitySet } from "./feed.ts";
+import { readSessionRows, sourceUrlOf } from "./documents.ts";
 import type { OlisClientOptions } from "./options.ts";
 import { feedTimestamp } from "./timestamps.ts";
 
@@ -27,38 +26,36 @@ export async function readMeetings(
   session: SessionKey,
   signal: AbortSignal,
 ): Promise<Meeting[]> {
-  const rows = await readEntitySet(options, "CommitteeMeetings", `SessionKey eq '${session}'`, meetingRow, signal);
-  return rows
-    .filter((row) => row.SessionKey === session)
-    .map((row) => {
-      const id = meetingIdOf(session, row.CommitteeCode, row.MeetingDate);
-      const committeeId = committeeIdOf(session, row.CommitteeCode);
-      const agendaId = agendaIdOf(session, row.CommitteeCode, row.MeetingDate);
-      const provenance = `CommitteeMeetings ${row.CommitteeCode} ${row.MeetingDate}`;
-      return {
-        session,
-        committeeCode: row.CommitteeCode,
-        id,
-        committeeId,
-        at: row.MeetingDate,
-        status: row.MeetingStatus,
-        agenda:
-          row.AgendaUrl === null
-            ? null
-            : {
-                id: agendaId,
-                nodeId: agendaId,
-                kind: "agenda",
-                label: "Agenda",
-                sourceUrl: sourceUrlOf(row.AgendaUrl),
-                postedAt: null,
-                relations: [
-                  { relation: "meeting", to: id, meaning: null, provenance },
-                  { relation: "committee", to: committeeId, meaning: null, provenance },
-                ],
-              },
-      };
-    });
+  const rows = await readSessionRows(options, "CommitteeMeetings", session, meetingRow, signal);
+  return rows.map((row) => {
+    const id = meetingIdOf(session, row.CommitteeCode, row.MeetingDate);
+    const committeeId = committeeIdOf(session, row.CommitteeCode);
+    const agendaId = agendaIdOf(session, row.CommitteeCode, row.MeetingDate);
+    const provenance = `CommitteeMeetings ${row.CommitteeCode} ${row.MeetingDate}`;
+    return {
+      session,
+      committeeCode: row.CommitteeCode,
+      id,
+      committeeId,
+      at: row.MeetingDate,
+      status: row.MeetingStatus,
+      agenda:
+        row.AgendaUrl === null
+          ? null
+          : {
+              id: agendaId,
+              nodeId: agendaId,
+              kind: "agenda",
+              label: "Agenda",
+              sourceUrl: sourceUrlOf(row.AgendaUrl),
+              postedAt: null,
+              relations: [
+                { relation: "meeting", to: id, meaning: null, provenance },
+                { relation: "committee", to: committeeId, meaning: null, provenance },
+              ],
+            },
+    };
+  });
 }
 
 const committeeRow = z.looseObject({
@@ -73,15 +70,13 @@ export async function readCommittees(
   session: SessionKey,
   signal: AbortSignal,
 ): Promise<Committee[]> {
-  const rows = await readEntitySet(options, "Committees", `SessionKey eq '${session}'`, committeeRow, signal);
-  return rows
-    .filter((row) => row.SessionKey === session)
-    .map((row) => ({
-      session,
-      code: row.CommitteeCode,
-      id: committeeIdOf(session, row.CommitteeCode),
-      name: row.CommitteeName,
-    }));
+  const rows = await readSessionRows(options, "Committees", session, committeeRow, signal);
+  return rows.map((row) => ({
+    session,
+    code: row.CommitteeCode,
+    id: committeeIdOf(session, row.CommitteeCode),
+    name: row.CommitteeName,
+  }));
 }
 
 // The feed spells the committee property `CommitteCode` ("Committe", one e short) on agenda items
@@ -107,27 +102,19 @@ export async function readAgendaItems(
   session: SessionKey,
   signal: AbortSignal,
 ): Promise<AgendaItem[]> {
-  const rows = await readEntitySet(
-    options,
-    "CommitteeAgendaItems",
-    `SessionKey eq '${session}'`,
-    agendaItemRow,
-    signal,
-  );
-  return rows
-    .filter((row) => row.SessionKey === session)
-    .map((row) => ({
-      itemId: row.CommitteeAgendaItemId,
-      meetingId: meetingIdOf(session, row.CommitteCode, row.MeetingDate),
-      measure:
-        row.MeasurePrefix === null || row.MeasureNumber === null
-          ? null
-          : { session, prefix: row.MeasurePrefix, number: row.MeasureNumber },
-      meetingType: row.MeetingType,
-      action: row.Action,
-      printOrder: row.PrintOrder,
-      comments: row.Comments,
-      boardName: row.BoardName,
-      executiveAppointee: row.ExecutiveAppointee,
-    }));
+  const rows = await readSessionRows(options, "CommitteeAgendaItems", session, agendaItemRow, signal);
+  return rows.map((row) => ({
+    itemId: row.CommitteeAgendaItemId,
+    meetingId: meetingIdOf(session, row.CommitteCode, row.MeetingDate),
+    measure:
+      row.MeasurePrefix === null || row.MeasureNumber === null
+        ? null
+        : { session, prefix: row.MeasurePrefix, number: row.MeasureNumber },
+    meetingType: row.MeetingType,
+    action: row.Action,
+    printOrder: row.PrintOrder,
+    comments: row.Comments,
+    boardName: row.BoardName,
+    executiveAppointee: row.ExecutiveAppointee,
+  }));
 }

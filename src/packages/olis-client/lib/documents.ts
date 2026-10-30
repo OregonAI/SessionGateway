@@ -49,7 +49,7 @@ export function downloadUrlOf(sourceUrl: string, documentOrigin: string): URL {
  * The rows of one entity set that belong to the Session. The `$filter` asks the feed for them; the
  * check that follows keeps a row of another Session out even from a feed that ignored the filter.
  */
-async function readSessionRows<Row extends { SessionKey: string }>(
+export async function readSessionRows<Row extends { SessionKey: string }>(
   options: OlisClientOptions,
   entitySet: string,
   session: SessionKey,
