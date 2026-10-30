@@ -23,15 +23,8 @@ import {
 } from "./lib/compare-amendment.ts";
 import { getMeasure, getMeasureInput, getMeasureOutput, unknownMeasureMessage } from "./lib/get-measure.ts";
 import { createLiveStatusReader, type LiveLookupFailure, type LiveStatusReader } from "./lib/live-status.ts";
-import {
-  backwardsRangeMessage,
-  MAX_MEETINGS_CHARACTERS,
-  meetings,
-  meetingsInput,
-  meetingsOutput,
-  NO_FILTER_MESSAGE,
-  unknownCommitteeMessage,
-} from "./lib/meetings.ts";
+import { filterFaultMessage } from "./lib/filters.ts";
+import { MAX_MEETINGS_CHARACTERS, meetings, meetingsInput, meetingsOutput, NO_FILTER_MESSAGE } from "./lib/meetings.ts";
 import { search, searchInput, searchOutput, type SearchDeps } from "./lib/search.ts";
 import { createVectorCache } from "./lib/vector-cache.ts";
 import { sessionOverview, sessionOverviewInput, sessionOverviewOutput } from "./lib/session-overview.ts";
@@ -213,19 +206,11 @@ function buildServer(
             structuredContent: result.meetings,
           };
         case "unknown_measure":
-          return {
-            isError: true,
-            content: [{ type: "text", text: unknownMeasureMessage(result.reference, result.session) }],
-          };
         case "unknown_committee":
-          return {
-            isError: true,
-            content: [{ type: "text", text: unknownCommitteeMessage(result.reference, result.session) }],
-          };
+        case "backwards_range":
+          return { isError: true, content: [{ type: "text", text: filterFaultMessage(result) }] };
         case "no_filter":
           return { isError: true, content: [{ type: "text", text: NO_FILTER_MESSAGE }] };
-        case "backwards_range":
-          return { isError: true, content: [{ type: "text", text: backwardsRangeMessage(result.from, result.to) }] };
         default:
           return result satisfies never;
       }
@@ -283,17 +268,9 @@ function buildServer(
         case "found":
           return { content: [{ type: "text", text: JSON.stringify(result.search) }], structuredContent: result.search };
         case "unknown_measure":
-          return {
-            isError: true,
-            content: [{ type: "text", text: unknownMeasureMessage(result.reference, result.session) }],
-          };
         case "unknown_committee":
-          return {
-            isError: true,
-            content: [{ type: "text", text: unknownCommitteeMessage(result.reference, result.session) }],
-          };
         case "backwards_range":
-          return { isError: true, content: [{ type: "text", text: backwardsRangeMessage(result.from, result.to) }] };
+          return { isError: true, content: [{ type: "text", text: filterFaultMessage(result) }] };
         default:
           return result satisfies never;
       }

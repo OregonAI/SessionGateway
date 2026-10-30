@@ -1,8 +1,9 @@
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
 import { olisMeetingPageUrlOf, type MeetingHeader } from "#/packages/domain/documents.ts";
-import { measureIdOf, parseMeasureReference, type SessionKey } from "#/packages/domain/index.ts";
+import { measureIdOf, type SessionKey } from "#/packages/domain/index.ts";
 import { formatPacific, isAtOrAfter } from "#/packages/time/pacific.ts";
+import { checkFilters, type FilterFault } from "./filters.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 
 export const meetingsInput = z.object({
@@ -183,12 +184,7 @@ export const meetingsOutput = z.object({
 export type MeetingsOutput = z.infer<typeof meetingsOutput>;
 
 /** Unknown references and empty questions are expected outcomes, so they are values; the MCP edge decides they are tool errors. */
-export type MeetingsResult =
-  | { kind: "found"; meetings: MeetingsOutput }
-  | { kind: "unknown_measure"; reference: string; session: SessionKey }
-  | { kind: "unknown_committee"; reference: string; session: SessionKey }
-  | { kind: "no_filter" }
-  | { kind: "backwards_range"; from: string; to: string };
+export type MeetingsResult = { kind: "found"; meetings: MeetingsOutput } | FilterFault | { kind: "no_filter" };
 
 export function meetings(
   reader: IndexReader,
@@ -204,17 +200,9 @@ export function meetings(
   ) {
     return { kind: "no_filter" };
   }
-  if (input.from !== undefined && input.to !== undefined && input.from > input.to) {
-    return { kind: "backwards_range", from: input.from, to: input.to };
-  }
-  const measure = input.measure === undefined ? undefined : parseMeasureReference(input.measure, session);
-  if (input.measure !== undefined && (measure === undefined || reader.findMeasure(measure) === undefined)) {
-    return { kind: "unknown_measure", reference: input.measure, session };
-  }
-  const committee = input.committee === undefined ? undefined : reader.findCommittee(session, input.committee);
-  if (input.committee !== undefined && committee === undefined) {
-    return { kind: "unknown_committee", reference: input.committee, session };
-  }
+  const checked = checkFilters(reader, session, input);
+  if (checked.kind !== "ok") return checked;
+  const { measure, committee } = checked;
   const asOf = reader.asOf(session);
   if (asOf === undefined) {
     throw new Error(`The index holds meetings of ${session} but no completed full pull to date them by`);
@@ -324,16 +312,6 @@ function meetingOutputOf(
   };
 }
 
-/** What an agent is told when no committee matches, so it can correct the call. */
-export function unknownCommitteeMessage(reference: string, session: SessionKey): string {
-  return `No committee "${reference}" in the ${session} Session. Give a committee code such as SLB or a committee id such as committee-${session.toLowerCase()}-slb.`;
-}
-
 /** What an agent is told when it asks for meetings without saying which. */
 export const NO_FILTER_MESSAGE =
   "Give a Measure, a committee or a date range (measure, committee, from, to). Without one, the answer would be every meeting of the Session.";
-
-/** What an agent is told when a date range ends before it starts. */
-export function backwardsRangeMessage(from: string, to: string): string {
-  return `The date range runs backwards: from ${from} is after to ${to}. Give a from that is on or before to.`;
-}

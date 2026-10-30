@@ -22,6 +22,8 @@ beforeAll(async () => {
     clockAt: "2025-01-18T02:00:00Z",
     documents: true,
     embedder: await loadRealEmbedder(),
+    // Well over a hundred calls are made on the one simulated clock: the default ceiling is 120 a minute.
+    serverEnv: { MCP_RATE_LIMIT: "100000" },
   });
 }, 120_000);
 
@@ -266,6 +268,28 @@ describe.for(eras)("search for a %s client", (era) => {
       expect(hitsOf(afterTheVersions).every((hit) => (hit.date ?? "") >= "2025-01-11")).toBe(true);
       expect(idsOf(beforeTheMeetings)).toContain("version-2025r1-sb69-introduced");
       expect(hitsOf(beforeTheMeetings).every((hit) => (hit.date ?? "9") < "2025-01-21")).toBe(true);
+    });
+
+    // `search` and `meetings` narrow by the same arguments, and read them in one place (mcp-server/lib/filters.ts): what a
+    // reference names, and what is an error with the words that tell an agent what to correct, are the same in both.
+    it.for([
+      { measure: "HB 3131" },
+      { measure: "hb3131" },
+      { measure: "measure-2025r1-hb3131" },
+      { measure: "HB 9999" },
+      { measure: "not a measure" },
+      { committee: "SLB" },
+      { committee: "slb" },
+      { committee: "committee-2025r1-slb" },
+      { committee: "XYZ" },
+      { from: "2025-02-01", to: "2025-01-01" },
+      { measure: "HB 9999", committee: "XYZ", from: "2025-02-01", to: "2025-01-01" },
+    ])("reads %o as the meetings tool does", async (filters) => {
+      const found = await callTool(connected, "search", { query: "department", ...filters });
+      const meetings = await callTool(connected, "meetings", filters);
+
+      expect(found.isError).toBe(meetings.isError);
+      if (found.isError) expect(found.text).toBe(meetings.text);
     });
 
     it("an unknown Measure, an unknown committee and a backwards range are tool errors that say what is wrong", async () => {
