@@ -5,3 +5,4 @@ data/*.db
 data/*.db-*
 .env
 .cache/
+CLAUDE.local.md

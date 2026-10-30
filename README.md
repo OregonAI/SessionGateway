@@ -12,7 +12,8 @@ It runs on the OregonAI deploy box beside the platform's corpora
 
 ## Status
 
-Pre-requirements. The build follows the mattpocock-skills flow:
+Specified and ticketed: spec #1, tickets #3–#25. The build follows the
+mattpocock-skills flow:
 
 1. **Research**: `docs/research/` (OLIS OData, OregonAI pairing, embeddings and storage)
 2. **Requirements**: `/grill-with-docs` → `GLOSSARY.md`, `docs/adr/`
@@ -23,3 +24,16 @@ Pre-requirements. The build follows the mattpocock-skills flow:
 An early spike (an FTS5 keyword index plus MCP tools in one container) is
 parked on the `prototype/scaffold` branch. It is reference material, not a
 decision.
+
+## How the code is written
+
+Test-first, at the two seams spec #1 agreed. The rules agents and people
+follow are in `CLAUDE.md` at the root and in each top-level folder. The
+toolchain and dependency policy are in
+`docs/adr/0008-typescript-toolchain-and-dependency-policy.md`.
+
+## License
+
+The code is MIT licensed (`LICENSE`). The Oregon Legislature documents
+committed under `test/fixtures/` are public records reproduced as published;
+the license does not cover them.
