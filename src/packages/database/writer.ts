@@ -28,6 +28,26 @@ export type PeopleRecord = {
   sponsors: readonly SponsorRecord[];
 };
 
+/** The columns of the sponsor table that only some kinds of row fill; the others stay NULL. */
+function kindColumnsOf(sponsor: SponsorRecord): {
+  legislatorCode: string | null;
+  legislatorId: string | null;
+  committeeCode: string | null;
+  message: string | null;
+} {
+  const none = { legislatorCode: null, legislatorId: null, committeeCode: null, message: null };
+  switch (sponsor.kind) {
+    case "member":
+      return { ...none, legislatorCode: sponsor.legislatorCode, legislatorId: sponsor.legislatorId };
+    case "committee":
+      return { ...none, committeeCode: sponsor.committeeCode };
+    case "presession":
+      return { ...none, message: sponsor.message };
+    default:
+      return sponsor satisfies never;
+  }
+}
+
 export type IndexWriter = {
   /** Stores what a full pull read, and when, in one transaction. A full pull never deletes (ADR-0005). */
   recordFullPull(session: SessionKey, measures: readonly Measure[], asOf: Timestamp, people: PeopleRecord): void;
@@ -75,6 +95,7 @@ export function openIndexWriter(path: string): IndexWriter {
         }
         for (const legislator of people.legislators) upsertLegislator.run(session, legislator.id, legislator.name);
         for (const sponsor of people.sponsors) {
+          const columns = kindColumnsOf(sponsor);
           upsertSponsor.run(
             session,
             sponsor.id,
@@ -83,10 +104,10 @@ export function openIndexWriter(path: string): IndexWriter {
             sponsor.kind,
             sponsor.level,
             sponsor.printOrder,
-            sponsor.kind === "member" ? sponsor.legislatorCode : null,
-            sponsor.kind === "member" ? sponsor.legislatorId : null,
-            sponsor.kind === "committee" ? sponsor.committeeCode : null,
-            sponsor.kind === "presession" ? sponsor.message : null,
+            columns.legislatorCode,
+            columns.legislatorId,
+            columns.committeeCode,
+            columns.message,
           );
         }
         recordAsOf.run(session, asOf);
