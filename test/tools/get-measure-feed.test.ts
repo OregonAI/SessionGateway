@@ -61,6 +61,8 @@ describe("a timestamp the feed does not send", () => {
     MeasurePrefix: "HB",
     MeasureNumber: 9001,
     CatchLine: "A Measure whose timestamp carries an offset.",
+    CurrentLocation: "In House Committee",
+    CurrentCommitteeCode: "HALNRW",
     CreatedDate: "2025-01-01T10:00:00",
     ModifiedDate: null,
   };
@@ -88,6 +90,8 @@ describe("the deployment's Session", () => {
     MeasurePrefix: "SB",
     MeasureNumber: 69,
     CatchLine: "A special-session Measure that happens to be numbered SB 69.",
+    CurrentLocation: "In Senate Committee",
+    CurrentCommitteeCode: "SLB",
     CreatedDate: "2025-08-29T09:00:00",
     ModifiedDate: null,
   };

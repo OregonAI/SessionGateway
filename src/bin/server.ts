@@ -21,8 +21,18 @@ const stopRequested = new Promise<void>((resolve) => {
   }
 });
 
+// Aborted on shutdown, so a live lookup of OLIS still in flight ends instead of holding the close open.
+const shutdown = new AbortController();
+
 const config = loadServerConfig(process.env);
-const handler = createSessionGatewayHandler(config, { clock: systemClock });
+const handler = createSessionGatewayHandler(config, {
+  clock: systemClock,
+  fetch,
+  signal: shutdown.signal,
+  onLiveLookupFailed: ({ measure, error }) => {
+    logger.warn({ err: error, measure }, "The live lookup of OLIS failed; get_measure answered from the cache");
+  },
+});
 const server = await serveMcp(handler, config, {
   onError: (error) => {
     logger.error({ err: error }, "The MCP adapter reported an error");
@@ -31,7 +41,9 @@ const server = await serveMcp(handler, config, {
 logger.info({ host: config.host, port: server.port, path: config.mcpPath }, "MCP server listening");
 
 // On SIGINT or SIGTERM stop accepting requests, then release the database, and let the process end.
+// The live lookups in flight are aborted first, so the close doesn't wait out their timeout.
 await stopRequested;
+shutdown.abort();
 try {
   await server.close();
   await handler.close();

@@ -24,6 +24,10 @@ A pass that reads every row of the Session from the OLIS feed. It counts as comp
 **As of**:
 When the Index was last refreshed from OLIS: the moment the latest completed full pull began, shown in Pacific time with its UTC offset. Every result carries it.
 
+**Live status**:
+A Measure's Location, History, Schedule and Votes as OLIS says them when a `get_measure` call arrives, in the result's `live_status` block beside what the Index last pulled. It is dated by the clock at the read, and the Index's As of time dates the rest of the result. The lookup asks OLIS five questions about that one Measure and never pulls a set (ADR-0005; `docs/adr/0014-get-measure-reads-one-measure-from-olis-and-falls-back-to-the-cache.md` lists them), and gives up after a bound (5 seconds unless the deployment sets `OLIS_LIVE_TIMEOUT_MS`). If it fails (an error status, a broken connection, no answer within the bound, a page the client cannot read, a Measure OLIS does not list), the block holds the Index's values instead, is dated by the As of time, says in its `notice` that the lookup failed and why, and has no Schedule. That is a normal result, not an error: the cache still answers.
+_Avoid_: status, unqualified; live data
+
 ### Measures and their texts
 
 **Measure**:
@@ -69,6 +73,19 @@ _Avoid_: minutes
 The Legislative Fiscal Office's statement of what a Version would cost government, naming the Agencies affected under "Government Unit(s) Affected".
 _Avoid_: fiscal note
 
+**Location**:
+Where a Measure is now, as the feed's `CurrentLocation` says it ("In Senate Committee", "Chapter Number Assigned", "House Desk - Vetoed"), with the committee code the feed gives beside it (`CurrentCommitteeCode`, such as `JWM`). The code is the feed's field as it stands, not a statement that the Measure is in that committee: the cache has it set on some Measures whose Location says they are at the President's desk, and null on one in a House committee (`docs/research/olis-votes.md` §6). `get_measure` shows what the last full pull stored, dated by the As of time, and the Live status shows what OLIS says now.
+_Avoid_: status, which names that live block
+
+**History**:
+What happened to a Measure, one line for each row of the feed's MeasureHistoryActions: the chamber, when the action happened (Pacific time with its offset) and the text as OLIS prints it. `get_measure` lists it oldest first, as OLIS does, so the last line is the latest action.
+
+**Schedule**:
+A Measure's upcoming committee meetings: the Agenda items of the Measure whose meeting is at or after the time of the read, soonest first. Only the Live status has one; the Index holds no agenda items, so a Live status that fell back to the cache has none (`null`, not an empty list: an empty list says OLIS has nothing ahead).
+
+**Agenda item**:
+One row of the feed's CommitteeAgendaItems: a committee, a meeting time and the kind of meeting ("Public Hearing", "Work Session", "Public Hearing and Work Session"), about one Measure. The feed's property for the committee is `CommitteCode`; the OLIS client hands it on as the committee's code. An item can also be about no Measure, and those are not a Measure's Schedule (`docs/research/olis-live.md` §2).
+
 ### People
 
 **Legislator**:
@@ -93,6 +110,16 @@ A committee that sponsors a Measure, from a MeasureSponsors row of type Committe
 
 **Presession message**:
 The text of a MeasureSponsors row of type Presession, as OLIS publishes it: "(Presession filed.)", or for SB 69 the Senate Interim Rule 213.28 notice its document opens with. A Measure can have none, one or (13 in 2025R1) two. The row names no Legislator.
+
+**Vote**:
+One Legislator's answer in a floor vote or a committee vote, in the feed's own word. Committee votes have "Aye", "Nay" and "Excused"; floor votes add "Excused for Business" and "Absent" (`docs/research/olis-votes.md` §2 has the counts). The voter is named by a Legislator Code, so it resolves to a Legislator like a Sponsor does.
+
+**Floor vote**:
+One chamber's roll call on a Measure, taken at one action of its History: the feed's MeasureVotes rows that share a `MeasureHistoryId`, with the chamber, when it voted and the action's text ("Third reading.  Carried by Bonham.  Passed."). `get_measure` lists a Measure's floor votes in the order they were taken, each with every Legislator's Vote in the order of the feed's ids for the entries. In the cache that is the order the feed lists them in (`docs/research/olis-votes.md` §5).
+_Avoid_: roll call, when the chamber matters
+
+**Committee vote**:
+One committee's roll call on a Measure at one meeting: the feed's CommitteeVotes rows that share a `CommitteeReportId`, with the committee's code and when it met. The feed gives some rolls under two reports with the same rows in each (in the cache, always a joint or conference committee's: `docs/research/olis-votes.md` §3), and `get_measure` lists such a roll once. The feed creates the rows before the meeting (§4), so a committee vote's meeting can be later than the As of time, with answers already listed; the feed does not say whether the vote has been taken. Committee names wait for the ticket that reads Committees, as for the Committee sponsor.
 
 ### Statutes and agencies
 

@@ -1,9 +1,16 @@
-// The ingest worker. A full pull reads every Measure, Legislator and sponsor row of the deployment's
-// Session from OLIS and stores them, with the time the pull started as the index's "as of" time. It
-// resolves each sponsor's Legislator Code to a Legislator on the way and reports the codes it could not.
+// The ingest worker. A full pull reads every Measure, Legislator, sponsor, history and vote row of the
+// deployment's Session from OLIS and stores them, with the time the pull started as the index's "as of"
+// time. It resolves the Legislator Code of each sponsor and each vote to a Legislator on the way and
+// reports the codes it could not.
 import type { IngestConfig } from "#/packages/config/index.ts";
-import { openIndexWriter, type SponsorRecord } from "#/packages/database/writer.ts";
+import {
+  openIndexWriter,
+  type CommitteeVoteRecord,
+  type FloorVoteRecord,
+  type SponsorRecord,
+} from "#/packages/database/writer.ts";
 import type { LegislatorId, Sponsorship } from "#/packages/domain/legislators.ts";
+import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
 import type { LegislatorAlias } from "#/packages/legislators/aliases.ts";
 import {
   createLegislatorResolver,
@@ -71,24 +78,48 @@ function sponsorRecordOf(sponsorship: Sponsorship, resolver: LegislatorResolver)
   }
 }
 
+/** What the database keeps of one entry of a floor vote: the entry and the Legislator its code names. */
+function floorVoteRecordOf(entry: FloorVoteEntry, resolver: LegislatorResolver): FloorVoteRecord {
+  return { ...entry, legislatorId: legislatorIdOfResolution(resolver.resolve("MeasureVotes", entry.legislatorCode)) };
+}
+
+/** What the database keeps of one entry of a committee vote: the entry and the Legislator its code names. */
+function committeeVoteRecordOf(entry: CommitteeVoteEntry, resolver: LegislatorResolver): CommitteeVoteRecord {
+  return { ...entry, legislatorId: legislatorIdOfResolution(resolver.resolve("CommitteeVotes", entry.legislatorCode)) };
+}
+
 export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promise<FullPullResult> {
   const asOf = formatPacific(deps.clock.now());
   const olis = createOlisClient({ baseUrl: config.olisBaseUrl, fetch: deps.fetch });
   const measures = await olis.readMeasures(config.session, deps.signal);
   const legislatorRows = await olis.readLegislators(config.session, deps.signal);
   const sponsorships = await olis.readSponsorships(config.session, deps.signal);
+  const history = await olis.readHistoryActions(config.session, deps.signal);
+  const committeeVotes = await olis.readCommitteeVotes(config.session, deps.signal);
+  const floorVotes = await olis.readFloorVotes(config.session, deps.signal);
 
-  // A Member sponsor names a Legislator by a Legislator Code; the resolver says who that is.
+  // A Member sponsor and the voter of a vote entry each name a Legislator by a Legislator Code; the
+  // resolver says who that is.
   const resolver = createLegislatorResolver({
     session: config.session,
     rows: legislatorRows,
     aliases: deps.legislatorAliases,
   });
   const sponsors = sponsorships.map((sponsorship) => sponsorRecordOf(sponsorship, resolver));
+  const floorVoteRecords = floorVotes.map((entry) => floorVoteRecordOf(entry, resolver));
+  const committeeVoteRecords = committeeVotes.map((entry) => committeeVoteRecordOf(entry, resolver));
 
   const writer = openIndexWriter(config.databasePath);
   try {
-    writer.recordFullPull(config.session, measures, asOf, { legislators: resolver.people, sponsors });
+    writer.recordFullPull(config.session, asOf, {
+      measures,
+      history,
+      legislators: resolver.people,
+      legislatorCodes: resolver.codes.map(({ code, legislator }) => ({ code, legislatorId: legislator.id })),
+      sponsors,
+      floorVotes: floorVoteRecords,
+      committeeVotes: committeeVoteRecords,
+    });
   } finally {
     writer.close();
   }

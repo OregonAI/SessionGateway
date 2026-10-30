@@ -24,3 +24,8 @@ export function formatPacific(instant: Date): Timestamp {
   const zoned = Temporal.Instant.fromEpochMilliseconds(instant.getTime()).toZonedDateTimeISO(PACIFIC);
   return zoned.toString({ timeZoneName: "never", smallestUnit: "second" }) as Timestamp;
 }
+
+/** The wall-clock reading in Pacific time at an instant, with no offset: for a source that words its times that way. */
+export function pacificWallClock(instant: Date): Temporal.PlainDateTime {
+  return Temporal.Instant.fromEpochMilliseconds(instant.getTime()).toZonedDateTimeISO(PACIFIC).toPlainDateTime();
+}
