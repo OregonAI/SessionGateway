@@ -16,9 +16,8 @@ export type IndexWriter = {
   /**
    * Brings what the feed says about documents already stored up to date, in one transaction: each one's
    * label, the node it belongs to, when it was posted, an analysis document's Version label and the
-   * nodes it points at. A fetched file is
-   * unchanging (ADR-0005), so its text, hash and retrieval time are left alone. A link whose document is
-   * not stored is ignored.
+   * nodes it points at. A fetched file is unchanging (ADR-0005), so its text, hash and retrieval time
+   * are left alone. A link whose document is not stored is ignored.
    */
   refreshDocuments(session: SessionKey, links: readonly DocumentLink[]): void;
   /** Every stored document of the Session whose file has no text layer, by id. */

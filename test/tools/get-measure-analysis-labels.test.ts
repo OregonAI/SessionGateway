@@ -5,6 +5,7 @@
 // EVERY ROW BELOW IS MADE UP: its id (9001xx), its Measure and its files are not the feed's. What is
 // real is the label it carries: each one occurs in the full 2025R1 cache (olis-odata.md gotcha 9;
 // docs/adr/0012 has the rows). Cases that only read the fixture are in get-measure-analysis.test.ts.
+// The last case is a made-up Measure with no digest and no analysis documents.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, type ConnectedClient, type ToolOutcome } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";
@@ -209,6 +210,41 @@ describe("a label OLIS changes after the file was fetched", () => {
       ).toHaveLength(1);
     } finally {
       await connected.close();
+    }
+  });
+});
+
+describe("a Measure with no digest and no analysis documents", () => {
+  // MADE UP: a Measure row the fixture lacks. Every Measure row of the cache has a MeasureSummary, but a
+  // row without the property, or with it null, has no digest; and a Measure with no analysis documents
+  // has none to list. No documents are served, so the pull is quick.
+  const measure = {
+    SessionKey: "2025R1",
+    MeasurePrefix: "HB",
+    MeasureNumber: 9002,
+    CatchLine: "A made-up Measure with no digest.",
+    CreatedDate: "2025-01-01T10:00:00",
+    ModifiedDate: null,
+  };
+
+  it.for([
+    ["has MeasureSummary null", { ...measure, MeasureSummary: null }],
+    ["has no MeasureSummary", measure],
+  ] as const)("shows a null digest and empty lists for a row that %s", async ([, row]) => {
+    const system = await startSystem({ clockAt, olis: { strayRows: { Measures: [row] } } });
+    const connected = await connectClient("2026-07-28", system.handler);
+    try {
+      const outcome = await callTool(connected, "get_measure", { measure: "HB 9002" });
+
+      expect(outcome.isError).toBe(false);
+      expect(outcome.structured).toMatchObject({
+        id: "measure-2025r1-hb9002",
+        digest: null,
+        analysis_documents: { by_version: [], unmapped: [] },
+      });
+    } finally {
+      await connected.close();
+      await system.stop();
     }
   });
 });
