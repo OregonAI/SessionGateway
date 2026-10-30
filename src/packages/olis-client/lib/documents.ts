@@ -2,7 +2,14 @@
 // called in the graph, and how it is fetched. The rows are the feed's own shapes and stay in here.
 import { z } from "zod";
 import { measureIdOf, type SessionKey } from "#/packages/domain/index.ts";
-import { versionIdOf, type DocumentLink, type DocumentRelation } from "#/packages/domain/documents.ts";
+import {
+  analysisIdOf,
+  committeeIdOf,
+  isPrintedAmendment,
+  versionIdOf,
+  type DocumentLink,
+  type DocumentRelation,
+} from "#/packages/domain/documents.ts";
 import { readEntitySet } from "./feed.ts";
 import type { OlisClientOptions } from "./options.ts";
 
@@ -64,11 +71,56 @@ async function readVersions(
       return {
         id,
         nodeId: id,
-        kind: "version",
+        kind: isPrintedAmendment(row.VersionDescription) ? "printed_amendment" : "version",
         label: row.VersionDescription,
         sourceUrl: sourceUrlOf(row.DocumentUrl),
         postedAt: null,
         relations,
+      };
+    });
+}
+
+// The feed spells the committee property `CommittteCode` (three t's) and serializes the decimal key
+// `MeasureAnalysisId` as a string (olis-odata.md section 8, gotchas 1 and 7).
+const analysisRow = z.looseObject({
+  SessionKey: z.string(),
+  MeasureAnalysisId: z.string().regex(/^\d+$/),
+  CommittteCode: z.string(),
+  DocumentType: z.string(),
+  MeasurePrefix: z.string(),
+  MeasureNumber: z.number().int(),
+  DocumentUrl: z.string(),
+});
+
+async function readAnalyses(
+  options: OlisClientOptions,
+  session: SessionKey,
+  signal: AbortSignal,
+): Promise<DocumentLink[]> {
+  const rows = await readEntitySet(
+    options,
+    "MeasureAnalysisDocuments",
+    `SessionKey eq '${session}'`,
+    analysisRow,
+    signal,
+  );
+  return rows
+    .filter((row) => row.SessionKey === session)
+    .map((row) => {
+      const key = { session, prefix: row.MeasurePrefix, number: row.MeasureNumber };
+      const id = analysisIdOf(session, row.MeasureAnalysisId);
+      const provenance = `MeasureAnalysisDocuments ${row.MeasureAnalysisId}`;
+      return {
+        id,
+        nodeId: id,
+        kind: "analysis",
+        label: row.DocumentType,
+        sourceUrl: sourceUrlOf(row.DocumentUrl),
+        postedAt: null,
+        relations: [
+          { relation: "measure", to: measureIdOf(key), meaning: null, provenance },
+          { relation: "committee", to: committeeIdOf(session, row.CommittteCode), meaning: null, provenance },
+        ],
       };
     });
 }
@@ -78,7 +130,9 @@ export async function readDocumentLinks(
   session: SessionKey,
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
-  return readVersions(options, session, signal);
+  const versions = await readVersions(options, session, signal);
+  const analyses = await readAnalyses(options, session, signal);
+  return [...versions, ...analyses];
 }
 
 /** The bytes of one document, or why they could not be had. */

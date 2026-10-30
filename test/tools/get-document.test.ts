@@ -62,4 +62,57 @@ describe.for(eras)("get_document for a %s client", (era) => {
       expect.objectContaining({ id: "measure-2025r1-sb69", relation: "measure" }),
     );
   });
+
+  // One row per kind of document and per wording of its name. Each row names the feed row it comes
+  // from (test/fixtures/olis-2025R1/feed/) and gives the id (spec #1, "Session graph"), the label and
+  // the link as that row writes them, and the nodes the row points at.
+  type Row = {
+    document: string;
+    id: string;
+    kind: string;
+    label: string;
+    sourceUrl: string;
+    related: [relation: string, id: string][];
+  };
+  const kinds: Row[] = [
+    {
+      document: "MeasureDocuments row for HB 3795, Senate Amendments to A-Engrossed (a Printed Amendment)",
+      id: "printed-amendment-2025r1-hb3795-senate-amendments-to-a-engrossed",
+      kind: "printed_amendment",
+      label: "Senate Amendments to A-Engrossed",
+      // The feed writes the spaces raw; the link a person can follow has them percent-encoded.
+      sourceUrl:
+        "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/HB3795/Senate%20Amendments%20to%20A-Engrossed",
+      related: [["measure", "measure-2025r1-hb3795"]],
+    },
+    {
+      // The row spells the committee property `CommittteCode` and the key `MeasureAnalysisId` as a string.
+      document: "MeasureAnalysisDocuments row 85414, SB 69's Fiscal Impact Statement",
+      id: "analysis-2025r1-85414",
+      kind: "analysis",
+      label: "Fiscal Impact Statement",
+      sourceUrl: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureAnalysisDocument/85414",
+      related: [
+        ["measure", "measure-2025r1-sb69"],
+        ["committee", "committee-2025r1-slb"],
+      ],
+    },
+  ];
+
+  it.for(kinds)("returns $document with its id, kind, label, link and related nodes", async (row) => {
+    const outcome = await callTool(connected, "get_document", { id: row.id });
+
+    expect(outcome.isError).toBe(false);
+    expect(outcome.structured).toMatchObject({
+      id: row.id,
+      kind: row.kind,
+      label: row.label,
+      source_url: row.sourceUrl,
+      has_text_layer: true,
+    });
+    const related = (outcome.structured?.["related"] as { id: string; relation: string }[]).map(
+      (node) => [node.relation, node.id] as const,
+    );
+    expect(related.toSorted()).toEqual(row.related.toSorted());
+  });
 });

@@ -2,7 +2,7 @@
 // their ids (src/CLAUDE.md, "Shape"). The forms are spec #1's (Implementation Decisions, "Session graph")
 // and follow ADR-0004's `{kind}-{session}-{key}` shape for what only SessionGateway holds.
 
-import type { MeasureId, MeasureKey } from "./index.ts";
+import type { MeasureId, MeasureKey, SessionKey } from "./index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 
 /** What a document is, in the glossary's words. */
@@ -31,9 +31,10 @@ export const documentKinds: readonly DocumentKind[] = [
 export type DocumentId = string & { readonly brand: "DocumentId" };
 /** The id of a Proposed Amendment: one node per Measure and amendment number, whatever its postings. */
 export type AmendmentId = string & { readonly brand: "AmendmentId" };
+export type CommitteeId = string & { readonly brand: "CommitteeId" };
 
 /** A node a document can point at. */
-export type NodeId = MeasureId | AmendmentId;
+export type NodeId = MeasureId | AmendmentId | CommitteeId;
 
 /** How a document points at a node. */
 export type Relation = "measure" | "committee" | "meeting" | "posted_to" | "amendment";
@@ -51,8 +52,26 @@ function measureSlug(key: MeasureKey): string {
   return `${key.session.toLowerCase()}-${key.prefix.toLowerCase()}${key.number}`;
 }
 
+/**
+ * Printed Amendments are the texts of amendments a chamber adopted ("House Amendments to
+ * Introduced"); every other MeasureDocuments description names a Version.
+ */
+export function isPrintedAmendment(versionDescription: string): boolean {
+  return /\bamendments\b/i.test(versionDescription);
+}
+
+/** The id of a Version (`version-2025r1-sb69-a-engrossed`) or of a Printed Amendment, by the feed's description. */
 export function versionIdOf(key: MeasureKey, versionDescription: string): DocumentId {
-  return `version-${measureSlug(key)}-${slug(versionDescription)}` as DocumentId;
+  const kind = isPrintedAmendment(versionDescription) ? "printed-amendment" : "version";
+  return `${kind}-${measureSlug(key)}-${slug(versionDescription)}` as DocumentId;
+}
+
+export function analysisIdOf(session: SessionKey, measureAnalysisId: string): DocumentId {
+  return `analysis-${session.toLowerCase()}-${measureAnalysisId}` as DocumentId;
+}
+
+export function committeeIdOf(session: SessionKey, committeeCode: string): CommitteeId {
+  return `committee-${session.toLowerCase()}-${slug(committeeCode)}` as CommitteeId;
 }
 
 /** A node a document points at, and how, with where the feed said so. */
