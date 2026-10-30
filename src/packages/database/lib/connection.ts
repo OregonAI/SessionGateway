@@ -17,6 +17,12 @@ const schema = `
     session_key TEXT NOT NULL PRIMARY KEY,
     full_pull_as_of TEXT NOT NULL
   ) STRICT;
+  CREATE TABLE IF NOT EXISTS snapshot_state (
+    session_key TEXT NOT NULL PRIMARY KEY,
+    source TEXT NOT NULL,
+    commit_sha TEXT NOT NULL,
+    commit_date TEXT NOT NULL
+  ) STRICT;
   CREATE TABLE IF NOT EXISTS committee (
     session_key TEXT NOT NULL,
     code TEXT NOT NULL,
