@@ -130,6 +130,96 @@ export function parseDocumentReference(text: string, session: SessionKey): Docum
     : (trimmed.toLowerCase() as DocumentId);
 }
 
+/**
+ * The Version an amendment's number says it amends, in the words the feed describes Versions in. Legislative
+ * Counsel numbers an amendment to the Introduced Version with digits alone ("-2") and an amendment to an
+ * engrossed Version with that Version's letter before them ("-A3" amends A-Engrossed, "-B1" B-Engrossed).
+ * Undefined for a number in neither form.
+ */
+export function versionDescriptionOfAmendmentNumber(number: string): string | undefined {
+  if (/^-\d+$/.test(number)) return "Introduced";
+  const letter = /^-([A-Z])\d+$/.exec(number)?.[1];
+  return letter === undefined ? undefined : `${letter}-Engrossed`;
+}
+
+/** Where a Proposed Amendment's Version is, as far as the evidence goes, and why (ADR-0015). */
+export type AmendmentPlacement =
+  { kind: "version"; versionId: DocumentId; description: string; reason: string } | { kind: "unknown"; reason: string };
+
+/**
+ * Says which Version of the Measure a Proposed Amendment amends. The amendment's own header names it and its
+ * number names it, and they must agree; nothing is guessed (ADR-0013's rule, applied here). `headers` has the
+ * Version that the header of each file the store holds for the amendment names, or null for a header that
+ * could not be read. `isHeld` says whether the store holds a Version of the Measure.
+ */
+export function placeAmendment(
+  key: MeasureKey,
+  number: string,
+  headers: readonly (string | null)[],
+  isHeld: (versionId: DocumentId) => boolean,
+): AmendmentPlacement {
+  const unknown = (reason: string): AmendmentPlacement => ({ kind: "unknown", reason });
+  if (headers.length === 0) {
+    return unknown(
+      "This index holds no file of the amendment, so its header, which names the Version it amends, cannot be read.",
+    );
+  }
+  const named = headers.filter((header): header is string => header !== null);
+  if (named.length < headers.length) {
+    return unknown(
+      'The header of the amendment\'s file (the line after "PROPOSED AMENDMENTS TO") could not be read, so which Version it amends is not known.',
+    );
+  }
+  const distinct = [...new Set(named)];
+  const [fromHeader] = distinct;
+  if (fromHeader === undefined || distinct.length > 1) {
+    return unknown(
+      `The headers of the amendment's files name different Versions (${distinct.join(" and ")}), so which Version it amends is not known.`,
+    );
+  }
+  const fromNumber = versionDescriptionOfAmendmentNumber(number);
+  if (fromNumber === undefined) {
+    return unknown(
+      `The amendment's number ${number} names no Version (a number of digits alone names Introduced, and a letter names that engrossed Version), so which Version it amends is not known.`,
+    );
+  }
+  if (fromNumber !== fromHeader) {
+    return unknown(
+      `The amendment's header names the ${fromHeader} Version but its number ${number} names the ${fromNumber} Version, so which Version it amends is not known.`,
+    );
+  }
+  const versionId = versionIdOf(key, fromHeader);
+  if (!isHeld(versionId)) {
+    return unknown(
+      `The amendment's header and number both name the ${fromHeader} Version of ${key.prefix} ${key.number}, which this index does not hold.`,
+    );
+  }
+  return {
+    kind: "version",
+    versionId,
+    description: fromHeader,
+    reason: `The amendment's header names the ${fromHeader} Version and its number ${number} agrees.`,
+  };
+}
+
+const amendmentCitationPattern = /^([A-Za-z]+)\s*(\d+)\s*(-\s*(?:[A-Za-z]\d+|\d+))$/;
+
+/**
+ * Reads what a caller wrote as a Proposed Amendment of the deployment's Session: its citation ("SB 69-2",
+ * "HB 3795-A3") or its id (`amendment-2025r1-sb69-2`). The id comes back as minted, from the citation or from
+ * the id in lower case. A document's id, a Measure's, another Session's or no form at all is not one: undefined.
+ */
+export function parseAmendmentReference(text: string, session: SessionKey): AmendmentId | undefined {
+  const trimmed = text.trim();
+  const citation = amendmentCitationPattern.exec(trimmed);
+  if (citation?.[1] !== undefined && citation[2] !== undefined && citation[3] !== undefined) {
+    const key = { session, prefix: citation[1].toUpperCase(), number: Number(citation[2]) };
+    return amendmentIdOf(key, citation[3].replace(/\s+/g, ""));
+  }
+  const reference = parseDocumentReference(trimmed, session);
+  return reference?.startsWith("amendment-") === true ? (reference as AmendmentId) : undefined;
+}
+
 export function committeeIdOf(session: SessionKey, committeeCode: string): CommitteeId {
   return `committee-${session.toLowerCase()}-${slug(committeeCode)}` as CommitteeId;
 }
@@ -323,6 +413,21 @@ export type PostedAmendment = {
   /** The posting: the document with the file posted to this meeting. */
   documentId: DocumentId;
   sourceUrl: string;
+  /** Whether the store holds the posting's file. The feed lists the posting either way. */
+  fetched: boolean;
+};
+
+/** One posting of a Proposed Amendment, as the amendment's own view lists it: where it was posted and what the committee did. */
+export type AmendmentPosting = {
+  documentId: DocumentId;
+  sourceUrl: string;
+  meetingId: MeetingId;
+  /** When the meeting starts, in Pacific time with its offset. */
+  meetingAt: Timestamp;
+  committeeCode: string;
+  committeeName: string;
+  /** What the committee did with the amendment at that meeting (the feed's `Meaning`): Proposed, Adopted... */
+  meaning: string | null;
   /** Whether the store holds the posting's file. The feed lists the posting either way. */
   fetched: boolean;
 };

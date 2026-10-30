@@ -6,6 +6,7 @@ import {
   positionOf,
   type AgendaItem,
   type AmendmentId,
+  type AmendmentPosting,
   type Committee,
   type DocumentId,
   type DocumentKind,
@@ -31,7 +32,16 @@ import {
   type SessionKey,
 } from "#/packages/domain/index.ts";
 import { comparePrintOrder, type Legislator, type LegislatorId, type Sponsor } from "#/packages/domain/legislators.ts";
-import type { AgencyId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
+import { parseOrsChapterId, parseOrsSectionId, type AgencyId, type SnapshotVersion } from "#/packages/domain/oregonai.ts";
+import type {
+  AmendmentFile,
+  RelatingClauseEdit,
+  StatuteLink,
+  StatuteLinkSource,
+  StatuteParse,
+  StoredAmendment,
+  StoredVersion,
+} from "#/packages/domain/statute-links.ts";
 import {
   groupCommitteeVotes,
   groupFloorVotes,
@@ -98,6 +108,14 @@ export type IndexReader = {
    * worker could not fetch their files. The next pull tries them again.
    */
   analysisNotHeld(key: MeasureKey): number;
+  /**
+   * A Proposed Amendment by its id: its Measure, every posting the feed lists for it (earliest meeting first,
+   * whether or not the store holds the posting's file) and, for each distinct file the store holds among them,
+   * what was read of it. Undefined when the feed lists no such amendment.
+   */
+  findAmendment(id: AmendmentId): StoredAmendment | undefined;
+  /** The Versions of a Measure the store holds (not its Printed Amendments), in no particular order, each with what was read of its text. */
+  findMeasureVersions(key: MeasureKey): StoredVersion[];
   /** What the index holds of the Session. */
   counts(session: SessionKey): IndexCounts;
   /** A committee by its code or its id, in either case. */
@@ -249,6 +267,44 @@ const testimonyRow = z.object({
   has_text_layer: z.number().nullable(),
   text_hash: z.string().nullable(),
 });
+const postingRow = z.object({
+  document_id: z.string(),
+  label: z.string(),
+  source_url: z.string(),
+  measure_id: z.string(),
+  meaning: z.string().nullable(),
+  meeting_id: z.string(),
+  meeting_at: z.string(),
+  committee_code: z.string(),
+  committee_name: z.string(),
+  fetched: z.number(),
+  content_hash: z.string().nullable(),
+});
+const versionRow = z.object({ id: z.string(), label: z.string(), source_url: z.string(), content_hash: z.string() });
+const parseRow = z.object({
+  text_read: z.number(),
+  amended_version_header: z.string().nullable(),
+  relating_clause_edits: z.string(),
+});
+const linkRow = z.object({
+  kind: z.enum(["amends", "repeals", "adds-to", "cites"]),
+  target_type: z.enum(["section", "chapter"]),
+  target_id: z.string(),
+  measure_section: z.string().nullable(),
+});
+const orsSectionId = z.string().transform((text, context) => {
+  const id = parseOrsSectionId(text);
+  if (id === undefined) context.addIssue({ code: "custom", message: `not an ORS section id: ${text}` });
+  return id ?? z.NEVER;
+});
+const relatingClauseEdits = z.array(
+  z.object({
+    deleted: z.string().nullable(),
+    deletedLines: z.array(z.string()),
+    inserted: z.string().nullable(),
+    insertedSections: z.array(orsSectionId),
+  }),
+);
 const countRow = z.object({ n: z.number() });
 const kindCountRow = z.object({ kind: z.string(), n: z.number() });
 const relationRow = z.object({
@@ -364,6 +420,29 @@ export function openIndexReader(path: string): IndexReader {
      WHERE t.measure_id = ? ORDER BY t.comm_test_id`,
   );
   const selectTestimonyListing = database.prepare("SELECT 1 AS listed FROM testimony WHERE document_id = ?");
+  // The postings the feed lists for one Proposed Amendment, with the meeting each was posted to.
+  const selectPostingsOfAmendment = database.prepare(
+    `SELECT l.document_id, l.label, l.source_url, l.measure_id, l.meaning, l.meeting_id, m.at AS meeting_at,
+            m.committee_code, c.name AS committee_name,
+            d.id IS NOT NULL AS fetched, d.content_hash
+     FROM meeting_document l
+     JOIN meeting m ON m.id = l.meeting_id
+     JOIN committee c ON c.session_key = m.session_key AND c.code = m.committee_code
+     LEFT JOIN document d ON d.id = l.document_id
+     WHERE l.kind = 'proposed_amendment' AND l.node_id = ?
+     ORDER BY m.at`,
+  );
+  const selectVersionsOfMeasure = database.prepare(
+    `SELECT d.id, d.label, d.source_url, d.content_hash
+     FROM document d JOIN document_relation r ON r.document_id = d.id
+     WHERE d.kind = 'version' AND r.relation = 'measure' AND r.to_id = ?`,
+  );
+  const selectStatuteParse = database.prepare(
+    "SELECT text_read, amended_version_header, relating_clause_edits FROM statute_parse WHERE content_hash = ? AND parsed_as = ?",
+  );
+  const selectStatuteLinks = database.prepare(
+    "SELECT kind, target_type, target_id, measure_section FROM statute_link WHERE content_hash = ? AND parsed_as = ? ORDER BY ordinal",
+  );
   const numbersInOrder = new Intl.Collator("en", { numeric: true });
   function documentOf(row: unknown): DocumentView["document"] {
     const stored = documentRow.parse(row);
@@ -379,6 +458,43 @@ export function openIndexReader(path: string): IndexReader {
       hasTextLayer: stored.has_text_layer === 1,
       postedAt: stored.posted_at as Timestamp | null,
       text: stored.text,
+    };
+  }
+  /**
+   * What was read of a file for Statute Links. A file the worker has not read yet (a pull that stopped between
+   * storing it and reading it) is shown as not read, with no links.
+   */
+  function statuteParseOf(contentHash: string, readAs: StatuteLinkSource): StatuteParse {
+    const row = selectStatuteParse.get(contentHash, readAs);
+    if (row === undefined) return { textRead: false, amendedVersionHeader: null, links: [], relatingClauseEdits: [] };
+    const stored = parseRow.parse(row);
+    const links = selectStatuteLinks.all(contentHash, readAs).map((linkRowOf): StatuteLink => {
+      const link = linkRow.parse(linkRowOf);
+      if (link.target_type === "section") {
+        const id = parseOrsSectionId(link.target_id);
+        if (id === undefined)
+          throw new Error(`The store holds a Statute Link to ${link.target_id}, which is no ORS section id`);
+        return {
+          kind: link.kind,
+          target: { type: "section", id, resolvableOnOregonAi: true },
+          measureSection: link.measure_section,
+        };
+      }
+      const id = parseOrsChapterId(link.target_id);
+      if (id === undefined)
+        throw new Error(`The store holds a Statute Link to ${link.target_id}, which is no ORS chapter id`);
+      return {
+        kind: link.kind,
+        target: { type: "chapter", id, resolvableOnOregonAi: false },
+        measureSection: link.measure_section,
+      };
+    });
+    const edits: RelatingClauseEdit[] = relatingClauseEdits.parse(JSON.parse(stored.relating_clause_edits));
+    return {
+      textRead: stored.text_read === 1,
+      amendedVersionHeader: stored.amended_version_header,
+      links,
+      relatingClauseEdits: edits,
     };
   }
   function relationsOf(documentId: DocumentId): RelatedNode[] {
@@ -455,6 +571,59 @@ export function openIndexReader(path: string): IndexReader {
         }
       }
       return { document: latest, related };
+    },
+    findAmendment(id) {
+      const rows = selectPostingsOfAmendment.all(id).map((row) => postingRow.parse(row));
+      const first = rows[0];
+      if (first === undefined) return undefined;
+      const listed = rows.map((stored) => ({
+        contentHash: stored.content_hash,
+        posting: {
+          documentId: stored.document_id as DocumentId,
+          sourceUrl: stored.source_url,
+          meetingId: stored.meeting_id as MeetingId,
+          meetingAt: stored.meeting_at as Timestamp,
+          committeeCode: stored.committee_code,
+          committeeName: stored.committee_name,
+          meaning: stored.meaning,
+          fetched: stored.fetched === 1,
+        } satisfies AmendmentPosting,
+      }));
+      // The same meeting's postings are told apart by the feed's number, compared as a number.
+      listed.sort(
+        (a, b) =>
+          a.posting.meetingAt.localeCompare(b.posting.meetingAt) ||
+          numbersInOrder.compare(a.posting.documentId, b.posting.documentId),
+      );
+      // Postings that share a file (the same bytes) are one file with several postings.
+      const files = new Map<string, AmendmentFile>();
+      for (const { contentHash, posting } of listed) {
+        if (contentHash === null) continue;
+        const file = files.get(contentHash) ?? {
+          postingIds: [],
+          parse: statuteParseOf(contentHash, "proposed_amendment"),
+        };
+        file.postingIds.push(posting.documentId);
+        files.set(contentHash, file);
+      }
+      return {
+        id,
+        number: first.label,
+        measureId: first.measure_id as MeasureId,
+        postings: listed.map(({ posting }) => posting),
+        files: [...files.values()],
+      };
+    },
+    findMeasureVersions(key) {
+      return selectVersionsOfMeasure.all(measureIdOf(key)).map((row): StoredVersion => {
+        const stored = versionRow.parse(row);
+        return {
+          id: stored.id as DocumentId,
+          label: stored.label,
+          sourceUrl: stored.source_url,
+          parse: statuteParseOf(stored.content_hash, "version"),
+        };
+      });
     },
     findCommittee(session, reference) {
       const row = selectCommittee.get(session, reference.trim(), reference.trim());

@@ -13,6 +13,12 @@ import {
   testimonyNotHeldMessage,
   unknownDocumentMessage,
 } from "./lib/get-document.ts";
+import {
+  compareAmendment,
+  compareAmendmentInput,
+  compareAmendmentOutput,
+  unknownAmendmentMessage,
+} from "./lib/compare-amendment.ts";
 import { getMeasure, getMeasureInput, getMeasureOutput, unknownMeasureMessage } from "./lib/get-measure.ts";
 import { createLiveStatusReader, type LiveLookupFailure, type LiveStatusReader } from "./lib/live-status.ts";
 import {
@@ -104,6 +110,36 @@ function buildServer(
           return {
             isError: true,
             content: [{ type: "text", text: unknownMeasureMessage(result.reference, result.session) }],
+          };
+        default:
+          return result satisfies never;
+      }
+    },
+  );
+  server.registerTool(
+    "compare_amendment",
+    {
+      title: "Compare a Proposed Amendment",
+      description:
+        "Looks up one Proposed Amendment of the Session by its citation (SB 69-2, HB 3795-A3) or its id and returns the meetings it was posted to, with what each committee did with it. It is not the official record.",
+      inputSchema: compareAmendmentInput,
+      outputSchema: compareAmendmentOutput,
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    (input) => {
+      const refused = refuseOverRateLimit(limiter, config);
+      if (refused !== undefined) return refused;
+      const result = compareAmendment(reader, config.session, input);
+      switch (result.kind) {
+        case "found":
+          return {
+            content: [{ type: "text", text: JSON.stringify(result.comparison) }],
+            structuredContent: result.comparison,
+          };
+        case "unknown":
+          return {
+            isError: true,
+            content: [{ type: "text", text: unknownAmendmentMessage(result.reference, result.session) }],
           };
         default:
           return result satisfies never;

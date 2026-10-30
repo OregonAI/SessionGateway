@@ -1,23 +1,10 @@
 import type { OrsSectionId } from "#/packages/domain/oregonai.ts";
 import { orsSectionIdOf } from "#/packages/domain/oregonai.ts";
+import type { RelatingClauseEdit } from "#/packages/domain/statute-links.ts";
 import type { RangeExpander } from "./ranges.ts";
 import { findSectionItems } from "./references.ts";
 
-/**
- * One edit a Proposed Amendment makes to the measure's relating clause, the text that says what the
- * measure does to the statutes ("Relating to ...; amending ORS 409.711."). It is what the amendment
- * says, not the clause after the edit: what the amendment deletes is not worked out (ADR-0001).
- */
-export type RelatingClauseEdit = {
-  /** The words the amendment quotes as deleted, or null when it quotes none. */
-  deleted: string | null;
-  /** The lines it deletes without quoting their words, as it names them: "line 3", "lines 3 and 4", "the rest of the line". */
-  deletedLines: string[];
-  /** The words it inserts, or null when it only deletes. */
-  inserted: string | null;
-  /** The ORS sections the inserted words name, ranges expanded, each once, in order. */
-  insertedSections: OrsSectionId[];
-};
+export type { RelatingClauseEdit };
 
 // Legislative Counsel writes the place of an edit on page 1 in a few forms:
 //   "In line 2 of the printed bill, ..."

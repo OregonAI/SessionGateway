@@ -5,7 +5,8 @@
 // the index's "as of" time. It resolves the Legislator Code of
 // each sponsor and each vote to a Legislator on the way and reports the codes it could not. It refreshes
 // what the feed says about the documents it already holds, fetches every linked document the store does
-// not hold yet, once each, keeps its text, and writes the build report
+// not hold yet, once each, keeps its text, reads the Statute Links of the Versions and Proposed Amendments it
+// holds, and writes the build report
 // (docs/adr/0011-an-amendment-is-a-node-and-its-postings-are-documents.md).
 import { createHash } from "node:crypto";
 import { testimonyAgencyLinks } from "#/packages/agency-links/index.ts";
@@ -16,9 +17,12 @@ import {
   type FloorVoteRecord,
   type SponsorRecord,
   type TestimonyRecord,
+  type StatuteParseRecord,
+  type UnreadStatuteFile,
 } from "#/packages/database/writer.ts";
 import type { DocumentLink } from "#/packages/domain/documents.ts";
 import type { LegislatorId, Sponsorship } from "#/packages/domain/legislators.ts";
+import type { OrsSectionId } from "#/packages/domain/oregonai.ts";
 import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
 import type { LegislatorAlias } from "#/packages/legislators/aliases.ts";
 import {
@@ -30,6 +34,7 @@ import {
 import { createOlisClient, type OlisClient } from "#/packages/olis-client/index.ts";
 import { loadSnapshot, type Snapshot } from "#/packages/oregonai-snapshot/index.ts";
 import { extractPdfText, type ExtractedPdf } from "#/packages/pdf-text/index.ts";
+import { parseStatuteLinks, readAmendedVersionHeader } from "#/packages/statute-links/index.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
 import { buildReportPath, writeBuildReport, type BuildReport } from "./lib/build-report.ts";
@@ -164,6 +169,46 @@ function testimonyRecordsOf(links: readonly DocumentLink[], snapshot: Snapshot):
   return records;
 }
 
+/**
+ * What reading one stored file for Statute Links comes to (ADR-0015): the links of a Version, or of a
+ * Proposed Amendment's inserted sections with its relating clause edits and the Version its header names. A
+ * file with no text layer gives no links and is recorded as not read.
+ */
+function statuteParseOf(
+  file: UnreadStatuteFile,
+  stored: { text: string; hasTextLayer: boolean },
+  orsSections: readonly OrsSectionId[],
+): StatuteParseRecord {
+  const common = { contentHash: file.contentHash, readAs: file.readAs };
+  if (!stored.hasTextLayer) {
+    return { ...common, textRead: false, amendedVersionHeader: null, links: [], relatingClauseEdits: [] };
+  }
+  switch (file.readAs) {
+    case "version": {
+      const parsed = parseStatuteLinks({ documentKind: "version", text: stored.text, orsSections });
+      return {
+        ...common,
+        textRead: true,
+        amendedVersionHeader: null,
+        links: parsed.links,
+        relatingClauseEdits: parsed.relatingClauseEdits,
+      };
+    }
+    case "proposed_amendment": {
+      const parsed = parseStatuteLinks({ documentKind: "proposed-amendment", text: stored.text, orsSections });
+      return {
+        ...common,
+        textRead: true,
+        amendedVersionHeader: readAmendedVersionHeader(stored.text) ?? null,
+        links: parsed.links,
+        relatingClauseEdits: parsed.relatingClauseEdits,
+      };
+    }
+    default:
+      return file.readAs satisfies never;
+  }
+}
+
 export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promise<FullPullResult> {
   // The snapshot is read before OLIS is: a build with no usable snapshot fails at once, naming the file.
   const snapshot = await loadSnapshot(config.snapshotPath);
@@ -249,6 +294,11 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       });
       stored.add(link.id);
       documentsFetched += 1;
+    }
+    // The Statute Links of every stored Version and posting not yet read, from the text the store holds: the
+    // files are not fetched again. Postings that share a file are read once (ADR-0015).
+    for (const file of writer.unreadStatuteFiles(config.session)) {
+      writer.storeStatuteParse(statuteParseOf(file, writer.storedText(file.documentId), snapshot.orsSections));
     }
     writeBuildReport(buildReportPath(config.databasePath), {
       session: config.session,
