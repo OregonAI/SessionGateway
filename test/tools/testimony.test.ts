@@ -271,4 +271,55 @@ describe.for(eras)("testimony for a %s client", (era) => {
       .flatMap((group) => group.items);
     expect(items.map((item) => item["agency_id"])).toEqual(Array<null>(42).fill(null));
   });
+
+  // Two of HB 3131's rows spell a city in capitals: 117204 "Oregon City" and 117301 "OREGON CITY" (both support,
+  // feed/CommitteePublicTestimonies.json). They are one group of two, shown as the first by CommTestId, 117204's.
+  it("groups Oregon City and OREGON CITY together, under the spelling of the lower CommTestId", async () => {
+    const outcome = await callTool(connected, "testimony", { measure: "HB 3131" });
+
+    const support = (outcome.structured?.["positions"] as Position[])[0];
+    const city = support?.organizations.find((group) => group.organization === "Oregon City");
+    expect(city).toMatchObject({ spellings: ["Oregon City", "OREGON CITY"], count: 2 });
+    expect(city?.items.map((item) => item.id)).toEqual(["testimony-2025r1-117204", "testimony-2025r1-117301"]);
+    // 33 groups in all: 32 of support and Newberg's, which is the one group of oppose.
+    expect(outcome.structured).toMatchObject({ organization_groups: 33 });
+    expect(support?.organizations).toHaveLength(32);
+  });
+
+  // The brief for #14: "Organization is free text and often a city (spec #1, Further Notes). Say so in the tool's
+  // description". An agent reads the description before it reads a result, so it learns that grouping by
+  // Organization is not grouping by organization, and where the real one often is (BehalfOf).
+  it("says in its description that Organization is free text, often a city, and that BehalfOf often names the organization", async () => {
+    const { tools } = await connected.client.listTools();
+
+    const tool = tools.find((candidate) => candidate.name === "testimony");
+    expect(tool?.description).toMatch(/free text/i);
+    expect(tool?.description).toMatch(/city/i);
+    expect(tool?.description).toMatch(/BehalfOf/);
+    expect(tool?.annotations?.readOnlyHint).toBe(true);
+  });
+
+  // An unknown Measure is an MCP error, as for get_measure and meetings (spec #1: "Errors are reported as MCP
+  // errors"), and the message names what was asked for and how to ask.
+  it("answers an unknown Measure with an error that names it", async () => {
+    const outcome = await callTool(connected, "testimony", { measure: "SB 9999" });
+
+    expect(outcome.isError).toBe(true);
+    expect(outcome.text).toContain('No Measure "SB 9999" in the 2025R1 Session.');
+  });
+
+  it("answers a Measure's id as well as its citation", async () => {
+    const outcome = await callTool(connected, "testimony", { measure: "measure-2025r1-hb3131" });
+
+    expect(outcome.structured).toMatchObject({ measure_id: "measure-2025r1-hb3131", total: 42 });
+  });
+
+  // Every result carries the as-of time and the non-official notice (spec #1, "What every result must carry"); the
+  // clock of this file is 2025-07-15 10:00 in Oregon, and the full pull began then.
+  it("carries the as-of time and the notice that it is not the official record", async () => {
+    const outcome = await callTool(connected, "testimony", { measure: "HB 3131" });
+
+    expect(outcome.structured?.["as_of"]).toBe("2025-07-15T10:00:00-07:00");
+    expect(String(outcome.structured?.["notice"])).toMatch(/not the official record/i);
+  });
 });
