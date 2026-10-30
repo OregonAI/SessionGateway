@@ -25,9 +25,10 @@ point at, and every document they link.
   `LegislatorCode` holds the personal names of non-legislator members (`olis-odata.md` section 8,
   gotcha 5), which no Legislators row matches, and the build stops on a gap that is not documented.
 - **Documents.** Versions and Printed Amendments, analysis documents (Fiscal and Revenue Impact
-  Statements, staff measure summaries), Proposed Amendments, meeting documents, agendas, and
-  Testimony from `/Downloads/PublicTestimonyDocument/{CommTestId}` (the feed's `DocumentUrl` for
-  Testimony is the session root). MeasureDocument URLs are recorded percent-encoded.
+  Statements, staff measure summaries), Proposed Amendments, Exhibits (the feed's
+  `CommitteeMeetingDocuments`), agendas, and Testimony from
+  `/Downloads/PublicTestimonyDocument/{CommTestId}` (the feed's `DocumentUrl` for Testimony is the
+  session root). MeasureDocument URLs are recorded percent-encoded.
 - **The Statutes Affected Table** (`documents/reports/artables2025R1.pdf`) is copied from the
   reports cache. No feed row links it, and its manifest entry has an empty `linked_by`. Its
   `source_url` is on `www.oregonlegislature.gov`, not `olis.`: the cache's `.hdr` file holds the
