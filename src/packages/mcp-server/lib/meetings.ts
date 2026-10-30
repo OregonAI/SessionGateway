@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
-import { olisMeetingPageUrlOf } from "#/packages/domain/documents.ts";
+import { olisMeetingPageUrlOf, type MeetingHeader } from "#/packages/domain/documents.ts";
 import { measureIdOf, parseMeasureReference, type SessionKey } from "#/packages/domain/index.ts";
 import { formatPacific, isAtOrAfter } from "#/packages/time/pacific.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
@@ -24,11 +24,15 @@ export const meetingsInput = z.object({
 });
 
 /**
- * The most meetings one call returns. A meeting with its agenda items and documents runs to a few thousand
- * characters, and one meeting of the 2025R1 feed has 70 agenda items and another 99 documents, so an
- * unbounded range would overflow an agent's context (the reason `get_document` serves parts).
+ * The most characters of meetings, as JSON, one call returns: the size of a `get_document` part (ADR-0011,
+ * "Parts"). A meeting with its agenda items and documents runs to a few thousand characters in the 2025R1 feed,
+ * and one has 70 agenda items (18,499 characters of them) and another 99 documents, so an unbounded range
+ * would overflow an agent's context. A page is whole days of meetings, as many as fit and always the first
+ * day: the only way an agent can ask for the next page is `from`, a date, so a page that ended inside a day
+ * would leave the rest of that day out of reach. A meeting is never cut short (its text is as published), so
+ * a single meeting or day can run past the limit.
  */
-export const MAX_MEETINGS = 25;
+export const MAX_MEETINGS_CHARACTERS = 20_000;
 
 const meetingOutput = z.object({
   id: z.string().describe("The meeting's id, such as meeting-2025r1-slb-2025-01-30-0800."),
@@ -158,17 +162,19 @@ export const meetingsOutput = z.object({
   meetings: z
     .array(meetingOutput)
     .describe(
-      `The meetings that match, earliest first: the first ${MAX_MEETINGS} when more match (see \`truncated\`).`,
+      `The meetings that match, earliest first: whole days of them, as many as fit in about ${MAX_MEETINGS_CHARACTERS} characters of JSON and at least the first day (see \`truncated\`).`,
     ),
-  matching_meetings: z.number().describe(`How many meetings match, including any past the first ${MAX_MEETINGS}.`),
+  matching_meetings: z.number().describe("How many meetings match, including any that did not fit in `meetings`."),
   truncated: z
     .boolean()
-    .describe("True when more meetings match than `meetings` holds. Narrow the question with from and to."),
+    .describe(
+      "True when more meetings match than `meetings` holds. Ask again with `from` set to the day after the last meeting returned, for the rest.",
+    ),
   next_meeting_id: z
     .string()
     .nullable()
     .describe(
-      'The first meeting among all that match that is upcoming and whose status is "Scheduled", or null when there is none. When `truncated` is true it may not be in `meetings`: ask again with from set to its date.',
+      'The first meeting among all that match that is upcoming and whose status is "Scheduled", or null when there is none. When `truncated` is true it may not be in `meetings`: ask again with `from` set to its date.',
     ),
   as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
   notice: z.string().describe("A reminder that this is not the official record."),
@@ -224,68 +230,97 @@ export function meetings(
       ...meeting,
       upcoming: isAtOrAfter(meeting.at, now),
     }));
+  // A page is whole days of meetings: as many as fit in MAX_MEETINGS_CHARACTERS, and always the first day.
+  const returned: MeetingsOutput["meetings"] = [];
+  let characters = 0;
+  for (const day of groupByDay(found)) {
+    const meetingsOfDay = day.map((meeting) => meetingOutputOf(reader, session, meeting));
+    const size = JSON.stringify(meetingsOfDay).length;
+    if (returned.length > 0 && characters + size > MAX_MEETINGS_CHARACTERS) break;
+    returned.push(...meetingsOfDay);
+    characters += size;
+  }
   return {
     kind: "found",
     meetings: {
       now: formatPacific(now),
-      meetings: found.slice(0, MAX_MEETINGS).map((meeting) => {
-        const contents = reader.meetingContents(meeting.id);
-        return {
-          id: meeting.id,
-          committee: meeting.committee,
-          at: meeting.at,
-          status: meeting.status,
-          upcoming: meeting.upcoming,
-          olis_page_url: olisMeetingPageUrlOf(session, meeting.committee.code, meeting.at),
-          agenda:
-            contents.agenda === null
-              ? null
-              : {
-                  id: contents.agenda.id,
-                  label: contents.agenda.label,
-                  source_url: contents.agenda.sourceUrl,
-                  fetched: contents.agenda.fetched,
-                },
-          agenda_items: contents.agendaItems.map((item) => ({
-            print_order: item.printOrder,
-            measure_id: item.measure === null ? null : measureIdOf(item.measure),
-            meeting_type: item.meetingType,
-            action: item.action,
-            comments: item.comments,
-            board_name: item.boardName,
-            executive_appointee: item.executiveAppointee,
-          })),
-          exhibits: contents.exhibits.map((exhibit) => ({
-            id: exhibit.id,
-            label: exhibit.label,
-            title: exhibit.title,
-            measure_id: exhibit.measureId,
-            source_url: exhibit.sourceUrl,
-            fetched: exhibit.fetched,
-          })),
-          recording_logs: contents.recordingLogs.map((log) => ({
-            id: log.id,
-            label: log.label,
-            source_url: log.sourceUrl,
-            fetched: log.fetched,
-          })),
-          proposed_amendments: contents.amendments.map((amendment) => ({
-            id: amendment.id,
-            number: amendment.number,
-            measure_id: amendment.measureId,
-            meaning: amendment.meaning,
-            document_id: amendment.documentId,
-            source_url: amendment.sourceUrl,
-            fetched: amendment.fetched,
-          })),
-        };
-      }),
+      meetings: returned,
       matching_meetings: found.length,
-      truncated: found.length > MAX_MEETINGS,
+      truncated: found.length > returned.length,
       next_meeting_id: found.find((meeting) => meeting.upcoming && meeting.status === "Scheduled")?.id ?? null,
       as_of: asOf,
       notice: NON_OFFICIAL_NOTICE,
     },
+  };
+}
+
+type FoundMeeting = MeetingHeader & { upcoming: boolean };
+
+/** The meetings split by the Pacific date they start on, in order: `at` begins with that date. */
+function groupByDay(found: readonly FoundMeeting[]): FoundMeeting[][] {
+  const days: FoundMeeting[][] = [];
+  for (const meeting of found) {
+    const lastDay = days.at(-1);
+    if (lastDay !== undefined && lastDay[0]?.at.slice(0, 10) === meeting.at.slice(0, 10)) lastDay.push(meeting);
+    else days.push([meeting]);
+  }
+  return days;
+}
+
+function meetingOutputOf(
+  reader: IndexReader,
+  session: SessionKey,
+  meeting: FoundMeeting,
+): MeetingsOutput["meetings"][number] {
+  const contents = reader.meetingContents(meeting.id);
+  return {
+    id: meeting.id,
+    committee: meeting.committee,
+    at: meeting.at,
+    status: meeting.status,
+    upcoming: meeting.upcoming,
+    olis_page_url: olisMeetingPageUrlOf(session, meeting.committee.code, meeting.at),
+    agenda:
+      contents.agenda === null
+        ? null
+        : {
+            id: contents.agenda.id,
+            label: contents.agenda.label,
+            source_url: contents.agenda.sourceUrl,
+            fetched: contents.agenda.fetched,
+          },
+    agenda_items: contents.agendaItems.map((item) => ({
+      print_order: item.printOrder,
+      measure_id: item.measure === null ? null : measureIdOf(item.measure),
+      meeting_type: item.meetingType,
+      action: item.action,
+      comments: item.comments,
+      board_name: item.boardName,
+      executive_appointee: item.executiveAppointee,
+    })),
+    exhibits: contents.exhibits.map((exhibit) => ({
+      id: exhibit.id,
+      label: exhibit.label,
+      title: exhibit.title,
+      measure_id: exhibit.measureId,
+      source_url: exhibit.sourceUrl,
+      fetched: exhibit.fetched,
+    })),
+    recording_logs: contents.recordingLogs.map((log) => ({
+      id: log.id,
+      label: log.label,
+      source_url: log.sourceUrl,
+      fetched: log.fetched,
+    })),
+    proposed_amendments: contents.amendments.map((amendment) => ({
+      id: amendment.id,
+      number: amendment.number,
+      measure_id: amendment.measureId,
+      meaning: amendment.meaning,
+      document_id: amendment.documentId,
+      source_url: amendment.sourceUrl,
+      fetched: amendment.fetched,
+    })),
   };
 }
 

@@ -14,7 +14,7 @@ import {
 import { getMeasure, getMeasureInput, getMeasureOutput, unknownMeasureMessage } from "./lib/get-measure.ts";
 import {
   backwardsRangeMessage,
-  MAX_MEETINGS,
+  MAX_MEETINGS_CHARACTERS,
   meetings,
   meetingsInput,
   meetingsOutput,
@@ -126,7 +126,7 @@ function buildServer(reader: IndexReader, config: ServerConfig, limiter: RateLim
     "meetings",
     {
       title: "Committee meetings",
-      description: `Lists committee meetings of the Session, earliest first, for a Measure (meetings with an agenda item about it), a committee, a date range, or all three together. Each meeting has when it starts, the status OLIS gives it (Scheduled, Cancelled), whether it is still ahead of the service's clock, its agenda items, the Proposed Amendments posted to it, its Exhibits (each with OLIS's title for it), its Recording Logs, its agenda document and a link to its OLIS page. next_meeting_id names the next scheduled meeting. Every document OLIS lists for a meeting is listed, and each says whether this service has fetched the file yet (fetched): only a fetched one can be read with get_document. At most ${MAX_MEETINGS} meetings come back; narrow with from and to when truncated is true. It is not the official record.`,
+      description: `Lists committee meetings of the Session, earliest first, for a Measure (meetings with an agenda item about it), a committee, a date range, or all three together. Each meeting has when it starts, the status OLIS gives it (Scheduled, Cancelled), whether it is still ahead of the service's clock, its agenda items, the Proposed Amendments posted to it, its Exhibits (each with OLIS's title for it), its Recording Logs, its agenda document and a link to its OLIS page. next_meeting_id names the next scheduled meeting. Every document OLIS lists for a meeting is listed, and each says whether this service has fetched the file yet (fetched): only a fetched one can be read with get_document. A call returns whole days of meetings, as many as fit in about ${MAX_MEETINGS_CHARACTERS} characters; when truncated is true, ask again with from set to the day after the last meeting returned. It is not the official record.`,
       inputSchema: meetingsInput,
       outputSchema: meetingsOutput,
       annotations: { readOnlyHint: true, openWorldHint: false },

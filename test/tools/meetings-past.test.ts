@@ -138,18 +138,67 @@ describe.for(eras)("meetings over the Session after the fact, for a %s client", 
     ]);
   });
 
-  // A call returns at most 25 meetings, because a meeting with its agenda items and documents runs to a few
-  // thousand characters and in the full 2025R1 feed cache (.cache/olis-2025R1/feed/) one meeting has 70 agenda items and another 99 documents. The
-  // whole year holds all of the fixture's 36 meetings: the first 25 come back, earliest first, ending with
-  // SHS's of 2025-04-29 (the 25th by start time and then committee code), and the result says that more match.
-  it("returns the first 25 meetings of a wider question and says how many match", async () => {
-    const outcome = await callTool(connected, "meetings", { from: "2025-01-01", to: "2025-12-31" });
+  // A call returns whole days of meetings up to about 20,000 characters of JSON, the size of one get_document
+  // part (ADR-0011, "Parts"), so a wide question is read a page at a time: ask again with `from` the day after
+  // the last meeting returned. The year holds all 36 meetings of the fixture (feed/CommitteeMeetings.json, by
+  // start time and then committee code), about 1,600 characters each, which is three pages and not one. Each
+  // meeting comes back once, in order, and `matching_meetings` counts the meetings left from `from`.
+  it("returns a wide question a page at a time, each meeting once, no page past 20,000 characters", async () => {
+    const everyMeeting = [
+      "meeting-2025r1-slb-2025-01-21-0800",
+      "meeting-2025r1-halnrw-2025-01-22-0800",
+      "meeting-2025r1-shs-2025-01-23-0800",
+      "meeting-2025r1-halnrw-2025-01-27-0800",
+      "meeting-2025r1-slb-2025-01-28-0800",
+      "meeting-2025r1-slb-2025-01-30-0800",
+      "meeting-2025r1-shs-2025-02-04-0800",
+      "meeting-2025r1-hhed-2025-02-06-0800",
+      "meeting-2025r1-halnrw-2025-02-12-0800",
+      "meeting-2025r1-hhed-2025-02-13-0800",
+      "meeting-2025r1-hhed-2025-02-20-0800",
+      "meeting-2025r1-slb-2025-03-11-0800",
+      "meeting-2025r1-slb-2025-03-13-0800",
+      "meeting-2025r1-sed-2025-03-17-0800",
+      "meeting-2025r1-sfr-2025-03-17-0800",
+      "meeting-2025r1-slb-2025-03-18-0800",
+      "meeting-2025r1-sed-2025-03-24-0800",
+      "meeting-2025r1-hechs-2025-04-03-0800",
+      "meeting-2025r1-sfr-2025-04-14-0800",
+      "meeting-2025r1-hechs-2025-04-15-0800",
+      "meeting-2025r1-hlws-2025-04-21-1500",
+      "meeting-2025r1-sed-2025-04-23-0800",
+      "meeting-2025r1-srules-2025-04-23-1300",
+      "meeting-2025r1-hlws-2025-04-28-1500",
+      "meeting-2025r1-shs-2025-04-29-0845",
+      "meeting-2025r1-sed-2025-04-30-0800",
+      "meeting-2025r1-hechs-2025-05-01-0800",
+      "meeting-2025r1-sed-2025-05-05-0800",
+      "meeting-2025r1-srules-2025-05-05-1300",
+      "meeting-2025r1-sed-2025-05-12-0800",
+      "meeting-2025r1-sed-2025-05-14-0800",
+      "meeting-2025r1-shs-2025-05-15-0800",
+      "meeting-2025r1-shs-2025-05-20-0800",
+      "meeting-2025r1-shs-2025-05-22-0800",
+      "meeting-2025r1-hrules-2025-06-05-0800",
+      "meeting-2025r1-hrules-2025-06-09-0830",
+    ];
+    const seen: string[] = [];
+    const pageSizes: number[] = [];
+    let from = "2025-01-01";
+    for (let page = 0; page < everyMeeting.length; page += 1) {
+      const outcome = await callTool(connected, "meetings", { from, to: "2025-12-31" });
 
-    expect(outcome.isError).toBe(false);
-    const meetings = outcome.structured?.["meetings"] as MeetingOutput[];
-    expect(meetings).toHaveLength(25);
-    expect(meetings[0]?.id).toBe("meeting-2025r1-slb-2025-01-21-0800");
-    expect(meetings[24]?.id).toBe("meeting-2025r1-shs-2025-04-29-0845");
-    expect(outcome.structured).toMatchObject({ matching_meetings: 36, truncated: true });
+      expect(outcome.isError).toBe(false);
+      const meetings = outcome.structured?.["meetings"] as MeetingOutput[];
+      expect(JSON.stringify(meetings).length).toBeLessThanOrEqual(20_000);
+      expect(outcome.structured?.["matching_meetings"]).toBe(everyMeeting.length - seen.length);
+      seen.push(...meetings.map((meeting) => meeting.id));
+      pageSizes.push(meetings.length);
+      if (outcome.structured?.["truncated"] !== true) break;
+      const lastDay = (meetings.at(-1)?.["at"] as string).slice(0, 10);
+      from = Temporal.PlainDate.from(lastDay).add({ days: 1 }).toString();
+    }
+    expect(seen).toEqual(everyMeeting);
+    expect(pageSizes.length).toBeGreaterThan(1);
   });
 });

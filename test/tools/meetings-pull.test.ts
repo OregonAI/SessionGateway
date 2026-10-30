@@ -25,6 +25,26 @@ afterEach(async () => {
 
 type MeetingOutput = { id: string; [field: string]: unknown };
 
+// A made-up agenda item row, shaped like the feed's (the property is spelled `CommitteCode`), for SLB's meeting of
+// 2025-01-30 unless `fields` says otherwise.
+function agendaItemRow(id: number, fields: Record<string, unknown>): Record<string, unknown> {
+  return {
+    CommitteeAgendaItemId: id,
+    SessionKey: "2025R1",
+    CommitteCode: "SLB",
+    MeetingDate: "2025-01-30T08:00:00",
+    MeasurePrefix: null,
+    MeasureNumber: null,
+    BoardName: null,
+    ExecutiveAppointee: null,
+    MeetingType: null,
+    Action: null,
+    PrintOrder: null,
+    Comments: null,
+    ...fields,
+  };
+}
+
 async function meetingsOnSb69(connected: ConnectedClient): Promise<MeetingOutput[]> {
   const outcome = await callTool(connected, "meetings", { measure: "SB 69" });
   expect(outcome.isError).toBe(false);
@@ -89,33 +109,18 @@ describe.for(eras)("meetings with a database of its own, for a %s client", (era)
     // Comments. These three rows, with the made-up ids 900201 to 900203, are shaped like those and added to
     // SLB's meeting of 2025-01-30. The PrintOrder is a string: "10" comes after "2", and an item with none is last.
     it("shows an appointment's board and appointee, and puts the items in print order (made-up rows)", async () => {
-      const itemRow = (id: number, fields: Record<string, unknown>): Record<string, unknown> => ({
-        CommitteeAgendaItemId: id,
-        SessionKey: "2025R1",
-        CommitteCode: "SLB",
-        MeetingDate: "2025-01-30T08:00:00",
-        MeasurePrefix: null,
-        MeasureNumber: null,
-        BoardName: null,
-        ExecutiveAppointee: null,
-        MeetingType: null,
-        Action: null,
-        PrintOrder: null,
-        Comments: null,
-        ...fields,
-      });
       const { connected } = await start(era, {
         clockAt: "2025-01-29T20:00:00Z",
         documents: false,
         olis: {
           strayRows: {
             CommitteeAgendaItems: [
-              itemRow(900203, { Comments: "<b>A notice with no print order.</b>" }),
-              itemRow(900202, {
+              agendaItemRow(900203, { Comments: "<b>A notice with no print order.</b>" }),
+              agendaItemRow(900202, {
                 PrintOrder: "10",
                 Comments: '<b>A notice.</b>\n<a href="https://example.org/">link</a>',
               }),
-              itemRow(900201, {
+              agendaItemRow(900201, {
                 PrintOrder: "2",
                 BoardName: "Commission on Example Affairs",
                 ExecutiveAppointee: "PatExample",
@@ -329,6 +334,109 @@ describe.for(eras)("meetings with a database of its own, for a %s client", (era)
           ["meeting-2025r1-slb-2025-01-28-0800", false],
           ["meeting-2025r1-slb-2025-01-30-0800", false],
         ],
+      });
+    });
+  });
+
+  describe("a result too long for one page", () => {
+    // MADE UP FOR THIS TEST. In the full 2025R1 feed an agenda item's Comments run to 18,499 characters
+    // (.cache/olis-2025R1/feed/CommitteeAgendaItems.json) and a committee's 25 meetings to 116,000 characters
+    // of agenda items; the committed fixture's items are short. These rows, with the made-up ids 900301
+    // and 900302, give one meeting a 26,600-character Comments, longer than a page (20,000 characters, the size
+    // of one get_document part, ADR-0011 "Parts"). A page is whole days of meetings, so that `from` the day
+    // after the last meeting returned is exactly where the next page starts; a meeting is never cut short.
+    const longComments = "Made-up witness, Made-up Organization\n".repeat(700);
+
+    it("starts the next page at the meeting that would not fit, and never cuts a meeting short", async () => {
+      const { connected } = await start(era, {
+        clockAt: "2025-07-15T17:00:00Z",
+        documents: false,
+        olis: {
+          strayRows: {
+            CommitteeAgendaItems: [
+              agendaItemRow(900301, { MeetingDate: "2025-01-28T08:00:00", Comments: longComments }),
+            ],
+          },
+        },
+      });
+      const page = async (from?: string): Promise<{ ids: string[]; comments: unknown; rest: unknown }> => {
+        const outcome = await callTool(connected, "meetings", {
+          committee: "SLB",
+          ...(from === undefined ? {} : { from }),
+        });
+        expect(outcome.isError).toBe(false);
+        const meetings = outcome.structured?.["meetings"] as (MeetingOutput & {
+          agenda_items: { comments: unknown }[];
+        })[];
+        return {
+          ids: meetings.map((meeting) => meeting.id),
+          comments: meetings
+            .flatMap((meeting) => meeting.agenda_items.map((item) => item.comments))
+            .find((text) => text === longComments),
+          rest: { matching: outcome.structured?.["matching_meetings"], truncated: outcome.structured?.["truncated"] },
+        };
+      };
+
+      // SLB's six meetings (feed/CommitteeMeetings.json). The first page stops before 01-28: with its long item
+      // it would run past 20,000 characters.
+      expect(await page()).toEqual({
+        ids: ["meeting-2025r1-slb-2025-01-21-0800"],
+        comments: undefined,
+        rest: { matching: 6, truncated: true },
+      });
+      // The meeting with the long item is a page of its own, with its Comments exactly as published.
+      expect(await page("2025-01-22")).toEqual({
+        ids: ["meeting-2025r1-slb-2025-01-28-0800"],
+        comments: longComments,
+        rest: { matching: 5, truncated: true },
+      });
+      expect(await page("2025-01-29")).toEqual({
+        ids: [
+          "meeting-2025r1-slb-2025-01-30-0800",
+          "meeting-2025r1-slb-2025-03-11-0800",
+          "meeting-2025r1-slb-2025-03-13-0800",
+          "meeting-2025r1-slb-2025-03-18-0800",
+        ],
+        comments: undefined,
+        rest: { matching: 4, truncated: false },
+      });
+    });
+
+    // SED's and SFR's meetings of 2025-03-17 are both at 08:00. SFR's has the long item, so the day does not fit
+    // after the two SLB meetings before it, and neither of its meetings is on the first page.
+    it("keeps the meetings of one day together", async () => {
+      const { connected } = await start(era, {
+        clockAt: "2025-07-15T17:00:00Z",
+        documents: false,
+        olis: {
+          strayRows: {
+            CommitteeAgendaItems: [
+              agendaItemRow(900302, {
+                CommitteCode: "SFR",
+                MeetingDate: "2025-03-17T08:00:00",
+                Comments: longComments,
+              }),
+            ],
+          },
+        },
+      });
+      const idsOf = async (from: string, to: string): Promise<{ ids: string[]; truncated: unknown }> => {
+        const outcome = await callTool(connected, "meetings", { from, to });
+        const meetings = outcome.structured?.["meetings"] as MeetingOutput[];
+        return { ids: meetings.map((meeting) => meeting.id), truncated: outcome.structured?.["truncated"] };
+      };
+
+      expect(await idsOf("2025-03-11", "2025-03-18")).toEqual({
+        ids: ["meeting-2025r1-slb-2025-03-11-0800", "meeting-2025r1-slb-2025-03-13-0800"],
+        truncated: true,
+      });
+      expect(await idsOf("2025-03-14", "2025-03-18")).toEqual({
+        ids: ["meeting-2025r1-sed-2025-03-17-0800", "meeting-2025r1-sfr-2025-03-17-0800"],
+        truncated: true,
+      });
+      expect(await idsOf("2025-03-18", "2025-03-18")).toEqual({
+        ids: ["meeting-2025r1-slb-2025-03-18-0800"],
+        truncated: false,
       });
     });
   });
