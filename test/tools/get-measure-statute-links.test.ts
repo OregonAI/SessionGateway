@@ -9,6 +9,7 @@
 // "is amended to read", and the references to ORS.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
+import { chapterTarget, expectedLinks, sectionTarget, triplesOf, type StatuteLinks } from "../support/statute-links.ts";
 import { startSystem, type System } from "../support/system.ts";
 
 let system: System;
@@ -26,20 +27,13 @@ afterAll(async () => {
   await system.stop();
 });
 
-type Link = {
-  kind: string;
-  target_id: string;
-  target_type: "section" | "chapter";
-  resolvable_on_oregonai: boolean;
-  measure_section: string | null;
-};
 type VersionEntry = {
   id: string;
   label: string;
   source_url: string;
   text_read: boolean;
   not_read_reason: string | null;
-  statute_links: Link[];
+  statute_links: StatuteLinks;
 };
 type Superseded = {
   id: string;
@@ -54,21 +48,6 @@ type StatuteLinksBySource = {
   superseded_amendments: Superseded[];
   note: string;
 };
-
-const section = (kind: string, id: string, measureSection: string): Link => ({
-  kind,
-  target_id: id,
-  target_type: "section",
-  resolvable_on_oregonai: true,
-  measure_section: measureSection,
-});
-const chapter = (kind: string, id: string, measureSection: string): Link => ({
-  kind,
-  target_id: id,
-  target_type: "chapter",
-  resolvable_on_oregonai: false,
-  measure_section: measureSection,
-});
 
 describe.for(eras)("get_measure's Statute Links for a %s client", (era) => {
   let connected: ConnectedClient;
@@ -112,20 +91,56 @@ describe.for(eras)("get_measure's Statute Links for a %s client", (era) => {
       const { versions } = await linksOf("SB 69");
 
       const [introduced, aEngrossed, enrolled] = versions;
-      expect(introduced?.statute_links).toEqual([section("cites", "ors-192.245", "1")]);
+      expect(introduced?.statute_links).toEqual(
+        expectedLinks({ cites: { sections: [sectionTarget("ors-192.245", "1")] } }),
+      );
       const changes = [
-        section("amends", "ors-657b.070", "3"),
-        section("amends", "ors-659a.159", "4"),
-        section("amends", "ors-659a.165", "5"),
-        section("amends", "ors-657b.400", "6"),
-        section("amends", "ors-657b.060", "7"),
-        section("amends", "ors-653.616", "8"),
-        section("amends", "ors-653.626", "9"),
-        section("amends", "ors-659a.156", "10"),
-        chapter("adds-to", "ors-chapter-657b", "1"),
+        sectionTarget("ors-657b.070", "3"),
+        sectionTarget("ors-659a.159", "4"),
+        sectionTarget("ors-659a.165", "5"),
+        sectionTarget("ors-657b.400", "6"),
+        sectionTarget("ors-657b.060", "7"),
+        sectionTarget("ors-653.616", "8"),
+        sectionTarget("ors-653.626", "9"),
+        sectionTarget("ors-659a.156", "10"),
       ];
-      expect(aEngrossed?.statute_links.slice(0, 9)).toEqual(changes);
-      expect(enrolled?.statute_links.slice(0, 9)).toEqual(changes);
+      for (const version of [aEngrossed, enrolled]) {
+        expect(version?.statute_links.amends).toEqual({ sections: changes, chapters: [] });
+        expect(version?.statute_links["adds-to"]).toEqual({
+          sections: [],
+          chapters: [chapterTarget("ors-chapter-657b", "1")],
+        });
+        expect(version?.statute_links.repeals).toEqual({ sections: [], chapters: [] });
+      }
+    });
+  });
+
+  // Finding F6: get_measure used to repeat every link of every Version as an object of five fields, 292 for each of SB 69's
+  // A-Engrossed and Enrolled Versions (8 amends, 1 adds-to and 283 cites, counted in the answer before the shape changed),
+  // and the answer was more than three times what it had been. The links are now listed once for each target under its
+  // kind, with the measure sections it is in, and none is left out. In pdftotext of measure-documents/SB69/A-Engrossed.pdf
+  // ORS 657B.060 is named in SECTION 2 ("requirements under ORS 657B.060") and in SECTION 3 ("(a) Violate ORS 657B.060."
+  // and "a violation of ORS 657B.060 or this ..."), and amended by SECTION 7; the 283 cites name 261 targets.
+  describe("a target linked in more than one measure section", () => {
+    it("is listed once under its kind, with each measure section, and no link of the A-Engrossed Version is left out", async () => {
+      const { versions } = await linksOf("SB 69");
+
+      const links = versions[1]?.statute_links ?? expectedLinks({});
+      const byKind = (kind: "amends" | "repeals" | "adds-to" | "cites"): number =>
+        triplesOf(links).filter(([linked]) => linked === kind).length;
+      expect([byKind("amends"), byKind("repeals"), byKind("adds-to"), byKind("cites")]).toEqual([8, 0, 1, 283]);
+      expect(triplesOf(links)).toHaveLength(292);
+      expect(links.cites.sections.length + links.cites.chapters.length).toBe(261);
+      expect(links.cites.sections.find((target) => target.target_id === "ors-657b.060")).toEqual(
+        sectionTarget("ors-657b.060", "2", "3"),
+      );
+      expect(links.amends.sections.find((target) => target.target_id === "ors-657b.060")).toEqual(
+        sectionTarget("ors-657b.060", "7"),
+      );
+      for (const group of [links.amends, links.repeals, links["adds-to"], links.cites]) {
+        const ids = [...group.sections, ...group.chapters].map((target) => target.target_id);
+        expect(new Set(ids).size).toBe(ids.length);
+      }
     });
   });
 
@@ -146,21 +161,28 @@ describe.for(eras)("get_measure's Statute Links for a %s client", (era) => {
         "Enrolled",
       ]);
       const [introduced, aEngrossed, bEngrossed, enrolled] = versions;
-      expect(introduced?.statute_links).toEqual([section("cites", "ors-192.245", "1")]);
-      expect(aEngrossed?.statute_links).toEqual([
-        section("amends", "ors-409.711", "1"),
-        section("cites", "ors-192.245", "1"),
-      ]);
-      const both = [
-        section("amends", "ors-409.711", "1"),
-        section("amends", "ors-418.808", "2"),
-        section("cites", "ors-192.245", "1"),
-        section("cites", "ors-418.806", "2"),
-        section("cites", "ors-418.808", "2"),
-        section("cites", "ors-418.811", "2"),
-        section("cites", "ors-418.813", "2"),
-        section("cites", "ors-418.816", "2"),
-      ];
+      expect(introduced?.statute_links).toEqual(
+        expectedLinks({ cites: { sections: [sectionTarget("ors-192.245", "1")] } }),
+      );
+      expect(aEngrossed?.statute_links).toEqual(
+        expectedLinks({
+          amends: { sections: [sectionTarget("ors-409.711", "1")] },
+          cites: { sections: [sectionTarget("ors-192.245", "1")] },
+        }),
+      );
+      const both = expectedLinks({
+        amends: { sections: [sectionTarget("ors-409.711", "1"), sectionTarget("ors-418.808", "2")] },
+        cites: {
+          sections: [
+            sectionTarget("ors-192.245", "1"),
+            sectionTarget("ors-418.806", "2"),
+            sectionTarget("ors-418.808", "2"),
+            sectionTarget("ors-418.811", "2"),
+            sectionTarget("ors-418.813", "2"),
+            sectionTarget("ors-418.816", "2"),
+          ],
+        },
+      });
       expect(bEngrossed?.statute_links).toEqual(both);
       expect(enrolled?.statute_links).toEqual(both);
     });

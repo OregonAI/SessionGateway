@@ -19,30 +19,47 @@ import {
   type StoredVersion,
 } from "#/packages/domain/statute-links.ts";
 
-export const statuteLinkOutput = z.object({
-  kind: z
-    .enum(statuteLinkKinds)
-    .describe(
-      "What the text does to the target: amends it, repeals it, adds a section to it (a chapter), or only cites it. A citation is not a change.",
-    ),
+/** The measure sections a target is linked in: null stands for text with no numbered sections. */
+const measureSectionsOutput = z
+  .array(z.string().nullable())
+  .describe(
+    'The numbered sections of the text the target is linked in, as the text prints them, in order: "8" for SECTION 8, "21a" for a section inserted later. A null entry means the text has no numbered sections.',
+  );
+
+const sectionTargetOutput = z.object({
   target_id: z
     .string()
     .describe(
-      "The ORS section or chapter, in OregonAI's id form: ors-468.130 for a section, ors-chapter-657b for a chapter.",
+      "The ORS section, in OregonAI's id form (ors-468.130). OregonAI has a page for every section listed here, so looking it up there works.",
     ),
-  target_type: z.enum(["section", "chapter"]).describe("Whether the target is an ORS section or a whole chapter."),
+  measure_sections: measureSectionsOutput,
+});
+
+const chapterTargetOutput = z.object({
+  target_id: z.string().describe("The ORS chapter, in OregonAI's id form (ors-chapter-657b)."),
   resolvable_on_oregonai: z
     .boolean()
-    .describe(
-      "True for a section, which OregonAI has a page for. False for a chapter, which OregonAI has no id for, so looking it up there fails.",
-    ),
-  measure_section: z
-    .string()
-    .nullable()
-    .describe(
-      'The numbered section of the text the link is read in, as the text prints it: "8" for SECTION 8, "21a" for a section inserted later. Null when the text has no numbered sections.',
-    ),
+    .describe("False for every chapter: OregonAI has no id for a chapter, so looking it up there fails."),
+  measure_sections: measureSectionsOutput,
 });
+
+/** The targets one kind of link points at: each once, with every measure section it is linked in. */
+const targetsOutput = z.object({
+  sections: z.array(sectionTargetOutput).describe("The ORS sections, in the order of their first measure section."),
+  chapters: z.array(chapterTargetOutput).describe("The ORS chapters, in the order of their first measure section."),
+});
+
+/**
+ * A document's Statute Links, by kind. Each target is listed once under its kind, with the measure sections it
+ * is linked in, so that a section a long range cites is not repeated for every link (finding F6). Nothing is left
+ * out: a target under two kinds (an amendment that amends a section and also cites it) is under both.
+ */
+export const statuteLinksOutput = z.object(
+  Object.fromEntries(statuteLinkKinds.map((kind) => [kind, targetsOutput])) as Record<
+    StatuteLinkKind,
+    typeof targetsOutput
+  >,
+);
 
 export const relatingClauseEditOutput = z.object({
   deleted: z.string().nullable().describe("The words the amendment quotes as deleted, or null when it quotes none."),
@@ -55,11 +72,8 @@ export const relatingClauseEditOutput = z.object({
     .describe("The ORS sections the inserted words name, with ranges expanded, each once, in order."),
 });
 
-export type StatuteLinkOutput = z.infer<typeof statuteLinkOutput>;
+export type StatuteLinksOutput = z.infer<typeof statuteLinksOutput>;
 export type RelatingClauseEditOutput = z.infer<typeof relatingClauseEditOutput>;
-
-/** The order links are listed in, from spec #1 (story 24): the changes first, then the mentions. */
-const kindOrder: Record<StatuteLinkKind, number> = { amends: 0, repeals: 1, "adds-to": 2, cites: 3 };
 
 /** "8" before "10" before "21a"; a link with no measure section last. */
 function compareMeasureSections(a: string | null, b: string | null): number {
@@ -68,21 +82,34 @@ function compareMeasureSections(a: string | null, b: string | null): number {
 }
 
 /**
- * The links in the order they are shown: by kind (amends, repeals, adds-to, cites), then by measure section,
- * and within those in the order the text names them.
+ * The links by kind (spec #1, story 24: the changes first, then the mentions, which the order of the keys
+ * says), each target once under its kind with the measure sections it is linked in. Targets are listed in the
+ * order of their first measure section, and within a section in the order the text names them.
  */
-export function statuteLinksShown(links: readonly StatuteLink[]): StatuteLinkOutput[] {
-  return links
-    .toSorted(
-      (a, b) => kindOrder[a.kind] - kindOrder[b.kind] || compareMeasureSections(a.measureSection, b.measureSection),
-    )
-    .map((link) => ({
-      kind: link.kind,
-      target_id: link.target.id,
-      target_type: link.target.type,
-      resolvable_on_oregonai: link.target.resolvableOnOregonAi,
-      measure_section: link.measureSection,
-    }));
+export function statuteLinksShown(links: readonly StatuteLink[]): StatuteLinksOutput {
+  const inSectionOrder = links.toSorted((a, b) => compareMeasureSections(a.measureSection, b.measureSection));
+  const shown = (kind: StatuteLinkKind): z.infer<typeof targetsOutput> => {
+    const targets = new Map<string, { link: StatuteLink; sections: (string | null)[] }>();
+    for (const link of inSectionOrder.filter((candidate) => candidate.kind === kind)) {
+      const target = targets.get(link.target.id) ?? { link, sections: [] };
+      target.sections.push(link.measureSection);
+      targets.set(link.target.id, target);
+    }
+    const listed = [...targets.values()];
+    return {
+      sections: listed
+        .filter(({ link }) => link.target.type === "section")
+        .map(({ link, sections }) => ({ target_id: link.target.id, measure_sections: sections })),
+      chapters: listed
+        .filter(({ link }) => link.target.type === "chapter")
+        .map(({ link, sections }) => ({
+          target_id: link.target.id,
+          resolvable_on_oregonai: link.target.resolvableOnOregonAi,
+          measure_sections: sections,
+        })),
+    };
+  };
+  return Object.fromEntries(statuteLinkKinds.map((kind) => [kind, shown(kind)])) as StatuteLinksOutput;
 }
 
 export function relatingClauseEditShown(edit: RelatingClauseEdit): RelatingClauseEditOutput {
@@ -206,11 +233,9 @@ export const fileOutput = z.object({
       "True when this index read the file's text for Statute Links. False when it did not (no text layer, or not read yet): statute_links is then empty, and that does not mean the amendment has none.",
     ),
   not_read_reason: z.string().nullable().describe("Why the file was not read. Null when text_read is true."),
-  statute_links: z
-    .array(statuteLinkOutput)
-    .describe(
-      "The Statute Links in the sections the amendment inserts, by kind (amends, repeals, adds-to, cites) and then by measure section. A link of the Version that the amendment deletes is not among them.",
-    ),
+  statute_links: statuteLinksOutput.describe(
+    "The Statute Links in the sections the amendment inserts, by kind (amends, repeals, adds-to, cites), each target once with the measure sections it is linked in. A link of the Version that the amendment deletes is not among them.",
+  ),
 });
 
 export function fileShown(file: AmendmentFile): z.infer<typeof fileOutput> {
@@ -232,9 +257,9 @@ const versionEntryOutput = z.object({
       "True when this index read the Version's text for Statute Links. False when it did not (no text layer, or not read yet): statute_links is then empty, and that does not mean the Version has none.",
     ),
   not_read_reason: z.string().nullable().describe("Why the text was not read. Null when text_read is true."),
-  statute_links: z
-    .array(statuteLinkOutput)
-    .describe("The Version's Statute Links, by kind (amends, repeals, adds-to, cites) and then by measure section."),
+  statute_links: statuteLinksOutput.describe(
+    "The Version's Statute Links, by kind (amends, repeals, adds-to, cites), each target once with the measure sections it is linked in.",
+  ),
 });
 
 /** A Version named in superseded_amendments: the one the amendment amends (which may not be held), or the one that replaces it. */

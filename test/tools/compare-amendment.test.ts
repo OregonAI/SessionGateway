@@ -12,6 +12,7 @@
 // (test/fixtures/oregonai-snapshot/snapshot.json).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
+import { chapterTarget, expectedLinks, sectionTarget, triplesOf, type StatuteLinks } from "../support/statute-links.ts";
 import { startSystem, type System } from "../support/system.ts";
 
 let system: System;
@@ -34,38 +35,11 @@ afterAll(async () => {
 const proposedAmendmentUrl = (id: number): string =>
   `https://olis.oregonlegislature.gov/liz/2025R1/Downloads/ProposedAmendment/${id}`;
 
-/** What an agent sees of one Statute Link. */
-type Link = {
-  kind: string;
-  target_id: string;
-  target_type: "section" | "chapter";
-  resolvable_on_oregonai: boolean;
-  measure_section: string | null;
-};
-
-/** An ORS section: OregonAI has its page. */
-const section = (kind: string, id: string, measureSection: string): Link => ({
-  kind,
-  target_id: id,
-  target_type: "section",
-  resolvable_on_oregonai: true,
-  measure_section: measureSection,
-});
-
-/** An ORS chapter: OregonAI has no id for it, and the link says so (spec #1, story 27). */
-const chapter = (kind: string, id: string, measureSection: string): Link => ({
-  kind,
-  target_id: id,
-  target_type: "chapter",
-  resolvable_on_oregonai: false,
-  measure_section: measureSection,
-});
-
 type File = {
   posting_ids: string[];
   text_read: boolean;
   not_read_reason: string | null;
-  statute_links: Link[];
+  statute_links: StatuteLinks;
   relating_clause_edits: {
     deleted: string | null;
     deleted_lines: string[];
@@ -195,31 +169,37 @@ describe.for(eras)("compare_amendment for a %s client", (era) => {
       const [file, ...others] = await filesOf("SB 69-2");
 
       expect(others).toEqual([]);
-      expect(file?.statute_links).toEqual(
+      expect(triplesOf(file?.statute_links ?? expectedLinks({}))).toEqual(
         expect.arrayContaining([
-          section("amends", "ors-653.616", "8"),
-          chapter("adds-to", "ors-chapter-657b", "1"),
-          section("amends", "ors-659a.159", "4"),
+          ["amends", "ors-653.616", "8"],
+          ["adds-to", "ors-chapter-657b", "1"],
+          ["amends", "ors-659a.159", "4"],
         ]),
       );
     });
 
-    it("lists the sections it amends and the chapter it adds to first, by kind and then by measure section", async () => {
+    // Each target is listed once under its kind with the measure sections it is linked in (finding F6), in the order
+    // of its first measure section. SB 69-2 amends one section in each of its sections 3 to 10 and adds to chapter 657B in 1.
+    it("lists, kind by kind, the sections it amends and the chapter it adds to, and nothing it repeals", async () => {
       const [file] = await filesOf("SB 69-2");
 
-      const links = file?.statute_links ?? [];
-      expect(links.slice(0, 9)).toEqual([
-        section("amends", "ors-657b.070", "3"),
-        section("amends", "ors-659a.159", "4"),
-        section("amends", "ors-659a.165", "5"),
-        section("amends", "ors-657b.400", "6"),
-        section("amends", "ors-657b.060", "7"),
-        section("amends", "ors-653.616", "8"),
-        section("amends", "ors-653.626", "9"),
-        section("amends", "ors-659a.156", "10"),
-        chapter("adds-to", "ors-chapter-657b", "1"),
-      ]);
-      expect(links.slice(9).every((link) => link.kind === "cites")).toBe(true);
+      const links = file?.statute_links ?? expectedLinks({});
+      expect(links.amends).toEqual({
+        sections: [
+          sectionTarget("ors-657b.070", "3"),
+          sectionTarget("ors-659a.159", "4"),
+          sectionTarget("ors-659a.165", "5"),
+          sectionTarget("ors-657b.400", "6"),
+          sectionTarget("ors-657b.060", "7"),
+          sectionTarget("ors-653.616", "8"),
+          sectionTarget("ors-653.626", "9"),
+          sectionTarget("ors-659a.156", "10"),
+        ],
+        chapters: [],
+      });
+      expect(links["adds-to"]).toEqual({ sections: [], chapters: [chapterTarget("ors-chapter-657b", "1")] });
+      expect(links.repeals).toEqual({ sections: [], chapters: [] });
+      expect(links.cites.sections.length).toBeGreaterThan(0);
     });
 
     it("shows a passing mention as a citation, not as an amendment", async () => {
@@ -227,20 +207,20 @@ describe.for(eras)("compare_amendment for a %s client", (era) => {
 
       // Section 2 says "the requirements under ORS 657B.060, and the provisions of ORS 657B.070"; section 3
       // opens "(a) Violate ORS 657B.060" and refers to ORS 659A.885 and 659A.820 and to appeals under ORS 657B.410 and 657B.420.
-      const links = file?.statute_links ?? [];
-      expect(links).toEqual(
+      const triples = triplesOf(file?.statute_links ?? expectedLinks({}));
+      expect(triples).toEqual(
         expect.arrayContaining([
-          section("cites", "ors-657b.060", "2"),
-          section("cites", "ors-657b.070", "2"),
-          section("cites", "ors-657b.060", "3"),
-          section("cites", "ors-659a.885", "3"),
-          section("cites", "ors-659a.820", "3"),
-          section("cites", "ors-657b.410", "3"),
-          section("cites", "ors-657b.420", "3"),
+          ["cites", "ors-657b.060", "2"],
+          ["cites", "ors-657b.070", "2"],
+          ["cites", "ors-657b.060", "3"],
+          ["cites", "ors-659a.885", "3"],
+          ["cites", "ors-659a.820", "3"],
+          ["cites", "ors-657b.410", "3"],
+          ["cites", "ors-657b.420", "3"],
         ]),
       );
       // ORS 657B.410 and 657B.420 are named, and nothing is amended there.
-      expect(links.filter((link) => link.kind === "amends").map((link) => link.target_id)).not.toContain(
+      expect(triples.filter(([kind]) => kind === "amends").map(([, targetId]) => targetId)).not.toContain(
         "ors-657b.410",
       );
     });
@@ -252,14 +232,14 @@ describe.for(eras)("compare_amendment for a %s client", (era) => {
     it("expands the ranges it cites into every section the snapshot holds between the ends", async () => {
       const [file] = await filesOf("SB 69-2");
 
+      // The targets are listed in the order of their first measure section, not of this one, so the lists are compared sorted.
       const citedIn = (measureSection: string, prefix: string): string[] =>
-        (file?.statute_links ?? [])
-          .filter(
-            (link) =>
-              link.kind === "cites" && link.measure_section === measureSection && link.target_id.startsWith(prefix),
-          )
-          .map((link) => link.target_id);
+        (file?.statute_links.cites.sections ?? [])
+          .filter((target) => target.measure_sections.includes(measureSection) && target.target_id.startsWith(prefix))
+          .map((target) => target.target_id)
+          .toSorted();
       expect(citedIn("4", "ors-659a.1")).toEqual([
+        "ors-659a.104",
         "ors-659a.150",
         "ors-659a.153",
         "ors-659a.156",
@@ -275,7 +255,6 @@ describe.for(eras)("compare_amendment for a %s client", (era) => {
         "ors-659a.180",
         "ors-659a.183",
         "ors-659a.186",
-        "ors-659a.104",
       ]);
       expect(citedIn("6", "ors-192.")).toEqual([
         "ors-192.311",
@@ -322,37 +301,44 @@ describe.for(eras)("compare_amendment for a %s client", (era) => {
     // Spec #1 story 27: a link to a whole chapter has no OregonAI id, and says so. SB 69-2 adds to ORS chapter
     // 657B (section 1) and, in section 6, names "ORS chapter 652, 653 or 659A", "ORS chapters 654, 656 and 731",
     // "ORS chapter 701", "ORS chapter 319" and "ORS chapter 657".
-    it("marks every chapter it names as not resolvable on OregonAI, and every section as resolvable", async () => {
+    it("marks every chapter it names as not resolvable on OregonAI, and lists every section apart from them", async () => {
       const [file] = await filesOf("SB 69-2");
 
-      const links = file?.statute_links ?? [];
-      expect(links.filter((link) => link.target_type === "chapter")).toEqual([
-        chapter("adds-to", "ors-chapter-657b", "1"),
-        chapter("cites", "ors-chapter-652", "6"),
-        chapter("cites", "ors-chapter-653", "6"),
-        chapter("cites", "ors-chapter-659a", "6"),
-        chapter("cites", "ors-chapter-654", "6"),
-        chapter("cites", "ors-chapter-656", "6"),
-        chapter("cites", "ors-chapter-731", "6"),
-        chapter("cites", "ors-chapter-701", "6"),
-        chapter("cites", "ors-chapter-319", "6"),
-        chapter("cites", "ors-chapter-657", "6"),
+      const links = file?.statute_links ?? expectedLinks({});
+      expect(links["adds-to"].chapters).toEqual([chapterTarget("ors-chapter-657b", "1")]);
+      expect(links.cites.chapters).toEqual([
+        chapterTarget("ors-chapter-652", "6"),
+        chapterTarget("ors-chapter-653", "6"),
+        chapterTarget("ors-chapter-659a", "6"),
+        chapterTarget("ors-chapter-654", "6"),
+        chapterTarget("ors-chapter-656", "6"),
+        chapterTarget("ors-chapter-731", "6"),
+        chapterTarget("ors-chapter-701", "6"),
+        chapterTarget("ors-chapter-319", "6"),
+        chapterTarget("ors-chapter-657", "6"),
       ]);
-      expect(links.filter((link) => link.target_type === "section").every((link) => link.resolvable_on_oregonai)).toBe(
-        true,
-      );
+      expect(links.amends.chapters).toEqual([]);
+      const groups = [links.amends, links.repeals, links["adds-to"], links.cites];
+      const chapters = groups.flatMap((group) => group.chapters);
+      expect(chapters).toHaveLength(10);
+      expect(chapters.some((chapter) => chapter.resolvable_on_oregonai)).toBe(false);
+      // No chapter is among the sections, which OregonAI has pages for.
+      expect(
+        groups.flatMap((group) => group.sections).some((target) => target.target_id.startsWith("ors-chapter-")),
+      ).toBe(false);
     });
 
-    // ADR-0011: SB 69's -1 has three postings (26284, 26285, 26287) and three files, which differ in the PDF's
-    // modification date and not in their words. Their Statute Links and relating clause edits are the same, so
-    // they are listed once, with all three posting ids: nothing is picked, and nothing is repeated three times.
+    // ADR-0011: SB 69's -1 has three postings (26284, 26285, 26287) and two files (26285 and 26287 are byte-identical,
+    // and 26284 differs from them in the PDF's modification date, not in its words). Their Statute Links and relating
+    // clause edits are the same, so they are listed once, with all three posting ids: nothing is picked, and nothing
+    // is repeated twice.
     it("lists postings whose files read the same as one entry with all their posting ids", async () => {
       const files = await filesOf("SB 69-1");
 
       expect(files.map((file) => file.posting_ids)).toEqual([
         ["posting-2025r1-26284", "posting-2025r1-26285", "posting-2025r1-26287"],
       ]);
-      expect(files[0]?.statute_links).toContainEqual(section("amends", "ors-657b.070", "3"));
+      expect(triplesOf(files[0]?.statute_links ?? expectedLinks({}))).toContainEqual(["amends", "ors-657b.070", "3"]);
     });
 
     // SECTION 8 of SB 69-1 (pdftotext of proposed-amendments/26284.pdf): "(4) For a purpose specified in ORS 659A.272,
@@ -361,8 +347,9 @@ describe.for(eras)("compare_amendment for a %s client", (era) => {
     it("reads a citation that runs over a page break, from the text the store holds", async () => {
       const files = await filesOf("SB 69-1");
 
-      expect(files[0]?.statute_links).toContainEqual(section("cites", "ors-659a.270", "8"));
-      expect(files[0]?.statute_links).toContainEqual(section("cites", "ors-659a.272", "8"));
+      const triples = triplesOf(files[0]?.statute_links ?? expectedLinks({}));
+      expect(triples).toContainEqual(["cites", "ors-659a.270", "8"]);
+      expect(triples).toContainEqual(["cites", "ors-659a.272", "8"]);
     });
 
     it("carries the amendment's edit to the relating clause", async () => {
@@ -413,7 +400,7 @@ describe.for(eras)("compare_amendment for a %s client", (era) => {
         known: true,
         text_read: true,
         not_read_reason: null,
-        statute_links: [section("cites", "ors-192.245", "1")],
+        statute_links: expectedLinks({ cites: { sections: [sectionTarget("ors-192.245", "1")] } }),
       });
     });
   });
@@ -448,14 +435,20 @@ describe.for(eras)("compare_amendment for a %s client", (era) => {
 
       expect(others).toEqual([]);
       expect(file?.posting_ids).toEqual(["posting-2025r1-28997", "posting-2025r1-29108", "posting-2025r1-29109"]);
-      expect(file?.statute_links).toEqual([
-        section("amends", "ors-418.808", "2"),
-        section("cites", "ors-418.806", "2"),
-        section("cites", "ors-418.808", "2"),
-        section("cites", "ors-418.811", "2"),
-        section("cites", "ors-418.813", "2"),
-        section("cites", "ors-418.816", "2"),
-      ]);
+      expect(file?.statute_links).toEqual(
+        expectedLinks({
+          amends: { sections: [sectionTarget("ors-418.808", "2")] },
+          cites: {
+            sections: [
+              sectionTarget("ors-418.806", "2"),
+              sectionTarget("ors-418.808", "2"),
+              sectionTarget("ors-418.811", "2"),
+              sectionTarget("ors-418.813", "2"),
+              sectionTarget("ors-418.816", "2"),
+            ],
+          },
+        }),
+      );
     });
 
     it("carries the edit that adds ORS 418.808 to the relating clause", async () => {
@@ -469,7 +462,10 @@ describe.for(eras)("compare_amendment for a %s client", (era) => {
     it("shows the A-Engrossed Version amending ORS 409.711 and citing ORS 192.245", async () => {
       expect((await compare())["amended_version"]).toMatchObject({
         text_read: true,
-        statute_links: [section("amends", "ors-409.711", "1"), section("cites", "ors-192.245", "1")],
+        statute_links: expectedLinks({
+          amends: { sections: [sectionTarget("ors-409.711", "1")] },
+          cites: { sections: [sectionTarget("ors-192.245", "1")] },
+        }),
       });
     });
   });

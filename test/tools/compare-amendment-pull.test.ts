@@ -8,6 +8,7 @@
 // compare-amendment.test.ts. Every case runs once with a 2026-07-28 client and once with a legacy client.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
+import { noLinks, sectionTarget, triplesOf, type StatuteLinks } from "../support/statute-links.ts";
 import { startSystem, type System } from "../support/system.ts";
 
 const clockAt = "2026-08-01T17:00:00Z";
@@ -41,13 +42,13 @@ type Amended = {
   label: string | null;
   reason: string;
   text_read: boolean | null;
-  statute_links: unknown[];
+  statute_links: StatuteLinks;
 };
 type File = {
   posting_ids: string[];
   text_read: boolean;
   not_read_reason: string | null;
-  statute_links: { kind: string; target_id: string; measure_section: string | null }[];
+  statute_links: StatuteLinks;
 };
 type Comparison = {
   amendment: { postings: { id: string; fetched: boolean }[] };
@@ -150,13 +151,11 @@ describe("amendments the fixture has no row for", () => {
           "The amendment's header names the Introduced Version but its number -A9 names the A-Engrossed Version, so which Version it amends is not known.",
         text_read: null,
         not_read_reason: null,
-        statute_links: [],
+        statute_links: noLinks,
       });
       // The file is SB 69-2's: its links are read all the same, and the deletions note is still there.
       expect(comparison.files.map((file) => file.posting_ids)).toEqual([["posting-2025r1-990001"]]);
-      expect(comparison.files[0]?.statute_links[0]).toEqual(
-        expect.objectContaining({ kind: "amends", target_id: "ors-657b.070", measure_section: "3" }),
-      );
+      expect(comparison.files[0]?.statute_links.amends.sections[0]).toEqual(sectionTarget("ors-657b.070", "3"));
       expect(comparison.deletions_note).toContain("was not evaluated");
     });
 
@@ -167,7 +166,7 @@ describe("amendments the fixture has no row for", () => {
       expect(comparison.amended_version.reason).toBe(
         'The header of the amendment\'s file (the line after "PROPOSED AMENDMENTS TO") could not be read, so which Version it amends is not known.',
       );
-      expect(comparison.amended_version.statute_links).toEqual([]);
+      expect(comparison.amended_version.statute_links).toEqual(noLinks);
     });
 
     it("reads the letter in a number as the engrossed Version it amends: -B1 names B-Engrossed", async () => {
@@ -198,14 +197,11 @@ describe("amendments the fixture has no row for", () => {
         ["posting-2025r1-26286", "posting-2025r1-26288"],
         ["posting-2025r1-990003"],
       ]);
-      expect(comparison.files[0]?.statute_links).toContainEqual(
-        expect.objectContaining({ kind: "amends", target_id: "ors-653.616", measure_section: "8" }),
-      );
+      expect(triplesOf(comparison.files[0]?.statute_links ?? noLinks)).toContainEqual(["amends", "ors-653.616", "8"]);
       // SB 921-2 (pdftotext of proposed-amendments/26923.pdf): SECTION 1 refers to "ORS 285A.666 to ..."; nothing is amended.
-      expect(comparison.files[1]?.statute_links).toContainEqual(
-        expect.objectContaining({ kind: "cites", target_id: "ors-285a.666", measure_section: "1" }),
-      );
-      expect(comparison.files[1]?.statute_links.map((link) => link.kind)).not.toContain("amends");
+      const other = comparison.files[1]?.statute_links ?? noLinks;
+      expect(triplesOf(other)).toContainEqual(["cites", "ors-285a.666", "1"]);
+      expect(other.amends).toEqual({ sections: [], chapters: [] });
     });
 
     // Replaces the case that asserted `known: true` here: it compared SB 921-2's file against SB 69's Introduced
@@ -222,7 +218,7 @@ describe("amendments the fixture has no row for", () => {
           "The amendment is to SB 69, but a file posted for it has a header that names SB 921, so which Version it amends is not known.",
         text_read: null,
         not_read_reason: null,
-        statute_links: [],
+        statute_links: noLinks,
       });
     });
 
@@ -235,7 +231,7 @@ describe("amendments the fixture has no row for", () => {
           text_read: false,
           not_read_reason:
             "This index did not read the file for Statute Links: it has no text layer (a scan or a photograph), or the index has not read it yet. The empty list does not mean the document has none.",
-          statute_links: [],
+          statute_links: noLinks,
           relating_clause_edits: [],
         },
       ]);
@@ -427,9 +423,10 @@ describe("files that never came", () => {
         reason:
           "The amendment's header and number both name the A-Engrossed Version of HB 3795, which this index does not hold.",
       });
-      expect(comparison.files[0]?.statute_links[0]).toEqual(
-        expect.objectContaining({ kind: "amends", target_id: "ors-418.808", measure_section: "2" }),
-      );
+      expect(comparison.files[0]?.statute_links.amends).toEqual({
+        sections: [sectionTarget("ors-418.808", "2")],
+        chapters: [],
+      });
     });
 
     // The amendment's header and number name A-Engrossed, which was not fetched, but B-Engrossed and Enrolled are

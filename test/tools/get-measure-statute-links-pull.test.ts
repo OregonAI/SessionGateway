@@ -13,6 +13,14 @@
 // Every case runs once with a 2026-07-28 client and once with a legacy client.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
+import {
+  chapterTarget,
+  expectedLinks,
+  noLinks,
+  sectionTarget,
+  triplesOf,
+  type StatuteLinks,
+} from "../support/statute-links.ts";
 import { startSystem, type System } from "../support/system.ts";
 
 // A case that builds its own system and serves the documents pulls up to the fixture's 278 files, about four
@@ -20,20 +28,13 @@ import { startSystem, type System } from "../support/system.ts";
 vi.setConfig({ testTimeout: 60_000 });
 const root = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads";
 
-type Link = {
-  kind: string;
-  target_id: string;
-  target_type: "section" | "chapter";
-  resolvable_on_oregonai: boolean;
-  measure_section: string | null;
-};
 type Posting = { id: string; meeting_id: string; meeting_date: string; committee_code: string; meaning: string | null };
 type Amendment = {
   id: string;
   number: string;
   amended_version: { known: boolean; id: string | null; label: string | null; reason: string };
   postings: Posting[];
-  files: { posting_ids: string[]; text_read: boolean; statute_links: Link[] }[];
+  files: { posting_ids: string[]; text_read: boolean; statute_links: StatuteLinks }[];
 };
 type Block = {
   versions: {
@@ -41,39 +42,24 @@ type Block = {
     label: string;
     text_read: boolean;
     not_read_reason: string | null;
-    statute_links: Link[];
+    statute_links: StatuteLinks;
   }[];
   proposed_amendments: Amendment[];
   superseded_amendments: { id: string; number: string; later_version: { id: string; label: string } }[];
 };
 
-const section = (kind: string, id: string, measureSection: string): Link => ({
-  kind,
-  target_id: id,
-  target_type: "section",
-  resolvable_on_oregonai: true,
-  measure_section: measureSection,
-});
-const chapter = (kind: string, id: string, measureSection: string): Link => ({
-  kind,
-  target_id: id,
-  target_type: "chapter",
-  resolvable_on_oregonai: false,
-  measure_section: measureSection,
-});
-
 /** SB 69's A-Engrossed and Enrolled Versions and -2 all amend the same eight sections and add to chapter 657B (pdftotext). */
-const sb69Changes = [
-  section("amends", "ors-657b.070", "3"),
-  section("amends", "ors-659a.159", "4"),
-  section("amends", "ors-659a.165", "5"),
-  section("amends", "ors-657b.400", "6"),
-  section("amends", "ors-657b.060", "7"),
-  section("amends", "ors-653.616", "8"),
-  section("amends", "ors-653.626", "9"),
-  section("amends", "ors-659a.156", "10"),
-  chapter("adds-to", "ors-chapter-657b", "1"),
+const sb69Amends = [
+  sectionTarget("ors-657b.070", "3"),
+  sectionTarget("ors-659a.159", "4"),
+  sectionTarget("ors-659a.165", "5"),
+  sectionTarget("ors-657b.400", "6"),
+  sectionTarget("ors-657b.060", "7"),
+  sectionTarget("ors-653.616", "8"),
+  sectionTarget("ors-653.626", "9"),
+  sectionTarget("ors-659a.156", "10"),
 ];
+const sb69AddsTo = [chapterTarget("ors-chapter-657b", "1")];
 
 async function blockOf(connected: ConnectedClient, measure: string): Promise<Block> {
   const outcome = await callTool(connected, "get_measure", { measure });
@@ -147,22 +133,28 @@ describe("the feed as it stood on 2025-02-01", () => {
       }
       // -2 (pdftotext of proposed-amendments/26286.pdf) has the structure of the Enrolled Version.
       expect(second?.files[0]?.posting_ids).toEqual(["posting-2025r1-26286", "posting-2025r1-26288"]);
-      expect(second?.files[0]?.statute_links.slice(0, 9)).toEqual(sb69Changes);
+      expect(second?.files[0]?.statute_links.amends).toEqual({ sections: sb69Amends, chapters: [] });
+      expect(second?.files[0]?.statute_links["adds-to"]).toEqual({ sections: [], chapters: sb69AddsTo });
       // -1 (proposed-amendments/26284.pdf) amends 657B.070 in SECTION 3 and adds SECTION 2 of the Act to chapter 657B.
       expect(first?.files[0]?.posting_ids).toEqual([
         "posting-2025r1-26284",
         "posting-2025r1-26285",
         "posting-2025r1-26287",
       ]);
-      expect(first?.files[0]?.statute_links).toEqual(
-        expect.arrayContaining([section("amends", "ors-657b.070", "3"), chapter("adds-to", "ors-chapter-657b", "1")]),
+      expect(triplesOf(first?.files[0]?.statute_links ?? noLinks)).toEqual(
+        expect.arrayContaining([
+          ["amends", "ors-657b.070", "3"],
+          ["adds-to", "ors-chapter-657b", "1"],
+        ]),
       );
     });
 
     it("also shows the Introduced Version's own link, beside the amendments", async () => {
       const block = await blockOf(connected, "SB 69");
 
-      expect(block.versions[0]?.statute_links).toEqual([section("cites", "ors-192.245", "1")]);
+      expect(block.versions[0]?.statute_links).toEqual(
+        expectedLinks({ cites: { sections: [sectionTarget("ors-192.245", "1")] } }),
+      );
     });
   });
 });
@@ -200,7 +192,8 @@ describe.for(eras)("when the next Version comes in with a later pull, for a %s c
 
     const after = await blockOf(connected, "SB 69");
     expect(after.versions.map((version) => version.label)).toEqual(["Introduced", "A-Engrossed", "Enrolled"]);
-    expect(after.versions[1]?.statute_links.slice(0, 9)).toEqual(sb69Changes);
+    expect(after.versions[1]?.statute_links.amends).toEqual({ sections: sb69Amends, chapters: [] });
+    expect(after.versions[1]?.statute_links["adds-to"]).toEqual({ sections: [], chapters: sb69AddsTo });
     expect(after.proposed_amendments).toEqual([]);
     expect(after.superseded_amendments.map((amendment) => [amendment.number, amendment.later_version.label])).toEqual([
       ["-1", "A-Engrossed"],
@@ -295,7 +288,7 @@ describe("rows the fixture lacks", () => {
         ["Minority Report A-Engrossed", true],
       ]);
       const scan = block.versions[2];
-      expect(scan?.statute_links).toEqual([]);
+      expect(scan?.statute_links).toEqual(noLinks);
       expect(scan?.not_read_reason).toContain("no text layer");
     });
 
