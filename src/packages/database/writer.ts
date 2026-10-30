@@ -16,6 +16,7 @@ import {
 import type { HistoryAction, Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
 import type { Legislator, LegislatorId, SponsorLevel } from "#/packages/domain/legislators.ts";
 import type { AgencyId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
+import type { Citation } from "#/packages/domain/citations.ts";
 import type { Passage, SearchEntry } from "#/packages/domain/search.ts";
 import type { RelatingClauseEdit, StatuteLink, StatuteLinkSource } from "#/packages/domain/statute-links.ts";
 import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
@@ -137,6 +138,12 @@ function kindColumnsOf(sponsor: SponsorRecord): {
 export type SearchRecord = {
   entry: SearchEntry;
   passages: readonly Passage[];
+  /**
+   * The citations the document's whole text makes (a Measure, a Proposed Amendment, an ORS section), each once, with
+   * where its first mention starts in the text. Read over the whole text and not passage by passage, so a citation
+   * that a passage boundary splits is still the document's.
+   */
+  citations: readonly Citation[];
   /**
    * The vectors of passages this document brings that the index does not hold yet: the passage's hash and its
    * int8 vector, under the id of the model that made it. A vector that is already stored is not given again,
@@ -561,6 +568,9 @@ export function openIndexWriter(path: string): IndexWriter {
         "INSERT INTO passage (document_id, ordinal, start_offset, end_offset, text_hash) VALUES (?, ?, ?, ?, ?)",
       );
       const insertPassageText = database.prepare("INSERT INTO passage_fts (rowid, text) VALUES (?, ?)");
+      const insertCitation = database.prepare(
+        "INSERT INTO document_citation (citation_id, document_id, first_offset) VALUES (?, ?, ?)",
+      );
       const insertVector = database.prepare(
         "INSERT OR IGNORE INTO passage_vector (text_hash, model_id, vector) VALUES (?, ?, ?)",
       );
@@ -601,6 +611,7 @@ export function openIndexWriter(path: string): IndexWriter {
           const inserted = insertPassage.run(document.id, ordinal, passage.start, passage.end, passage.hash);
           insertPassageText.run(inserted.lastInsertRowid, passage.text);
         });
+        for (const citation of search.citations) insertCitation.run(citation.id, document.id, citation.index);
         for (const row of search.vectors.rows) insertVector.run(row.hash, search.vectors.modelId, row.vector);
         database.exec("COMMIT");
       } catch (error) {

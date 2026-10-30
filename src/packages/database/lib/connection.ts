@@ -241,6 +241,15 @@ const schema = `
   ) STRICT;
   CREATE INDEX IF NOT EXISTS passage_document ON passage (document_id, ordinal);
   CREATE INDEX IF NOT EXISTS passage_hash ON passage (text_hash);
+  -- The citations a document's text makes: each distinct Measure, Proposed Amendment or ORS section it names, by
+  -- id, with where the first mention starts in document.text (UTF-16 code units). Read once at ingest over the
+  -- whole text, so a citation that a passage boundary splits still belongs to the document.
+  CREATE TABLE IF NOT EXISTS document_citation (
+    citation_id TEXT NOT NULL,
+    document_id TEXT NOT NULL,
+    first_offset INTEGER NOT NULL,
+    PRIMARY KEY (citation_id, document_id)
+  ) STRICT, WITHOUT ROWID;
   -- The vector side: the int8 vector of a passage's text (384 bytes), under the sha256 of the text and the id of
   -- the model that made it, so that identical text is embedded once and a change of model reuses nothing.
   CREATE TABLE IF NOT EXISTS passage_vector (

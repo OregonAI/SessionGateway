@@ -4,7 +4,7 @@
 // (395,000 characters), which the real model would take half a minute to embed. None of these cases is about
 // how well a meaning ranks, so the embedder is the fake (test/support/fake-embedder.ts); the cases that are
 // use the real model on an early clock (search.test.ts, search-keyword-only.test.ts).
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, test } from "vitest";
 import { callTool, connectClient, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";
 
@@ -112,6 +112,56 @@ describe("an exact citation", () => {
         .toSorted(),
     ).toEqual([...holding, "testimony-2025r1-209256", "testimony-2025r1-209569"].toSorted());
   });
+});
+
+// A passage ends at a line end, and a PDF breaks its lines wherever the page is full, so a citation can be cut in two:
+// "ORS" ends one passage and the number begins the next. A document holds the citation all the same, so it is an
+// exact match over the document's whole text and not passage by passage (ADR-0025). The fake embedder cuts the
+// passages where the real model's tokenizer does (test/support/fake-embedder.ts), so these cuts are production's;
+// which documents a citation names does not depend on meaning, which is why the fake is enough here.
+//
+// `pdftotext -raw` with white space folded finds "ORS 192.245" in eight documents of the fixture, HB 3795's
+// Introduced, A-Engrossed, B-Engrossed and Enrolled Versions and its Printed Amendment "House Amendments to
+// Introduced", SB 69's and SB 921's Introduced Versions and Proposed Amendment 27966 (HB 3795-1); and
+// "ORS 279C.800" in five nodes, SB 69's A-Engrossed and Enrolled Versions, its Printed Amendment "Senate Amendments
+// to Introduced" and the postings of its Proposed Amendments -1 (26284, 26285, 26287) and -2 (26286, 26288). In HB 3795's
+// Enrolled Version the text reads "in the manner provided in ORS" and then, on the next line, "192.245", and in SB 69's
+// Enrolled Version "279C.800" starts a line.
+describe("an exact citation of an ORS section that a passage boundary cuts in two", () => {
+  test.for([
+    {
+      section: "ORS 192.245",
+      holding: [
+        "amendment-2025r1-hb3795-1",
+        "printed-amendment-2025r1-hb3795-house-amendments-to-introduced",
+        "version-2025r1-hb3795-a-engrossed",
+        "version-2025r1-hb3795-b-engrossed",
+        "version-2025r1-hb3795-enrolled",
+        "version-2025r1-hb3795-introduced",
+        "version-2025r1-sb69-introduced",
+        "version-2025r1-sb921-introduced",
+      ],
+    },
+    {
+      section: "ORS 279C.800",
+      holding: [
+        "amendment-2025r1-sb69-1",
+        "amendment-2025r1-sb69-2",
+        "printed-amendment-2025r1-sb69-senate-amendments-to-introduced",
+        "version-2025r1-sb69-a-engrossed",
+        "version-2025r1-sb69-enrolled",
+      ],
+    },
+  ])(
+    "$section puts every document that holds it first, the Enrolled Version included",
+    async ({ section, holding }) => {
+      const outcome = await callTool(connected, "search", { query: section });
+
+      const first = hitsOf(outcome).slice(0, holding.length);
+      expect(first.map((hit) => hit.id).toSorted()).toEqual(holding);
+      expect(first.filter((hit) => !hit.found_by.includes("citation")).map((hit) => hit.id)).toEqual([]);
+    },
+  );
 });
 
 describe("the size and the contents of an answer", () => {

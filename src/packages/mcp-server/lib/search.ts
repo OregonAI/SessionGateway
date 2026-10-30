@@ -12,7 +12,7 @@ import { documentKinds, type AmendmentId, type DocumentId } from "#/packages/dom
 import { measureIdOf, parseMeasureReference, type SessionKey } from "#/packages/domain/index.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
 import { reciprocalRankFusion } from "#/packages/search/ranking.ts";
-import { matchExpressionOf, orsCitationPattern, phraseOf, snippetOf, termsOf } from "#/packages/search/text.ts";
+import { matchExpressionOf, phraseOf, snippetOf, termsOf } from "#/packages/search/text.ts";
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 import type { VectorCache } from "./vector-cache.ts";
@@ -322,8 +322,8 @@ export async function search(
 
 /**
  * The documents a citation names exactly (docs/adr/0025, "Citations"): a Measure's Versions, from Introduced to
- * Enrolled; a Proposed Amendment's latest posting; and for an ORS section the documents whose text holds
- * the citation, best first. Only those that pass the filter.
+ * Enrolled; a Proposed Amendment's latest posting; and for an ORS section the documents whose whole text holds
+ * the citation, oldest first. Only those that pass the filter.
  */
 function documentsCitedBy(index: SearchIndexReader, citation: Citation, filter: SearchFilter): CitedDocument[] {
   switch (citation.kind) {
@@ -333,21 +333,9 @@ function documentsCitedBy(index: SearchIndexReader, citation: Citation, filter: 
       const posting = index.postingOf(citation.id, filter);
       return posting === undefined ? [] : [posting];
     }
-    case "ors": {
-      const exact = orsCitationPattern(citation.id);
-      const documents = new Map<HitId, CitedDocument>();
-      // The keyword side finds the passages that hold the words in order; the pattern keeps those that
-      // hold the citation and not a longer number.
-      for (const passage of index.keyword(
-        matchExpressionOf([], [phraseOf(citation)]) ?? "",
-        filter,
-        CANDIDATE_PASSAGES,
-      )) {
-        if (documents.has(passage.nodeId) || !exact.test(index.details(passage).passageText)) continue;
-        documents.set(passage.nodeId, passage);
-      }
-      return [...documents.values()];
-    }
+    case "ors":
+      // The index read the citations of each document's whole text when the worker stored it.
+      return index.citing(citation.id, filter, MAX_LIMIT);
     default:
       return citation satisfies never;
   }
