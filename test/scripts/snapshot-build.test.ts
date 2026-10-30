@@ -4,15 +4,22 @@
 // This is not one of the two seams spec #1 agreed (test/CLAUDE.md): no MCP tool shows the registry,
 // the section list or the chapter table yet, so the script's command line is the only place the
 // ticket's first box, "a build step produces the snapshot ... with a version", can be seen. It is
-// recorded as a decision in the ticket's report. The expected values are literals written from the
-// made-up rows, never computed by the script's own rules.
+// provisional: making it a standing seam is a question for the owner in the ticket's report, and
+// test/CLAUDE.md does not list it. The expected values are literals written from the made-up rows,
+// never computed by the script's own rules or by running the git command the script runs.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createMadeUpErf, madeUpGraph, type MadeUpErf, type MadeUpGraph } from "../support/made-up-erf.ts";
+import {
+  createMadeUpErf,
+  createMadeUpErfWithoutItsRepository,
+  madeUpGraph,
+  type MadeUpErf,
+  type MadeUpGraph,
+} from "../support/made-up-erf.ts";
 
 const cleanups: (() => void)[] = [];
 
@@ -62,9 +69,11 @@ describe("the snapshot build script", () => {
     expect(readJson(out)).toEqual({
       formatVersion: 1,
       // The commit date was made at 2026-07-02T10:04:05 UTC, which is 03:04:05 Pacific daylight time.
+      // The commit is the SHA git gives the made-up repository, whose names, dates and files are pinned
+      // (made-up-erf.ts): it changes only when those do.
       version: {
         source: "executive-regulatory-frameworks",
-        commit: erf.commit,
+        commit: "20c90dd4f413f435d1e95c0c2fc88e9dead0e7f8",
         commitDate: "2026-07-02T03:04:05-07:00",
       },
       agencies: [
@@ -169,6 +178,42 @@ describe("the snapshot build script", () => {
   });
 });
 
+// The version is the commit of the checkout, so the path has to BE the checkout (F2). `git -C <path>` finds
+// the nearest repository above a folder, and a folder that holds ERF's files but not its repository would be
+// given that other repository's commit and date, with nothing to say so.
+describe("the snapshot build script given a path that is not the root of a git checkout", () => {
+  it("stops and says so when the path is a folder inside another repository, and writes nothing", () => {
+    const elsewhere = createMadeUpErfWithoutItsRepository();
+    cleanups.push(() => {
+      elsewhere.remove();
+    });
+    const out = outputFile();
+
+    const finished = build(["--erf", elsewhere.path, "--out", out]);
+
+    expect(finished.status, finished.stdout).toBe(1);
+    expect(finished.stderr).toContain("not the root of a git checkout");
+    expect(finished.stderr).toContain(elsewhere.path);
+    expect(existsSync(out)).toBe(false);
+  });
+
+  it("builds from a path that is a symbolic link to the root of the checkout", () => {
+    const erf = madeUpErf();
+    const folder = mkdtempSync(join(tmpdir(), "snapshot-build-link-"));
+    cleanups.push(() => {
+      rmSync(folder, { recursive: true, force: true });
+    });
+    const link = join(folder, "erf");
+    symlinkSync(erf.path, link);
+    const out = outputFile();
+
+    const finished = build(["--erf", link, "--out", out]);
+
+    expect(finished.status, finished.stderr).toBe(0);
+    expect(readJson(out)).toMatchObject({ version: { commit: "20c90dd4f413f435d1e95c0c2fc88e9dead0e7f8" } });
+  });
+});
+
 // --trim-to reads the committed 2025R1 fixture (test/fixtures/olis-2025R1): its documents and Measures say
 // which ORS chapters and Agencies it touches. The ERF checkout is still made up. The fixture's own words are
 // the oracle for what it touches (measures.txt and the spec): SB 69 adds to "ORS chapter 657B", amends ORS
@@ -255,7 +300,10 @@ describe("the snapshot build script with --trim-to the 2025R1 fixture", () => {
     ]);
     expect(trimmed["chapterAgencies"]).toEqual({ "ors-chapter-409": ["made-up-human-services"] });
     // The version is the checkout's, untouched by the trim.
-    expect(trimmed["version"]).toMatchObject({ commit: erf.commit, commitDate: "2026-07-02T03:04:05-07:00" });
+    expect(trimmed["version"]).toMatchObject({
+      commit: "166ba8585cda9ae94437cdb4532e9ba815ffaba0",
+      commitDate: "2026-07-02T03:04:05-07:00",
+    });
 
     const recorded = readJson(record) as Record<string, unknown>;
     expect(recorded["derivedFrom"]).toBe(fixture);
@@ -275,6 +323,7 @@ describe("the snapshot build script with --trim-to the 2025R1 fixture", () => {
     expect(recorded["agenciesNamedInText"]).toEqual(["made-up-employment"]);
     expect(recorded["kept"]).toEqual({ agencies: 2, orsSections: 5, chaptersWithAgencies: 1 });
     expect(recorded["of"]).toEqual({ agencies: 3, orsSections: 6, chaptersWithAgencies: 2 });
-    expect(recorded["snapshotSha256"]).toBe(createHash("sha256").update(readFileSync(out)).digest("hex"));
+    // The SHA-256 of the output file, as `sha256sum` prints it for it.
+    expect(recorded["snapshotSha256"]).toBe("6a682be3815e8bebdbc8af5d8e2e590aa44e29b8314f198ce1ad3dd38c396415");
   }, 30_000);
 });

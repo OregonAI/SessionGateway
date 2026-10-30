@@ -7,9 +7,9 @@
 //   statutes/ors-*.md            one file per ORS section
 // It is a real git repository with one commit, because the build script names the commit.
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 export type GraphNode = { id: string; title: string; doc_type: string; status: string; path: string };
 export type GraphEdge = { from: string; to: string; type: string };
@@ -119,8 +119,6 @@ export type MadeUpErfOptions = {
 
 export type MadeUpErf = {
   path: string;
-  /** The commit's SHA, as `git rev-parse HEAD` prints it. */
-  commit: string;
   /** Changes a tracked file after the commit, so the checkout is no longer what the commit holds. */
   editAfterCommit(relativePath: string, text: string): void;
   /**
@@ -133,6 +131,26 @@ export type MadeUpErf = {
 
 /** The commit date, pinned as UTC so a test can see the build script write it in Pacific time. */
 export const madeUpCommitDateUtc = "2026-07-02T10:04:05+0000";
+
+/** The environment of a git command in a made-up repository: no global or system configuration, pinned names and dates. */
+function gitEnvironment(home: string): Record<string, string> {
+  return {
+    PATH: process.env["PATH"] ?? "",
+    HOME: home,
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_AUTHOR_NAME: "Made Up",
+    GIT_AUTHOR_EMAIL: "made-up@example.invalid",
+    GIT_COMMITTER_NAME: "Made Up",
+    GIT_COMMITTER_EMAIL: "made-up@example.invalid",
+    GIT_AUTHOR_DATE: madeUpCommitDateUtc,
+    GIT_COMMITTER_DATE: madeUpCommitDateUtc,
+  };
+}
+
+function gitIn(root: string, ...args: string[]): string {
+  return execFileSync("git", ["-C", root, ...args], { env: gitEnvironment(root), encoding: "utf8" });
+}
 
 export function createMadeUpErf(options: MadeUpErfOptions = {}): MadeUpErf {
   const root = mkdtempSync(join(tmpdir(), "made-up-erf-"));
@@ -150,26 +168,12 @@ export function createMadeUpErf(options: MadeUpErfOptions = {}): MadeUpErf {
   write("statutes/_index.md", "# Statutes (made up)\n");
   write("statutes/CHANGELOG.md", "Made up.\n");
 
-  // No global or system git configuration: a made-up repository must not depend on the machine's.
-  const env = {
-    PATH: process.env["PATH"] ?? "",
-    HOME: root,
-    GIT_CONFIG_GLOBAL: "/dev/null",
-    GIT_CONFIG_NOSYSTEM: "1",
-    GIT_AUTHOR_NAME: "Made Up",
-    GIT_AUTHOR_EMAIL: "made-up@example.invalid",
-    GIT_COMMITTER_NAME: "Made Up",
-    GIT_COMMITTER_EMAIL: "made-up@example.invalid",
-    GIT_AUTHOR_DATE: madeUpCommitDateUtc,
-    GIT_COMMITTER_DATE: madeUpCommitDateUtc,
-  };
-  const git = (...args: string[]): string => execFileSync("git", ["-C", root, ...args], { env, encoding: "utf8" });
-  git("init", "--quiet");
-  git("add", ".");
-  git("commit", "--quiet", "--no-gpg-sign", "-m", "Made-up ERF");
+  // The commit's SHA is pinned by the names, dates and files above: tests write it as a literal.
+  gitIn(root, "init", "--quiet");
+  gitIn(root, "add", ".");
+  gitIn(root, "commit", "--quiet", "--no-gpg-sign", "-m", "Made-up ERF");
   return {
     path: root,
-    commit: git("rev-parse", "HEAD").trim(),
     editAfterCommit: write,
     touchAfterCommit: (relativePath) => {
       const later = new Date(Date.now() + 60_000);
@@ -177,6 +181,37 @@ export function createMadeUpErf(options: MadeUpErfOptions = {}): MadeUpErf {
     },
     remove: () => {
       rmSync(root, { recursive: true, force: true });
+    },
+  };
+}
+
+export type MadeUpErfWithoutItsRepository = {
+  /** The made-up ERF's files in a folder that git ignores, inside ANOTHER repository. The folder has no `.git`. */
+  path: string;
+  remove(): void;
+};
+
+/**
+ * The files of a made-up ERF with no repository of their own, in the ignored `.cache/` folder of another
+ * repository with a commit of its own: the layout of an ERF export unpacked into a project that keeps
+ * its caches under `.cache/`. `git -C <path>` finds the OTHER repository, and `git status` does not list
+ * the ignored files, so only a check of where the repository's root is can tell the files are not its.
+ */
+export function createMadeUpErfWithoutItsRepository(): MadeUpErfWithoutItsRepository {
+  const erf = createMadeUpErf();
+  const outer = mkdtempSync(join(tmpdir(), "made-up-outer-repository-"));
+  writeFileSync(join(outer, ".gitignore"), ".cache/\n");
+  writeFileSync(join(outer, "README.md"), "Made up: another project.\n");
+  gitIn(outer, "init", "--quiet");
+  gitIn(outer, "add", ".");
+  gitIn(outer, "commit", "--quiet", "--no-gpg-sign", "-m", "Made-up outer repository");
+  const path = join(outer, ".cache", "erf");
+  cpSync(erf.path, path, { recursive: true, filter: (source) => basename(source) !== ".git" });
+  erf.remove();
+  return {
+    path,
+    remove: () => {
+      rmSync(outer, { recursive: true, force: true });
     },
   };
 }

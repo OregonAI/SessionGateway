@@ -64,7 +64,7 @@ JSON file named by the checkout's commit:
 node scripts/snapshot/build.ts --erf <checkout of executive-regulatory-frameworks> --out data/snapshot.json
 ```
 
-The checkout is only read, and the build stops if a file it reads has uncommitted changes. Needs no network.
+The checkout is only read, and the build stops if the path is not the root of a git checkout or a file it reads has uncommitted changes. Needs no network.
 `session_overview` reports the commit and its date.
 
 A full pull against the live feed is allowed only between 5 pm and 6 am Pacific (ADR-0005). Nothing

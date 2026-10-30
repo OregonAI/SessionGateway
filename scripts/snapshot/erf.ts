@@ -11,7 +11,7 @@
 // The checkout is read-only here: git runs with GIT_OPTIONAL_LOCKS=0 so that `git status` does not
 // refresh the index, and nothing is written.
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
@@ -74,6 +74,15 @@ function sample(items: Iterable<string>, count = 5): string {
  * the checkout is not what a commit can describe or its files disagree with each other.
  */
 export function readErfSnapshot(checkout: string): SnapshotFile {
+  // `git -C <path>` finds the nearest repository above the path. A folder that holds ERF's files but is
+  // not itself the checkout (an export unpacked into another project's ignored cache folder, say) would
+  // be given that other repository's commit, and `git status` does not list ignored files to say so.
+  const root = git(checkout, ["rev-parse", "--show-toplevel"]).trim();
+  if (realpathSync(root) !== realpathSync(checkout)) {
+    throw new Error(
+      `"${checkout}" is not the root of a git checkout: git finds the repository at "${root}", and that repository's commit would not describe these files. Give the folder that holds ERF's .git.`,
+    );
+  }
   // The commit names the data only if the data is the commit's.
   const changed = git(checkout, [
     "status",
