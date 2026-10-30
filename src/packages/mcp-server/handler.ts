@@ -50,7 +50,7 @@ function buildServer(reader: IndexReader, config: ServerConfig, limiter: RateLim
     {
       title: "Get a Measure",
       description:
-        "Looks up one Measure of the Session by its id or citation and returns its catchline, a link to its OLIS page, when this index was last refreshed and a notice that it is not the official record.",
+        "Looks up one Measure of the Session by its id or citation and returns its catchline, its digest as OLIS publishes it, its analysis documents (Fiscal Impact Statements, revenue impact statements, staff measure summaries and budget reports) by the Version each is of, with the ones the Legislature's label does not place on a Version listed apart and saying why, a link to its OLIS page, when this index was last refreshed and a notice that it is not the official record.",
       inputSchema: getMeasureInput,
       outputSchema: getMeasureOutput,
       annotations: { readOnlyHint: true, openWorldHint: false },

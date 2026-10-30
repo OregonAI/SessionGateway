@@ -38,7 +38,7 @@ Expected values are literals from an independent source:
 
 The layout is the deep-module one in `src/packages/README.md`:
 - seam 2 in the parser package's own `tests/` folder, next to the parser it tests;
-- seam 1 in `test/tools/`, one file per kind of database use: `get-measure.test.ts` shares one read-only database, `get-measure-feed.test.ts` builds its own for each case, `get-document.test.ts` shares one database of the whole fixture and `get-document-pull.test.ts` builds its own for each case (fetch counts, failures, rows the fixture lacks), and the real-port and entry-script tests are files of their own;
+- seam 1 in `test/tools/`, one file per kind of database use: `get-measure.test.ts` shares one read-only database, `get-measure-feed.test.ts` builds its own for each case, `get-document.test.ts` shares one database of the whole fixture and `get-document-pull.test.ts` builds its own for each case (fetch counts, failures, rows the fixture lacks), `get-measure-analysis.test.ts` shares one database of the whole fixture for the digest and the analysis documents and `get-measure-analysis-labels.test.ts` builds its own for the feed labels the fixture lacks (made-up rows), and the real-port and entry-script tests are files of their own;
 - the shared harness (fake OLIS, clock, MCP client) in `test/support/`;
 - fixtures in `test/fixtures/`.
 
