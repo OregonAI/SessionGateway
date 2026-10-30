@@ -93,15 +93,29 @@ describe("the deployment's Session", () => {
   };
   const sb69CatchlineStart = "Specifies that the Bureau of Labor and Industries";
 
-  it("ignores rows of another Session that the feed serves", async () => {
+  it("does not let a row of another Session replace the Measure with the same prefix and number", async () => {
     const olis = { strayRows: { Measures: [otherSessionSb69] } };
 
     const own = await getMeasure({ clockAt: "2025-12-15T17:00:00Z", olis }, "SB 69");
-    const other = await getMeasure({ clockAt: "2025-12-15T17:00:00Z", olis }, "measure-2025s1-sb69");
 
     expect(own.structured).toMatchObject({ id: "measure-2025r1-sb69" });
     expect(String(own.structured?.["catchline"])).toContain(sb69CatchlineStart);
-    expect(other.isError).toBe(true);
+  });
+
+  it("takes no row of another Session into the index: a server for that Session finds nothing", async () => {
+    // The worker pulls 2025R1 and the feed serves a 2025S1 row anyway. A server then configured for
+    // 2025S1 over the same database must not find that row: the pull never took it.
+    const outcome = await getMeasure(
+      {
+        clockAt: "2025-12-15T17:00:00Z",
+        olis: { strayRows: { Measures: [otherSessionSb69] } },
+        serverEnv: { SESSION_KEY: "2025S1" },
+      },
+      "SB 69",
+    );
+
+    expect(outcome.isError).toBe(true);
+    expect(outcome.text).toContain('No Measure "SB 69" in the 2025S1 Session');
   });
 
   it("serves the Session the configuration names", async () => {
