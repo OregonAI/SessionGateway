@@ -7,7 +7,8 @@ build a graph of it, and search it with embeddings. Paired with the OregonAI
 Corpus MCP, it should show quickly how a proposed bill or amendment would affect
 a state agency.
 
-It should be hostable on the Google Cloud Run free tier or on Azure.
+It runs on the OregonAI deploy box beside the platform's corpora
+(`docs/adr/0007-run-on-the-deploy-box.md`).
 
 ## Status
 

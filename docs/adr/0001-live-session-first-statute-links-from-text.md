@@ -1,0 +1,7 @@
+# Live session first: Statute Links come from parsing text as it arrives
+
+The main use is during a Live Session, so Statute Links are parsed from each Version and Proposed Amendment when it is posted, using Legislative Counsel's fixed wording ("ORS 657B.070 is amended to read", "is repealed", "is added to and made a part of ORS chapter 657B", plain mentions as "cites"). Legislative Counsel's official Statutes Affected Table (`artables{session}.pdf`) is added as a second source once it is published, but it appears only after the Session ends (2025R1's is dated 8/19/2025), too late for the questions that matter while a measure is moving.
+
+Each Statute Link records its kind, the Version, Proposed Amendment or table row it came from, and the measure section ("§8"). When the table arrives it confirms or contradicts parsed links; disagreements are kept side by side, never overwritten. This deliberately goes further than the OregonAI legislature corpus, which stores untyped "references" (HB 3795 lists four sections but amends two).
+
+A Proposed Amendment is parsed only for what it says itself: Statute Links in the sections it inserts, and edits to the relating clause ("delete 'amending ORS 468.130' and insert 'amending ORS 468.130 and 468.140'"). What it deletes from the base Version is not computed, because that means applying page-and-line edits to the printed Version, and answers say so. When the next Version is printed, its parse replaces these links for that Measure.

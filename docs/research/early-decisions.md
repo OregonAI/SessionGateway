@@ -29,26 +29,21 @@ Public.Resource.Org*, 590 U.S. 255 (2020)).
   impact statements, staff measure summaries, agendas, minutes, votes,
   history): all three parts apply. Mirror the full text exactly as published,
   with `source_url` and a non-official notice on every result.
-- **Public testimony:** parts 1 and 2 apply, but not part 3 (a private
-  citizen wrote it and owns its copyright). Mirror the full text, but remove
-  contact details (email addresses, phone numbers, street addresses) before
-  storing. Keep organization names searchable. Don't offer search by a private
-  person's name: embedding search makes it much easier to find an individual
-  than OLIS does, which is why the OregonAI platform excluded testimony.
+- **Public testimony:** mirror the full text exactly as published, like every
+  other document. It is public material the Legislature already publishes.
+  Decided 2026-10-29; see `docs/adr/0002-mirror-everything-as-published.md`.
 - **Video transcripts:** derived text of public proceedings. Label each one
   machine-generated and not official, link it to its timestamp in the
   recording, and cite the recording. This comes in a later slice.
 - **Terms of use** (`olis-odata.md` §Access): the agreement has no license
   grant and no prohibition on mirroring, and its disclaimer already says the
   data is "not an official record". To respect clause 3 ("forego regular
-  scraping"), download only documents the feed links to, once each, in the
-  5 pm–6 am Pacific window, and cache them. Open action: email
-  Leg.Helpdesk@oregonlegislature.gov to accept the agreement, describe the
-  cache-and-cite mirror, and ask whether a bulk channel for documents exists.
+  scraping"), download only documents the feed links to, once each, and cache
+  them. Full re-pulls stay in the 5 pm–6 am Pacific window; new documents are
+  fetched as they appear (`docs/adr/0005-read-olis-within-its-terms.md`). No
+  email to the Legislature: dropped 2026-10-29.
 
 ## Research still needed
 
-- **Hearing video:** where it's hosted, whether captions or transcripts already
-  exist, hours of video per session, how to download it within the terms, and
-  what transcription would cost (local Whisper vs. a hosted API) within the
-  free-tier budget.
+- **Hearing video:** done in `hearing-video.md` (2026-10-28). The video slice
+  was deferred on 2026-10-29; how videos are found is decided with it.
