@@ -1,7 +1,7 @@
 // The documents the feed links (spec #1, "OLIS client"): which rows link one, what each document is
 // called in the graph, and how it is fetched. The rows are the feed's own shapes and stay in here.
 import { z } from "zod";
-import { measureIdOf, type SessionKey } from "#/packages/domain/index.ts";
+import { measureIdOf, type MeasureKey, type SessionKey } from "#/packages/domain/index.ts";
 import {
   amendmentIdOf,
   analysisIdOf,
@@ -17,6 +17,7 @@ import {
   type DocumentRelation,
 } from "#/packages/domain/documents.ts";
 import { readEntitySet } from "./feed.ts";
+import type { Timestamp } from "#/packages/time/pacific.ts";
 import { feedTimestamp } from "./timestamps.ts";
 import type { OlisClientOptions } from "./options.ts";
 
@@ -42,6 +43,58 @@ export function downloadUrlOf(sourceUrl: string, documentOrigin: string): URL {
   return new URL(url.pathname + url.search, documentOrigin);
 }
 
+/**
+ * The rows of one entity set that belong to the Session. The `$filter` asks the feed for them; the
+ * check that follows keeps a row of another Session out even from a feed that ignored the filter.
+ */
+async function readSessionRows<Row extends { SessionKey: string }>(
+  options: OlisClientOptions,
+  entitySet: string,
+  session: SessionKey,
+  rowSchema: z.ZodType<Row>,
+  signal: AbortSignal,
+): Promise<Row[]> {
+  const rows = await readEntitySet(options, entitySet, `SessionKey eq '${session}'`, rowSchema, signal);
+  return rows.filter((row) => row.SessionKey === session);
+}
+
+function measureRelation(key: MeasureKey, provenance: string): DocumentRelation {
+  return { relation: "measure", to: measureIdOf(key), meaning: null, provenance };
+}
+
+function committeeRelation(session: SessionKey, committeeCode: string, provenance: string): DocumentRelation {
+  return { relation: "committee", to: committeeIdOf(session, committeeCode), meaning: null, provenance };
+}
+
+/**
+ * What a document posted for a meeting points at: the meeting, its committee and, when the row names
+ * one, the Measure. The same for an Exhibit and for Testimony.
+ */
+function meetingBoundRelations(
+  session: SessionKey,
+  row: {
+    CommitteeCode: string;
+    MeetingDate: Timestamp;
+    MeasurePrefix: string | null;
+    MeasureNumber: number | null;
+  },
+  provenance: string,
+): DocumentRelation[] {
+  const relations: DocumentRelation[] = [
+    {
+      relation: "meeting",
+      to: meetingIdOf(session, row.CommitteeCode, row.MeetingDate),
+      meaning: null,
+      provenance,
+    },
+    committeeRelation(session, row.CommitteeCode, provenance),
+  ];
+  if (row.MeasurePrefix !== null && row.MeasureNumber !== null) {
+    relations.push(measureRelation({ session, prefix: row.MeasurePrefix, number: row.MeasureNumber }, provenance));
+  }
+  return relations;
+}
+
 const measureDocumentRow = z.looseObject({
   SessionKey: z.string(),
   MeasurePrefix: z.string(),
@@ -55,36 +108,21 @@ async function readVersions(
   session: SessionKey,
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
-  const rows = await readEntitySet(
-    options,
-    "MeasureDocuments",
-    `SessionKey eq '${session}'`,
-    measureDocumentRow,
-    signal,
-  );
-  return rows
-    .filter((row) => row.SessionKey === session)
-    .map((row) => {
-      const key = { session, prefix: row.MeasurePrefix, number: row.MeasureNumber };
-      const id = versionIdOf(key, row.VersionDescription);
-      const relations: DocumentRelation[] = [
-        {
-          relation: "measure",
-          to: measureIdOf(key),
-          meaning: null,
-          provenance: `MeasureDocuments ${row.MeasurePrefix}${row.MeasureNumber} ${row.VersionDescription}`,
-        },
-      ];
-      return {
-        id,
-        nodeId: id,
-        kind: isPrintedAmendment(row.VersionDescription) ? "printed_amendment" : "version",
-        label: row.VersionDescription,
-        sourceUrl: sourceUrlOf(row.DocumentUrl),
-        postedAt: null,
-        relations,
-      };
-    });
+  const rows = await readSessionRows(options, "MeasureDocuments", session, measureDocumentRow, signal);
+  return rows.map((row) => {
+    const key = { session, prefix: row.MeasurePrefix, number: row.MeasureNumber };
+    const id = versionIdOf(key, row.VersionDescription);
+    const provenance = `MeasureDocuments ${row.MeasurePrefix}${row.MeasureNumber} ${row.VersionDescription}`;
+    return {
+      id,
+      nodeId: id,
+      kind: isPrintedAmendment(row.VersionDescription) ? "printed_amendment" : "version",
+      label: row.VersionDescription,
+      sourceUrl: sourceUrlOf(row.DocumentUrl),
+      postedAt: null,
+      relations: [measureRelation(key, provenance)],
+    };
+  });
 }
 
 // The feed spells the committee property `CommittteCode` (three t's) and serializes the decimal key
@@ -104,32 +142,21 @@ async function readAnalyses(
   session: SessionKey,
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
-  const rows = await readEntitySet(
-    options,
-    "MeasureAnalysisDocuments",
-    `SessionKey eq '${session}'`,
-    analysisRow,
-    signal,
-  );
-  return rows
-    .filter((row) => row.SessionKey === session)
-    .map((row) => {
-      const key = { session, prefix: row.MeasurePrefix, number: row.MeasureNumber };
-      const id = analysisIdOf(session, row.MeasureAnalysisId);
-      const provenance = `MeasureAnalysisDocuments ${row.MeasureAnalysisId}`;
-      return {
-        id,
-        nodeId: id,
-        kind: "analysis",
-        label: row.DocumentType,
-        sourceUrl: sourceUrlOf(row.DocumentUrl),
-        postedAt: null,
-        relations: [
-          { relation: "measure", to: measureIdOf(key), meaning: null, provenance },
-          { relation: "committee", to: committeeIdOf(session, row.CommittteCode), meaning: null, provenance },
-        ],
-      };
-    });
+  const rows = await readSessionRows(options, "MeasureAnalysisDocuments", session, analysisRow, signal);
+  return rows.map((row) => {
+    const key = { session, prefix: row.MeasurePrefix, number: row.MeasureNumber };
+    const id = analysisIdOf(session, row.MeasureAnalysisId);
+    const provenance = `MeasureAnalysisDocuments ${row.MeasureAnalysisId}`;
+    return {
+      id,
+      nodeId: id,
+      kind: "analysis",
+      label: row.DocumentType,
+      sourceUrl: sourceUrlOf(row.DocumentUrl),
+      postedAt: null,
+      relations: [measureRelation(key, provenance), committeeRelation(session, row.CommittteCode, provenance)],
+    };
+  });
 }
 
 // An Exhibit row has no navigation to a Measure: `MeasurePrefix` and `MeasureNumber` are null when the
@@ -150,44 +177,22 @@ async function readExhibits(
   session: SessionKey,
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
-  const rows = await readEntitySet(
-    options,
-    "CommitteeMeetingDocuments",
-    `SessionKey eq '${session}'`,
-    exhibitRow,
-    signal,
-  );
-  return rows
-    .filter((row) => row.SessionKey === session)
-    .map((row) => {
-      const isRecordingLog = row.DocumentType === "Recording Log";
-      const id = isRecordingLog
-        ? recordingLogIdOf(session, row.CommitteeMeetingDocumentId)
-        : exhibitIdOf(session, row.CommitteeMeetingDocumentId);
-      const provenance = `CommitteeMeetingDocuments ${row.CommitteeMeetingDocumentId}`;
-      const relations: DocumentRelation[] = [
-        {
-          relation: "meeting",
-          to: meetingIdOf(session, row.CommitteeCode, row.MeetingDate),
-          meaning: null,
-          provenance,
-        },
-        { relation: "committee", to: committeeIdOf(session, row.CommitteeCode), meaning: null, provenance },
-      ];
-      if (row.MeasurePrefix !== null && row.MeasureNumber !== null) {
-        const key = { session, prefix: row.MeasurePrefix, number: row.MeasureNumber };
-        relations.push({ relation: "measure", to: measureIdOf(key), meaning: null, provenance });
-      }
-      return {
-        id,
-        nodeId: id,
-        kind: isRecordingLog ? "recording_log" : "exhibit",
-        label: row.DocumentType,
-        sourceUrl: sourceUrlOf(row.DocumentUrl),
-        postedAt: null,
-        relations,
-      };
-    });
+  const rows = await readSessionRows(options, "CommitteeMeetingDocuments", session, exhibitRow, signal);
+  return rows.map((row) => {
+    const isRecordingLog = row.DocumentType === "Recording Log";
+    const id = isRecordingLog
+      ? recordingLogIdOf(session, row.CommitteeMeetingDocumentId)
+      : exhibitIdOf(session, row.CommitteeMeetingDocumentId);
+    return {
+      id,
+      nodeId: id,
+      kind: isRecordingLog ? "recording_log" : "exhibit",
+      label: row.DocumentType,
+      sourceUrl: sourceUrlOf(row.DocumentUrl),
+      postedAt: null,
+      relations: meetingBoundRelations(session, row, `CommitteeMeetingDocuments ${row.CommitteeMeetingDocumentId}`),
+    };
+  });
 }
 
 // A Testimony row's `DocumentUrl` is only the Session's root on OLIS, for every row (olis-odata.md
@@ -208,42 +213,20 @@ async function readTestimony(
   session: SessionKey,
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
-  const rows = await readEntitySet(
-    options,
-    "CommitteePublicTestimonies",
-    `SessionKey eq '${session}'`,
-    testimonyRow,
-    signal,
-  );
-  return rows
-    .filter((row) => row.SessionKey === session)
-    .map((row) => {
-      const id = testimonyIdOf(session, row.CommTestId);
-      const provenance = `CommitteePublicTestimonies ${row.CommTestId}`;
-      const root = sourceUrlOf(row.DocumentUrl).replace(/\/$/, "");
-      const relations: DocumentRelation[] = [
-        {
-          relation: "meeting",
-          to: meetingIdOf(session, row.CommitteeCode, row.MeetingDate),
-          meaning: null,
-          provenance,
-        },
-        { relation: "committee", to: committeeIdOf(session, row.CommitteeCode), meaning: null, provenance },
-      ];
-      if (row.MeasurePrefix !== null && row.MeasureNumber !== null) {
-        const key = { session, prefix: row.MeasurePrefix, number: row.MeasureNumber };
-        relations.push({ relation: "measure", to: measureIdOf(key), meaning: null, provenance });
-      }
-      return {
-        id,
-        nodeId: id,
-        kind: "testimony",
-        label: row.DocumentDescription,
-        sourceUrl: `${root}/Downloads/PublicTestimonyDocument/${row.CommTestId}`,
-        postedAt: null,
-        relations,
-      };
-    });
+  const rows = await readSessionRows(options, "CommitteePublicTestimonies", session, testimonyRow, signal);
+  return rows.map((row) => {
+    const id = testimonyIdOf(session, row.CommTestId);
+    const root = sourceUrlOf(row.DocumentUrl).replace(/\/$/, "");
+    return {
+      id,
+      nodeId: id,
+      kind: "testimony",
+      label: row.DocumentDescription,
+      sourceUrl: `${root}/Downloads/PublicTestimonyDocument/${row.CommTestId}`,
+      postedAt: null,
+      relations: meetingBoundRelations(session, row, `CommitteePublicTestimonies ${row.CommTestId}`),
+    };
+  });
 }
 
 // A Proposed Amendment is one node per Measure and amendment number; each row is one posting of it to a
@@ -266,40 +249,32 @@ async function readPostings(
   session: SessionKey,
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
-  const rows = await readEntitySet(
-    options,
-    "CommitteeProposedAmendments",
-    `SessionKey eq '${session}'`,
-    postingRow,
-    signal,
-  );
-  return rows
-    .filter((row) => row.SessionKey === session)
-    .map((row) => {
-      const key = { session, prefix: row.MeasurePrefix, number: row.MeasureNumber };
-      const amendmentNumber = row.AmendmentNumber.trim();
-      const provenance = `CommitteeProposedAmendments ${row.ProposedAmendmentId}`;
-      const meaning = row.Meaning.trim();
-      return {
-        id: postingIdOf(session, row.ProposedAmendmentId),
-        nodeId: amendmentIdOf(key, amendmentNumber),
-        kind: "proposed_amendment",
-        label: amendmentNumber,
-        sourceUrl: sourceUrlOf(row.ProposedAmendmentUrl),
-        postedAt: row.MeetingDate,
-        relations: [
-          { relation: "measure", to: measureIdOf(key), meaning: null, provenance },
-          { relation: "committee", to: committeeIdOf(session, row.CommitteeCode), meaning: null, provenance },
-          {
-            relation: "posted_to",
-            to: meetingIdOf(session, row.CommitteeCode, row.MeetingDate),
-            meaning: meaning === "" ? null : meaning,
-            provenance,
-          },
-          { relation: "amendment", to: amendmentIdOf(key, amendmentNumber), meaning: null, provenance },
-        ],
-      };
-    });
+  const rows = await readSessionRows(options, "CommitteeProposedAmendments", session, postingRow, signal);
+  return rows.map((row) => {
+    const key = { session, prefix: row.MeasurePrefix, number: row.MeasureNumber };
+    const amendmentNumber = row.AmendmentNumber.trim();
+    const provenance = `CommitteeProposedAmendments ${row.ProposedAmendmentId}`;
+    const meaning = row.Meaning.trim();
+    return {
+      id: postingIdOf(session, row.ProposedAmendmentId),
+      nodeId: amendmentIdOf(key, amendmentNumber),
+      kind: "proposed_amendment",
+      label: amendmentNumber,
+      sourceUrl: sourceUrlOf(row.ProposedAmendmentUrl),
+      postedAt: row.MeetingDate,
+      relations: [
+        measureRelation(key, provenance),
+        committeeRelation(session, row.CommitteeCode, provenance),
+        {
+          relation: "posted_to",
+          to: meetingIdOf(session, row.CommitteeCode, row.MeetingDate),
+          meaning: meaning === "" ? null : meaning,
+          provenance,
+        },
+        { relation: "amendment", to: amendmentIdOf(key, amendmentNumber), meaning: null, provenance },
+      ],
+    };
+  });
 }
 
 export async function readDocumentLinks(
