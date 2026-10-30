@@ -58,7 +58,7 @@ A Measure ("HB 3131"), a Proposed Amendment ("SB 69-2") or an ORS section ("ORS 
 _Avoid_: reference, Statute Link (a Statute Link is parsed from a Version's text, not found in a question)
 
 **Keyword-only Document**:
-An agenda, a Recording Log or a witness-registration list (an Exhibit the feed labels "Witness Registration", or titles so). Search finds it by its words and never by meaning: its Passages are not embedded.
+An agenda, a Recording Log or a witness-registration list (an Exhibit the feed labels "Witness Registration", or titles so). Search finds it by its words and never by meaning: its Passages are not embedded. It is found by some of a question's words, after the Documents that hold them all. When OLIS relabels a stored Exhibit, the next pull moves it across.
 _Avoid_: unembedded document
 
 **Vector**:
