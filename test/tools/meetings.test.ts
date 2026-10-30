@@ -292,6 +292,17 @@ describe.for(eras)("meetings for a %s client", (era) => {
     expect(system.olis.documentRequests().filter((path) => path.includes("/Committees/"))).toEqual([]);
   });
 
+  // Spec #1, "What every result must carry": the index's as-of time (the pull began at the simulated clock's
+  // noon on 2025-01-29, in Pacific time with its offset) and the notice that this is not the official record.
+  // `now`, the time "upcoming" is measured from, is the same clock's.
+  it("carries the index's as-of time and the notice that it is not the official record", async () => {
+    const outcome = await callTool(connected, "meetings", { measure: "SB 69" });
+
+    expect(outcome.structured?.["as_of"]).toBe("2025-01-29T12:00:00-08:00");
+    expect(outcome.structured?.["now"]).toBe("2025-01-29T12:00:00-08:00");
+    expect(outcome.structured?.["notice"]).toMatch(/not the official record/i);
+  });
+
   // An unknown Measure is an expected outcome, so it is a tool error that tells the agent what to give
   // (src/CLAUDE.md, "Errors"). The fixture holds no SB 9999.
   it("answers a Measure the Session does not have with an error that says what to give", async () => {

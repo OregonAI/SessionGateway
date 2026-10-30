@@ -80,6 +80,75 @@ describe("a Recording Log", () => {
   });
 });
 
+describe("agenda items that name no Measure", () => {
+  // MADE UP FOR THIS TEST. Every agenda item in the committed fixture is about a Measure, but 3,598 of the
+  // 9,275 in the full 2025R1 feed are not (.cache/olis-2025R1/feed/CommitteeAgendaItems.json): executive
+  // appointments with a BoardName and an ExecutiveAppointee (row 202186 is one), and notices with only
+  // Comments. These three rows, with the made-up ids 900201 to 900203, are shaped like those and added to
+  // SLB's meeting of 2025-01-30. The PrintOrder is a string: "10" comes after "2", and an item with none is last.
+  it("shows an appointment's board and appointee, and puts the items in print order (made-up rows)", async () => {
+    const itemRow = (id: number, fields: Record<string, unknown>): Record<string, unknown> => ({
+      CommitteeAgendaItemId: id,
+      SessionKey: "2025R1",
+      CommitteCode: "SLB",
+      MeetingDate: "2025-01-30T08:00:00",
+      MeasurePrefix: null,
+      MeasureNumber: null,
+      BoardName: null,
+      ExecutiveAppointee: null,
+      MeetingType: null,
+      Action: null,
+      PrintOrder: null,
+      Comments: null,
+      ...fields,
+    });
+    const { connected } = await start({
+      clockAt: "2025-01-29T20:00:00Z",
+      documents: false,
+      olis: {
+        strayRows: {
+          CommitteeAgendaItems: [
+            itemRow(900203, { Comments: "<b>A notice with no print order.</b>" }),
+            itemRow(900202, {
+              PrintOrder: "10",
+              Comments: '<b>A notice.</b>\n<a href="https://example.org/">link</a>',
+            }),
+            itemRow(900201, {
+              PrintOrder: "2",
+              BoardName: "Commission on Example Affairs",
+              ExecutiveAppointee: "PatExample",
+              MeetingType: "Public Hearing and Work Session    (Executive Appointment)",
+            }),
+          ],
+        },
+      },
+    });
+
+    const outcome = await callTool(connected, "meetings", { committee: "SLB", from: "2025-01-30", to: "2025-01-30" });
+
+    const meetings = outcome.structured?.["meetings"] as { id: string; agenda_items: unknown[] }[];
+    expect(meetings.map((meeting) => meeting.id)).toEqual(["meeting-2025r1-slb-2025-01-30-0800"]);
+    expect(meetings[0]?.agenda_items).toEqual([
+      expect.objectContaining({ print_order: "1", measure_id: "measure-2025r1-sb69" }),
+      {
+        print_order: "2",
+        measure_id: null,
+        meeting_type: "Public Hearing and Work Session    (Executive Appointment)",
+        action: null,
+        comments: null,
+        board_name: "Commission on Example Affairs",
+        executive_appointee: "PatExample",
+      },
+      expect.objectContaining({
+        print_order: "10",
+        measure_id: null,
+        comments: '<b>A notice.</b>\n<a href="https://example.org/">link</a>',
+      }),
+      expect.objectContaining({ print_order: null, measure_id: null }),
+    ]);
+  });
+});
+
 describe("the next meeting", () => {
   // The clock is noon in Oregon on 2025-02-12. HHED's meeting of 2025-02-13 is ahead of it, and the feed's row
   // for it says "Cancelled" (feed/CommitteeMeetings.json; the fixture holds each row's final state, so the
@@ -96,5 +165,26 @@ describe("the next meeting", () => {
       ["meeting-2025r1-hhed-2025-02-20-0800", "Scheduled", true],
     ]);
     expect(outcome.structured?.["next_meeting_id"]).toBe("meeting-2025r1-hhed-2025-02-20-0800");
+  });
+});
+
+describe("the tool-call rate limit", () => {
+  // The MCP specification requires servers to rate-limit tool calls, over every tool together
+  // (get-measure-rate-limit.test.ts shows the other three). A third `meetings` call in a limit of two is refused.
+  it("counts meetings calls with the others, and refuses the one past the limit", async () => {
+    const { connected } = await start({
+      clockAt: "2025-01-29T20:00:00Z",
+      documents: false,
+      serverEnv: { MCP_RATE_LIMIT: "2", MCP_RATE_WINDOW_SECONDS: "60" },
+    });
+
+    const first = await callTool(connected, "meetings", { measure: "SB 69" });
+    const second = await callTool(connected, "get_measure", { measure: "SB 69" });
+    const refused = await callTool(connected, "meetings", { measure: "SB 69" });
+
+    expect([first.isError, second.isError]).toEqual([false, false]);
+    expect(refused.isError).toBe(true);
+    expect(refused.structured).toBeUndefined();
+    expect(refused.text).toMatch(/rate limit/i);
   });
 });
