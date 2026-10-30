@@ -2,8 +2,9 @@
 // containers run them, with their configuration in the environment. The fake OLIS is the only
 // thing in this process; the worker and the server are child processes.
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { connect, createServer } from "node:net";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { startFakeOlis, type FakeOlis, type FakeOlisOptions } from "../support/fake-olis.ts";
@@ -13,6 +14,7 @@ import { memberSponsorRow } from "../support/sponsors.ts";
 import { createTempDatabase, type TempDatabase } from "../support/temp-database.ts";
 import { snapshotFixturePath } from "../support/oregonai-snapshot.ts";
 import { modelPath } from "../support/real-embedder.ts";
+import { modelLockPath, readModelLock } from "#/packages/embedder/lock.ts";
 
 type Finished = { code: number | null; stdout: string; stderr: string };
 
@@ -27,16 +29,18 @@ function childEnvironment(env: Record<string, string>): Record<string, string> {
   return { PATH: process.env["PATH"] ?? "", TZ: process.env["TZ"] ?? "UTC", ...env };
 }
 
-/** Runs a script with exactly this environment, until it exits. */
-function run(script: string, env: Record<string, string>): Promise<Finished> {
+/** Runs a script with exactly this environment, until it exits, or until `limitMs` have passed and it is killed (code null). */
+function run(script: string, env: Record<string, string>, limitMs = 60_000): Promise<Finished> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [script], { env: childEnvironment(env) });
+    const timer = setTimeout(() => child.kill("SIGKILL"), limitMs);
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
     child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
     child.once("error", reject);
     child.once("close", (code) => {
+      clearTimeout(timer);
       resolve({ code, stdout, stderr });
     });
   });
@@ -476,6 +480,64 @@ describe("the entry scripts", () => {
       expect(finished.stderr).not.toContain("/nonexistent/model");
     },
   );
+
+  // The files at MODEL_PATH are checked against the lock's sha256 before anything is loaded: vectors are kept under the
+  // model id the lock names, and files that are not the pinned ones would store theirs under it (ADR-0026). The
+  // directory is the pinned one but for one file, the onnx file linked to save copying 34 MB.
+  describe.for([
+    {
+      problem: "a tokenizer.json that is not the pinned one",
+      file: "tokenizer.json",
+      change: (text: string): string => text.replace('"lowercase": true', '"lowercase": false'),
+    },
+    {
+      problem: "a config.json changed without changing its size",
+      file: "config.json",
+      change: (text: string): string => text.replace("bert", "BERT"),
+    },
+    {
+      problem: "a tokenizer.json cut off in the middle",
+      file: "tokenizer.json",
+      change: (text: string): string => text.slice(0, 1000),
+    },
+  ])("with $problem in MODEL_PATH", ({ file, change }) => {
+    it.for(["src/bin/ingest.ts", "src/bin/server.ts"])(
+      "%s fails at start-up, naming the file and the variable, and never the directory",
+      { timeout: 30_000 },
+      async (script) => {
+        const lock = readModelLock(modelLockPath);
+        const directory = mkdtempSync(join(tmpdir(), "sg-model-"));
+        cleanups.push(() => {
+          rmSync(directory, { recursive: true, force: true });
+        });
+        for (const pinned of lock.files) {
+          const target = join(directory, pinned.path);
+          mkdirSync(dirname(target), { recursive: true });
+          if (pinned.path === file) {
+            const original = readFileSync(join(modelPath(), pinned.path), "utf8");
+            const changed = change(original);
+            expect(changed, "the change must alter the file").not.toBe(original);
+            writeFileSync(target, changed);
+          } else {
+            symlinkSync(join(modelPath(), pinned.path), target);
+          }
+        }
+        const { olis, database } = await fakeOlisAndDatabase();
+
+        const finished = await run(
+          script,
+          { ...workerEnvironment(olis, database.path), MODEL_PATH: directory },
+          20_000,
+        );
+
+        expect(finished.code, finished.stderr).toBe(1);
+        expect(finished.stderr).toContain(file);
+        expect(finished.stderr).toContain("MODEL_PATH");
+        expect(finished.stderr).toContain("npm run model:fetch");
+        expect(finished.stderr).not.toContain(directory);
+      },
+    );
+  });
 
   it("src/bin/ingest.ts fails at start-up when SNAPSHOT_PATH is not set, naming the variable", async () => {
     const { olis, database } = await fakeOlisAndDatabase();

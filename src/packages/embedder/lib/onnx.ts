@@ -54,9 +54,9 @@ async function startOnnxRunner(modelPath: string, lock: ModelLock, intraOpThread
 }
 
 /**
- * Loads the model and its tokenizer from the model directory. It throws, naming the missing file and
- * `npm run model:fetch`, when a pinned file is not there; whether the files are the pinned ones is
- * `npm run model:verify`'s check and is not repeated on every start.
+ * Loads the model and its tokenizer from the model directory, after checking every file the lock pins against
+ * its sha256. It throws, naming each file that is missing or is not the pinned one, MODEL_PATH and
+ * `npm run model:fetch`, and never the directory.
  */
 export function loadOnnxEmbedder(options: OnnxEmbedderOptions): Promise<Embedder> {
   return loadEmbedder(options, (modelPath, lock) => startOnnxRunner(modelPath, lock, options.intraOpThreads));
