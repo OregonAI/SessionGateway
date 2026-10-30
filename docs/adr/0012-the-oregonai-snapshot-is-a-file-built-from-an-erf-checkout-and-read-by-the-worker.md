@@ -38,3 +38,4 @@ What the rules cannot see is a bare `fetch` to an OregonAI host in code that was
 - `name` is the registry's statutory name. `oar_name` (the chapter's OAR title, which differs from `name` on 3 rows) and `raw_index_name` are not copied.
 - A range is expanded against ERF's ingested sections, which are all but 221 of the 37,755 ERF's catalog lists.
 - The snapshot's version is the commit of the checkout, which may be behind `origin/main`; a refresh is a new build.
+- ERF licenses `_meta/` under the MIT License ("Copyright (c) 2026 the repository contributors"), which asks that the notice go with copies or substantial portions. The snapshot fixture's README carries it; a deployment that ships the full snapshot should too.
