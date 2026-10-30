@@ -5,7 +5,10 @@
 //
 //  - `$count=true` is rejected with 400; the v3 forms are `$inlinecount=allpages` (answered as the
 //    string "odata.count") and the `/$count` path segment.
-//  - `/$count` is answered only without a JSON `Accept` header (415 otherwise).
+//  - `/$count` is answered with a 415 when the `Accept` header names JSON, and with the count otherwise.
+//    That includes `*/*`, which is what fetch sends when a request names no Accept of its own. The
+//    research verified only a request with no Accept header at all (olis-odata.md section 1), so
+//    that live OLIS answers `*/*` is an assumption this fake cannot check.
 //  - Without a JSON `Accept` header an entity set comes back as Atom XML.
 //  - A page holds at most 5,000 rows, and `odata.nextLink` is relative (`../odataservice.svc/...`).
 //  - Rows are served verbatim: misspelled property names (CommitteCode, CommittteCode,

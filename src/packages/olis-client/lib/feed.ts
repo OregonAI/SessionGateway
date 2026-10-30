@@ -12,7 +12,12 @@ function bounded(signal: AbortSignal): AbortSignal {
 }
 
 async function readCount(options: OlisClientOptions, url: URL, signal: AbortSignal): Promise<number> {
-  // /$count answers 415 to a JSON Accept header, so this request names no Accept at all.
+  // /$count answers 415 to a JSON Accept header (docs/research/olis-odata.md section 1, verified for a
+  // request that sent no Accept header). This request names no type of its own, but fetch adds
+  // `accept: */*`, which RFC 9110 section 12.5.1 reads the same as no Accept header at all. That live
+  // OLIS answers `*/*` with the count is therefore NOT verified: the fake OLIS accepts it because it is
+  // what this client sends, so no seam-1 test can show it. The by-hand contract test against live OLIS
+  // (test/CLAUDE.md, "Hermetic") is the check.
   const response = await options.fetch(url, { signal: bounded(signal) });
   if (!response.ok) throw new Error(`OLIS answered ${response.status} to ${url.pathname}`);
   const text = (await response.text()).trim();
