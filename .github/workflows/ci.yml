@@ -27,6 +27,14 @@ jobs:
         with:
           node-version-file: package.json
       - run: npm ci
+      # The embedding model is pinned by src/packages/embedder/data/model-lock.json and kept out of the
+      # repository. The cache is keyed on the lock, so a new revision or hash misses it and model:fetch
+      # downloads the files again; on a hit model:fetch checks the files and sends no request.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/models
+          key: model-${{ hashFiles('src/packages/embedder/data/model-lock.json') }}
+      - run: npm run model:fetch
       - run: npm run check
 
   audit-signatures:

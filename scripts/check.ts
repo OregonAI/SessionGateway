@@ -12,6 +12,7 @@ const detailPatterns: Record<string, RegExp[]> = {
   "lint:boundaries": [/(?:\d+ modules,).*cruised/m],
   "fixture:verify": [/^verify: .*/m],
   "snapshot:verify": [/^verify: .*/m],
+  "model:verify": [/^verify: .*/m],
   test: [/^\s*Test Files\s+.*/m, /^\s*Tests\s+.*/m],
 };
 
