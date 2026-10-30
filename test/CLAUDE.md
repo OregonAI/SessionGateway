@@ -28,7 +28,7 @@ Expected values are literals from an independent source:
   - Cases that change state (increments, removals, revised agendas) build their own.
   - Keep the two kinds in separate files.
 - **MCP client.** Drive `createMcpHandler` in-process through `handler.fetch`, once with a 2026-07-28 client and once with a legacy client. Call `listTools()` first so the client validates `structuredContent`. One test runs on a real port for the Node adapter, the `Host` and `Origin` guards, and the mount path.
-- **One system.** `startSystem` (`test/support/system.ts`) starts the fake OLIS at a simulated time, runs the ingest worker's full pull into a temp database and builds the MCP handler, wiring the packages through their entry points the way `src/bin/` does. It refuses to run under the Pacific zone, so a lost `TZ` setting fails loudly.
+- **One system.** `startSystem` (`test/support/system.ts`) starts the fake OLIS at a simulated time, runs the ingest worker's full pull into a temp database and builds the MCP handler, wiring the packages through their entry points the way `src/bin/` does. It refuses to run under the Pacific zone, so a lost `TZ` setting fails loudly. Its `pullAgain()` runs the full pull again after a test moves the clock or changes the fake (for example `olis.withholdLastRows(1)`, so the pull is refused and the test reads the tools to see the index stayed as it was).
 - **Entry scripts.** One test file runs `src/bin/ingest.ts` and `src/bin/server.ts` as child processes against the fake OLIS, because nothing else executes them.
 - **Hermetic.** The suite reaches only localhost. A contract test of the OLIS client against live OLIS is run by hand, outside `npm test`.
 
