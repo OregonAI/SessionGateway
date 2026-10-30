@@ -182,7 +182,8 @@ describe.for(eras)("compare_amendment for a %s client", (era) => {
   // section 2 of the Act to ORS chapter 657B; 3 amends ORS 657B.070, 4 amends 659A.159 ("as amended by section 8,
   // chapter 20, Oregon Laws 2024"), 5 amends 659A.165, 6 amends 657B.400, 7 amends 657B.060, 8 amends 653.616, 9 amends
   // 653.626 and 10 amends 659A.156. The Statutes Affected Table for SB 69 (artables2025R1.pdf; olis-odata.md §5)
-  // gives 653.616 (A, section 8), chapter 657B (Add, section 1) and 659A.159 (A, section 4).
+  // gives 653.616 (A, section 8), chapter 657B (Add, section 1) and 659A.159 (A, section 4), and `pdftotext -layout`
+  // of it also has the rows 653.626 A §9, 659A.156 A §10 and 659A.165 A §5 for "SB 69 A" (A is the engrossing level).
   describe("the amendment's own Statute Links", () => {
     async function filesOf(reference: string): Promise<File[]> {
       const outcome = await callTool(connected, "compare_amendment", { amendment: reference });
