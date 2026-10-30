@@ -4,6 +4,7 @@
 // logger's callback.
 import { pino } from "pino";
 import { loadServerConfig } from "#/packages/config/index.ts";
+import { modelLockPath } from "#/packages/embedder/lock.ts";
 import { loadOnnxEmbedder } from "#/packages/embedder/onnx.ts";
 import { createSessionGatewayHandler } from "#/packages/mcp-server/handler.ts";
 import { serveMcp } from "#/packages/mcp-server/http.ts";
@@ -29,7 +30,7 @@ const shutdown = new AbortController();
 const config = loadServerConfig(process.env);
 // The server holds the model for the life of the process and runs it on one thread: the deploy box has two
 // cores shared with seven corpora (ADR-0007). A start-up that cannot load it fails here, naming the file.
-const embedder = await loadOnnxEmbedder({ modelPath: config.modelPath, intraOpThreads: 1 });
+const embedder = await loadOnnxEmbedder({ modelPath: config.modelPath, lockPath: modelLockPath, intraOpThreads: 1 });
 const handler = createSessionGatewayHandler(config, {
   clock: systemClock,
   embedder,

@@ -471,7 +471,9 @@ describe("the entry scripts", () => {
 
       expect(finished.code).not.toBe(0);
       expect(finished.stderr).toContain("npm run model:fetch");
-      expect(finished.stderr).toContain("/nonexistent/model");
+      // The variable is named and its value never printed (src/CLAUDE.md, "Configuration and portability").
+      expect(finished.stderr).toContain("MODEL_PATH");
+      expect(finished.stderr).not.toContain("/nonexistent/model");
     },
   );
 

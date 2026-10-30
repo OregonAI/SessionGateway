@@ -160,7 +160,7 @@ describe("a build whose snapshot cannot be used", () => {
         signal: AbortSignal.timeout(30_000),
         pause: () => Promise.resolve(),
         legislatorAliases: readLegislatorAliases(committedAliasFilePath),
-        embedder: createFakeEmbedder(),
+        embedder: await createFakeEmbedder(),
       }),
     ).rejects.toThrow('Could not read the OregonAI snapshot at "/nonexistent/snapshot.json"');
 

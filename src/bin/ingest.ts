@@ -6,6 +6,7 @@ import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { loadIngestConfig } from "#/packages/config/index.ts";
+import { modelLockPath } from "#/packages/embedder/lock.ts";
 import { loadOnnxEmbedder } from "#/packages/embedder/onnx.ts";
 import { runFullPull } from "#/packages/ingest/index.ts";
 import { committedAliasFilePath, readLegislatorAliases } from "#/packages/legislators/aliases.ts";
@@ -25,7 +26,11 @@ const pull = await runFullPull(config, {
   signal: shutdown.signal,
   pause: (milliseconds, signal) => sleep(milliseconds, undefined, { signal }),
   legislatorAliases: readLegislatorAliases(committedAliasFilePath),
-  embedder: await loadOnnxEmbedder({ modelPath: config.modelPath, intraOpThreads: config.modelThreads }),
+  embedder: await loadOnnxEmbedder({
+    modelPath: config.modelPath,
+    lockPath: modelLockPath,
+    intraOpThreads: config.modelThreads,
+  }),
 });
 
 // The build report of Legislator Codes (spec #1, story 54), beside the database it describes. It is

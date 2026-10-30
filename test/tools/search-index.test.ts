@@ -5,6 +5,7 @@
 // well anything ranks.
 import { afterEach, describe, expect, it } from "vitest";
 import type { Embedder } from "#/packages/embedder/index.ts";
+import { createFakeEmbedder } from "../support/fake-embedder.ts";
 import { callTool, connectClient } from "../support/mcp-clients.ts";
 import { loadRealEmbedder } from "../support/real-embedder.ts";
 import { recordEmbeddings } from "../support/recording-embedder.ts";
@@ -159,8 +160,8 @@ describe("a row OLIS changes after the pull", () => {
 // wrapped to read the vectors it hands back (test/support/recording-embedder.ts).
 describe("a passage's vector", () => {
   const startOf = (passage: { text: string }): string => passage.text.replace(/\s+/g, " ").slice(0, 60);
-  const smallPull = "2025-01-15T22:00:00Z"; // 14:00 Pacific: SLB's agenda and the Introduced Versions of five Measures
-  const largerPull = "2025-01-18T02:00:00Z"; // 2025-01-17 18:00 Pacific: the early Session of search.test.ts, 87 more documents
+  const smallPull = "2025-01-15T22:00:00Z"; // 14:00 Pacific: 6 documents, SLB's agenda and the Introduced Versions of five Measures
+  const largerPull = "2025-01-18T02:00:00Z"; // 2025-01-17 18:00 Pacific: the early Session of search.test.ts, 9 more documents
 
   it("is the one the model gives the passage on its own, whichever other documents were pulled with it", async () => {
     const model = await loadRealEmbedder();
@@ -186,4 +187,22 @@ describe("a passage's vector", () => {
     }
     expect(differing).toEqual([]);
   }, 180_000);
+});
+
+// A document is cut into passages by the model's own tokenizer, in production and in every test: the fake embedder
+// replaces the ONNX session and nothing else (test/support/fake-embedder.ts). Where a passage ends decides which
+// citations a cut splits, so a test that ran the fake on cuts the real model never makes would show behaviour
+// production does not have. An operator sees the cuts as the number of passages in build-report.json.
+describe("the passages a document is cut into", () => {
+  it("are the same whether the embedder runs the real model or the fake", async () => {
+    const clockAt = "2025-01-18T02:00:00Z"; // 2025-01-17 18:00 Pacific: 15 documents
+    const real = await start(clockAt, await loadRealEmbedder());
+    const fake = await start(clockAt, await createFakeEmbedder());
+
+    const realReport = searchIndexOf(real);
+    const fakeReport = searchIndexOf(fake);
+    expect(realReport.passages).toBeGreaterThan(50);
+    expect(fakeReport.passages).toBe(realReport.passages);
+    expect(fakeReport.keyword_only_passages).toBe(realReport.keyword_only_passages);
+  }, 120_000);
 });

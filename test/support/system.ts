@@ -84,7 +84,7 @@ export async function startSystem(options: SystemOptions): Promise<System> {
   const clock = createSimulatedClock(options.clockAt);
   const olis = await startFakeOlis({ clock, documents: options.documents ?? false, ...options.olis });
   const database = createTempDatabase();
-  const embedder = options.embedder ?? createFakeEmbedder();
+  const embedder = options.embedder ?? (await createFakeEmbedder());
   const shutdown = new AbortController();
   const env = {
     SESSION_KEY: options.sessionKey ?? "2025R1",

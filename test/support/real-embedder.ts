@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { defaultModelPath, readModelLock } from "#/packages/embedder/lock.ts";
+import { defaultModelPath, modelLockPath, readModelLock } from "#/packages/embedder/lock.ts";
 import { loadOnnxEmbedder } from "#/packages/embedder/onnx.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
 
@@ -26,5 +26,5 @@ export async function loadRealEmbedder(): Promise<Embedder> {
       `The embedding model is not in ${path} (missing ${missing.map((file) => file.path).join(", ")}). Run npm run model:fetch, then try again.`,
     );
   }
-  return loadOnnxEmbedder({ modelPath: path, intraOpThreads: 1 });
+  return loadOnnxEmbedder({ modelPath: path, lockPath: modelLockPath, intraOpThreads: 1 });
 }
