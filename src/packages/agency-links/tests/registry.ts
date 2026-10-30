@@ -45,6 +45,7 @@ export const testRegistry: readonly RegistryAgency[] = [
   },
   { slug: "judicial-department", name: "Judicial Department", aliases: [] },
   { slug: "legislative-assembly", name: "Legislative Assembly", aliases: [] },
+  { slug: "legislative-revenue-office", name: "Legislative Revenue Office", aliases: [] },
   {
     slug: "oregon-business-development-department",
     name: "Oregon Business Development Department",

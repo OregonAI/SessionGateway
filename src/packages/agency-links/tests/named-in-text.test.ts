@@ -145,6 +145,21 @@ describe("Agencies named in Version and Proposed Amendment text", () => {
         registry: testRegistry,
         agencies: [{ slug: "department-of-human-services", terms: ["ODHS", "Department of Human Services"] }],
       },
+      {
+        // The fixture's Versions hold no name inside a longer word, so this row is a committee
+        // agenda (text of the same kind, `pdftotext` output of an OLIS document). The registry
+        // names the Legislative Revenue Office; the agenda writes the officer's title.
+        source:
+          'committee-agendas/SFR/2025-04-14-08-00.pdf (Senate Committee On Finance and Revenue agenda): "Legislative Revenue Officer" starts with a registry name',
+        text: [
+          "Public Hearing and Work Session",
+          "SB 120",
+          "Requires the Legislative Revenue Officer to study tax expenditures.",
+          "Public Hearing",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [],
+      },
     ])("$source", expectLinks);
   });
 });
