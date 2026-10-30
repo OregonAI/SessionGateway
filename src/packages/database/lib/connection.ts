@@ -29,8 +29,23 @@ const schema = `
     session_key TEXT NOT NULL,
     committee_code TEXT NOT NULL,
     committee_id TEXT NOT NULL,
-    at TEXT NOT NULL
+    at TEXT NOT NULL,
+    status TEXT NOT NULL
   ) STRICT;
+  CREATE TABLE IF NOT EXISTS agenda_item (
+    id INTEGER NOT NULL PRIMARY KEY,
+    meeting_id TEXT NOT NULL,
+    session_key TEXT NOT NULL,
+    measure_prefix TEXT,
+    measure_number INTEGER,
+    meeting_type TEXT,
+    action TEXT,
+    print_order TEXT,
+    comments TEXT,
+    board_name TEXT,
+    executive_appointee TEXT
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS agenda_item_meeting ON agenda_item (meeting_id);
   CREATE TABLE IF NOT EXISTS document (
     id TEXT NOT NULL PRIMARY KEY,
     node_id TEXT NOT NULL,

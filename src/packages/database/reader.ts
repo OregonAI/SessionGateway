@@ -7,6 +7,9 @@ import {
   type DocumentKind,
   type DocumentView,
   type IndexCounts,
+  type CommitteeId,
+  type MeetingHeader,
+  type MeetingId,
   type NodeId,
   type Relation,
   type RelatedNode,
@@ -14,6 +17,12 @@ import {
 import type { Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openReadConnection } from "./lib/connection.ts";
+
+/** What a meetings query asks for. Every field given must hold. */
+export type MeetingFilter = {
+  /** Meetings with an agenda item about this Measure. */
+  measure?: MeasureKey;
+};
 
 export type IndexReader = {
   findMeasure(key: MeasureKey): Measure | undefined;
@@ -26,6 +35,8 @@ export type IndexReader = {
   findDocument(id: DocumentId | AmendmentId): DocumentView | undefined;
   /** What the index holds of the Session. */
   counts(session: SessionKey): IndexCounts;
+  /** The meetings that match, earliest first. */
+  findMeetings(session: SessionKey, filter: MeetingFilter): MeetingHeader[];
   close(): void;
 };
 
@@ -47,6 +58,14 @@ const documentRow = z.object({
   has_text_layer: z.number(),
   posted_at: z.string().nullable(),
   text: z.string(),
+});
+const meetingRow = z.object({
+  id: z.string(),
+  committee_id: z.string(),
+  committee_code: z.string(),
+  committee_name: z.string(),
+  at: z.string(),
+  status: z.string(),
 });
 const countRow = z.object({ n: z.number() });
 const kindCountRow = z.object({ kind: z.string(), n: z.number() });
@@ -72,6 +91,14 @@ export function openIndexReader(path: string): IndexReader {
   );
   const selectRelations = database.prepare(
     "SELECT relation, to_id, meaning FROM document_relation WHERE document_id = ? ORDER BY rowid",
+  );
+  const selectMeetings = database.prepare(
+    `SELECT m.id, m.committee_id, m.committee_code, c.name AS committee_name, m.at, m.status
+     FROM meeting m JOIN committee c ON c.session_key = m.session_key AND c.code = m.committee_code
+     WHERE m.session_key = ?
+       AND (? IS NULL OR EXISTS (SELECT 1 FROM agenda_item a
+                                 WHERE a.meeting_id = m.id AND a.measure_prefix = ? AND a.measure_number = ?))
+     ORDER BY m.at, m.committee_code`,
   );
   function documentOf(row: unknown): DocumentView["document"] {
     const stored = documentRow.parse(row);
@@ -144,6 +171,24 @@ export function openIndexReader(path: string): IndexReader {
         }
       }
       return { document: latest, related };
+    },
+    findMeetings(session, filter) {
+      const measure = filter.measure;
+      return selectMeetings
+        .all(session, measure?.prefix ?? null, measure?.prefix ?? null, measure?.number ?? null)
+        .map((row) => {
+          const stored = meetingRow.parse(row);
+          return {
+            id: stored.id as MeetingId,
+            committee: {
+              id: stored.committee_id as CommitteeId,
+              code: stored.committee_code,
+              name: stored.committee_name,
+            },
+            at: stored.at as Timestamp,
+            status: stored.status,
+          };
+        });
     },
     findMeasure(key) {
       const row = selectMeasure.get(key.session, key.prefix, key.number);

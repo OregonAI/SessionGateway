@@ -12,6 +12,7 @@ import {
   unknownDocumentMessage,
 } from "./lib/get-document.ts";
 import { getMeasure, getMeasureInput, getMeasureOutput, unknownMeasureMessage } from "./lib/get-measure.ts";
+import { meetings, meetingsInput, meetingsOutput } from "./lib/meetings.ts";
 import { sessionOverview, sessionOverviewInput, sessionOverviewOutput } from "./lib/session-overview.ts";
 import { createRateLimiter, rateLimitMessage, type RateLimiter } from "./lib/rate-limit.ts";
 
@@ -43,7 +44,7 @@ function refuseOverRateLimit(
   };
 }
 
-function buildServer(reader: IndexReader, config: ServerConfig, limiter: RateLimiter): McpServer {
+function buildServer(reader: IndexReader, config: ServerConfig, limiter: RateLimiter, clock: Clock): McpServer {
   const server = new McpServer({ name: "session-gateway", version: "0.0.0" });
   server.registerTool(
     "get_measure",
@@ -111,6 +112,36 @@ function buildServer(reader: IndexReader, config: ServerConfig, limiter: RateLim
     },
   );
   server.registerTool(
+    "meetings",
+    {
+      title: "Committee meetings",
+      description:
+        "Lists committee meetings that have an agenda item about a Measure, earliest first, each with when it starts, its status as OLIS states it (Scheduled, Cancelled), and whether it is still ahead of the service's clock. next_meeting_id names the next scheduled one. It is not the official record.",
+      inputSchema: meetingsInput,
+      outputSchema: meetingsOutput,
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    (input) => {
+      const refused = refuseOverRateLimit(limiter, config);
+      if (refused !== undefined) return refused;
+      const result = meetings(reader, config.session, clock.now(), input);
+      switch (result.kind) {
+        case "found":
+          return {
+            content: [{ type: "text", text: JSON.stringify(result.meetings) }],
+            structuredContent: result.meetings,
+          };
+        case "unknown_measure":
+          return {
+            isError: true,
+            content: [{ type: "text", text: unknownMeasureMessage(result.reference, result.session) }],
+          };
+        default:
+          return result satisfies never;
+      }
+    },
+  );
+  server.registerTool(
     "session_overview",
     {
       title: "Overview of the Session",
@@ -139,7 +170,7 @@ export function createSessionGatewayHandler(config: ServerConfig, deps: HandlerD
     windowSeconds: config.rateWindowSeconds,
     clock: deps.clock,
   });
-  const handler = createMcpHandler(() => buildServer(reader, config, limiter));
+  const handler = createMcpHandler(() => buildServer(reader, config, limiter, deps.clock));
   return {
     fetch: handler.fetch,
     close: async () => {
