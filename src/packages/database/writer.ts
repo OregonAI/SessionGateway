@@ -16,6 +16,7 @@ import {
 import type { HistoryAction, Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
 import type { Legislator, LegislatorId, SponsorLevel } from "#/packages/domain/legislators.ts";
 import type { AgencyId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
+import type { Passage, SearchEntry } from "#/packages/domain/search.ts";
 import type { RelatingClauseEdit, StatuteLink, StatuteLinkSource } from "#/packages/domain/statute-links.ts";
 import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
@@ -132,6 +133,12 @@ function kindColumnsOf(sponsor: SponsorRecord): {
   }
 }
 
+/** What search keeps of one document, stored in the same transaction as the document. */
+export type SearchRecord = {
+  entry: SearchEntry;
+  passages: readonly Passage[];
+};
+
 export type IndexWriter = {
   /**
    * Stores what a full pull read, when, and the version of the OregonAI snapshot the build used, in one
@@ -153,8 +160,11 @@ export type IndexWriter = {
   refreshDocuments(session: SessionKey, links: readonly DocumentLink[]): void;
   /** Every stored document of the Session whose file has no text layer, by id. */
   documentsWithoutTextLayer(session: SessionKey): { id: DocumentId; sourceUrl: string }[];
-  /** Keeps one fetched document, its text and the nodes it points at, in one transaction. */
-  storeDocument(session: SessionKey, document: StoredDocument): void;
+  /**
+   * Keeps one fetched document, its text, the nodes it points at, and what search keeps of it (its entry and
+   * its passages), in one transaction: a document is never stored without being searchable.
+   */
+  storeDocument(session: SessionKey, document: StoredDocument, search: SearchRecord): void;
   /**
    * The files of the Session's stored Versions and postings of Proposed Amendments that have not been read
    * for Statute Links, each once however many documents share it. Read from the stored text; nothing is fetched.
@@ -497,7 +507,7 @@ export function openIndexWriter(path: string): IndexWriter {
         throw error;
       }
     },
-    storeDocument(session, document) {
+    storeDocument(session, document, search) {
       const insertDocument = database.prepare(
         `INSERT INTO document (id, node_id, session_key, kind, label, source_url, retrieved_at, content_hash,
                                text_hash, page_count, has_text_layer, posted_at, analysis_version_label,
@@ -507,6 +517,15 @@ export function openIndexWriter(path: string): IndexWriter {
       const insertRelation = database.prepare(
         `INSERT INTO document_relation (document_id, relation, to_id, meaning, provenance) VALUES (?, ?, ?, ?, ?)`,
       );
+      const insertSearchDocument = database.prepare(
+        `INSERT INTO search_document (document_id, session_key, node_id, kind, title, measure_id, committee_id,
+                                      dated_at, keyword_only)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      const insertPassage = database.prepare(
+        "INSERT INTO passage (document_id, ordinal, start_offset, end_offset, text_hash) VALUES (?, ?, ?, ?, ?)",
+      );
+      const insertPassageText = database.prepare("INSERT INTO passage_fts (rowid, text) VALUES (?, ?)");
       database.exec("BEGIN IMMEDIATE");
       try {
         insertDocument.run(
@@ -529,6 +548,21 @@ export function openIndexWriter(path: string): IndexWriter {
         for (const relation of document.relations) {
           insertRelation.run(document.id, relation.relation, relation.to, relation.meaning, relation.provenance);
         }
+        insertSearchDocument.run(
+          document.id,
+          session,
+          search.entry.nodeId,
+          search.entry.kind,
+          search.entry.title,
+          search.entry.measureId,
+          search.entry.committeeId,
+          search.entry.date,
+          search.entry.keywordOnly ? 1 : 0,
+        );
+        search.passages.forEach((passage, ordinal) => {
+          const inserted = insertPassage.run(document.id, ordinal, passage.start, passage.end, passage.hash);
+          insertPassageText.run(inserted.lastInsertRowid, passage.text);
+        });
         database.exec("COMMIT");
       } catch (error) {
         database.exec("ROLLBACK");

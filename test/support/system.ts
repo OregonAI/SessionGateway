@@ -4,12 +4,15 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadIngestConfig, loadServerConfig, type ServerConfig } from "#/packages/config/index.ts";
+import type { Embedder } from "#/packages/embedder/index.ts";
 import { runFullPull, type FullPullResult } from "#/packages/ingest/index.ts";
 import { committedAliasFilePath, readLegislatorAliases } from "#/packages/legislators/aliases.ts";
 import { createSessionGatewayHandler, type SessionGatewayHandler } from "#/packages/mcp-server/handler.ts";
 import { createSimulatedClock, type SimulatedClock } from "./clock.ts";
+import { createFakeEmbedder } from "./fake-embedder.ts";
 import { startFakeOlis, type FakeOlis, type FakeOlisOptions } from "./fake-olis.ts";
 import { snapshotFixturePath } from "./oregonai-snapshot.ts";
+import { modelPath } from "./real-embedder.ts";
 import { createTempDatabase, type TempDatabase } from "./temp-database.ts";
 
 /** Seam 1 runs under a zone other than Pacific, so code that relies on local time fails (test/CLAUDE.md). */
@@ -45,6 +48,12 @@ export type SystemOptions = {
    * given. For writing the root the way docs/research/olis-odata.md does, without the slash.
    */
   olisBaseUrl?: (serviceRoot: string) => string;
+  /**
+   * The embedder the worker and the server share, as the entry scripts would make one. A fake by default
+   * (test/support/fake-embedder.ts): a test of how well search ranks passes the real one
+   * (`loadRealEmbedder()`, test/support/real-embedder.ts).
+   */
+  embedder?: Embedder;
   /** Further environment variables for the server's configuration (MCP_PATH, MCP_PORT, ...). */
   serverEnv?: Record<string, string>;
   /** The alias file the worker reads, as the entry script would pass it. The committed one by default. */
@@ -75,6 +84,7 @@ export async function startSystem(options: SystemOptions): Promise<System> {
   const clock = createSimulatedClock(options.clockAt);
   const olis = await startFakeOlis({ clock, documents: options.documents ?? false, ...options.olis });
   const database = createTempDatabase();
+  const embedder = options.embedder ?? createFakeEmbedder();
   const shutdown = new AbortController();
   const env = {
     SESSION_KEY: options.sessionKey ?? "2025R1",
@@ -82,6 +92,8 @@ export async function startSystem(options: SystemOptions): Promise<System> {
     DATABASE_PATH: database.path,
     OLIS_DOCUMENT_ORIGIN: olis.origin,
     SNAPSHOT_PATH: options.snapshot ?? snapshotFixturePath,
+    // The entry scripts load the model from here. The harness is given its embedder, so nothing reads it.
+    MODEL_PATH: modelPath(),
   };
   const pull = (): Promise<FullPullResult> =>
     runFullPull(loadIngestConfig(env), {
@@ -92,6 +104,7 @@ export async function startSystem(options: SystemOptions): Promise<System> {
       pause: () => Promise.resolve(),
       ...(options.documentTimeoutMs === undefined ? {} : { documentTimeoutMs: options.documentTimeoutMs }),
       legislatorAliases: readLegislatorAliases(options.legislatorAliasesPath ?? committedAliasFilePath),
+      embedder,
     });
   try {
     await pull();
@@ -101,6 +114,7 @@ export async function startSystem(options: SystemOptions): Promise<System> {
       fetch,
       signal: shutdown.signal,
       onLiveLookupFailed: () => {},
+      embedder,
     });
     return {
       clock,

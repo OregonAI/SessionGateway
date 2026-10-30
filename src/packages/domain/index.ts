@@ -97,3 +97,13 @@ export function parseMeasureReference(text: string, session: SessionKey): Measur
   if (citation?.[1] === undefined || citation[2] === undefined) return undefined;
   return { session, prefix: citation[1].toUpperCase(), number: Number(citation[2]) };
 }
+
+/**
+ * The citation a Measure id stands for: "SB 69" for `measure-2025r1-sb69`. The id is minted by
+ * `measureIdOf`, so it always has this form.
+ */
+export function citationOfMeasureId(id: MeasureId): string {
+  const parts = measureIdPattern.exec(id);
+  if (parts?.[2] === undefined || parts[3] === undefined) throw new Error(`Not a Measure id: ${id}`);
+  return `${parts[2].toUpperCase()} ${Number(parts[3])}`;
+}

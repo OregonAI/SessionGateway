@@ -214,6 +214,38 @@ const schema = `
     measure_id TEXT NOT NULL
   ) STRICT;
   CREATE INDEX IF NOT EXISTS analysis_listing_measure ON analysis_listing (measure_id);
+  -- Search (docs/adr/0025). What search files each stored document under, written in the same transaction as
+  -- the document. node_id is the id a hit carries: the document's, or a posting's Proposed Amendment.
+  CREATE TABLE IF NOT EXISTS search_document (
+    document_id TEXT NOT NULL PRIMARY KEY,
+    session_key TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    measure_id TEXT,
+    committee_id TEXT,
+    dated_at TEXT,
+    keyword_only INTEGER NOT NULL
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS search_document_measure ON search_document (measure_id, kind, dated_at);
+  CREATE INDEX IF NOT EXISTS search_document_node ON search_document (node_id);
+  -- A document's text cut into passages: where each is in document.text, in UTF-16 code units, and the
+  -- sha256 of its text, which its vector is kept under. The passage's text is in passage_fts and in document.
+  CREATE TABLE IF NOT EXISTS passage (
+    id INTEGER PRIMARY KEY,
+    document_id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL,
+    start_offset INTEGER NOT NULL,
+    end_offset INTEGER NOT NULL,
+    text_hash TEXT NOT NULL
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS passage_document ON passage (document_id, ordinal);
+  CREATE INDEX IF NOT EXISTS passage_hash ON passage (text_hash);
+  -- The keyword side: one row for each passage, with the passage's id as its rowid. Contentless, so the text
+  -- is not kept a second time; a hit's snippet is cut from document.text.
+  CREATE VIRTUAL TABLE IF NOT EXISTS passage_fts USING fts5(
+    text, content = '', contentless_delete = 1, tokenize = 'porter unicode61 remove_diacritics 2'
+  );
 `;
 
 /** The default timeout of 0 fails at once on a busy database, so both sides wait up to 5 seconds. */

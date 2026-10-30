@@ -404,6 +404,12 @@ export type DocumentLink = {
   sourceUrl: string;
   /** When it was posted to a meeting, for a posting. */
   postedAt: Timestamp | null;
+  /**
+   * The date search files it under: the start of the meeting a document is posted to or for (an agenda, an
+   * Exhibit, a Recording Log, Testimony, a posting of a Proposed Amendment), else when the feed created the
+   * row (a Version, a Printed Amendment, an analysis document). Null when the feed gave none.
+   */
+  date: Timestamp | null;
   /** For an analysis document: the feed's own `Version` label, "" when the feed gives none. */
   versionLabel?: string;
   /** For an analysis document: the feed's own `IsMinority` flag. */
@@ -427,7 +433,7 @@ export type RelatedNode = {
 /** What `get_document` resolves an id to: a document, and the nodes it (or the amendment's postings) point at. */
 export type DocumentView = {
   /** The document whose text is served: the id asked for, or an amendment's latest posting. */
-  document: Omit<StoredDocument, "relations" | "textHash">;
+  document: Omit<StoredDocument, "relations" | "textHash" | "date">;
   related: RelatedNode[];
 };
 

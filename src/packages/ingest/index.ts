@@ -20,7 +20,8 @@ import {
   type StatuteParseRecord,
   type UnreadStatuteFile,
 } from "#/packages/database/writer.ts";
-import type { DocumentLink } from "#/packages/domain/documents.ts";
+import type { Embedder } from "#/packages/embedder/index.ts";
+import type { CommitteeId, DocumentLink } from "#/packages/domain/documents.ts";
 import type { LegislatorId, Sponsorship } from "#/packages/domain/legislators.ts";
 import type { OrsSectionId } from "#/packages/domain/oregonai.ts";
 import { unreadStatuteParse } from "#/packages/domain/statute-links.ts";
@@ -36,6 +37,8 @@ import { createOlisClient, type OlisClient } from "#/packages/olis-client/index.
 import { loadSnapshot, type Snapshot } from "#/packages/oregonai-snapshot/index.ts";
 import { extractPdfText, type ExtractedPdf } from "#/packages/pdf-text/index.ts";
 import { parseStatuteLinks, readAmendedVersionHeader } from "#/packages/statute-links/index.ts";
+import { searchEntryOf } from "#/packages/search/documents.ts";
+import { splitPassages } from "#/packages/search/passages.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
 import { buildReportPath, writeBuildReport, type BuildReport } from "./lib/build-report.ts";
@@ -51,6 +54,8 @@ export type IngestDeps = {
   documentTimeoutMs?: number;
   /** The alias file's entries: who the Legislator Codes it lists are, where the Legislators rows do not say. */
   legislatorAliases: readonly LegislatorAlias[];
+  /** Counts the tokens that decide where a passage ends. Created in the entry script, like the clock. */
+  embedder: Embedder;
 };
 
 export type FullPullResult = {
@@ -248,6 +253,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
   const floorVoteRecords = floorVotes.map((entry) => floorVoteRecordOf(entry, resolver));
   const committeeVoteRecords = committeeVotes.map((entry) => committeeVoteRecordOf(entry, resolver));
 
+  const committeeNames = new Map<CommitteeId, string>(committees.map((committee) => [committee.id, committee.name]));
   const writer = openIndexWriter(config.databasePath);
   let documentsFetched = 0;
   const notFetched: BuildReport["documents_not_fetched"] = [];
@@ -284,15 +290,19 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
         notFetched.push({ id: link.id, source_url: link.sourceUrl, reason: fetched.reason });
         continue;
       }
-      writer.storeDocument(config.session, {
-        ...link,
-        retrievedAt: formatPacific(deps.clock.now()),
-        contentHash: createHash("sha256").update(fetched.bytes).digest("hex"),
-        textHash: createHash("sha256").update(fetched.pdf.text).digest("hex"),
-        pageCount: fetched.pdf.pageCount,
-        hasTextLayer: fetched.pdf.hasTextLayer,
-        text: fetched.pdf.text,
-      });
+      writer.storeDocument(
+        config.session,
+        {
+          ...link,
+          retrievedAt: formatPacific(deps.clock.now()),
+          contentHash: createHash("sha256").update(fetched.bytes).digest("hex"),
+          textHash: createHash("sha256").update(fetched.pdf.text).digest("hex"),
+          pageCount: fetched.pdf.pageCount,
+          hasTextLayer: fetched.pdf.hasTextLayer,
+          text: fetched.pdf.text,
+        },
+        { entry: searchEntryOf(link, committeeNames), passages: splitPassages(fetched.pdf.text, deps.embedder) },
+      );
       stored.add(link.id);
       documentsFetched += 1;
     }
