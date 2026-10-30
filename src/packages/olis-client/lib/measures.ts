@@ -9,6 +9,8 @@ const measureRow = z.looseObject({
   MeasurePrefix: z.string(),
   MeasureNumber: z.number().int(),
   CatchLine: z.string().nullable(),
+  CurrentLocation: z.string(),
+  CurrentCommitteeCode: z.string().nullable(),
   CreatedDate: feedTimestamp,
   ModifiedDate: feedTimestamp.nullable(),
 });
@@ -28,6 +30,7 @@ export async function readMeasureRows(
       prefix: row.MeasurePrefix,
       number: row.MeasureNumber,
       catchline: row.CatchLine,
+      location: { current: row.CurrentLocation, committeeCode: row.CurrentCommitteeCode },
       createdAt: row.CreatedDate,
       modifiedAt: row.ModifiedDate,
     }));

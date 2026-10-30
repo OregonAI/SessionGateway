@@ -20,6 +20,8 @@ export type IndexReader = {
 
 const measureRow = z.object({
   catchline: z.string().nullable(),
+  location: z.string(),
+  committee_code: z.string().nullable(),
   created_at: z.string(),
   modified_at: z.string().nullable(),
 });
@@ -37,7 +39,7 @@ const sponsorRow = z.object({
 export function openIndexReader(path: string): IndexReader {
   const database = openReadConnection(path);
   const selectMeasure = database.prepare(
-    "SELECT catchline, created_at, modified_at FROM measure WHERE session_key = ? AND prefix = ? AND number = ?",
+    "SELECT catchline, location, committee_code, created_at, modified_at FROM measure WHERE session_key = ? AND prefix = ? AND number = ?",
   );
   const selectSponsors = database.prepare(
     `SELECT sponsor.sponsor_id, sponsor.print_order, sponsor.level, sponsor.legislator_code,
@@ -65,6 +67,7 @@ export function openIndexReader(path: string): IndexReader {
       return {
         ...key,
         catchline: stored.catchline,
+        location: { current: stored.location, committeeCode: stored.committee_code },
         createdAt: stored.created_at as Timestamp,
         modifiedAt: stored.modified_at as Timestamp | null,
       };

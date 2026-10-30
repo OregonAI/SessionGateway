@@ -19,8 +19,17 @@ export type MeasureKey = {
   number: number;
 };
 
+/** Where a Measure is now, as the feed's Measures row says it (GLOSSARY.md, "Location"). */
+export type MeasureLocation = {
+  /** The feed's `CurrentLocation`, such as "In Senate Committee" or "Chapter Number Assigned". */
+  current: string;
+  /** The feed's `CurrentCommitteeCode`: the committee the Measure is in, null when it is in none. */
+  committeeCode: string | null;
+};
+
 export type Measure = MeasureKey & {
   catchline: string | null;
+  location: MeasureLocation;
   /** When OLIS created the Measure's row, in Pacific time with its offset. */
   createdAt: Timestamp;
   /** When OLIS last changed it, if it ever did. */

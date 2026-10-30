@@ -14,6 +14,17 @@ export const getMeasureOutput = z.object({
   id: z.string().describe("The Measure's id in OregonAI's form."),
   catchline: z.string().nullable().describe("The Measure's catchline, as OLIS publishes it."),
   source_url: z.string().describe("The Measure's page on OLIS."),
+  location: z
+    .object({
+      current: z
+        .string()
+        .describe('Where the Measure is, as OLIS says it, such as "In Senate Committee" or "Chapter Number Assigned".'),
+      committee_code: z
+        .string()
+        .nullable()
+        .describe("The code of the committee the Measure is in, such as JWM, or null when it is in none."),
+    })
+    .describe("The Measure's current location as of the last full pull (see as_of)."),
   created_at: z.string().describe("When OLIS created the Measure, in Pacific time with its UTC offset."),
   modified_at: z
     .string()
@@ -76,6 +87,7 @@ export function getMeasure(
       id: measureIdOf(measure),
       catchline: measure.catchline,
       source_url: olisPageUrlOf(measure),
+      location: { current: measure.location.current, committee_code: measure.location.committeeCode },
       created_at: measure.createdAt,
       modified_at: measure.modifiedAt,
       sponsors: reader.findSponsors(measure).map((sponsor) => ({

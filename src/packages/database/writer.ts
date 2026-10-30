@@ -59,9 +59,11 @@ export function openIndexWriter(path: string): IndexWriter {
   return {
     recordFullPull(session, measures, asOf, people) {
       const upsertMeasure = database.prepare(
-        `INSERT INTO measure (session_key, prefix, number, catchline, created_at, modified_at) VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO measure (session_key, prefix, number, catchline, location, committee_code, created_at, modified_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (session_key, prefix, number) DO UPDATE SET
-           catchline = excluded.catchline, created_at = excluded.created_at, modified_at = excluded.modified_at`,
+           catchline = excluded.catchline, location = excluded.location, committee_code = excluded.committee_code,
+           created_at = excluded.created_at, modified_at = excluded.modified_at`,
       );
       const upsertLegislator = database.prepare(
         `INSERT INTO legislator (session_key, id, name) VALUES (?, ?, ?)
@@ -89,6 +91,8 @@ export function openIndexWriter(path: string): IndexWriter {
             measure.prefix,
             measure.number,
             measure.catchline,
+            measure.location.current,
+            measure.location.committeeCode,
             measure.createdAt,
             measure.modifiedAt,
           );
