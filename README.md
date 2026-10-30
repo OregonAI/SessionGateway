@@ -40,7 +40,7 @@ SESSION_KEY=2025R1 DATABASE_PATH=data/index.db node src/bin/server.ts   # serves
 | `SESSION_KEY` | both | none | The one Session this deployment serves (ADR-0003), such as `2025R1`. |
 | `DATABASE_PATH` | both | none | The SQLite file. The worker writes it and the server reads it. |
 | `OLIS_BASE_URL` | both | none | The OLIS OData service root, such as `https://api.oregonlegislature.gov/odata/odataservice.svc` (a trailing slash is added if it is missing). The worker pulls from it, and the server reads one Measure from it when `get_measure` is called. |
-| `OLIS_LIVE_TIMEOUT_MS` | server | `5000` | How long one live lookup may take, its five requests together, before `get_measure` answers from the cache and says the lookup failed. |
+| `OLIS_LIVE_TIMEOUT_MS` | server | `5000` | How long one live lookup may take, its five requests together, before `get_measure` answers from the cache and says the lookup failed. A whole number of milliseconds from 1 to 30000 (half what an MCP client waits for a tool by default); another value stops the start-up. |
 | `MCP_PATH` | server | `/mcp` | Where the endpoint is mounted. |
 | `MCP_HOST`, `MCP_PORT` | server | `127.0.0.1`, `3000` | Where it listens. |
 | `MCP_ALLOWED_HOSTS` | server | `localhost,127.0.0.1,[::1]` | Host names a request may be addressed to; any other `Host` is refused with 403. |

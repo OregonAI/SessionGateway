@@ -260,6 +260,11 @@ describe("the entry scripts", () => {
     ["src/bin/server.ts", "SESSION_KEY", "not-a-session-key"],
     ["src/bin/server.ts", "OLIS_BASE_URL", "not a url at all"],
     ["src/bin/server.ts", "OLIS_LIVE_TIMEOUT_MS", "soon"],
+    // Over the bound the lookup may take (30 seconds: half the 60 seconds an MCP client waits for a tool
+    // by default, so the cache's answer still reaches it), and over what a Node timer can count (2^31 - 1
+    // ms), which it would take for 1 ms.
+    ["src/bin/server.ts", "OLIS_LIVE_TIMEOUT_MS", "30001"],
+    ["src/bin/server.ts", "OLIS_LIVE_TIMEOUT_MS", "3000000000"],
     ["src/bin/server.ts", "MCP_PORT", "seventy"],
     ["src/bin/server.ts", "MCP_PATH", "no-leading-slash"],
     ["src/bin/server.ts", "MCP_RATE_LIMIT", "plenty"],
