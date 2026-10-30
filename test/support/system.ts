@@ -1,7 +1,7 @@
 // The whole system for one seam-1 test: a fake OLIS at a simulated time, the ingest worker's full
 // pull into a database in a disposable directory, and the MCP handler reading that database. It
 // wires the production packages through their entry points, the way src/bin/ does.
-import { loadIngestConfig, loadServerConfig } from "#/packages/config/index.ts";
+import { loadIngestConfig, loadServerConfig, type ServerConfig } from "#/packages/config/index.ts";
 import { runFullPull } from "#/packages/ingest/index.ts";
 import { createSessionGatewayHandler, type SessionGatewayHandler } from "#/packages/mcp-server/handler.ts";
 import { createSimulatedClock, type SimulatedClock } from "./clock.ts";
@@ -24,12 +24,16 @@ export type SystemOptions = {
   /** The deployment's Session (the SESSION_KEY variable). */
   sessionKey?: string;
   olis?: Omit<FakeOlisOptions, "clock">;
+  /** Further environment variables for the server's configuration (MCP_PATH, MCP_PORT, ...). */
+  serverEnv?: Record<string, string>;
 };
 
 export type System = {
   clock: SimulatedClock;
   olis: FakeOlis;
   database: TempDatabase;
+  /** The server's configuration, as the entry script would load it. */
+  serverConfig: ServerConfig;
   /** The MCP handler, serving the database the full pull wrote. */
   handler: SessionGatewayHandler;
   stop(): Promise<void>;
@@ -48,11 +52,13 @@ export async function startSystem(options: SystemOptions): Promise<System> {
   };
   try {
     await runFullPull(loadIngestConfig(env), { fetch, clock, signal: AbortSignal.timeout(30_000) });
-    const handler = createSessionGatewayHandler(loadServerConfig(env));
+    const serverConfig = loadServerConfig({ ...env, ...options.serverEnv });
+    const handler = createSessionGatewayHandler(serverConfig);
     return {
       clock,
       olis,
       database,
+      serverConfig,
       handler,
       stop: async () => {
         await handler.close();

@@ -1,4 +1,4 @@
-import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { Client, StreamableHTTPClientTransport, type FetchLike } from "@modelcontextprotocol/client";
 
 /** The two kinds of MCP client the server answers (test/CLAUDE.md, "MCP client"). */
 export type Era = "2026-07-28" | "legacy";
@@ -21,13 +21,25 @@ export type ConnectedClient = {
  * schema.
  */
 export async function connectClient(era: Era, handler: FetchHandler): Promise<ConnectedClient> {
+  return connect(era, new URL("http://session-gateway.test/mcp"), (input, init) =>
+    handler.fetch(new Request(input, init)),
+  );
+}
+
+/** Connects a client to a server on a real port, over the network stack. */
+export async function connectClientToUrl(era: Era, url: URL): Promise<ConnectedClient> {
+  return connect(era, url, undefined);
+}
+
+async function connect(era: Era, url: URL, fetchImplementation: FetchLike | undefined): Promise<ConnectedClient> {
   const client = new Client(
     { name: `seam-1-${era}-client`, version: "0.0.0" },
     era === "legacy" ? {} : { versionNegotiation: { mode: { pin: "2026-07-28" } } },
   );
-  const transport = new StreamableHTTPClientTransport(new URL("http://session-gateway.test/mcp"), {
-    fetch: (input, init) => handler.fetch(new Request(input, init)),
-  });
+  const transport = new StreamableHTTPClientTransport(
+    url,
+    fetchImplementation === undefined ? {} : { fetch: fetchImplementation },
+  );
   await client.connect(transport);
   const negotiated = client.getProtocolEra();
   if (negotiated !== (era === "legacy" ? "legacy" : "modern")) {

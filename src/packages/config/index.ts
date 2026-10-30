@@ -16,6 +16,14 @@ export type IngestConfig = {
 export type ServerConfig = {
   session: SessionKey;
   databasePath: string;
+  /** Where the MCP endpoint is mounted, such as /session-gateway/mcp. */
+  mcpPath: string;
+  host: string;
+  port: number;
+  /** Host names (without ports) a request may be addressed to; any other Host header is refused. */
+  allowedHosts: string[];
+  /** Origin host names a browser request may come from. A request with an Origin not listed is refused. */
+  allowedOrigins: string[];
 };
 
 const sessionKey = z.string().transform((text, context) => {
@@ -33,9 +41,28 @@ const ingestSchema = z.object({
   DATABASE_PATH: z.string().min(1),
 });
 
+const list = (text: string): string[] =>
+  text
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item !== "");
+
 const serverSchema = z.object({
   SESSION_KEY: sessionKey,
   DATABASE_PATH: z.string().min(1),
+  MCP_PATH: z
+    .string()
+    .regex(/^\/\S*$/, "must start with /")
+    .default("/mcp"),
+  MCP_HOST: z.string().min(1).default("127.0.0.1"),
+  MCP_PORT: z
+    .string()
+    .regex(/^\d+$/, "must be a whole number")
+    .transform(Number)
+    .pipe(z.number().max(65535, "must be at most 65535"))
+    .default(3000),
+  MCP_ALLOWED_HOSTS: z.string().transform(list).default(["localhost", "127.0.0.1", "[::1]"]),
+  MCP_ALLOWED_ORIGINS: z.string().transform(list).default([]),
 });
 
 function parseEnvironment<Schema extends z.ZodType>(schema: Schema, env: Environment): z.output<Schema> {
@@ -52,5 +79,13 @@ export function loadIngestConfig(env: Environment): IngestConfig {
 
 export function loadServerConfig(env: Environment): ServerConfig {
   const parsed = parseEnvironment(serverSchema, env);
-  return { session: parsed.SESSION_KEY, databasePath: parsed.DATABASE_PATH };
+  return {
+    session: parsed.SESSION_KEY,
+    databasePath: parsed.DATABASE_PATH,
+    mcpPath: parsed.MCP_PATH,
+    host: parsed.MCP_HOST,
+    port: parsed.MCP_PORT,
+    allowedHosts: parsed.MCP_ALLOWED_HOSTS,
+    allowedOrigins: parsed.MCP_ALLOWED_ORIGINS,
+  };
 }
