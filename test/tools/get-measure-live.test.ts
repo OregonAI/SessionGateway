@@ -118,3 +118,79 @@ describe("the live status with OLIS answering", () => {
     );
   });
 });
+
+// The schedule is the Measure's upcoming committee agenda items: the feed's CommitteeAgendaItems rows for
+// the Measure whose MeetingDate is at or after the time of the read. The rows, from the fixture:
+//   SB 69    201898  SLB    2025-01-21T08:00:00  Informational Meeting             created 2025-01-17
+//            202157  SLB    2025-01-28T08:00:00  Public Hearing                    created 2025-01-23
+//            202165  SLB    2025-01-30T08:00:00  Public Hearing and Work Session   created 2025-01-23
+//            209474  HLWS   2025-04-21T15:00:00  Public Hearing                    created 2025-04-11
+//            210203  HLWS   2025-04-28T15:00:00  Work Session                      created 2025-04-23
+//   HB 3795  208761  HECHS  2025-04-03T08:00:00  Public Hearing and Work Session   created 2025-04-02
+//            210517  SHS    2025-04-29T08:45:00  Public Hearing                    created 2025-04-25
+//            211461  SHS    2025-05-15T08:00:00  Work Session                      created 2025-05-08
+//            211739  SHS    2025-05-22T08:00:00  Work Session                      created 2025-05-15
+//            211740  SHS    2025-05-20T08:00:00  Public Hearing and Work Session   created 2025-05-15
+// (The property that names the committee is spelled `CommitteCode` in the feed.) The fake OLIS serves only
+// the rows created by its clock's time.
+describe("the schedule with OLIS answering", () => {
+  let system: System;
+
+  beforeAll(async () => {
+    system = await startSystem({ clockAt: pulledAt });
+  });
+
+  afterAll(async () => {
+    await system.stop();
+  });
+
+  describe.for(eras)("for a %s client", (era) => {
+    let connected: ConnectedClient;
+
+    beforeAll(async () => {
+      connected = await connectClient(era, system.handler);
+    });
+
+    afterAll(async () => {
+      await connected.close();
+    });
+
+    // 2025-04-26 10:00 in Oregon. SB 69's HLWS hearing (04-21) is past and its work session (04-28) is
+    // ahead; HB 3795's SHS hearing (04-29) was created the day before and is ahead, and its later SHS
+    // rows do not exist yet.
+    it.for([
+      ["SB 69", [{ committee_code: "HLWS", meeting_date: "2025-04-28T15:00:00-07:00", meeting_type: "Work Session" }]],
+      [
+        "HB 3795",
+        [{ committee_code: "SHS", meeting_date: "2025-04-29T08:45:00-07:00", meeting_type: "Public Hearing" }],
+      ],
+    ] as const)("lists the meetings still ahead of %s at the time of the read", async ([measure, ahead]) => {
+      system.clock.set("2025-04-26T17:00:00Z");
+
+      const outcome = await callTool(connected, "get_measure", { measure });
+
+      expect(liveStatusOf(outcome)?.schedule).toEqual(ahead);
+    });
+
+    it("lists a meeting that starts at the very time of the read, and not one that started a second before", async () => {
+      // SB 69's HLWS work session is at 2025-04-28 15:00 Pacific, which is 22:00:00 UTC.
+      system.clock.set("2025-04-28T22:00:00Z");
+      const atTheTime = await callTool(connected, "get_measure", { measure: "SB 69" });
+      system.clock.set("2025-04-28T22:00:01Z");
+      const aSecondLater = await callTool(connected, "get_measure", { measure: "SB 69" });
+
+      expect(liveStatusOf(atTheTime)?.schedule?.map((item) => item.meeting_date)).toEqual([
+        "2025-04-28T15:00:00-07:00",
+      ]);
+      expect(liveStatusOf(aSecondLater)?.schedule).toEqual([]);
+    });
+
+    it("lists nothing for a Measure with no meeting ahead", async () => {
+      system.clock.set("2025-12-15T17:00:00Z");
+
+      const outcome = await callTool(connected, "get_measure", { measure: "HB 3795" });
+
+      expect(liveStatusOf(outcome)).toMatchObject({ source: "olis", schedule: [] });
+    });
+  });
+});

@@ -8,6 +8,7 @@ import {
   type MeasureLocation,
   type SessionKey,
 } from "#/packages/domain/index.ts";
+import type { AgendaItem } from "#/packages/domain/schedule.ts";
 import type { CommitteeVote, FloorVote, LegislatorVote } from "#/packages/domain/votes.ts";
 import type { LiveLookup, LiveStatusReader } from "./live-status.ts";
 
@@ -81,6 +82,18 @@ const liveStatusOutput = z
     history: z
       .array(historyActionOutput)
       .describe("The Measure's history (see as_of), oldest action first as OLIS prints it."),
+    schedule: z
+      .array(
+        z.object({
+          committee_code: z.string().describe("The code of the committee that meets, such as SLB."),
+          meeting_date: z.string().describe("When the committee meets, in Pacific time with its UTC offset."),
+          meeting_type: z.string().describe('The kind of meeting as OLIS words it, such as "Public Hearing".'),
+        }),
+      )
+      .nullable()
+      .describe(
+        'The committee meetings still ahead at which the Measure is on the agenda (meeting_date at or after as_of), soonest first, as OLIS lists them now; empty when none is. Null when source is "cache": the cache holds no schedule.',
+      ),
     floor_votes: z
       .array(floorVoteOutput)
       .describe("The Measure's floor votes (see as_of), in the order they were taken, as the top-level floor_votes."),
@@ -193,6 +206,7 @@ function liveStatusOf(
         notice: `Read from OLIS when this call arrived, as of ${live.asOf}.`,
         location: { current: live.location.current, committee_code: live.location.committeeCode },
         history: live.history.map(historyShown),
+        schedule: live.schedule.map(scheduledItemShown),
         floor_votes: live.floorVotes.map(floorVoteShown),
         committee_votes: live.committeeVotes.map(committeeVoteShown),
       };
@@ -201,15 +215,20 @@ function liveStatusOf(
         source: "cache",
         lookup_failed: true,
         as_of: cached.asOf,
-        notice: `The live lookup of OLIS failed (${live.reason}). The location, history and votes in this block come from the cache, as of ${cached.asOf}, the index's as-of time, and may be out of date.`,
+        notice: `The live lookup of OLIS failed (${live.reason}). The location, history and votes in this block come from the cache, as of ${cached.asOf}, the index's as-of time, and may be out of date. The cache holds no schedule, so schedule is null.`,
         location: { current: cached.location.current, committee_code: cached.location.committeeCode },
         history: cached.history.map(historyShown),
+        schedule: null,
         floor_votes: cached.floorVotes.map(floorVoteShown),
         committee_votes: cached.committeeVotes.map(committeeVoteShown),
       };
     default:
       return live satisfies never;
   }
+}
+
+function scheduledItemShown(item: AgendaItem): { committee_code: string; meeting_date: string; meeting_type: string } {
+  return { committee_code: item.committeeCode, meeting_date: item.meetingDate, meeting_type: item.meetingType };
 }
 
 function floorVoteShown(vote: FloorVote): z.infer<typeof floorVoteOutput> {

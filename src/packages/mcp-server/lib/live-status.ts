@@ -9,6 +9,7 @@ import {
   type MeasureLocation,
 } from "#/packages/domain/index.ts";
 import type { Legislator } from "#/packages/domain/legislators.ts";
+import { compareAgendaItems, type AgendaItem } from "#/packages/domain/schedule.ts";
 import {
   compareCommitteeVoteEntries,
   compareFloorVoteEntries,
@@ -31,6 +32,7 @@ export type LiveLookup =
       history: HistoryAction[];
       floorVotes: FloorVote[];
       committeeVotes: CommitteeVote[];
+      schedule: AgendaItem[];
     }
   | { kind: "failed"; reason: string };
 
@@ -88,7 +90,7 @@ export function createLiveStatusReader(deps: LiveStatusDeps): LiveStatusReader {
 
       let read: MeasureLiveRead;
       try {
-        read = await deps.olis.readMeasureLive(key, signal);
+        read = await deps.olis.readMeasureLive(key, readAt, signal);
       } catch (error) {
         return failed(error);
       }
@@ -101,6 +103,7 @@ export function createLiveStatusReader(deps: LiveStatusDeps): LiveStatusReader {
         asOf: formatPacific(readAt),
         location: read.measure.location,
         history: read.history.toSorted(compareHistoryActions),
+        schedule: read.schedule.toSorted(compareAgendaItems),
         floorVotes: groupFloorVotes(
           read.floorVotes.toSorted(compareFloorVoteEntries).map((entry) => ({
             historyId: entry.historyId,

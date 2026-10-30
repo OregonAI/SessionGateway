@@ -29,9 +29,10 @@ export type OlisClient = {
   readFloorVotes(session: SessionKey, signal: AbortSignal): Promise<FloorVoteEntry[]>;
   /**
    * What OLIS says now about one Measure (the live lookup, ticket #21): only that Measure's rows, one
-   * request for each kind of row. It reads no other Measure and never pulls a whole set.
+   * request for each of five kinds of row. It reads no other Measure and never pulls a whole set. `readAt`
+   * is the time of the read: the schedule is the meetings at or after it.
    */
-  readMeasureLive(key: MeasureKey, signal: AbortSignal): Promise<MeasureLiveRead>;
+  readMeasureLive(key: MeasureKey, readAt: Date, signal: AbortSignal): Promise<MeasureLiveRead>;
 };
 
 export function createOlisClient(options: OlisClientOptions): OlisClient {
@@ -42,6 +43,6 @@ export function createOlisClient(options: OlisClientOptions): OlisClient {
     readHistoryActions: (session, signal) => readHistoryActionRows(options, session, signal),
     readCommitteeVotes: (session, signal) => readCommitteeVoteRows(options, session, signal),
     readFloorVotes: (session, signal) => readFloorVoteRows(options, session, signal),
-    readMeasureLive: (key, signal) => readMeasureLive(options, key, signal),
+    readMeasureLive: (key, readAt, signal) => readMeasureLive(options, key, readAt, signal),
   };
 }
