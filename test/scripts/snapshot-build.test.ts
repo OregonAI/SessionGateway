@@ -10,9 +10,9 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createMadeUpErf, madeUpGraph, type MadeUpErf } from "../support/made-up-erf.ts";
+import { createMadeUpErf, madeUpGraph, type MadeUpErf, type MadeUpGraph } from "../support/made-up-erf.ts";
 
 const cleanups: (() => void)[] = [];
 
@@ -166,5 +166,115 @@ describe("the snapshot build script", () => {
     expect(finished.status).toBe(1);
     expect(finished.stderr).toContain("ors-468.140");
     expect(existsSync(out)).toBe(false);
+  });
+});
+
+// --trim-to reads the committed 2025R1 fixture (test/fixtures/olis-2025R1): its documents and Measures say
+// which ORS chapters and Agencies it touches. The ERF checkout is still made up. The fixture's own words are
+// the oracle for what it touches (measures.txt and the spec): SB 69 adds to "ORS chapter 657B", amends ORS
+// 659A.159 and 653.616 (the Statutes Affected Table, spec #1 case (b)); HB 3795 amends ORS 409.711 and
+// 418.808; SB 69's Fiscal Impact Statement says "Government Unit(s) Affected: Bureau of Labor and
+// Industries, Employment Department, Judicial Department, Department of Justice".
+describe("the snapshot build script with --trim-to the 2025R1 fixture", () => {
+  const fixture = "test/fixtures/olis-2025R1";
+
+  function trimmedErf(): MadeUpErf {
+    const sections = ["ors-653.616", "ors-659a.159", "ors-657b.010", "ors-409.711", "ors-418.808", "ors-999.001"];
+    const graph: MadeUpGraph = {
+      note: "MADE UP for a test.",
+      nodes: [
+        ...sections.map((id) => ({
+          id,
+          title: `Made up ${id}`,
+          doc_type: "statute",
+          status: "current",
+          path: `statutes/${id}.md`,
+        })),
+        ...["oar-407-001-0010", "oar-998-001-0001"].map((id) => ({
+          id,
+          title: `Made up ${id}`,
+          doc_type: "rule",
+          status: "current",
+          path: `rules/${id.split("-")[1] ?? ""}/001/${id}.md`,
+        })),
+      ],
+      edges: [
+        { from: "oar-407-001-0010", to: "ors-409.711", type: "implements" },
+        // Chapter 999 is cited by nothing in the fixture, so the agency that implements it is not touched.
+        { from: "oar-998-001-0001", to: "ors-999.001", type: "implements" },
+      ],
+    };
+    const agenciesYaml = `organizations:
+- slug: made-up-employment
+  name: Employment Department
+  oar_chapter: '471'
+- slug: made-up-human-services
+  name: Made-Up Human Services
+  oar_chapter: '407'
+- slug: made-up-decoy-board
+  name: Made-Up Decoy Board
+  oar_chapter: '998'
+`;
+    return madeUpErf({ graph, agenciesYaml });
+  }
+
+  it("keeps the ORS chapters the fixture cites and the Agencies it touches, drops the rest, and records why", () => {
+    const erf = trimmedErf();
+    const out = outputFile();
+    const record = join(dirname(out), "trim.json");
+
+    const finished = build(["--erf", erf.path, "--out", out, "--trim-to", fixture, "--trim-record", record]);
+
+    expect(finished.status, finished.stderr).toBe(0);
+    const trimmed = readJson(out) as Record<string, unknown>;
+    // Chapters 409, 418, 653, 657B and 659A are cited; 999 is not. The decoy agency, whose only rule
+    // implements chapter 999, is dropped. The Employment Department is named in SB 69's Fiscal Impact
+    // Statement though no rule here implements a cited chapter; Made-Up Human Services implements 409.
+    expect(trimmed["agencies"]).toEqual([
+      {
+        slug: "made-up-employment",
+        name: "Employment Department",
+        aliases: [],
+        oarChapter: "471",
+        dasAgencyNumber: null,
+      },
+      {
+        slug: "made-up-human-services",
+        name: "Made-Up Human Services",
+        aliases: [],
+        oarChapter: "407",
+        dasAgencyNumber: null,
+      },
+    ]);
+    expect(trimmed["orsSections"]).toEqual([
+      "ors-409.711",
+      "ors-418.808",
+      "ors-653.616",
+      "ors-657b.010",
+      "ors-659a.159",
+    ]);
+    expect(trimmed["chapterAgencies"]).toEqual({ "ors-chapter-409": ["made-up-human-services"] });
+    // The version is the checkout's, untouched by the trim.
+    expect(trimmed["version"]).toMatchObject({ commit: erf.commit, commitDate: "2026-07-02T03:04:05-07:00" });
+
+    const recorded = readJson(record) as Record<string, unknown>;
+    expect(recorded["derivedFrom"]).toBe(fixture);
+    expect(recorded["orsChaptersCited"]).toEqual(
+      expect.arrayContaining([
+        "ors-chapter-409",
+        "ors-chapter-418",
+        "ors-chapter-653",
+        "ors-chapter-657b",
+        "ors-chapter-659a",
+      ]),
+    );
+    expect(recorded["orsChaptersCited"]).not.toContain("ors-chapter-999");
+    // SB 69 cites ORS 192.245; this made-up checkout holds no section of chapter 192.
+    expect(recorded["orsChaptersNotInSnapshot"]).toContain("ors-chapter-192");
+    expect(recorded["orsChaptersNotInSnapshot"]).not.toContain("ors-chapter-409");
+    expect(recorded["agenciesNamedInText"]).toEqual(["made-up-employment"]);
+    expect(recorded["kept"]).toEqual({ agencies: 2, orsSections: 5, chaptersWithAgencies: 1 });
+    expect(recorded["of"]).toEqual({ agencies: 3, orsSections: 6, chaptersWithAgencies: 2 });
+    expect(recorded["snapshotSha256"]).toBe(createHash("sha256").update(readFileSync(out)).digest("hex"));
   });
 });
