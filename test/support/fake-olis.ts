@@ -14,6 +14,10 @@
 //  - Rows are served verbatim: misspelled property names (CommitteCode, CommittteCode,
 //    LegislatoreCode) and decimal keys as strings.
 //  - Timestamps carry no offset (they are Pacific local time, which the fixture rows already are).
+//  - `$filter` is a conjunction of "Property eq 'text'", "Property eq 123" and "Property ge datetime'...'"
+//    terms, the forms the live lookup sends (olis-odata.md section 1 verified `eq`, `ge`, `and` and
+//    `datetime'...'`). Anything else is refused with 400, and so is a property no row of the set has,
+//    as live OLIS refuses `Nope eq 1`.
 //
 // "As the feed stood at the clock's time" means the rows whose CreatedDate is not after it. The
 // fixture holds each row's final state, so a row's other fields may be newer than the clock.
@@ -46,11 +50,47 @@ export type FakeOlisOptions = {
   pagingFault?: "repeats-the-first-page" | "never-ends";
 };
 
+/** One request the fake OLIS received, as the feed's own URL words it. */
+export type FakeOlisRequest = {
+  /** The entity set, such as "MeasureHistoryActions". */
+  entitySet: string;
+  /** True for the `/$count` path segment. */
+  isCount: boolean;
+  /** The `$filter` option, decoded, or null if the request had none. */
+  filter: string | null;
+};
+
+/** What the fake OLIS does with every request from now on (see `FakeOlis.behave`). */
+export type FakeOlisBehavior =
+  | { kind: "answer" }
+  /** Answers with this error status, such as 503. */
+  | { kind: "fail"; status: number }
+  /** Accepts the request and never answers it. */
+  | { kind: "hang" }
+  /** Closes the connection without a response. */
+  | { kind: "drop-connection" };
+
 export type FakeOlis = {
   /** The service root with a trailing slash, for the OLIS client's base URL. */
   baseUrl: string;
   /** From now on, leave the last `count` rows of each set out of the pages (see `withholdLastRows`). */
   withholdLastRows(count: number): void;
+  /** From now on, answer (or not) the way `behavior` says. Answering is the default. */
+  behave(behavior: FakeOlisBehavior): void;
+  /**
+   * Changes fields of the rows of one entity set that `matches`, from now on. The fixture holds each
+   * row's final state, so a test that needs a Measure to have moved since the pull says how here, and
+   * the row it makes is made up for its case.
+   */
+  amendRows(entitySet: string, matches: (row: Row) => boolean, changes: Row): void;
+  /**
+   * Adds rows to one entity set, from now on. Unlike `strayRows`, which the pull sees too, these appear
+   * after it, and the fake still hides one whose CreatedDate is after its clock.
+   */
+  addRows(entitySet: string, rows: readonly Row[]): void;
+  /** Every feed request received since the fake started or `forgetRequests` was last called. */
+  requests(): readonly FakeOlisRequest[];
+  forgetRequests(): void;
   close(): Promise<void>;
 };
 
@@ -112,21 +152,62 @@ function sendError(response: ServerResponse, status: number, message: string): v
   );
 }
 
+type FilterTerm =
+  { property: string; operator: "eq"; value: string | number } | { property: string; operator: "ge"; value: number };
+
+const textTerm = /^(\w+) eq '((?:[^']|'')*)'$/;
+const numberTerm = /^(\w+) eq (-?\d+)$/;
+const datetimeTerm = /^(\w+) ge datetime'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?)'$/;
+
+/** Reads a `$filter` of terms joined by " and ", or says which term the fake does not understand. */
+function parseFilter(filter: string): FilterTerm[] | { error: string } {
+  const terms: FilterTerm[] = [];
+  for (const text of filter.split(" and ")) {
+    const asText = textTerm.exec(text);
+    const asNumber = numberTerm.exec(text);
+    const asDatetime = datetimeTerm.exec(text);
+    if (asText?.[1] !== undefined && asText[2] !== undefined) {
+      terms.push({ property: asText[1], operator: "eq", value: asText[2].replaceAll("''", "'") });
+    } else if (asNumber?.[1] !== undefined && asNumber[2] !== undefined) {
+      terms.push({ property: asNumber[1], operator: "eq", value: Number(asNumber[2]) });
+    } else if (asDatetime?.[1] !== undefined && asDatetime[2] !== undefined) {
+      terms.push({ property: asDatetime[1], operator: "ge", value: feedWallClock(asDatetime[2]) });
+    } else {
+      return {
+        error: `The fake OLIS understands only "Property eq 'text'", "Property eq 123" and "Property ge datetime'...'" joined by " and ", not "${text}".`,
+      };
+    }
+  }
+  return terms;
+}
+
+function matches(row: Row, term: FilterTerm): boolean {
+  const value = row[term.property];
+  if (term.operator === "ge") return typeof value === "string" && feedWallClock(value) >= term.value;
+  return value === term.value;
+}
+
 export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis> {
   const feed = loadFeed();
   const pageSize = options.pageSize ?? 5000;
   let withheldRows = options.withholdLastRows ?? 0;
+  let behavior: FakeOlisBehavior = { kind: "answer" };
+  let received: FakeOlisRequest[] = [];
   const supportedQueryOptions = new Set(["$filter", "$inlinecount", "$skiptoken"]);
 
   /** The rows of one entity set that match the request's `$filter`, as the feed stood at the clock's time. */
   function visibleRows(entitySet: string, filter: string | null): Row[] | { error: string } {
-    const sessionKey = filter === null ? undefined : /^SessionKey eq '([^']*)'$/.exec(filter)?.[1];
-    if (filter !== null && sessionKey === undefined) {
-      return { error: `The fake OLIS understands only "$filter=SessionKey eq '<key>'", not "${filter}".` };
+    const terms = filter === null ? [] : parseFilter(filter);
+    if ("error" in terms) return terms;
+    const known = feed.get(entitySet) ?? [];
+    for (const term of terms) {
+      if (!known.some((row) => term.property in row)) {
+        return { error: `Could not find a property named '${term.property}' on type '${entitySet}'.` };
+      }
     }
     const now = pacificWallClock(options.clock.now());
-    const rows = (feed.get(entitySet) ?? []).filter((row) => {
-      if (sessionKey !== undefined && row["SessionKey"] !== sessionKey) return false;
+    const rows = known.filter((row) => {
+      if (!terms.every((term) => matches(row, term))) return false;
       const created = row["CreatedDate"];
       return typeof created !== "string" || feedWallClock(created) <= now;
     });
@@ -141,6 +222,25 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
     if (request.method !== "GET" || !isServiceRoot || entitySet === undefined || !feed.has(entitySet)) {
       sendError(response, 404, `Resource not found for the segment '${entitySet ?? url.pathname}'.`);
       return;
+    }
+    received.push({
+      entitySet,
+      isCount: segments[3] === "$count",
+      filter: url.searchParams.get("$filter"),
+    });
+    switch (behavior.kind) {
+      case "answer":
+        break;
+      case "fail":
+        sendError(response, behavior.status, "The fake OLIS was told to fail.");
+        return;
+      case "hang":
+        return;
+      case "drop-connection":
+        request.socket.destroy();
+        return;
+      default:
+        return behavior satisfies never;
     }
     for (const name of url.searchParams.keys()) {
       if (name === "$count") {
@@ -210,6 +310,23 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
     baseUrl: `http://127.0.0.1:${port}/odata/odataservice.svc/`,
     withholdLastRows: (count) => {
       withheldRows = count;
+    },
+    behave: (next) => {
+      behavior = next;
+    },
+    addRows: (entitySet, rows) => {
+      const known = feed.get(entitySet) ?? [];
+      known.push(...rows);
+      feed.set(entitySet, known);
+    },
+    amendRows: (entitySet, matchesRow, changes) => {
+      for (const row of feed.get(entitySet) ?? []) {
+        if (matchesRow(row)) Object.assign(row, changes);
+      }
+    },
+    requests: () => [...received],
+    forgetRequests: () => {
+      received = [];
     },
     close: () =>
       new Promise<void>((resolve, reject) => {

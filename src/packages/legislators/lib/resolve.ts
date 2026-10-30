@@ -14,6 +14,8 @@ export type UnresolvedLegislatorCode = {
 export type LegislatorResolver = {
   /** Every Legislator the resolver can name, one entry per person. */
   people: readonly Legislator[];
+  /** Every Legislator Code the resolver can resolve, with the Legislator it names: a person can have several. */
+  codes: readonly { code: string; legislator: Legislator }[];
   /**
    * Resolves a code that `source` (an entity set, such as "MeasureSponsors") used. A code that does not
    * resolve is counted against its source, for the report.
@@ -124,6 +126,7 @@ export function createLegislatorResolver(input: ResolverInput): LegislatorResolv
 
   return {
     people: [...new Set(byCode.values())],
+    codes: [...byCode.entries()].map(([code, legislator]) => ({ code, legislator })),
     resolve(source, code) {
       const legislator = byCode.get(code);
       if (legislator !== undefined) return { kind: "resolved", legislator };

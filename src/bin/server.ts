@@ -11,8 +11,17 @@ import { systemClock } from "#/packages/time/clock.ts";
 // and portability"). pino's `err` key writes an Error's type, message and stack as fields of the line.
 const logger = pino();
 
+const shutdown = new AbortController();
+
 const config = loadServerConfig(process.env);
-const handler = createSessionGatewayHandler(config, { clock: systemClock });
+const handler = createSessionGatewayHandler(config, {
+  clock: systemClock,
+  fetch,
+  signal: shutdown.signal,
+  onLiveLookupFailed: ({ measure, error }) => {
+    logger.warn({ err: error, measure }, "The live lookup of OLIS failed; get_measure answered from the cache");
+  },
+});
 const server = await serveMcp(handler, config, {
   onError: (error) => {
     logger.error({ err: error }, "The MCP adapter reported an error");
@@ -23,6 +32,7 @@ logger.info({ host: config.host, port: server.port, path: config.mcpPath }, "MCP
 // On SIGINT or SIGTERM stop accepting requests, then release the database, and let the process end.
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
+    shutdown.abort();
     server
       .close()
       .then(() => handler.close())

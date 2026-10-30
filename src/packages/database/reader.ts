@@ -2,7 +2,13 @@
 import { z } from "zod";
 import type { HistoryAction, Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
 import { comparePrintOrder, type Legislator, type LegislatorId, type Sponsor } from "#/packages/domain/legislators.ts";
-import type { CommitteeVote, FloorVote, LegislatorVote } from "#/packages/domain/votes.ts";
+import {
+  groupCommitteeVotes,
+  groupFloorVotes,
+  type CommitteeVote,
+  type FloorVote,
+  type LegislatorVote,
+} from "#/packages/domain/votes.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openReadConnection } from "./lib/connection.ts";
 
@@ -26,6 +32,11 @@ export type IndexReader = {
    * with the members' votes in the order of the feed's ids for the entries (`CommitteeVoteId`).
    */
   findCommitteeVotes(key: MeasureKey): CommitteeVote[];
+  /**
+   * The Legislator a Legislator Code names, as the last full pull resolved it, or undefined when the code
+   * is not one the pull could resolve. The live lookup resolves the codes in OLIS's current votes this way.
+   */
+  findLegislatorOfCode(session: SessionKey, code: string): Legislator | undefined;
   /** When the last completed full pull started, or undefined if none has completed. */
   asOf(session: SessionKey): Timestamp | undefined;
   close(): void;
@@ -65,6 +76,7 @@ const committeeVoteRow = z.object({
   legislator_name: z.string().nullable(),
   vote: z.string(),
 });
+const legislatorOfCodeRow = z.object({ legislator_id: z.string(), legislator_name: z.string() });
 const sponsorRow = z.object({
   sponsor_id: z.number(),
   print_order: z.number(),
@@ -83,37 +95,6 @@ function legislatorOf(stored: { legislator_id: string | null; legislator_name: s
 /** A stored vote entry, as the server shows it. */
 function legislatorVoteOf(stored: z.infer<typeof floorVoteRow> | z.infer<typeof committeeVoteRow>): LegislatorVote {
   return { legislatorCode: stored.legislator_code, legislator: legislatorOf(stored), vote: stored.vote };
-}
-
-/** The rows in order, cut into runs of neighbours that share a key: the rows of one vote come next to each other. */
-function runsOf<Row>(rows: readonly Row[], keyOf: (row: Row) => unknown): [Row, ...Row[]][] {
-  const runs: [Row, ...Row[]][] = [];
-  for (const row of rows) {
-    const last = runs.at(-1);
-    if (last !== undefined && keyOf(last[0]) === keyOf(row)) last.push(row);
-    else runs.push([row]);
-  }
-  return runs;
-}
-
-/** A committee vote's committee, meeting and who voted what, whatever order the feed lists the members in. */
-function rollOf(vote: CommitteeVote): string {
-  const cast = vote.votes.map((entry) => `${entry.legislatorCode}\u0000${entry.vote}`).sort();
-  return JSON.stringify([vote.committeeCode, vote.meetingDate, cast]);
-}
-
-/**
- * The cache gives every agenda item that has two reports the same roll twice (docs/research/olis-votes.md
- * §3), so a roll the feed gives under two reports is listed once. Rolls that differ are never merged.
- */
-function withoutRepeatedRolls(votes: readonly CommitteeVote[]): CommitteeVote[] {
-  const listed = new Set<string>();
-  return votes.filter((vote) => {
-    const roll = rollOf(vote);
-    if (listed.has(roll)) return false;
-    listed.add(roll);
-    return true;
-  });
 }
 
 export function openIndexReader(path: string): IndexReader {
@@ -158,6 +139,12 @@ export function openIndexReader(path: string): IndexReader {
        ON legislator.session_key = committee_vote.session_key AND legislator.id = committee_vote.legislator_id
      WHERE committee_vote.session_key = ? AND committee_vote.prefix = ? AND committee_vote.number = ?
      ORDER BY committee_vote.meeting_date, committee_vote.report_id, committee_vote.vote_id`,
+  );
+  const selectLegislatorOfCode = database.prepare(
+    `SELECT legislator.id AS legislator_id, legislator.name AS legislator_name
+     FROM legislator_code JOIN legislator
+       ON legislator.session_key = legislator_code.session_key AND legislator.id = legislator_code.legislator_id
+     WHERE legislator_code.session_key = ? AND legislator_code.code = ?`,
   );
   const selectAsOf = database.prepare("SELECT full_pull_as_of FROM index_state WHERE session_key = ?");
   return {
@@ -212,24 +199,35 @@ export function openIndexReader(path: string): IndexReader {
     findFloorVotes(key) {
       const rows = selectFloorVotes.all(key.session, key.prefix, key.number).map((row) => floorVoteRow.parse(row));
       // The rows come ordered by time and history id, so the rows of a history id are one floor vote.
-      return runsOf(rows, (stored) => stored.history_id).map((run) => ({
-        chamber: run[0].chamber,
-        date: run[0].action_date as Timestamp,
-        action: run[0].action_text,
-        votes: run.map(legislatorVoteOf),
-      }));
+      return groupFloorVotes(
+        rows.map((stored) => ({
+          historyId: stored.history_id,
+          chamber: stored.chamber,
+          date: stored.action_date as Timestamp,
+          action: stored.action_text,
+          cast: legislatorVoteOf(stored),
+        })),
+      );
     },
     findCommitteeVotes(key) {
       const rows = selectCommitteeVotes
         .all(key.session, key.prefix, key.number)
         .map((row) => committeeVoteRow.parse(row));
       // The rows come ordered by meeting and report, so the rows of a report id are one roll.
-      const reports = runsOf(rows, (stored) => stored.report_id).map((run) => ({
-        committeeCode: run[0].committee_code,
-        meetingDate: run[0].meeting_date as Timestamp,
-        votes: run.map(legislatorVoteOf),
-      }));
-      return withoutRepeatedRolls(reports);
+      return groupCommitteeVotes(
+        rows.map((stored) => ({
+          reportId: stored.report_id,
+          committeeCode: stored.committee_code,
+          meetingDate: stored.meeting_date as Timestamp,
+          cast: legislatorVoteOf(stored),
+        })),
+      );
+    },
+    findLegislatorOfCode(session, code) {
+      const row = selectLegislatorOfCode.get(session, code);
+      if (row === undefined) return undefined;
+      const stored = legislatorOfCodeRow.parse(row);
+      return { id: stored.legislator_id as LegislatorId, name: stored.legislator_name };
     },
     asOf(session) {
       const row = selectAsOf.get(session);

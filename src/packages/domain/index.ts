@@ -55,6 +55,12 @@ export type HistoryAction = {
   text: string;
 };
 
+/** Orders history actions oldest first: by when they happened, then by the feed's id. */
+export function compareHistoryActions(a: HistoryAction, b: HistoryAction): number {
+  if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+  return a.id - b.id;
+}
+
 /** A Measure's id in OregonAI's form: lower-case Session and prefix, no leading zeros. */
 export type MeasureId = string & { readonly brand: "MeasureId" };
 
