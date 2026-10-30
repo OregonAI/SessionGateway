@@ -27,14 +27,14 @@ _Avoid_: attachment, file, when the text is meant
 
 **Part**:
 One slice of a Document's text, at most 20,000 characters and ending at the end of a line, so a long Document is read a Part at a time. The Parts joined are the text exactly.
-_Avoid_: page, chunk (which search will mean)
+_Avoid_: page, chunk (search's word is Passage)
 
 **Text layer**:
 The text a PDF carries, as opposed to a picture of text. A scan or a photograph has none, and its Document is flagged.
 _Avoid_: OCR, which reads a picture and is out of scope
 
 **Build report**:
-What the ingest worker writes after a full pull, beside the database (spec #1, story 54): `build-report.json`, the Documents with no Text layer and the Documents it could not get or read, and `unresolved-legislator-codes.json`, the Unresolved Legislator Codes.
+What the ingest worker writes after a full pull, beside the database (spec #1, story 54): `build-report.json`, the Documents with no Text layer, the Documents it could not get or read, and what it made of the Passages it stored (how many were embedded and how many reused, ADR-0025), and `unresolved-legislator-codes.json`, the Unresolved Legislator Codes.
 
 **As of**:
 When the Index was last refreshed from OLIS: the moment the latest completed full pull began, shown in Pacific time with its UTC offset. Every result carries it.
@@ -42,6 +42,31 @@ When the Index was last refreshed from OLIS: the moment the latest completed ful
 **Live status**:
 A Measure's Location, History, Schedule and Votes as OLIS says them when a `get_measure` call arrives, in the result's `live_status` block beside what the Index last pulled. It is dated by the clock at the read, and the Index's As of time dates the rest of the result. The lookup asks OLIS five questions about that one Measure and never pulls a set (ADR-0005; `docs/adr/0014-get-measure-reads-one-measure-from-olis-and-falls-back-to-the-cache.md` lists them), and gives up after a bound (5 seconds unless the deployment sets `OLIS_LIVE_TIMEOUT_MS`). If it fails (an error status, a broken connection, no answer within the bound, a page the client cannot read, a Measure OLIS does not list), the block holds the Index's values instead, is dated by the As of time, says in its `notice` that the lookup failed and why, and has no Schedule. That is a normal result, not an error: the cache still answers.
 _Avoid_: status, unqualified; live data
+
+### Search
+
+**Passage**:
+One slice of a Document's text that search indexes and embeds: whole lines, at most 510 tokens by the embedding model's own count, with no overlap with the next. A Passage is a slice of the Document's text, so what a hit shows is exactly what the Document says (ADR-0025).
+_Avoid_: chunk, Part (a Part is what `get_document` serves)
+
+**Hit**:
+One result of `search`: a Document, or for a Proposed Amendment the amendment, with its id, kind, title, Measure, date, a snippet of the Passage that matched, its `source_url`, and how it was found (`found_by`).
+_Avoid_: result, match
+
+**Exact citation**:
+A Measure ("HB 3131"), a Proposed Amendment ("SB 69-2") or an ORS section ("ORS 468.130") written in a question as people write it. The Hits it names exactly come first: a Measure's Versions from Introduced to Enrolled, the amendment, the Documents whose text holds the section (ADR-0025).
+_Avoid_: reference, Statute Link (a Statute Link is parsed from a Version's text, not found in a question)
+
+**Keyword-only Document**:
+An agenda, a Recording Log or a witness-registration list (an Exhibit the feed labels "Witness Registration", or titles so). Search finds it by its words and never by meaning: its Passages are not embedded.
+_Avoid_: unembedded document
+
+**Vector**:
+The 384 numbers the embedding model gives a Passage's text, kept as 384 bytes (each number times 127, rounded) under the sha256 of the text and the model id. Identical text has one Vector, whichever Documents hold it.
+_Avoid_: embedding, when the stored thing is meant
+
+**Model id**:
+The name of the embedding model, its revision, its pooling and the instruction a question carries, as one string. A Vector is valid only under the Model id that made it.
 
 ### Measures and their texts
 

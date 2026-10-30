@@ -25,7 +25,8 @@ A ticket is done when all of these hold:
 `package.json` is the source of truth for every script.
 
 - `npm ci`: the only way to install.
-- `npm run check`: the whole gate. It runs `format:check`, `lint`, `typecheck`, `guard:tsc`, `lint:boundaries`, `fixture:verify`, `snapshot:verify` and `test`, keeps going after a failure, prints each step's result, and exits 1 if any failed. CI runs the same command.
+- `npm run model:fetch`: downloads the pinned embedding model into `.cache/models/` (gitignored) and sends no request when the files are there and verified. Run it once per checkout, before `npm test`: the search tests load the real model (ADR-0026).
+- `npm run check`: the whole gate. It runs `format:check`, `lint`, `typecheck`, `guard:tsc`, `lint:boundaries`, `fixture:verify`, `snapshot:verify`, `model:verify` and `test`, keeps going after a failure, prints each step's result, and exits 1 if any failed. CI runs `model:fetch` and then the same command.
 - `npx vitest run <file>`: one test file, for the inner loop.
 - `npm run format`: rewrites src, test and scripts with Prettier. `test/fixtures/` is never formatted.
 - `npm run license:check`: the licence allowlist over the production tree (CI's supply-chain job; it needs no network).
@@ -47,7 +48,7 @@ Whoever adopts this code inherits every dependency, so the tree stays small and 
 - `.npmrc` sets `min-release-age=14`, so npm resolves only versions published at least 14 days ago. A security fix is the one exception: take it deliberately and say so in the PR.
 - `.npmrc` sets `strict-allow-scripts=true`, so `npm ci` fails while any dependency's install script is neither approved nor denied in `package.json` `allowScripts`. Read the script, then record the decision with `npm approve-scripts <pkg>` (pinned to the version you read) or `npm deny-scripts <pkg>`, and list each decision in the PR. Deny a script that only fetches something the service doesn't use, such as onnxruntime-node's, which downloads CUDA files.
 - A `node:` built-in comes before a package. Justify each new runtime dependency in its PR: what it does, its license, and why no built-in fits.
-- Licenses must be permissive (MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD). CI checks `npm sbom --omit=dev` output against that list. A package outside the list needs the owner's approval in its PR, then an entry in the check's exceptions list naming the package, its license and the reason. The embedder ticket will need one: transformers.js depends on sharp, whose `@img/sharp-libvips-*` binaries are LGPL-3.0-or-later.
+- Licenses must be permissive (MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD). CI checks `npm sbom --omit=dev` output against that list. A package outside the list needs the owner's approval in its PR, then an entry in the check's exceptions list naming the package, its license and the reason. transformers.js depends on sharp, whose `@img/sharp-libvips-*` binaries are LGPL-3.0-or-later, so the embedder uses onnxruntime-node and `@huggingface/tokenizers` instead and needs no exception (ADR-0026).
 
 ## Agent skills
 

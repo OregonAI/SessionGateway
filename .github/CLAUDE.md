@@ -1,6 +1,6 @@
 # CI and repository automation
 
-- **One gate.** CI runs `npm ci`, then `npm run check`, on every PR: the same gate as local work. It uses the Node version `package.json` pins (`actions/setup-node` with `node-version-file: package.json`), and `concurrency` cancels superseded runs.
+- **One gate.** CI runs `npm ci`, then `npm run model:fetch`, then `npm run check`, on every PR: the same gate as local work. The embedding model is not in the repository: `actions/cache` keeps `.cache/models` keyed on `src/packages/embedder/data/model-lock.json`, `model:fetch` downloads what the cache lacks and checks every file against the lock (ADR-0026), and the tests read it from there. It uses the Node version `package.json` pins (`actions/setup-node` with `node-version-file: package.json`), and `concurrency` cancels superseded runs.
 - **Least privilege.** Each workflow starts with `permissions: contents: read`, and a job that needs more raises it for that job alone. `actions/checkout` runs with `persist-credentials: false`.
 - **Pinned actions.** Every action is pinned to a full commit SHA, with its version in a comment, for example `actions/checkout@<sha> # v7.0.1`.
 - **Untrusted input.** Workflows trigger on `pull_request` and `push`. Untrusted input reaches a `run:` step through an `env:` variable, never inline in `${{ }}`.
