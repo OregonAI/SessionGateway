@@ -24,7 +24,7 @@ export type AgencyEvidence =
     }
   | {
       kind: "testimony";
-      /** The Testimony row's `Organization`, as it is written there. */
+      /** The Testimony row's `Organization`, as it is written there but for stray spaces at either end. */
       organization: string;
     };
 
