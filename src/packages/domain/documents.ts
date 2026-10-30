@@ -167,6 +167,8 @@ export type DocumentLink = {
   postedAt: Timestamp | null;
   /** For an analysis document: the feed's own `Version` label, "" when the feed gives none. */
   versionLabel?: string;
+  /** For an analysis document: the feed's own `IsMinority` flag. */
+  isMinority?: boolean;
   relations: DocumentRelation[];
 };
 

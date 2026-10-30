@@ -45,6 +45,7 @@ const schema = `
     has_text_layer INTEGER NOT NULL,
     posted_at TEXT,
     analysis_version_label TEXT,
+    analysis_is_minority INTEGER,
     text TEXT NOT NULL
   ) STRICT;
   CREATE INDEX IF NOT EXISTS document_node ON document (node_id);

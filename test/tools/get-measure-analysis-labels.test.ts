@@ -23,16 +23,17 @@ function analysisRow(
   id: number,
   measure: { prefix: string; number: number },
   version: string | null,
+  options: { type?: string; isMinority?: boolean } = {},
 ): Record<string, unknown> {
   return {
     MeasureAnalysisId: String(id),
     SessionKey: "2025R1",
     CommittteCode: "HALNRW",
-    DocumentType: "Fiscal Impact Statement",
+    DocumentType: options.type ?? "Fiscal Impact Statement",
     MeasurePrefix: measure.prefix,
     MeasureNumber: measure.number,
     Version: version,
-    IsMinority: false,
+    IsMinority: options.isMinority ?? false,
     DocumentUrl: `${root}/MeasureAnalysisDocument/${id}`,
     CreatedDate: "2025-02-12T10:00:00",
     ModifiedDate: null,
@@ -64,6 +65,17 @@ describe("labels the fixture has no row for", () => {
   const hb3131 = { prefix: "HB", number: 3131 };
   const hb3795 = { prefix: "HB", number: 3795 };
   const sb921 = { prefix: "SB", number: 921 };
+  const sb69 = { prefix: "SB", number: 69 };
+  // The pair the cache has for SB 916 (87549 and 87550, 11 seconds apart): a Staff Measure Summary of the
+  // majority and one the feed flags IsMinority=true, both labelled "A". SB 69 lists A-Engrossed and no
+  // B-Engrossed. 900113 and 900114 are flagged and carry a label of a Version it lacks, and no label.
+  const staffSummary = { type: "Staff Measure Summary" };
+  const minorityRows = [
+    analysisRow(900111, sb69, "A", staffSummary),
+    analysisRow(900112, sb69, "A", { ...staffSummary, isMinority: true }),
+    analysisRow(900113, sb69, "B", { ...staffSummary, isMinority: true }),
+    analysisRow(900114, sb69, "", { ...staffSummary, isMinority: true }),
+  ];
   const rows: [id: number, label: string | null][] = [
     [900101, "B*"],
     [900102, "MRA"],
@@ -95,11 +107,12 @@ describe("labels the fixture has no row for", () => {
             analysisRow(900108, hb3795, "C"),
             // The highest id of SB 921's analysis documents, though it is of the first Version printed.
             analysisRow(900110, sb921, "INTRO"),
+            ...minorityRows,
           ],
           MeasureDocuments: [cEngrossedRow],
         },
         strayDocuments: {
-          ...strayFiles([...rows.map(([id]) => id), 900108, 900110]),
+          ...strayFiles([...rows.map(([id]) => id), 900108, 900110, 900111, 900112, 900113, 900114]),
           "/liz/2025R1/Downloads/MeasureDocument/HB3795/C-Engrossed": "measure-documents/HB3795/B-Engrossed.pdf",
         },
       },
@@ -200,6 +213,45 @@ describe("labels the fixture has no row for", () => {
         ],
       ]);
     });
+
+    // The feed flags 18 of the cache's rows IsMinority=true (ADR-0012). Its label says "A", but the row
+    // is the minority report's, not the majority's A-Engrossed text, so the document is listed apart
+    // and says why. The majority's own summary next to it (900111) stays on A-Engrossed.
+    it("lists a document the feed flags as a minority report's apart, even when its label names a listed Version", async () => {
+      const analysis = analysisOf(await callTool(connected, "get_measure", { measure: "SB 69" }));
+
+      expect(analysis.by_version.map((group) => group.version_id)).toEqual(["version-2025r1-sb69-a-engrossed"]);
+      expect(analysis.by_version[0]?.documents.map((document) => document.id)).toEqual([
+        "analysis-2025r1-85414",
+        "analysis-2025r1-85419",
+        "analysis-2025r1-85482",
+        "analysis-2025r1-91380",
+        "analysis-2025r1-900111",
+      ]);
+      expect(analysis.unmapped.map((document) => [document.id, document.version_label])).toEqual([
+        ["analysis-2025r1-900112", "A"],
+        ["analysis-2025r1-900113", "B"],
+        ["analysis-2025r1-900114", ""],
+      ]);
+      const reasons = analysis.unmapped.map((document) => document.unmapped_reason);
+      expect(reasons[0]).toMatch(/flags this document as a minority report's.*labels it "A"/s);
+      expect(reasons[1]).toMatch(/flags this document as a minority report's.*labels it "B"/s);
+      expect(reasons[2]).toMatch(/flags this document as a minority report's.*no Version label/s);
+    });
+
+    it("points a document the feed flags as a minority report's at no Version in get_document", async () => {
+      for (const id of [900112, 900113, 900114]) {
+        const outcome = await callTool(connected, "get_document", { id: `analysis-2025r1-${id}` });
+        expect.soft(outcome.isError, String(id)).toBe(false);
+        const related = outcome.structured?.["related"] as { relation: string }[];
+        expect
+          .soft(
+            related.map((node) => node.relation),
+            String(id),
+          )
+          .not.toContain("version");
+      }
+    });
   });
 });
 
@@ -237,6 +289,50 @@ describe.for(eras)("a label OLIS changes after the file was fetched, for a %s cl
         system.olis
           .documentRequests()
           .filter((path) => path === "/liz/2025R1/Downloads/MeasureAnalysisDocument/900109"),
+      ).toHaveLength(1);
+    } finally {
+      await connected.close();
+      await system.stop();
+    }
+  });
+});
+
+describe.for(eras)("a minority flag OLIS sets after the file was fetched, for a %s client", (era) => {
+  // Made-up row 900115 is a majority Staff Measure Summary labelled "A" on SB 69, then flagged
+  // IsMinority=true by a later pull: get_measure and get_document follow the row, without fetching the
+  // file again.
+  it("moves the document off its Version at the next pull", async () => {
+    const row = analysisRow(900115, { prefix: "SB", number: 69 }, "A", { type: "Staff Measure Summary" });
+    const system = await startSystem({
+      clockAt,
+      documents: true,
+      olis: {
+        strayRows: { MeasureAnalysisDocuments: [row] },
+        strayDocuments: strayFiles([900115]),
+      },
+    });
+    const connected = await connectClient(era, system.handler);
+    try {
+      const before = analysisOf(await callTool(connected, "get_measure", { measure: "SB 69" }));
+      expect(before.by_version.flatMap((group) => group.documents.map((document) => document.id))).toContain(
+        "analysis-2025r1-900115",
+      );
+
+      row["IsMinority"] = true;
+      await system.pullAgain();
+
+      const after = analysisOf(await callTool(connected, "get_measure", { measure: "SB 69" }));
+      expect(after.by_version.flatMap((group) => group.documents.map((document) => document.id))).not.toContain(
+        "analysis-2025r1-900115",
+      );
+      expect(after.unmapped.map((document) => document.id)).toEqual(["analysis-2025r1-900115"]);
+      const document = await callTool(connected, "get_document", { id: "analysis-2025r1-900115" });
+      const related = document.structured?.["related"] as { relation: string }[];
+      expect(related.map((node) => node.relation)).not.toContain("version");
+      expect(
+        system.olis
+          .documentRequests()
+          .filter((path) => path === "/liz/2025R1/Downloads/MeasureAnalysisDocument/900115"),
       ).toHaveLength(1);
     } finally {
       await connected.close();

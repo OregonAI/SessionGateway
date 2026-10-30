@@ -106,7 +106,7 @@ A Fiscal Impact Statement, revenue impact statement, Staff Measure Summary or Bu
 _Avoid_: fiscal document, report, unqualified
 
 **Version label**:
-The feed's own mark of the Version an analysis document is of: "INTRO", "A", "B", "C", or one the feed does not define ("B*", "MRA", blank). "INTRO" and a single letter name a Version; the others do not, and the document is listed as unmapped with the reason (ADR-0012).
+The feed's own mark of the Version an analysis document is of: "INTRO", "A", "B", "C", or one the feed does not define ("B*", "MRA", blank). "INTRO" and a single letter name a Version; the others do not, and neither does any label on a document the feed flags as a minority report's (`IsMinority`). Such a document is listed as unmapped with the reason (ADR-0012).
 _Avoid_: version, unqualified
 
 ### People

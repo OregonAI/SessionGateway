@@ -38,7 +38,7 @@ export const analysisDocumentsOutput = z
     unmapped: z
       .array(analysisEntry.extend({ unmapped_reason: z.string().describe("Why the document is on no Version.") }))
       .describe(
-        "The analysis documents the feed's label does not place on a Version of the Measure. They are listed, never dropped; the reason says what the feed leaves unsaid.",
+        "The analysis documents the feed's label does not place on a Version of the Measure, and the ones the feed flags as a minority report's. They are listed, never dropped; the reason says what the feed leaves unsaid.",
       ),
   })
   .describe(
@@ -82,7 +82,7 @@ export function analysisDocumentsOf(key: MeasureKey, stored: readonly StoredAnal
     // The worker pointed the document at a Version only when its label named one the feed lists for the
     // Measure. So the Version it is pointed at is the one "listed" Version here, and the others are not:
     // this replays the worker's placement from what it stored, and cannot disagree with it.
-    const placement = placeAnalysis(key, analysis.versionLabel, (version) => version === analysis.placedVersionId);
+    const placement = placeAnalysis(key, analysis, (version) => version === analysis.placedVersionId);
     switch (placement.kind) {
       case "version": {
         const group = groups.get(placement.versionId) ?? {

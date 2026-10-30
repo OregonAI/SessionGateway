@@ -159,6 +159,8 @@ const analysisRow = z.looseObject({
   MeasureNumber: z.number().int(),
   // "INTRO", "A", "B", ...; blank on most rows (olis-odata.md gotcha 9).
   Version: z.string().nullish(),
+  // True for the 18 rows of the 2025R1 cache that are a minority report's (docs/adr/0012).
+  IsMinority: z.boolean(),
   DocumentUrl: z.string(),
 });
 
@@ -174,10 +176,11 @@ async function readAnalyses(
     const id = analysisIdOf(session, row.MeasureAnalysisId);
     const provenance = `MeasureAnalysisDocuments ${row.MeasureAnalysisId}`;
     const relations = [measureRelation(key, provenance), committeeRelation(session, row.CommittteCode, provenance)];
-    // The one reading of the label, which get_measure shares (domain/analysis.ts). A Version is a node
+    // The one reading of the row, which get_measure shares (domain/analysis.ts). A Version is a node
     // only when the feed lists it for the Measure, so a label that names a Version it lacks points nowhere.
     const versionLabel = row.Version ?? "";
-    const placement = placeAnalysis(key, versionLabel, (version) => versions.has(version));
+    const isMinority = row.IsMinority;
+    const placement = placeAnalysis(key, { versionLabel, isMinority }, (version) => versions.has(version));
     switch (placement.kind) {
       case "version":
         relations.push(versionRelation(placement.versionId, provenance));
@@ -195,6 +198,7 @@ async function readAnalyses(
       sourceUrl: sourceUrlOf(row.DocumentUrl),
       postedAt: null,
       versionLabel,
+      isMinority,
       relations,
     };
   });

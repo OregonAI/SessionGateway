@@ -61,6 +61,7 @@ const analysisRow = z.object({
   label: z.string(),
   source_url: z.string(),
   analysis_version_label: z.string(),
+  analysis_is_minority: z.number(),
 });
 const countRow = z.object({ n: z.number() });
 const kindCountRow = z.object({ kind: z.string(), n: z.number() });
@@ -88,7 +89,7 @@ export function openIndexReader(path: string): IndexReader {
     "SELECT relation, to_id, meaning FROM document_relation WHERE document_id = ? ORDER BY rowid",
   );
   const selectAnalyses = database.prepare(
-    `SELECT d.id, d.label, d.source_url, d.analysis_version_label
+    `SELECT d.id, d.label, d.source_url, d.analysis_version_label, d.analysis_is_minority
        FROM document d JOIN document_relation r ON r.document_id = d.id
       WHERE d.kind = 'analysis' AND r.relation = 'measure' AND r.to_id = ?
       ORDER BY d.id`,
@@ -125,6 +126,7 @@ export function openIndexReader(path: string): IndexReader {
           id,
           type: stored.label,
           versionLabel: stored.analysis_version_label,
+          isMinority: stored.analysis_is_minority === 1,
           sourceUrl: stored.source_url,
           committeeId: (related.find((node) => node.relation === "committee")?.to as CommitteeId | undefined) ?? null,
           placedVersionId: (related.find((node) => node.relation === "version")?.to as DocumentId | undefined) ?? null,
