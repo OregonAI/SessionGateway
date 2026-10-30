@@ -1,16 +1,16 @@
 import { z } from "zod";
 import type { Measure, SessionKey } from "#/packages/domain/index.ts";
-import { readPacificLocal } from "#/packages/time/pacific.ts";
 import { readEntitySet } from "./feed.ts";
 import type { OlisClientOptions } from "./options.ts";
+import { feedTimestamp } from "./timestamps.ts";
 
 const measureRow = z.looseObject({
   SessionKey: z.string(),
   MeasurePrefix: z.string(),
   MeasureNumber: z.number().int(),
   CatchLine: z.string().nullable(),
-  CreatedDate: z.string(),
-  ModifiedDate: z.string().nullable(),
+  CreatedDate: feedTimestamp,
+  ModifiedDate: feedTimestamp.nullable(),
 });
 
 export async function readMeasureRows(
@@ -28,7 +28,7 @@ export async function readMeasureRows(
       prefix: row.MeasurePrefix,
       number: row.MeasureNumber,
       catchline: row.CatchLine,
-      createdAt: readPacificLocal(row.CreatedDate),
-      modifiedAt: row.ModifiedDate === null ? null : readPacificLocal(row.ModifiedDate),
+      createdAt: row.CreatedDate,
+      modifiedAt: row.ModifiedDate,
     }));
 }

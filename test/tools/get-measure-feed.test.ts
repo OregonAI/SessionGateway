@@ -52,6 +52,33 @@ describe("Pacific time", () => {
   });
 });
 
+describe("a timestamp the feed does not send", () => {
+  // The feed's timestamps are Edm.DateTime and carry no offset (docs/research/olis-odata.md section 6).
+  // One that carries an offset is not in the form the client reads as Pacific local time, so the pull
+  // refuses it instead of reading its clock digits as Pacific time and shifting the instant.
+  const row = {
+    SessionKey: "2025R1",
+    MeasurePrefix: "HB",
+    MeasureNumber: 9001,
+    CatchLine: "A Measure whose timestamp carries an offset.",
+    CreatedDate: "2025-01-01T10:00:00",
+    ModifiedDate: null,
+  };
+
+  it.for([
+    ["CreatedDate", "2025-01-01T10:00:00+05:00"],
+    ["CreatedDate", "2025-01-01T10:00:00Z"],
+    ["ModifiedDate", "2025-01-01T10:00:00-08:00"],
+    ["ModifiedDate", "yesterday"],
+  ])("refuses the pull when %s is %s", async ([property, value]) => {
+    const stray = { ...row, [property as string]: value };
+
+    const pull = startSystem({ clockAt: "2025-12-15T17:00:00Z", olis: { strayRows: { Measures: [stray] } } });
+
+    await expect(pull).rejects.toThrow(new RegExp(String(property)));
+  });
+});
+
 describe("the deployment's Session", () => {
   // A Measure of another Session that shares SB 69's prefix and number: measure numbers restart each
   // Session (docs/research/olis-odata.md section 8, gotcha 1). The harness adds it to the fake

@@ -55,7 +55,14 @@ export async function readEntitySet<Row>(
       signal: bounded(signal),
     });
     if (!response.ok) throw new Error(`OLIS answered ${response.status} to ${url.pathname}`);
-    const body = page.parse(await response.json());
+    const parsed = page.safeParse(await response.json());
+    if (!parsed.success) {
+      const problems = parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`);
+      throw new Error(`OLIS sent a page of ${entitySet} that is not what the client reads: ${problems.join("; ")}`, {
+        cause: parsed.error,
+      });
+    }
+    const body = parsed.data;
     rows.push(...body.value);
     // The loop ends only when a page has no next link, so a feed that keeps sending one is bounded here
     // (src/CLAUDE.md, "Errors"): every page must bring a row, and the rows may not pass the feed's count.
