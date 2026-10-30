@@ -169,6 +169,28 @@ export type DocumentRelation = {
   provenance: string;
 };
 
+/** What a Position means, in the glossary's words. An id the feed does not list is "unlisted position". */
+export type PositionLabel = "support" | "oppose" | "neutral" | "unknown" | "unlisted position";
+
+/** Which side of a Measure a Testimony takes (GLOSSARY.md, "Position"): the feed's id and what it means. */
+export type Position = { id: number; label: PositionLabel };
+
+/**
+ * The Positions the feed lists, in the order `testimony` lists them: the feed's `PositionOnMeasureId` 3983 is
+ * support, 3982 oppose, 3981 neutral and 4022 unknown (docs/research/olis-odata.md, gotcha 3).
+ */
+export const listedPositions: readonly Position[] = [
+  { id: 3983, label: "support" },
+  { id: 3982, label: "oppose" },
+  { id: 3981, label: "neutral" },
+  { id: 4022, label: "unknown" },
+];
+
+/** The Position a `PositionOnMeasureId` names. An id the feed does not list keeps its number and is never dropped. */
+export function positionOf(id: number): Position {
+  return listedPositions.find((position) => position.id === id) ?? { id, label: "unlisted position" };
+}
+
 /**
  * What a Testimony row says besides its file (GLOSSARY.md, "Testimony"), every text as the feed writes it:
  * who submitted it, for whom, from where, and on which side of the Measure.
@@ -176,8 +198,8 @@ export type DocumentRelation = {
 export type TestimonyDetails = {
   /** The feed's `CommTestId`, the key the Testimony's id is minted from. */
   commTestId: number;
-  /** The feed's `PositionOnMeasureId`: 3983 support, 3982 oppose, 3981 neutral, 4022 unknown (olis-odata.md gotcha 3). */
-  positionId: number;
+  /** The Position of the feed's `PositionOnMeasureId`. */
+  position: Position;
   /** The feed's `SubmitterFirstName` and `SubmitterLastName` joined by one space, neither trimmed. */
   submitter: string;
   /** The feed's `BehalfOf`: free text, often the real organization. Null when the feed gives none. */

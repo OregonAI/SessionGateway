@@ -390,7 +390,7 @@ export function openIndexWriter(path: string): IndexWriter {
             link.relations.find((relation) => relation.relation === "measure")?.to ?? null,
             link.sourceUrl,
             link.label,
-            link.testimony.positionId,
+            link.testimony.position.id,
             link.testimony.submitter,
             link.testimony.behalfOf,
             link.testimony.organization,

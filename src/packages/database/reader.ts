@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { StoredAnalysis } from "#/packages/domain/analysis.ts";
 import {
   documentKinds,
+  positionOf,
   type AgendaItem,
   type AmendmentId,
   type Committee,
@@ -567,7 +568,7 @@ export function openIndexReader(path: string): IndexReader {
           commTestId: stored.comm_test_id,
           sourceUrl: stored.source_url,
           documentDescription: stored.document_description,
-          positionId: stored.position_id,
+          position: positionOf(stored.position_id),
           submitter: stored.submitter,
           behalfOf: stored.behalf_of,
           organization: stored.organization,

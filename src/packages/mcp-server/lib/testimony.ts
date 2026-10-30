@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
-import type { DocumentId, TestimonyEntry } from "#/packages/domain/documents.ts";
+import { listedPositions, positionOf, type DocumentId, type TestimonyEntry } from "#/packages/domain/documents.ts";
 import { measureIdOf, parseMeasureReference, type MeasureId, type SessionKey } from "#/packages/domain/index.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 
@@ -13,19 +13,6 @@ export const testimonyInput = z.object({
     .optional()
     .describe("Which page of the Measure's Testimony to return, from 1. The first by default."),
 });
-
-/**
- * The positions a Testimony row can take, by the feed's `PositionOnMeasureId` (docs/research/olis-odata.md
- * gotcha 3), in the order the tool lists them. An id not listed here is shown under its number.
- */
-const listedPositions = [
-  { id: 3983, label: "support" },
-  { id: 3982, label: "oppose" },
-  { id: 3981, label: "neutral" },
-  { id: 4022, label: "unknown" },
-] as const;
-
-const UNLISTED_POSITION_LABEL = "unlisted position";
 
 /**
  * How many Testimony rows one page lists. The 2025R1 feed has Measures with 14,223 rows (SB 210) and 4,204 (HB 2025),
@@ -48,10 +35,6 @@ const PAGE_SIZE = TESTIMONY_PAGE_SIZE;
  */
 export const TESTIMONY_MAX_LISTED_LETTER_SETS = 10;
 const MAX_LISTED_SETS = TESTIMONY_MAX_LISTED_LETTER_SETS;
-
-function positionLabelOf(id: number): string {
-  return listedPositions.find((position) => position.id === id)?.label ?? UNLISTED_POSITION_LABEL;
-}
 
 /** The listed positions first, in their order, then any other id by number. */
 function comparePositions(a: number, b: number): number {
@@ -269,7 +252,7 @@ function placeEntries(entries: readonly TestimonyEntry[]): { ordered: Placed[]; 
   const groups = new Map<string, GroupFacts>();
   const placed = entries.map((entry): Placed => {
     const key = organizationKey(entry.organization);
-    const groupKey = `${entry.positionId} ${key}`;
+    const groupKey = `${entry.position.id} ${key}`;
     let facts = groups.get(groupKey);
     if (facts === undefined) {
       facts = { organization: key === "" ? null : entry.organization, spellings: [], count: 0 };
@@ -283,7 +266,7 @@ function placeEntries(entries: readonly TestimonyEntry[]): { ordered: Placed[]; 
   });
   const ordered = placed.toSorted(
     (a, b) =>
-      comparePositions(a.entry.positionId, b.entry.positionId) ||
+      comparePositions(a.entry.position.id, b.entry.position.id) ||
       compareGroupKeys(a.organizationKey, b.organizationKey) ||
       a.entry.commTestId - b.entry.commTestId,
   );
@@ -301,11 +284,11 @@ function positionsOf(
   const groupsOnPage = new Map<string, Group>();
   for (const { entry, groupKey } of page) {
     let position = positions.at(-1);
-    if (position?.position_id !== entry.positionId) {
+    if (position?.position_id !== entry.position.id) {
       position = {
-        position_id: entry.positionId,
-        position: positionLabelOf(entry.positionId),
-        count: countByPosition.get(entry.positionId) ?? 0,
+        position_id: entry.position.id,
+        position: entry.position.label,
+        count: countByPosition.get(entry.position.id) ?? 0,
         organizations: [],
       };
       positions.push(position);
@@ -389,7 +372,8 @@ export function testimony(
   const identical = identicalLettersOf(entries);
   const { ordered, groups } = placeEntries(entries);
   const countByPosition = new Map<number, number>();
-  for (const entry of entries) countByPosition.set(entry.positionId, (countByPosition.get(entry.positionId) ?? 0) + 1);
+  for (const entry of entries)
+    countByPosition.set(entry.position.id, (countByPosition.get(entry.position.id) ?? 0) + 1);
   return {
     kind: "found",
     testimony: {
@@ -397,7 +381,7 @@ export function testimony(
       total: entries.length,
       position_counts: [...new Set([...listedPositions.map((position) => position.id), ...countByPosition.keys()])]
         .sort(comparePositions)
-        .map((id) => ({ position_id: id, position: positionLabelOf(id), count: countByPosition.get(id) ?? 0 })),
+        .map((id) => ({ position_id: id, position: positionOf(id).label, count: countByPosition.get(id) ?? 0 })),
       organization_groups: groups.size,
       identical_letters: identical.letters,
       identical_letters_left_out: identical.lettersLeftOut,

@@ -11,6 +11,7 @@ import {
   exhibitIdOf,
   isPrintedAmendment,
   meetingIdOf,
+  positionOf,
   postingIdOf,
   recordingLogIdOf,
   testimonyIdOf,
@@ -266,7 +267,7 @@ async function readTestimony(
       postedAt: null,
       testimony: {
         commTestId: row.CommTestId,
-        positionId: row.PositionOnMeasureId,
+        position: positionOf(row.PositionOnMeasureId),
         submitter: `${row.SubmitterFirstName} ${row.SubmitterLastName}`,
         behalfOf: row.BehalfOf ?? null,
         organization: row.Organization ?? null,
