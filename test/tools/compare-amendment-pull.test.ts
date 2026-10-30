@@ -163,7 +163,7 @@ describe("amendments the fixture has no row for", () => {
       const comparison = await compare("SB 69-2");
 
       // 26286 and 26288 share a file; the made-up posting 990003 is a different one, SB 921-2's, whose header
-      // ("SENATE BILL 921") and the number "-2" both say Introduced.
+      // names another Measure ("SENATE BILL 921").
       expect(comparison.files.map((file) => file.posting_ids)).toEqual([
         ["posting-2025r1-26286", "posting-2025r1-26288"],
         ["posting-2025r1-990003"],
@@ -176,7 +176,24 @@ describe("amendments the fixture has no row for", () => {
         expect.objectContaining({ kind: "cites", target_id: "ors-285a.666", measure_section: "1" }),
       );
       expect(comparison.files[1]?.statute_links.map((link) => link.kind)).not.toContain("amends");
-      expect(comparison.amended_version).toMatchObject({ known: true, id: "version-2025r1-sb69-introduced" });
+    });
+
+    // Replaces the case that asserted `known: true` here: it compared SB 921-2's file against SB 69's Introduced
+    // Version and said the header and the number agreed, though the header names SENATE BILL 921 (finding F3).
+    it("says the Version is not known when a file's header names another Measure, and names both Measures", async () => {
+      const comparison = await compare("SB 69-2");
+
+      expect(comparison.amended_version).toEqual({
+        known: false,
+        id: null,
+        label: null,
+        source_url: null,
+        reason:
+          "The amendment is to SB 69, but a file posted for it has a header that names SB 921, so which Version it amends is not known.",
+        text_read: null,
+        not_read_reason: null,
+        statute_links: [],
+      });
     });
 
     it("reports a file with no text layer as not read, with no links, and does not call the Version known", async () => {

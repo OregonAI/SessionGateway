@@ -189,20 +189,36 @@ function spelled(spellings: readonly string[]): string {
     : `${spellings.slice(0, -1).join(", ")} and ${last}`;
 }
 
+/**
+ * What a Proposed Amendment's own header names: the Version it amends and the Measure it is to ("SENATE BILL 69"
+ * is the Introduced Version of SB 69; "A-ENGROSSED HOUSE BILL 3795" the A-Engrossed Version of HB 3795).
+ */
+export type AmendmentHeader = {
+  /** In the words the feed describes Versions in: "Introduced", "A-Engrossed". */
+  version: string;
+  measure: { prefix: string; number: number };
+};
+
+/** "SB 69": a Measure as people cite it. */
+function citationOf(measure: { prefix: string; number: number }): string {
+  return `${measure.prefix} ${measure.number}`;
+}
+
 /** Where a Proposed Amendment's Version is, as far as the evidence goes, and why (ADR-0015). */
 export type AmendmentPlacement =
   { kind: "version"; versionId: DocumentId; description: string; reason: string } | { kind: "unknown"; reason: string };
 
 /**
  * Says which Version of the Measure a Proposed Amendment amends. The amendment's own header names it and its
- * number names it, and they must agree; nothing is guessed (ADR-0013's rule, applied here). `headers` has the
- * Version that the header of each file the store holds for the amendment names, or null for a header that
- * could not be read. `isHeld` says whether the store holds a Version of the Measure.
+ * number names it, and they must agree; the header must also name the amendment's own Measure, so a file posted
+ * under the wrong Measure is not compared. Nothing is guessed (ADR-0013's rule, applied here). `spellings` has the
+ * number as each posting writes it. `headers` has what the header of each file the store holds for the amendment
+ * names, or null for a header that could not be read. `isHeld` says whether the store holds a Version of the Measure.
  */
 export function placeAmendment(
   key: MeasureKey,
   spellings: readonly string[],
-  headers: readonly (string | null)[],
+  headers: readonly (AmendmentHeader | null)[],
   isHeld: (versionId: DocumentId) => boolean,
 ): AmendmentPlacement {
   const unknown = (reason: string): AmendmentPlacement => ({ kind: "unknown", reason });
@@ -211,13 +227,20 @@ export function placeAmendment(
       "This index holds no file of the amendment, so its header, which names the Version it amends, cannot be read.",
     );
   }
-  const named = headers.filter((header): header is string => header !== null);
+  const named = headers.filter((header): header is AmendmentHeader => header !== null);
   if (named.length < headers.length) {
     return unknown(
       'The header of the amendment\'s file (the line after "PROPOSED AMENDMENTS TO") could not be read, so which Version it amends is not known.',
     );
   }
-  const distinct = [...new Set(named)];
+  const own = citationOf(key);
+  const elsewhere = [...new Set(named.map((header) => citationOf(header.measure)).filter((cited) => cited !== own))];
+  if (elsewhere.length > 0) {
+    return unknown(
+      `The amendment is to ${own}, but a file posted for it has a header that names ${elsewhere.join(" and ")}, so which Version it amends is not known.`,
+    );
+  }
+  const distinct = [...new Set(named.map((header) => header.version))];
   const [fromHeader] = distinct;
   if (fromHeader === undefined || distinct.length > 1) {
     return unknown(

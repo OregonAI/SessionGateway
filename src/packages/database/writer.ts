@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   meetingDocumentKinds,
   type AgendaItem,
+  type AmendmentHeader,
   type Committee,
   type DocumentId,
   type DocumentKind,
@@ -106,7 +107,7 @@ export type StatuteParseRecord = {
   contentHash: string;
   readAs: StatuteLinkSource;
   textRead: boolean;
-  amendedVersionHeader: string | null;
+  amendedVersionHeader: AmendmentHeader | null;
   links: readonly StatuteLink[];
   relatingClauseEdits: readonly RelatingClauseEdit[];
 };
@@ -556,8 +557,9 @@ export function openIndexWriter(path: string): IndexWriter {
     },
     storeStatuteParse(record) {
       const insertParse = database.prepare(
-        `INSERT INTO statute_parse (content_hash, parsed_as, text_read, amended_version_header, relating_clause_edits)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO statute_parse (content_hash, parsed_as, text_read, amended_version_header,
+                                    header_measure_prefix, header_measure_number, relating_clause_edits)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       );
       const insertLink = database.prepare(
         `INSERT INTO statute_link (content_hash, parsed_as, ordinal, kind, target_type, target_id, measure_section)
@@ -569,7 +571,9 @@ export function openIndexWriter(path: string): IndexWriter {
           record.contentHash,
           record.readAs,
           record.textRead ? 1 : 0,
-          record.amendedVersionHeader,
+          record.amendedVersionHeader?.version ?? null,
+          record.amendedVersionHeader?.measure.prefix ?? null,
+          record.amendedVersionHeader?.measure.number ?? null,
           JSON.stringify(record.relatingClauseEdits),
         );
         record.links.forEach((link, ordinal) => {

@@ -192,6 +192,8 @@ const schema = `
     parsed_as TEXT NOT NULL CHECK (parsed_as IN ('version', 'proposed_amendment')),
     text_read INTEGER NOT NULL,
     amended_version_header TEXT,
+    header_measure_prefix TEXT,
+    header_measure_number INTEGER,
     relating_clause_edits TEXT NOT NULL,
     PRIMARY KEY (content_hash, parsed_as)
   ) STRICT;

@@ -12,6 +12,7 @@ import {
   type DocumentKind,
   type DocumentView,
   type IndexCounts,
+  type AmendmentHeader,
   type CommitteeId,
   type MeetingContents,
   type MeetingDocument,
@@ -286,6 +287,8 @@ const versionRow = z.object({ id: z.string(), label: z.string(), source_url: z.s
 const parseRow = z.object({
   text_read: z.number(),
   amended_version_header: z.string().nullable(),
+  header_measure_prefix: z.string().nullable(),
+  header_measure_number: z.number().nullable(),
   relating_clause_edits: z.string(),
 });
 const linkRow = z.object({
@@ -443,7 +446,7 @@ export function openIndexReader(path: string): IndexReader {
      WHERE d.kind = 'version' AND r.relation = 'measure' AND r.to_id = ?`,
   );
   const selectStatuteParse = database.prepare(
-    "SELECT text_read, amended_version_header, relating_clause_edits FROM statute_parse WHERE content_hash = ? AND parsed_as = ?",
+    "SELECT text_read, amended_version_header, header_measure_prefix, header_measure_number, relating_clause_edits FROM statute_parse WHERE content_hash = ? AND parsed_as = ?",
   );
   const selectStatuteLinks = database.prepare(
     "SELECT kind, target_type, target_id, measure_section FROM statute_link WHERE content_hash = ? AND parsed_as = ? ORDER BY ordinal",
@@ -495,9 +498,18 @@ export function openIndexReader(path: string): IndexReader {
       };
     });
     const edits: RelatingClauseEdit[] = relatingClauseEdits.parse(JSON.parse(stored.relating_clause_edits));
+    const header: AmendmentHeader | null =
+      stored.amended_version_header === null ||
+      stored.header_measure_prefix === null ||
+      stored.header_measure_number === null
+        ? null
+        : {
+            version: stored.amended_version_header,
+            measure: { prefix: stored.header_measure_prefix, number: stored.header_measure_number },
+          };
     return {
       textRead: stored.text_read === 1,
-      amendedVersionHeader: stored.amended_version_header,
+      amendedVersionHeader: header,
       links,
       relatingClauseEdits: edits,
     };
