@@ -92,6 +92,35 @@ module.exports = {
       from: { path: `^(${R}/ingest/|src/bin/ingest\\.ts$)` },
       to: { path: `^${R}/database/reader\\.ts$` },
     },
+
+    // --- Nothing calls OregonAI while serving (ADR-0004) -------------------------------------------
+    // OregonAI's data reaches the service one way: scripts/snapshot/build.ts reads a checkout of
+    // OregonAI's repository at build time, and the worker copies the file it wrote. These rules make
+    // the other ways impossible to add without a failing check.
+    {
+      name: "server-never-reaches-the-oregonai-snapshot",
+      comment:
+        "The MCP server and its entry script get what they know of OregonAI from the database (the snapshot version is stored with the full pull), never from the snapshot package, directly or through any chain of imports. Only the worker reads the snapshot file.",
+      severity: "error",
+      from: { path: `^(${R}/mcp-server/|src/bin/server\\.ts$)` },
+      to: { path: `^${R}/oregonai-snapshot/`, reachable: true },
+    },
+    {
+      name: "production-never-imports-scripts",
+      comment:
+        "The snapshot builder (scripts/snapshot/) is the only code that knows OregonAI's repository, and the registry it reads is parsed there by a YAML package the service does not ship. Nothing under src/ may import anything from scripts/, so the builder cannot become part of the server path.",
+      severity: "error",
+      from: { path: "^src/", pathNot: `^${R}/[^/]+/tests/` },
+      to: { path: "^scripts/" },
+    },
+    {
+      name: "production-uses-production-dependencies",
+      comment:
+        "Code under src/ imports only packages that are in dependencies, never one that is in devDependencies. The MCP client SDK, the one package that could speak to OregonAI's gateway, is a devDependency for the tests, so the server cannot use it.",
+      severity: "error",
+      from: { path: "^src/", pathNot: `^${R}/[^/]+/tests/` },
+      to: { dependencyTypes: ["npm-dev"] },
+    },
   ],
   options: {
     doNotFollow: { path: "node_modules" },
