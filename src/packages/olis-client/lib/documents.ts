@@ -3,11 +3,13 @@
 import { z } from "zod";
 import { measureIdOf, type SessionKey } from "#/packages/domain/index.ts";
 import {
+  amendmentIdOf,
   analysisIdOf,
   committeeIdOf,
   exhibitIdOf,
   isPrintedAmendment,
   meetingIdOf,
+  postingIdOf,
   testimonyIdOf,
   versionIdOf,
   type DocumentLink,
@@ -240,6 +242,62 @@ async function readTestimony(
     });
 }
 
+// A Proposed Amendment is one node per Measure and amendment number; each row is one posting of it to a
+// meeting, with a file of its own, which may differ from the file posted to another meeting. The feed
+// writes the amendment number "-2 " with a trailing space once (SB 921, ProposedAmendmentId 26923).
+const postingRow = z.looseObject({
+  SessionKey: z.string(),
+  ProposedAmendmentId: z.number().int(),
+  CommitteeCode: z.string(),
+  MeetingDate: feedTimestamp,
+  MeasurePrefix: z.string(),
+  MeasureNumber: z.number().int(),
+  AmendmentNumber: z.string(),
+  Meaning: z.string(),
+  ProposedAmendmentUrl: z.string(),
+});
+
+async function readPostings(
+  options: OlisClientOptions,
+  session: SessionKey,
+  signal: AbortSignal,
+): Promise<DocumentLink[]> {
+  const rows = await readEntitySet(
+    options,
+    "CommitteeProposedAmendments",
+    `SessionKey eq '${session}'`,
+    postingRow,
+    signal,
+  );
+  return rows
+    .filter((row) => row.SessionKey === session)
+    .map((row) => {
+      const key = { session, prefix: row.MeasurePrefix, number: row.MeasureNumber };
+      const amendmentNumber = row.AmendmentNumber.trim();
+      const provenance = `CommitteeProposedAmendments ${row.ProposedAmendmentId}`;
+      const meaning = row.Meaning.trim();
+      return {
+        id: postingIdOf(session, row.ProposedAmendmentId),
+        nodeId: amendmentIdOf(key, amendmentNumber),
+        kind: "proposed_amendment",
+        label: amendmentNumber,
+        sourceUrl: sourceUrlOf(row.ProposedAmendmentUrl),
+        postedAt: row.MeetingDate,
+        relations: [
+          { relation: "measure", to: measureIdOf(key), meaning: null, provenance },
+          { relation: "committee", to: committeeIdOf(session, row.CommitteeCode), meaning: null, provenance },
+          {
+            relation: "posted_to",
+            to: meetingIdOf(session, row.CommitteeCode, row.MeetingDate),
+            meaning: meaning === "" ? null : meaning,
+            provenance,
+          },
+          { relation: "amendment", to: amendmentIdOf(key, amendmentNumber), meaning: null, provenance },
+        ],
+      };
+    });
+}
+
 export async function readDocumentLinks(
   options: OlisClientOptions,
   session: SessionKey,
@@ -248,8 +306,9 @@ export async function readDocumentLinks(
   const versions = await readVersions(options, session, signal);
   const analyses = await readAnalyses(options, session, signal);
   const exhibits = await readExhibits(options, session, signal);
+  const postings = await readPostings(options, session, signal);
   const testimony = await readTestimony(options, session, signal);
-  return [...versions, ...analyses, ...exhibits, ...testimony];
+  return [...versions, ...analyses, ...postings, ...exhibits, ...testimony];
 }
 
 /** The bytes of one document, or why they could not be had. */

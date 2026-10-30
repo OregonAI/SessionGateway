@@ -152,4 +152,104 @@ describe.for(eras)("get_document for a %s client", (era) => {
     );
     expect(related.toSorted()).toEqual(row.related.toSorted());
   });
+
+  describe("a Proposed Amendment posted to several meetings", () => {
+    // SB 69's -1 has three rows in feed/CommitteeProposedAmendments.json, ProposedAmendmentId 26284
+    // (SLB, 2025-01-21), 26285 (SLB, 2025-01-28) and 26287 (SLB, 2025-01-30): spec #1 says it "was posted
+    // to three meetings". Its -2 has two (26286 on 2025-01-28, 26288 on 2025-01-30, adopted that day).
+    it("is one node with a posting edge for each meeting it was posted to", async () => {
+      const outcome = await callTool(connected, "get_document", { id: "amendment-2025r1-sb69-1" });
+
+      expect(outcome.isError).toBe(false);
+      expect(outcome.structured).toMatchObject({
+        id: "amendment-2025r1-sb69-1",
+        kind: "proposed_amendment",
+        label: "-1",
+      });
+      const related = (outcome.structured?.["related"] as { id: string; relation: string }[]).map(
+        (node) => [node.relation, node.id] as const,
+      );
+      expect(related.toSorted()).toEqual(
+        [
+          ["measure", "measure-2025r1-sb69"],
+          ["committee", "committee-2025r1-slb"],
+          ["posted_to", "meeting-2025r1-slb-2025-01-21-0800"],
+          ["posted_to", "meeting-2025r1-slb-2025-01-28-0800"],
+          ["posted_to", "meeting-2025r1-slb-2025-01-30-0800"],
+        ].toSorted(),
+      );
+    });
+
+    // The files differ: the manifest's sha256 of 26284 (posted 01-21) is not that of 26285 and 26287
+    // (posted 01-28 and 01-30), which are the same file (test/fixtures/olis-2025R1/manifest.json). Their
+    // text is the same (`pdftotext -raw` prints 34,141 characters for each; only the PDF's ModDate
+    // differs), so a posting whose text differs is built in get-document-pull.test.ts.
+    it("keeps the file of each posting, and serves the latest posting's under the amendment's id", async () => {
+      const node = await callTool(connected, "get_document", { id: "amendment-2025r1-sb69-1" });
+      const first = await callTool(connected, "get_document", { id: "posting-2025r1-26284" });
+
+      expect(node.structured).toMatchObject({
+        document_id: "posting-2025r1-26287",
+        content_hash: "6c7919c7745dc087d0a16f9d4c98b096481cc2856b6fda431c1220ab9e4d51d4",
+      });
+      expect(first.structured).toMatchObject({
+        id: "posting-2025r1-26284",
+        document_id: "posting-2025r1-26284",
+        kind: "proposed_amendment",
+        source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/ProposedAmendment/26284",
+        content_hash: "c58e10ef692899f88e4d595727d739117b5893775527c09737441b5d95e57fe3",
+      });
+      // Each posting edge names the meeting and the document posted there.
+      expect(node.structured?.["related"]).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            relation: "posted_to",
+            id: "meeting-2025r1-slb-2025-01-21-0800",
+            document_id: "posting-2025r1-26284",
+          }),
+          expect.objectContaining({
+            relation: "posted_to",
+            id: "meeting-2025r1-slb-2025-01-28-0800",
+            document_id: "posting-2025r1-26285",
+          }),
+          expect.objectContaining({
+            relation: "posted_to",
+            id: "meeting-2025r1-slb-2025-01-30-0800",
+            document_id: "posting-2025r1-26287",
+          }),
+        ]),
+      );
+      // A posting points back at the amendment it is a text of.
+      expect(first.structured?.["related"]).toContainEqual(
+        expect.objectContaining({ relation: "amendment", id: "amendment-2025r1-sb69-1" }),
+      );
+    });
+
+    // Spec #1: "SB 69-2 was adopted by SLB on 2025-01-30". The feed has it Proposed on 2025-01-28
+    // (26286) and Adopted on 2025-01-30 (26288).
+    it("says what the committee did with the amendment at each meeting", async () => {
+      const outcome = await callTool(connected, "get_document", { id: "amendment-2025r1-sb69-2" });
+
+      const postings = (outcome.structured?.["related"] as { relation: string; id: string; meaning: string | null }[])
+        .filter((node) => node.relation === "posted_to")
+        .map((node) => [node.id, node.meaning]);
+      expect(postings).toEqual([
+        ["meeting-2025r1-slb-2025-01-28-0800", "Proposed"],
+        ["meeting-2025r1-slb-2025-01-30-0800", "Adopted"],
+      ]);
+    });
+
+    // The feed writes SB 921's second -2 as "-2 " with a trailing space (ProposedAmendmentId 26923,
+    // posted 2025-03-18, feed/CommitteeProposedAmendments.json); 26824 (2025-03-13) writes it "-2".
+    it("treats a number the feed wrote with a trailing space as the same amendment", async () => {
+      const outcome = await callTool(connected, "get_document", { id: "amendment-2025r1-sb921-2" });
+
+      expect(outcome.isError).toBe(false);
+      expect(outcome.structured).toMatchObject({ label: "-2", document_id: "posting-2025r1-26923" });
+      const meetings = (outcome.structured?.["related"] as { relation: string; id: string }[])
+        .filter((node) => node.relation === "posted_to")
+        .map((node) => node.id);
+      expect(meetings).toEqual(["meeting-2025r1-slb-2025-03-13-0800", "meeting-2025r1-slb-2025-03-18-0800"]);
+    });
+  });
 });

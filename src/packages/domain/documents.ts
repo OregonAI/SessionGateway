@@ -67,6 +67,16 @@ export function versionIdOf(key: MeasureKey, versionDescription: string): Docume
   return `${kind}-${measureSlug(key)}-${slug(versionDescription)}` as DocumentId;
 }
 
+/** SB 69-2 is `amendment-2025r1-sb69-2`; the feed writes the number "-2" or "-A3", and once "-2 " with a space. */
+export function amendmentIdOf(key: MeasureKey, amendmentNumber: string): AmendmentId {
+  return `amendment-${measureSlug(key)}-${slug(amendmentNumber)}` as AmendmentId;
+}
+
+/** One posting of a Proposed Amendment to a meeting, by the feed's `ProposedAmendmentId`. */
+export function postingIdOf(session: SessionKey, proposedAmendmentId: number): DocumentId {
+  return `posting-${session.toLowerCase()}-${proposedAmendmentId}` as DocumentId;
+}
+
 export function analysisIdOf(session: SessionKey, measureAnalysisId: string): DocumentId {
   return `analysis-${session.toLowerCase()}-${measureAnalysisId}` as DocumentId;
 }
@@ -124,6 +134,22 @@ export type DocumentLink = {
   /** When it was posted to a meeting, for a posting. */
   postedAt: Timestamp | null;
   relations: DocumentRelation[];
+};
+
+/** What a document or an amendment points at, with the document whose feed row says so. */
+export type RelatedNode = {
+  relation: Relation;
+  to: NodeId;
+  meaning: string | null;
+  /** The document that carries the relation: for a posting, the one with the text posted to that meeting. */
+  documentId: DocumentId;
+};
+
+/** What `get_document` resolves an id to: a document, and the nodes it (or the amendment's postings) point at. */
+export type DocumentView = {
+  /** The document whose text is served: the id asked for, or an amendment's latest posting. */
+  document: StoredDocument;
+  related: RelatedNode[];
 };
 
 /** A document with its extracted text, as the store keeps it and the server reads it. */

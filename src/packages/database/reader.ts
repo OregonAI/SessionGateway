@@ -4,9 +4,10 @@ import type {
   AmendmentId,
   DocumentId,
   DocumentKind,
-  DocumentRelation,
+  DocumentView,
   NodeId,
   Relation,
+  RelatedNode,
   StoredDocument,
 } from "#/packages/domain/documents.ts";
 import type { Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
@@ -17,8 +18,11 @@ export type IndexReader = {
   findMeasure(key: MeasureKey): Measure | undefined;
   /** When the last completed full pull started, or undefined if none has completed. */
   asOf(session: SessionKey): Timestamp | undefined;
-  /** A document by its id. */
-  findDocument(id: string): StoredDocument | undefined;
+  /**
+   * A document by its id, or a Proposed Amendment by its id: the text of its latest posting, with the
+   * nodes all its postings point at.
+   */
+  findDocument(id: string): DocumentView | undefined;
   close(): void;
 };
 
@@ -45,7 +49,6 @@ const relationRow = z.object({
   relation: z.string(),
   to_id: z.string(),
   meaning: z.string().nullable(),
-  provenance: z.string(),
 });
 
 export function openIndexReader(path: string): IndexReader {
@@ -55,39 +58,59 @@ export function openIndexReader(path: string): IndexReader {
   );
   const selectAsOf = database.prepare("SELECT full_pull_as_of FROM index_state WHERE session_key = ?");
   const selectDocument = database.prepare("SELECT * FROM document WHERE id = ?");
-  const selectRelations = database.prepare(
-    "SELECT relation, to_id, meaning, provenance FROM document_relation WHERE document_id = ? ORDER BY rowid",
+  const selectPostings = database.prepare(
+    "SELECT * FROM document WHERE node_id = ? AND node_id <> id ORDER BY posted_at DESC, id DESC",
   );
-  function relationsOf(documentId: string): DocumentRelation[] {
+  const selectRelations = database.prepare(
+    "SELECT relation, to_id, meaning FROM document_relation WHERE document_id = ? ORDER BY rowid",
+  );
+  function documentOf(row: unknown): StoredDocument {
+    const stored = documentRow.parse(row);
+    return {
+      id: stored.id as DocumentId,
+      nodeId: stored.node_id as DocumentId | AmendmentId,
+      kind: stored.kind as DocumentKind,
+      label: stored.label,
+      sourceUrl: stored.source_url,
+      retrievedAt: stored.retrieved_at as Timestamp,
+      contentHash: stored.content_hash,
+      pageCount: stored.page_count,
+      hasTextLayer: stored.has_text_layer === 1,
+      postedAt: stored.posted_at as Timestamp | null,
+      text: stored.text,
+      relations: [],
+    };
+  }
+  function relationsOf(documentId: DocumentId): RelatedNode[] {
     return selectRelations.all(documentId).map((row) => {
       const stored = relationRow.parse(row);
-      return {
-        relation: stored.relation as Relation,
-        to: stored.to_id as NodeId,
-        meaning: stored.meaning,
-        provenance: stored.provenance,
-      };
+      return { relation: stored.relation as Relation, to: stored.to_id as NodeId, meaning: stored.meaning, documentId };
     });
   }
   return {
     findDocument(id) {
-      const row = selectDocument.get(id);
-      if (row === undefined) return undefined;
-      const stored = documentRow.parse(row);
-      return {
-        id: stored.id as DocumentId,
-        nodeId: stored.node_id as DocumentId | AmendmentId,
-        kind: stored.kind as DocumentKind,
-        label: stored.label,
-        sourceUrl: stored.source_url,
-        retrievedAt: stored.retrieved_at as Timestamp,
-        contentHash: stored.content_hash,
-        pageCount: stored.page_count,
-        hasTextLayer: stored.has_text_layer === 1,
-        postedAt: stored.posted_at as Timestamp | null,
-        text: stored.text,
-        relations: relationsOf(stored.id),
-      };
+      const own = selectDocument.get(id);
+      if (own !== undefined) {
+        const document = documentOf(own);
+        return { document, related: relationsOf(document.id) };
+      }
+      // Not a document: a Proposed Amendment, which has a posting (and a file) for each meeting.
+      const postings = selectPostings.all(id).map(documentOf);
+      const latest = postings[0];
+      if (latest === undefined) return undefined;
+      const related: RelatedNode[] = [];
+      const seen = new Set<string>();
+      for (const posting of postings.toReversed()) {
+        for (const node of relationsOf(posting.id)) {
+          if (node.relation === "amendment") continue;
+          // A posting is told apart by its meeting; every other relation is the same for each posting.
+          const key = `${node.relation} ${node.to}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          related.push(node);
+        }
+      }
+      return { document: latest, related };
     },
     findMeasure(key) {
       const row = selectMeasure.get(key.session, key.prefix, key.number);

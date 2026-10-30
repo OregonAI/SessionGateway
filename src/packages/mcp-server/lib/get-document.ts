@@ -10,11 +10,28 @@ export const getDocumentInput = z.object({
 
 const related = z.object({
   id: z.string().describe("The id of a node this document points at."),
-  relation: z.enum(["measure", "committee", "meeting", "posted_to", "amendment"]).describe("How it points at it."),
+  relation: z
+    .enum(["measure", "committee", "meeting", "posted_to", "amendment"])
+    .describe(
+      "How it points at it: the Measure, committee or meeting a document belongs to, the meeting a Proposed Amendment was posted to, or the amendment a posting is of.",
+    ),
+  meaning: z
+    .string()
+    .nullable()
+    .describe("For a posting: what the committee did with the amendment at that meeting, such as Proposed or Adopted."),
+  document_id: z
+    .string()
+    .nullable()
+    .describe("For a posting: the document with the text posted to that meeting, which may differ from the others."),
 });
 
 export const getDocumentOutput = z.object({
   id: z.string().describe("The id that was asked for."),
+  document_id: z
+    .string()
+    .describe(
+      "The document whose text this is. It differs from id when id names a Proposed Amendment: then it is the latest posting.",
+    ),
   kind: z
     .enum([
       "version",
@@ -54,8 +71,9 @@ export function getDocument(
   session: SessionKey,
   input: z.infer<typeof getDocumentInput>,
 ): GetDocumentResult {
-  const stored = reader.findDocument(input.id);
-  if (stored === undefined) return { kind: "unknown", id: input.id, session };
+  const found = reader.findDocument(input.id);
+  if (found === undefined) return { kind: "unknown", id: input.id, session };
+  const stored = found.document;
   const asOf = reader.asOf(session);
   if (asOf === undefined) {
     throw new Error(`The index holds documents of ${session} but no completed full pull to date them by`);
@@ -64,6 +82,7 @@ export function getDocument(
     kind: "found",
     document: {
       id: input.id,
+      document_id: stored.id,
       kind: stored.kind,
       label: stored.label,
       source_url: stored.sourceUrl,
@@ -74,7 +93,12 @@ export function getDocument(
       part: 1,
       part_count: 1,
       text: stored.text,
-      related: stored.relations.map((relation) => ({ id: relation.to, relation: relation.relation })),
+      related: found.related.map((node) => ({
+        id: node.to,
+        relation: node.relation,
+        meaning: node.meaning,
+        document_id: node.relation === "posted_to" ? node.documentId : null,
+      })),
       as_of: asOf,
       notice: NON_OFFICIAL_NOTICE,
     },
