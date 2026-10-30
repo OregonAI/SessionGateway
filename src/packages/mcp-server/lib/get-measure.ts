@@ -57,6 +57,6 @@ export function getMeasure(
 
 /** What an agent is told when no Measure matches, so it can correct the call. */
 export function unknownMeasureMessage(reference: string, session: SessionKey): string {
-  const example = `measure-${session.toLowerCase()}-sb69`;
+  const example = measureIdOf({ session, prefix: "SB", number: 69 });
   return `No Measure "${reference}" in the ${session} Session. Give a Measure id such as ${example} or a citation such as SB 69.`;
 }

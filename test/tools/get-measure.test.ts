@@ -72,6 +72,15 @@ describe.for(eras)("get_measure for a %s client", (era) => {
     expect(outcome.structured).toBeUndefined();
     expect(outcome.text).toContain(reference);
     expect(outcome.text).toContain("2025R1");
+    // The message teaches the agent the id form (spec #1's), so it can correct the call.
+    expect(outcome.text).toContain("measure-2025r1-sb69");
+  });
+
+  it("teaches, in a tool error, the same id form that a found Measure carries", async () => {
+    const found = await callTool(connected, "get_measure", { measure: "SB 69" });
+    const unknown = await callTool(connected, "get_measure", { measure: "SB 9999" });
+
+    expect(unknown.text).toContain(String(found.structured?.["id"]));
   });
 
   it("advertises get_measure as the one read-only tool, with an output schema", async () => {
