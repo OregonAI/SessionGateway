@@ -12,6 +12,12 @@ const sectionHeader = /\bSECTION (\d+[a-z]?)\. /g;
 // Inserted text opens with a curly quote: “SECTION 3. ORS 657B.070 is amended to read:
 const insertedSectionHeader = /“\s*(?=SECTION (\d+[a-z]?)\. )/g;
 
+/**
+ * Which kind of document the text is. A Version is read section by section. A Proposed Amendment is
+ * read for what it says itself: the sections it inserts and its edits to the relating clause (ADR-0001).
+ */
+export type StatuteLinkDocumentKind = "version" | "proposed-amendment";
+
 /** One measure section of the document: its number as printed, and its running text. */
 type MeasureSection = { number: string | null; text: string };
 
@@ -91,7 +97,7 @@ function linksOf(sections: MeasureSection[], expandRange: RangeExpander): Statut
 
 /** What a document's text says: its Statute Links, and for a Proposed Amendment its relating clause edits. */
 export function readDocument(
-  documentKind: "version" | "proposed-amendment",
+  documentKind: StatuteLinkDocumentKind,
   text: string,
   orsSections: readonly OrsSectionId[],
 ): { links: StatuteLink[]; relatingClauseEdits: RelatingClauseEdit[] } {

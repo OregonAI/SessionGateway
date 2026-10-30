@@ -1,12 +1,10 @@
-import type { StatuteLink } from "#/packages/domain/statute-links.ts";
-import type { OrsSectionId } from "#/packages/domain/statute-links.ts";
+import type { OrsSectionId, StatuteLink } from "#/packages/domain/statute-links.ts";
+import type { StatuteLinkDocumentKind } from "./lib/read-links.ts";
 import { readDocument } from "./lib/read-links.ts";
 import type { RelatingClauseEdit } from "./lib/relating-clause.ts";
 
+export type { StatuteLinkDocumentKind } from "./lib/read-links.ts";
 export type { RelatingClauseEdit } from "./lib/relating-clause.ts";
-
-/** Which kind of document the text is. A Proposed Amendment is read for what it says itself (ADR-0001). */
-export type StatuteLinkDocumentKind = "version" | "proposed-amendment";
 
 export type ParseStatuteLinksInput = {
   documentKind: StatuteLinkDocumentKind;

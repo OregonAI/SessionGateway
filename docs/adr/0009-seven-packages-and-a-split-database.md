@@ -5,7 +5,8 @@ Spec #1 lists twelve modules, and `src/CLAUDE.md` asks the ticket that first bui
 | Package | Entry points | What it is |
 |---|---|---|
 | `time` | `clock.ts`, `pacific.ts` | The injected `Clock` and the system clock; the Pacific `Timestamp`: an instant or a Pacific wall-clock reading written with the offset in force. It knows the zone and no source's text format. |
-| `domain` | `index.ts` | The glossary's words as types (`SessionKey`, `Measure`, `MeasureId`) and the one place that mints and parses ids and builds the OLIS page URL. |
+| `domain` | `index.ts`, `statute-links.ts` | The glossary's words as types (`SessionKey`, `Measure`, `MeasureId`, `StatuteLink`) and the one place that mints and parses ids and builds the OLIS page URL. `statute-links.ts` holds the ORS ids (`ors-163a.040`, `ors-chapter-657b`) and the Statute Link type (ticket #6). |
+| `statute-links` | `index.ts` | Spec module 4, the Statute Link parser (ticket #6): `parseStatuteLinks`, text in and links out, with the ORS section list as a parameter. It does no I/O and knows no database, no MCP and no feed. |
 | `config` | `index.ts` | The environment read once through zod, for the worker and for the server. |
 | `olis-client` | `index.ts` | Spec module 1: the only code that sees the feed's own shapes, among them the offset-less timestamps, which it reads as Pacific local time and refuses in any other form. |
 | `database` | `writer.ts`, `reader.ts` | The only code that imports `node:sqlite`. |
