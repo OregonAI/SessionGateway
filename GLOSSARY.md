@@ -54,7 +54,7 @@ One result of `search`: a Document, or for a Proposed Amendment the amendment, w
 _Avoid_: result, match
 
 **Exact citation**:
-A Measure ("HB 3131"), a Proposed Amendment ("SB 69-2") or an ORS section ("ORS 468.130") written in a question as people write it. The Hits it names exactly come first: a Measure's Versions from Introduced to Enrolled, the amendment, the Documents whose text holds the section (ADR-0025).
+A Measure ("HB 3131"), a Proposed Amendment ("SB 69-2") or an ORS section ("ORS 468.130") written in a question as people write it. The Hits it names exactly come first: a Measure's Versions from Introduced to Enrolled, the amendment, the Documents whose text holds the section (ADR-0025). A citation that names nothing the index holds puts nothing first, and the result's `notes` name it.
 _Avoid_: reference, Statute Link (a Statute Link is parsed from a Version's text, not found in a question)
 
 **Keyword-only Document**:
