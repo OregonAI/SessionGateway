@@ -19,9 +19,11 @@ import {
   sb69Slb,
 } from "../support/expected-votes.ts";
 import { liveStatusOf } from "../support/live-status.ts";
+import type { FakeOlisBehavior } from "../support/fake-olis.ts";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";
 import { committeeVotesOf, floorVotesOf, tuplesOf } from "../support/votes.ts";
+import type { ToolOutcome } from "../support/mcp-clients.ts";
 
 // 2025-04-10 10:00 in Oregon: the cache is pulled then. SB 69 has been heard by SLB, and has passed the
 // Senate (its floor vote of 2025-02-06 is in the cache); HB 3795, which OLIS created on 2025-02-25, has
@@ -191,6 +193,194 @@ describe("the schedule with OLIS answering", () => {
       const outcome = await callTool(connected, "get_measure", { measure: "HB 3795" });
 
       expect(liveStatusOf(outcome)).toMatchObject({ source: "olis", schedule: [] });
+    });
+  });
+});
+
+// Acceptance case (f): sponsors, location and committee votes for SB 69 and HB 3795, with the live lookup
+// faked both answering and failing. The sponsor rows are the fixture's MeasureSponsors rows (SB 69's one row
+// is a presession filing and HB 3795's a committee sponsor, HECHS: get-measure-sponsors.test.ts has the
+// documents that print them), the locations its Measures rows' CurrentLocation, and the rolls its
+// CommitteeVotes rows. "Ahead" is what OLIS has on 2025-12-15; "cached" is what the cache pulled on
+// 2025-04-10 holds.
+const caseF = [
+  {
+    measure: "SB 69",
+    sponsorLine: {
+      sponsors: [],
+      committee_sponsors: [],
+      presession_messages: [
+        "Printed pursuant to Senate Interim Rule 213.28 by order of the President of the Senate in conformance with presession filing rules, indicating neither advocacy nor opposition on the part of the President.",
+      ],
+    },
+    location: { current: "Chapter Number Assigned", committee_code: null },
+    liveRolls: [sb69Slb, sb69Hlws],
+    cachedRolls: [sb69Slb],
+  },
+  {
+    measure: "HB 3795",
+    sponsorLine: {
+      sponsors: [],
+      committee_sponsors: [{ committee_code: "HECHS" }],
+      presession_messages: [],
+    },
+    location: { current: "House Desk - Vetoed", committee_code: null },
+    liveRolls: [hb3795Hechs, hb3795Shs],
+    cachedRolls: [hb3795Hechs],
+  },
+] as const;
+
+function sponsorLineOf(outcome: ToolOutcome): Record<string, unknown> {
+  return {
+    sponsors: outcome.structured?.["sponsors"],
+    committee_sponsors: outcome.structured?.["committee_sponsors"],
+    presession_messages: outcome.structured?.["presession_messages"],
+  };
+}
+
+describe("acceptance case (f) with OLIS answering", () => {
+  let system: System;
+
+  beforeAll(async () => {
+    system = await startSystem({ clockAt: pulledAt });
+    system.clock.set(readAt);
+  });
+
+  afterAll(async () => {
+    await system.stop();
+  });
+
+  describe.for(eras)("for a %s client", (era) => {
+    let connected: ConnectedClient;
+
+    beforeAll(async () => {
+      connected = await connectClient(era, system.handler);
+    });
+
+    afterAll(async () => {
+      await connected.close();
+    });
+
+    it.for(caseF)(
+      "gives $measure's sponsors, location and committee votes, the last two from OLIS",
+      async (expected) => {
+        const outcome = await callTool(connected, "get_measure", { measure: expected.measure });
+
+        expect(outcome.isError).toBe(false);
+        expect(sponsorLineOf(outcome)).toEqual(expected.sponsorLine);
+        const live = liveStatusOf(outcome);
+        expect(live).toMatchObject({ source: "olis", lookup_failed: false, location: expected.location });
+        expect(live?.committee_votes.map((vote) => tuplesOf(vote.votes))).toEqual(expected.liveRolls);
+      },
+    );
+  });
+});
+
+describe("a location that has changed since the pull", () => {
+  let system: System;
+
+  beforeAll(async () => {
+    system = await startSystem({ clockAt: pulledAt });
+    system.clock.set(readAt);
+    // The fixture holds each row's final state, so SB 69's location is the same in the cache and at OLIS.
+    // This case makes OLIS move it after the pull, to a place made up for the case.
+    system.olis.amendRows("Measures", (row) => row["MeasurePrefix"] === "SB" && row["MeasureNumber"] === 69, {
+      CurrentLocation: "In House Committee",
+      CurrentCommitteeCode: "HLWS",
+    });
+  });
+
+  afterAll(async () => {
+    await system.stop();
+  });
+
+  describe.for(eras)("for a %s client", (era) => {
+    let connected: ConnectedClient;
+
+    beforeAll(async () => {
+      connected = await connectClient(era, system.handler);
+    });
+
+    afterAll(async () => {
+      await connected.close();
+    });
+
+    it("shows OLIS's location in the live block and the pull's in the cache's own field", async () => {
+      const outcome = await callTool(connected, "get_measure", { measure: "SB 69" });
+
+      expect(liveStatusOf(outcome)?.location).toEqual({ current: "In House Committee", committee_code: "HLWS" });
+      expect(outcome.structured?.["location"]).toEqual({ current: "Chapter Number Assigned", committee_code: null });
+    });
+  });
+});
+
+// A live lookup that fails (an error status, a broken connection, or no answer within the bound) is not an
+// error of the tool: the cache answers, and the live block says plainly that the lookup failed and that
+// the values are the cache's, as of the index's time. [what the fake does, the bound on the lookup in
+// milliseconds if the case needs a short one, what the reason an agent reads must say]
+const failures: readonly (readonly [string, FakeOlisBehavior, string | undefined, RegExp])[] = [
+  ["answers with a 503", { kind: "fail", status: 503 }, undefined, /503/],
+  ["never answers", { kind: "hang" }, "300", /did not answer within 0\.3 seconds/],
+  ["drops the connection", { kind: "drop-connection" }, undefined, /connection to OLIS failed/],
+];
+
+describe.for(failures)("the live status when OLIS %s", ([, behavior, timeoutMs, reason]) => {
+  let system: System;
+
+  beforeAll(async () => {
+    system = await startSystem({
+      clockAt: pulledAt,
+      ...(timeoutMs === undefined ? {} : { serverEnv: { OLIS_LIVE_TIMEOUT_MS: timeoutMs } }),
+    });
+    system.clock.set(readAt);
+    system.olis.behave(behavior);
+  });
+
+  afterAll(async () => {
+    await system.stop();
+  });
+
+  describe.for(eras)("for a %s client", (era) => {
+    let connected: ConnectedClient;
+
+    beforeAll(async () => {
+      connected = await connectClient(era, system.handler);
+    });
+
+    afterAll(async () => {
+      await connected.close();
+    });
+
+    it.for(caseF)("answers $measure from the cache, as a result and not an error, and says so", async (expected) => {
+      const outcome = await callTool(connected, "get_measure", { measure: expected.measure });
+
+      expect(outcome.isError).toBe(false);
+      const live = liveStatusOf(outcome);
+      expect(live).toMatchObject({
+        source: "cache",
+        lookup_failed: true,
+        // The index's time: the pull of 2025-04-10 10:00, not the 2025-12-15 clock of the call.
+        as_of: "2025-04-10T10:00:00-07:00",
+        schedule: null,
+      });
+      expect(live?.notice).toMatch(/live lookup of OLIS failed/i);
+      expect(live?.notice).toMatch(reason);
+      expect(live?.notice).toContain("come from the cache, as of 2025-04-10T10:00:00-07:00");
+      // Case (f): the values are the cache's, which differ from what OLIS would say.
+      expect(sponsorLineOf(outcome)).toEqual(expected.sponsorLine);
+      expect(live?.location).toEqual(expected.location);
+      expect(live?.committee_votes.map((vote) => tuplesOf(vote.votes))).toEqual(expected.cachedRolls);
+    });
+
+    it("gives the cache's history and floor votes in the block, the same as the cache's own fields", async () => {
+      const outcome = await callTool(connected, "get_measure", { measure: "SB 69" });
+
+      const live = liveStatusOf(outcome);
+      expect(live?.history).toHaveLength(10);
+      expect(live?.history).toEqual(outcome.structured?.["history"]);
+      expect(live?.floor_votes).toEqual(floorVotesOf(outcome));
+      expect(live?.committee_votes).toEqual(committeeVotesOf(outcome));
+      expect(outcome.structured).toMatchObject({ as_of: "2025-04-10T10:00:00-07:00" });
     });
   });
 });
