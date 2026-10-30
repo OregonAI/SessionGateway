@@ -135,4 +135,16 @@ describe("the entry scripts", () => {
       expect(finished.stderr).not.toContain(value);
     },
   );
+
+  it("src/bin/ingest.ts refuses a database that cannot run in WAL mode, instead of writing in another mode", async () => {
+    // SQLite answers a request for WAL without an error and keeps the journal mode it had when it cannot
+    // switch: an in-memory database is one such case, a filesystem without shared memory is another.
+    const { olis } = await fakeOlisAndDatabase();
+    const env = { SESSION_KEY: "2025R1", OLIS_BASE_URL: olis.baseUrl, DATABASE_PATH: ":memory:" };
+
+    const finished = await run("src/bin/ingest.ts", env);
+
+    expect(finished.code).not.toBe(0);
+    expect(finished.stderr).toContain("WAL");
+  }, 20_000);
 });

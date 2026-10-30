@@ -22,10 +22,21 @@ const schema = `
 /** The default timeout of 0 fails at once on a busy database, so both sides wait up to 5 seconds. */
 const BUSY_TIMEOUT_MS = 5000;
 
-/** The worker's connection: WAL, so the server reads while the worker writes. */
+/**
+ * The worker's connection: WAL, so the server reads while the worker writes. SQLite answers a request
+ * for WAL without an error and keeps the journal mode it had when it cannot switch (an in-memory
+ * database, or a file on a filesystem without shared-memory support), so the answer is checked.
+ */
 export function openWriteConnection(path: string): DatabaseSync {
   const database = new DatabaseSync(path, { timeout: BUSY_TIMEOUT_MS });
-  database.exec("PRAGMA journal_mode = WAL");
+  const answer = database.prepare("PRAGMA journal_mode = WAL").get();
+  const mode = answer?.["journal_mode"];
+  if (mode !== "wal") {
+    database.close();
+    throw new Error(
+      `Could not put the database at "${path}" in WAL mode: SQLite kept the "${String(mode)}" journal mode. WAL needs a file on a filesystem with shared-memory support.`,
+    );
+  }
   database.exec("PRAGMA synchronous = NORMAL");
   database.exec(schema);
   return database;
