@@ -194,6 +194,10 @@ describe.for(eras)("when the next Version comes in with a later pull, for a %s c
     system.clock.set("2026-08-01T17:00:00Z");
     await system.pullAgain();
 
+    // The second pull reads the Versions it newly holds from the text it stores, and fetches nothing it already held
+    // (ADR-0005: a fetched file is unchanging): SB 69-2's posting was asked for once, by the first pull.
+    expect(system.olis.documentRequests().filter((path) => path.endsWith("/ProposedAmendment/26286"))).toHaveLength(1);
+
     const after = await blockOf(connected, "SB 69");
     expect(after.versions.map((version) => version.label)).toEqual(["Introduced", "A-Engrossed", "Enrolled"]);
     expect(after.versions[1]?.statute_links.slice(0, 9)).toEqual(sb69Changes);
