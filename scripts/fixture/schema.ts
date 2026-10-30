@@ -3,7 +3,9 @@
 //
 // build.ts uses this to decide which rows a Measure drags in. verify.ts uses the same table to
 // check that every reference resolves inside the fixture, so the two cannot disagree about
-// what refers to what. Source: docs/research/olis-odata.md section 2 ($metadata) and section 8.
+// what refers to what. The shapes of the two files build.ts writes and verify.ts reads
+// (manifest.json and unresolved.json) are declared here too, once, for the same reason.
+// Source: docs/research/olis-odata.md section 2 ($metadata) and section 8.
 //
 // Property names are the feed's own, misspellings included: CommitteCode (on agenda items),
 // CommittteCode (on analysis documents) and LegislatoreCode (on sponsors) are what OLIS
@@ -12,6 +14,9 @@
 // This file imports nothing, runs under Node type stripping, and uses erasable syntax only.
 
 export type Row = Record<string, unknown>;
+
+export const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
 /** A reference from one row's properties to a row in another entity set. */
 export type Ref = {
@@ -173,6 +178,12 @@ export const entitySets: Record<string, EntitySpec> = {
 export type DocumentLink = {
   /** Folder under documents/ and under the download cache. */
   kind: string;
+  /**
+   * Mean size of one such document, from docs/research/olis-odata.md section 7. The build uses
+   * it to estimate a download before it starts. It sits on the link so a kind cannot be renamed
+   * without its size. Floor letters were not sampled: 250 kB is a guess.
+   */
+  meanBytes: number;
   /** The row's document URL as the feed (or the OLIS testimony page) gives it. */
   url: (row: Row) => string;
   /** Path under the kind folder, without an extension. */
@@ -181,41 +192,34 @@ export type DocumentLink = {
 
 const slug = (text: unknown): string => String(text).replace(/[^A-Za-z0-9._-]+/g, "-");
 
-// Mean document sizes by kind, from docs/research/olis-odata.md section 7. The build uses them
-// to estimate a download before it starts. Floor letters were not sampled: 250 kB is a guess.
-export const meanBytes: Record<string, number> = {
-  "measure-documents": 42_415,
-  "measure-analysis-documents": 500_075,
-  "proposed-amendments": 40_907,
-  "committee-meeting-documents": 218_262,
-  "testimony": 77_397,
-  "committee-agendas": 101_925,
-  "floor-letters": 250_000,
-};
-
 export const documentLinks: Record<string, DocumentLink> = {
   MeasureDocuments: {
     kind: "measure-documents",
+    meanBytes: 42_415,
     url: (r) => String(r.DocumentUrl),
     stem: (r) => `${slug(r.MeasurePrefix)}${slug(r.MeasureNumber)}/${slug(r.VersionDescription)}`,
   },
   MeasureAnalysisDocuments: {
     kind: "measure-analysis-documents",
+    meanBytes: 500_075,
     url: (r) => String(r.DocumentUrl),
     stem: (r) => slug(r.MeasureAnalysisId),
   },
   CommitteeProposedAmendments: {
     kind: "proposed-amendments",
+    meanBytes: 40_907,
     url: (r) => String(r.ProposedAmendmentUrl),
     stem: (r) => slug(r.ProposedAmendmentId),
   },
   CommitteeMeetingDocuments: {
     kind: "committee-meeting-documents",
+    meanBytes: 218_262,
     url: (r) => String(r.DocumentUrl),
     stem: (r) => slug(r.CommitteeMeetingDocumentId),
   },
   CommitteeMeetings: {
     kind: "committee-agendas",
+    meanBytes: 101_925,
     url: (r) => String(r.AgendaUrl),
     stem: (r) => `${slug(r.CommitteeCode)}/${slug(String(r.MeetingDate).replace("T", "-").replace(/:\d\d$/, ""))}`,
   },
@@ -223,11 +227,13 @@ export const documentLinks: Record<string, DocumentLink> = {
   // gotcha 2); the file lives under PublicTestimonyDocument/{CommTestId}.
   CommitteePublicTestimonies: {
     kind: "testimony",
+    meanBytes: 77_397,
     url: (r) => `https://olis.oregonlegislature.gov/liz/${r.SessionKey}/Downloads/PublicTestimonyDocument/${r.CommTestId}`,
     stem: (r) => slug(r.CommTestId),
   },
   FloorLetters: {
     kind: "floor-letters",
+    meanBytes: 250_000,
     url: (r) => String(r.FloorLetterUrl),
     stem: (r) => slug(r.FloorLetterId),
   },
@@ -290,4 +296,70 @@ export function rowKeyOf(entitySet: string, row: Row): Record<string, unknown> {
 export function describeKey(entitySet: string, key: Record<string, unknown>): string {
   const parts = Object.entries(key).map(([k, v]) => `${k}=${JSON.stringify(v)}`);
   return `${entitySet}[${parts.join(", ")}]`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The two files build.ts writes beside the feed rows and verify.ts reads back. Their shapes are
+// declared once, here, so a change to one cannot leave the other reading a different file.
+
+/** A feed row that links a document: its entity set and its key (see rowKeyOf). */
+export type LinkedBy = { entity_set: string; row_key: Record<string, unknown> };
+
+export const isLinkedBy = (value: unknown): value is LinkedBy =>
+  isRecord(value) && typeof value.entity_set === "string" && isRecord(value.row_key);
+
+/** One entry of manifest.json: a document in the fixture. */
+export type ManifestEntry = {
+  path: string;
+  source_url: string;
+  retrieved_at: string;
+  sha256: string;
+  bytes: number;
+  content_type: string;
+  linked_by: LinkedBy[];
+  note?: string;
+};
+
+/** The string fields every manifest entry must carry. The type checks the names. */
+export const requiredManifestStrings = ["path", "source_url", "retrieved_at", "sha256"] as const satisfies readonly (keyof ManifestEntry)[];
+
+/** One entry of unresolved.json: a reference the full cache cannot resolve either. */
+export type Unresolved = {
+  entity_set: string;
+  row_key: Record<string, unknown>;
+  property: string;
+  refers_to: string;
+  target_key: Record<string, unknown>;
+  reason: string;
+};
+
+export function makeUnresolved(entitySet: string, row: Row, ref: Ref, target: Record<string, unknown>): Unresolved {
+  return {
+    entity_set: entitySet,
+    row_key: rowKeyOf(entitySet, row),
+    property: ref.property,
+    refers_to: ref.to,
+    target_key: target,
+    reason:
+      ref.to === "Legislators"
+        ? "No Legislators row with this LegislatorCode in the full 2025R1 feed cache: Legislators is a current snapshot (docs/research/olis-odata.md section 8, gotcha 4)."
+        : `No ${ref.to} row with this key in the full 2025R1 feed cache.`,
+  };
+}
+
+export const isUnresolved = (value: unknown): value is Unresolved =>
+  isRecord(value) &&
+  typeof value.entity_set === "string" &&
+  isRecord(value.row_key) &&
+  typeof value.property === "string" &&
+  typeof value.refers_to === "string" &&
+  isRecord(value.target_key) &&
+  typeof value.reason === "string" &&
+  value.reason !== "";
+
+/** Identifies one reference of one row, so a listed gap can be matched to the reference it covers. */
+export function unresolvedId(entitySet: string, rowKey: Record<string, unknown>, property: string, refersTo: string): string {
+  const spec = entitySets[entitySet];
+  const keyValues = spec === undefined ? [] : spec.key.map((p) => rowKey[p]);
+  return `${entitySet}|${keyString(keyValues)}|${property}|${refersTo}`;
 }

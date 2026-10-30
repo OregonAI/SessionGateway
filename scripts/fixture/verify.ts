@@ -21,13 +21,17 @@ import { argv, exit } from "node:process";
 import {
   describeKey,
   entitySets,
+  isRecord,
+  isUnresolved,
   keyString,
   linkedDocumentUrl,
+  requiredManifestStrings,
   rowKeyOf,
   targetKeyOf,
+  unresolvedId,
   valuesOf,
 } from "./schema.ts";
-import type { Row } from "./schema.ts";
+import type { Row, Unresolved } from "./schema.ts";
 
 const defaultFixture = join(import.meta.dirname, "..", "..", "test", "fixtures", "olis-2025R1");
 
@@ -65,9 +69,6 @@ function readJson(path: string, label: string): unknown {
   }
 }
 
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
 // ---------------------------------------------------------------------------------------------
 // Manifest: hashes, files, and nothing under documents/ that the manifest does not list.
 
@@ -79,18 +80,18 @@ let documentCount = 0;
 function checkManifest(): void {
   const manifest = readJson(join(fixtureDir, "manifest.json"), "manifest.json");
   if (manifest === undefined) return;
-  if (!isObject(manifest) || !Array.isArray(manifest.documents)) {
+  if (!isRecord(manifest) || !Array.isArray(manifest.documents)) {
     problem('manifest.json: expected {"documents": [...]}');
     return;
   }
   manifest.documents.forEach((entry: unknown, index: number) => {
     const at = `manifest.json documents[${index}]`;
-    if (!isObject(entry)) {
+    if (!isRecord(entry)) {
       problem(`${at}: not an object`);
       return;
     }
     documentCount++;
-    for (const field of ["path", "source_url", "retrieved_at", "sha256"]) {
+    for (const field of requiredManifestStrings) {
       if (typeof entry[field] !== "string" || entry[field] === "") problem(`${at}: ${field} is missing`);
     }
     const path = entry.path;
@@ -146,8 +147,6 @@ function checkDocumentsAreListed(): void {
 // ---------------------------------------------------------------------------------------------
 // Feed rows: every reference resolves inside the fixture, or is a listed gap of the full cache.
 
-type Unresolved = { entity_set: string; row_key: Record<string, unknown>; property: string; refers_to: string; target_key: unknown };
-
 const feedRows = new Map<string, Row[]>();
 
 function loadFeed(): void {
@@ -168,7 +167,7 @@ function loadFeed(): void {
     }
     const rows = readJson(join(feedDir, file), `feed/${file}`);
     if (rows === undefined) continue;
-    if (!Array.isArray(rows) || !rows.every(isObject)) {
+    if (!Array.isArray(rows) || !rows.every(isRecord)) {
       problem(`feed/${file}: expected a JSON array of row objects`);
       continue;
     }
@@ -182,36 +181,23 @@ function loadUnresolved(): Map<string, { entry: Unresolved; used: boolean }> {
   if (!existsSync(path)) return entries;
   const content = readJson(path, "unresolved.json");
   if (content === undefined) return entries;
-  if (!isObject(content) || !Array.isArray(content.unresolved)) {
+  if (!isRecord(content) || !Array.isArray(content.unresolved)) {
     problem('unresolved.json: expected {"unresolved": [...]}');
     return entries;
   }
   content.unresolved.forEach((entry: unknown, index: number) => {
-    if (
-      !isObject(entry) ||
-      typeof entry.entity_set !== "string" ||
-      !isObject(entry.row_key) ||
-      typeof entry.property !== "string" ||
-      typeof entry.refers_to !== "string" ||
-      typeof entry.reason !== "string" ||
-      entry.reason === ""
-    ) {
-      problem(`unresolved.json unresolved[${index}]: needs entity_set, row_key, property, refers_to and a reason`);
+    if (!isUnresolved(entry)) {
+      problem(`unresolved.json unresolved[${index}]: needs entity_set, row_key, property, refers_to, target_key and a reason`);
       return;
     }
-    const spec = entitySets[entry.entity_set];
-    if (spec === undefined) {
+    if (entitySets[entry.entity_set] === undefined) {
       problem(`unresolved.json unresolved[${index}]: unknown entity set "${entry.entity_set}"`);
       return;
     }
-    const id = unresolvedId(entry.entity_set, spec.key.map((p) => (entry.row_key as Record<string, unknown>)[p]), entry.property, entry.refers_to);
-    entries.set(id, { entry: entry as Unresolved, used: false });
+    entries.set(unresolvedId(entry.entity_set, entry.row_key, entry.property, entry.refers_to), { entry, used: false });
   });
   return entries;
 }
-
-const unresolvedId = (entitySet: string, keyValues: unknown[], property: string, refersTo: string): string =>
-  `${entitySet}|${keyString(keyValues)}|${property}|${refersTo}`;
 
 function checkReferences(): { references: number; accepted: number } {
   const keysPresent = new Map<string, Set<string>>();
@@ -243,7 +229,7 @@ function checkReferences(): { references: number; accepted: number } {
         const present = keysPresent.get(ref.to);
         const found = targetSpec !== undefined && present !== undefined && present.has(keyString(targetSpec.key.map((p) => target[p])));
         const rowKey = rowKeyOf(entitySet, row);
-        const id = unresolvedId(entitySet, spec.key.map((p) => rowKey[p]), ref.property, ref.to);
+        const id = unresolvedId(entitySet, rowKey, ref.property, ref.to);
         const listed = unresolved.get(id);
         if (found) {
           if (listed !== undefined) problem(`unresolved.json lists ${describeKey(entitySet, rowKey)}.${ref.property} -> ${ref.to}, but it resolves inside the fixture: remove the entry`);

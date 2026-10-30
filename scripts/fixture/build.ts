@@ -32,11 +32,11 @@ import {
   entitySets,
   keyString,
   linkedDocumentUrl,
-  meanBytes,
+  makeUnresolved,
   rowKeyOf,
   targetKeyOf,
 } from "./schema.ts";
-import type { Row } from "./schema.ts";
+import type { LinkedBy, ManifestEntry, Row, Unresolved } from "./schema.ts";
 
 const SESSION = "2025R1";
 const OLIS_ORIGIN = "https://olis.oregonlegislature.gov/";
@@ -116,15 +116,6 @@ function readMeasures(path: string): Chosen[] {
 // runs one way. A row pulled in by a reference must itself be about a chosen Measure (or about
 // none); otherwise the build stops instead of quietly pulling in another Measure.
 
-type Unresolved = {
-  entity_set: string;
-  row_key: Record<string, unknown>;
-  property: string;
-  refers_to: string;
-  target_key: Record<string, unknown>;
-  reason: string;
-};
-
 type Selection = { included: Map<string, number[]>; unresolved: Unresolved[] };
 
 function loadFeed(feedDir: string): Map<string, Row[]> {
@@ -196,20 +187,7 @@ function select(feed: Map<string, Row[]>, chosen: Chosen[]): Selection {
       const targetSpec = entitySets[ref.to] as (typeof entitySets)[string];
       const targetIndex = indexOf(ref.to).get(keyString(targetSpec.key.map((p) => target[p])));
       if (targetIndex === undefined) {
-        unresolved.push({
-          rowIndex,
-          gap: {
-            entity_set: entitySet,
-            row_key: rowKeyOf(entitySet, row),
-            property: ref.property,
-            refers_to: ref.to,
-            target_key: target,
-            reason:
-              ref.to === "Legislators"
-                ? "No Legislators row with this LegislatorCode in the full 2025R1 feed cache: Legislators is a current snapshot (docs/research/olis-odata.md section 8, gotcha 4)."
-                : `No ${ref.to} row with this key in the full 2025R1 feed cache.`,
-          },
-        });
+        unresolved.push({ rowIndex, gap: makeUnresolved(entitySet, row, ref, target) });
         continue;
       }
       const targetRow = (feed.get(ref.to) as Row[])[targetIndex] as Row;
@@ -242,10 +220,11 @@ function select(feed: Map<string, Row[]>, chosen: Chosen[]): Selection {
 // Documents the selected rows link
 
 type Doc = {
-  kind: string;
   stem: string;
   url: string;
-  linkedBy: Array<{ entity_set: string; row_key: Record<string, unknown> }>;
+  /** From the DocumentLink: the mean size of this kind of document. */
+  meanBytes: number;
+  linkedBy: LinkedBy[];
 };
 
 function collectDocuments(feed: Map<string, Row[]>, selection: Selection): Doc[] {
@@ -269,7 +248,7 @@ function collectDocuments(feed: Map<string, Row[]>, selection: Selection): Doc[]
       const clash = byStem.get(stem);
       if (clash !== undefined && clash !== url) throw new BuildError(`documents ${clash} and ${url} would both be stored as ${stem}`);
       byStem.set(stem, url);
-      const doc = byUrl.get(url) ?? { kind: link.kind, stem, url, linkedBy: [] };
+      const doc = byUrl.get(url) ?? { stem, url, meanBytes: link.meanBytes, linkedBy: [] };
       doc.linkedBy.push({ entity_set: entitySet, row_key: rowKeyOf(entitySet, row) });
       byUrl.set(url, doc);
     }
@@ -454,17 +433,6 @@ const extensionFor = (contentType: string, bytes: Buffer): string => {
   return bytes.subarray(0, 5).toString("latin1") === "%PDF-" ? ".pdf" : ".bin";
 };
 
-type ManifestEntry = {
-  path: string;
-  source_url: string;
-  retrieved_at: string;
-  sha256: string;
-  bytes: number;
-  content_type: string;
-  linked_by: Array<{ entity_set: string; row_key: Record<string, unknown> }>;
-  note?: string;
-};
-
 function readArtables(reportsDir: string): { entry: ManifestEntry; file: string } {
   const file = join(reportsDir, ARTABLES.file);
   const headers = join(reportsDir, "artables2025R1.hdr");
@@ -530,7 +498,7 @@ async function main(): Promise<void> {
     else cached.set(doc, hit);
   }
   const estimate =
-    missing.reduce((sum, doc) => sum + (meanBytes[doc.kind] ?? 0), 0) + [...cached.values()].reduce((sum, hit) => sum + hit.meta.bytes, 0);
+    missing.reduce((sum, doc) => sum + doc.meanBytes, 0) + [...cached.values()].reduce((sum, hit) => sum + hit.meta.bytes, 0);
   console.log(
     `documents: ${docs.length} linked, ${cached.size} in the download cache, ${missing.length} ${args.offline ? "missing" : "to fetch"}; ` +
       `estimated fixture documents ${megabytes(estimate)} (means from olis-odata.md section 7)`,
