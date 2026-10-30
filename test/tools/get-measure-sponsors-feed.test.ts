@@ -4,8 +4,12 @@
 // get-measure-sponsors.test.ts.
 //
 // A stray row is a MeasureSponsors row the test adds to what the fake OLIS serves; the committed
-// fixture never changes (test/CLAUDE.md). Each one is a real row of the cached 2025R1 feed, pointed
-// at SB 69 so that the fixture holds the Measure it names.
+// fixture never changes (test/CLAUDE.md). A row with a MeasureSponsorId below 900000 is a real row
+// of the cached 2025R1 feed (.cache/olis-2025R1/feed/MeasureSponsors.json), with its code, level,
+// PrintOrder and CreatedDate as the cache has them and only its Measure changed to SB 69, so that
+// the fixture holds the Measure it names; the comment beside it names the Measure it came from. A
+// MeasureSponsorId of 900000 or more is made up for the test, and carries a Legislator Code in a form
+// the feed does use.
 import { afterEach, describe, expect, it } from "vitest";
 import { callTool, connectClient, type ToolOutcome } from "../support/mcp-clients.ts";
 import { legislatorRow, memberSponsorRow, sponsorsOf } from "../support/sponsors.ts";
@@ -39,27 +43,34 @@ async function getMeasure(options: SystemOptions, reference: string): Promise<To
 const afterTheSession = "2025-12-15T17:00:00Z";
 
 describe("Legislator Codes that carry a leadership title", () => {
-  // The codes are the cache's own: "Rep Speaker Fahey" is the chief sponsor of HB 2010 (MeasureSponsorId
-  // 143197) and "Sen President Wagner" a sponsor of SB 223 (143036). Each has a Legislators row with
-  // that code (Title "Speaker" and "President"), whose name is Julie Fahey and Rob Wagner.
+  // Both rows are real rows of the cache, moved to SB 69. "Rep Speaker Fahey" is the chief sponsor of
+  // HB 2010 (MeasureSponsorId 143197, PrintOrder 1, created 2024-12-30T16:16:37) and "Sen President
+  // Wagner" a regular sponsor of SB 223 (143036, PrintOrder 20, created 2024-12-26T22:36:10). Each
+  // has a Legislators row with that code (Title "Speaker" and "President") in the fixture, whose name
+  // is Julie Fahey and Rob Wagner.
   it.for([
-    ["Speaker", "Rep Speaker Fahey", "legislator-2025r1-fahey", "Julie Fahey"],
-    ["President", "Sen President Wagner", "legislator-2025r1-wagner", "Rob Wagner"],
-  ])(
-    "resolves the code of the %s (%s) to the Legislator, named for the person and not the office",
-    async ([, code, id, name]) => {
+    [
+      "Speaker",
+      memberSponsorRow("143197", "Rep Speaker Fahey", "Chief", "1", { createdDate: "2024-12-30T16:16:37" }),
+      { level: "chief", id: "legislator-2025r1-fahey", name: "Julie Fahey" },
+    ],
+    [
+      "President",
+      memberSponsorRow("143036", "Sen President Wagner", "Regular", "20", { createdDate: "2024-12-26T22:36:10" }),
+      { level: "regular", id: "legislator-2025r1-wagner", name: "Rob Wagner" },
+    ],
+  ] as const)(
+    "resolves the code of the %s to the Legislator, named for the person and not the office",
+    async ([, row, expected]) => {
       const outcome = await getMeasure(
-        {
-          clockAt: afterTheSession,
-          olis: { strayRows: { MeasureSponsors: [memberSponsorRow("143197", code as string, "Chief", "1")] } },
-        },
+        { clockAt: afterTheSession, olis: { strayRows: { MeasureSponsors: [row] } } },
         "SB 69",
       );
 
       expect(sponsorsOf(outcome)?.[0]).toEqual({
-        level: "chief",
-        legislator_code: code,
-        legislator: { id, name },
+        level: expected.level,
+        legislator_code: row["LegislatoreCode"],
+        legislator: { id: expected.id, name: expected.name },
       });
     },
   );
@@ -114,10 +125,17 @@ describe("a Legislator Code that has no Legislators row and no alias", () => {
 describe("a Legislator Code that has no Legislators row", () => {
   it("resolves through the alias file to the person it names, who has no Legislators row at all", async () => {
     // "Sen Woods" is in the alias file as Aaron Woods; the fixture has no sponsor row for the code, so
-    // a stray one is added (a real code: the cache's HB 3592 names "Sen Woods" as a chief sponsor).
+    // a stray one is added: the cache's row 150301 (HB 3592, Chief, PrintOrder 2, created
+    // 2025-02-17T18:03:00), moved to SB 69.
     const system = await startSystem({
       clockAt: afterTheSession,
-      olis: { strayRows: { MeasureSponsors: [memberSponsorRow("150301", "Sen Woods", "Chief", "2")] } },
+      olis: {
+        strayRows: {
+          MeasureSponsors: [
+            memberSponsorRow("150301", "Sen Woods", "Chief", "2", { createdDate: "2025-02-17T18:03:00" }),
+          ],
+        },
+      },
     });
     started.push(system);
     const connected = await connectClient("2026-07-28", system.handler);
