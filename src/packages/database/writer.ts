@@ -15,6 +15,7 @@ import {
 import type { HistoryAction, Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
 import type { Legislator, LegislatorId, SponsorLevel } from "#/packages/domain/legislators.ts";
 import type { AgencyId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
+import type { RelatingClauseEdit, StatuteLink, StatuteLinkSource } from "#/packages/domain/statute-links.ts";
 import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openWriteConnection } from "./lib/connection.ts";
@@ -91,6 +92,25 @@ export type FullPullRecord = {
   testimony: readonly TestimonyRecord[];
 };
 
+/** A file the store holds that has not been read for Statute Links yet: one document stands for every document with the same file. */
+export type UnreadStatuteFile = {
+  /** A stored document with the file. */
+  documentId: DocumentId;
+  /** What the file is read as: a Version, or a posting of a Proposed Amendment. */
+  readAs: StatuteLinkSource;
+  contentHash: string;
+};
+
+/** What reading one file for Statute Links came to, ready to store. */
+export type StatuteParseRecord = {
+  contentHash: string;
+  readAs: StatuteLinkSource;
+  textRead: boolean;
+  amendedVersionHeader: string | null;
+  links: readonly StatuteLink[];
+  relatingClauseEdits: readonly RelatingClauseEdit[];
+};
+
 /** The columns of the sponsor table that only some kinds of row fill; the others stay NULL. */
 function kindColumnsOf(sponsor: SponsorRecord): {
   legislatorCode: string | null;
@@ -134,11 +154,26 @@ export type IndexWriter = {
   documentsWithoutTextLayer(session: SessionKey): { id: DocumentId; sourceUrl: string }[];
   /** Keeps one fetched document, its text and the nodes it points at, in one transaction. */
   storeDocument(session: SessionKey, document: StoredDocument): void;
+  /**
+   * The files of the Session's stored Versions and postings of Proposed Amendments that have not been read
+   * for Statute Links, each once however many documents share it. Read from the stored text; nothing is fetched.
+   */
+  unreadStatuteFiles(session: SessionKey): UnreadStatuteFile[];
+  /** The stored text of one document, and whether the file had a text layer. */
+  storedText(id: DocumentId): { text: string; hasTextLayer: boolean };
+  /** Keeps what reading one file came to, its links with it, in one transaction. */
+  storeStatuteParse(record: StatuteParseRecord): void;
   close(): void;
 };
 
 const idRow = z.object({ id: z.string() });
 const scanRow = z.object({ id: z.string(), source_url: z.string() });
+const unreadFileRow = z.object({
+  id: z.string(),
+  kind: z.enum(["version", "proposed_amendment"]),
+  content_hash: z.string(),
+});
+const storedTextRow = z.object({ text: z.string(), has_text_layer: z.number() });
 
 /** SQLite has no boolean: an analysis document's flag is 0 or 1, and any other document's is NULL. */
 function minorityColumn(isMinority: boolean | undefined): 0 | 1 | null {
@@ -493,6 +528,61 @@ export function openIndexWriter(path: string): IndexWriter {
         for (const relation of document.relations) {
           insertRelation.run(document.id, relation.relation, relation.to, relation.meaning, relation.provenance);
         }
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    unreadStatuteFiles(session) {
+      const rows = database
+        .prepare(
+          `SELECT MIN(d.id) AS id, d.kind, d.content_hash FROM document d
+           WHERE d.session_key = ? AND d.kind IN ('version', 'proposed_amendment')
+             AND NOT EXISTS (SELECT 1 FROM statute_parse p WHERE p.content_hash = d.content_hash AND p.parsed_as = d.kind)
+           GROUP BY d.content_hash, d.kind ORDER BY MIN(d.id)`,
+        )
+        .all(session);
+      return rows.map((row) => {
+        const unread = unreadFileRow.parse(row);
+        return { documentId: unread.id as DocumentId, readAs: unread.kind, contentHash: unread.content_hash };
+      });
+    },
+    storedText(id) {
+      const row = database.prepare("SELECT text, has_text_layer FROM document WHERE id = ?").get(id);
+      if (row === undefined) throw new Error(`The store holds no document ${id}`);
+      const stored = storedTextRow.parse(row);
+      return { text: stored.text, hasTextLayer: stored.has_text_layer === 1 };
+    },
+    storeStatuteParse(record) {
+      const insertParse = database.prepare(
+        `INSERT INTO statute_parse (content_hash, parsed_as, text_read, amended_version_header, relating_clause_edits)
+         VALUES (?, ?, ?, ?, ?)`,
+      );
+      const insertLink = database.prepare(
+        `INSERT INTO statute_link (content_hash, parsed_as, ordinal, kind, target_type, target_id, measure_section)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      );
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        insertParse.run(
+          record.contentHash,
+          record.readAs,
+          record.textRead ? 1 : 0,
+          record.amendedVersionHeader,
+          JSON.stringify(record.relatingClauseEdits),
+        );
+        record.links.forEach((link, ordinal) => {
+          insertLink.run(
+            record.contentHash,
+            record.readAs,
+            ordinal,
+            link.kind,
+            link.target.type,
+            link.target.id,
+            link.measureSection,
+          );
+        });
         database.exec("COMMIT");
       } catch (error) {
         database.exec("ROLLBACK");

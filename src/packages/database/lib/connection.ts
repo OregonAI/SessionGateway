@@ -184,6 +184,27 @@ const schema = `
     agency_id TEXT
   ) STRICT;
   CREATE INDEX IF NOT EXISTS testimony_measure ON testimony (measure_id);
+  -- What reading one file for Statute Links came to, by the file's content hash and what it was read as, so that
+  -- two postings of one amendment that share a file share one reading (ADR-0015). Written by the ingest worker
+  -- from the stored text, after the files are stored.
+  CREATE TABLE IF NOT EXISTS statute_parse (
+    content_hash TEXT NOT NULL,
+    parsed_as TEXT NOT NULL CHECK (parsed_as IN ('version', 'proposed_amendment')),
+    text_read INTEGER NOT NULL,
+    amended_version_header TEXT,
+    relating_clause_edits TEXT NOT NULL,
+    PRIMARY KEY (content_hash, parsed_as)
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS statute_link (
+    content_hash TEXT NOT NULL,
+    parsed_as TEXT NOT NULL,
+    ordinal INTEGER NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('amends', 'repeals', 'adds-to', 'cites')),
+    target_type TEXT NOT NULL CHECK (target_type IN ('section', 'chapter')),
+    target_id TEXT NOT NULL,
+    measure_section TEXT,
+    PRIMARY KEY (content_hash, parsed_as, ordinal)
+  ) STRICT;
   CREATE TABLE IF NOT EXISTS analysis_listing (
     document_id TEXT NOT NULL PRIMARY KEY,
     session_key TEXT NOT NULL,
