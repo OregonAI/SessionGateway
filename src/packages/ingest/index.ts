@@ -323,9 +323,11 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     const stored = writer.storedDocumentIds(config.session);
     // A fetched file is unchanging (ADR-0005) but its feed row is not: OLIS changes a posting's Meaning,
     // a Testimony's Measure. What the row says about a stored document is refreshed without fetching it.
+    const refreshed = links.filter((link) => stored.has(link.id));
     writer.refreshDocuments(
       config.session,
-      links.filter((link) => stored.has(link.id)),
+      refreshed,
+      new Map(refreshed.map((link) => [link.id, searchEntryOf(link, committeeNames)])),
     );
     for (const link of links) {
       if (stored.has(link.id)) continue;
