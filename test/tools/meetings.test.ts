@@ -3,7 +3,8 @@
 // 2025-01-29 (rows created by then), the ingest worker pulls them into a database, and an MCP client
 // calls the tool in-process. One database serves every case in this file because none of them
 // changes it. The cases that need the Session after the fact are in meetings-past.test.ts, and the
-// one that needs a row the fixture lacks is in meetings-recording-log.test.ts.
+// ones that need a database of their own (another clock, a failed fetch, a row the fixture lacks, such
+// as a Recording Log) are in meetings-pull.test.ts.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";

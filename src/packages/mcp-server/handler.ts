@@ -25,7 +25,10 @@ import { sessionOverview, sessionOverviewInput, sessionOverviewOutput } from "./
 import { createRateLimiter, rateLimitMessage, type RateLimiter } from "./lib/rate-limit.ts";
 
 export type HandlerDeps = {
-  /** Times the rate limit's window. */
+  /**
+   * The time the server answers by: it times the rate limit's window, and `meetings` measures "upcoming"
+   * and the next meeting from it. A test that freezes or moves it moves both.
+   */
   clock: Clock;
 };
 
