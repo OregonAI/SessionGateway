@@ -70,8 +70,13 @@ async function listening(port: number): Promise<void> {
   throw new Error(`nothing listens on port ${port}`);
 }
 
-async function fakeOlisAndDatabase(): Promise<{ olis: FakeOlis; database: TempDatabase }> {
-  const olis = await startFakeOlis({ clock: createSimulatedClock("2025-07-15T17:00:00Z") });
+async function fakeOlisAndDatabase(
+  options: { clockAt?: string; documents?: boolean } = {},
+): Promise<{ olis: FakeOlis; database: TempDatabase }> {
+  const olis = await startFakeOlis({
+    clock: createSimulatedClock(options.clockAt ?? "2025-07-15T17:00:00Z"),
+    documents: options.documents ?? false,
+  });
   const database = createTempDatabase();
   cleanups.push(async () => {
     await olis.close();
@@ -80,10 +85,24 @@ async function fakeOlisAndDatabase(): Promise<{ olis: FakeOlis; database: TempDa
   return { olis, database };
 }
 
+/**
+ * The worker's environment against this fake OLIS. The feed links documents on olis.oregonlegislature.gov;
+ * OLIS_DOCUMENT_ORIGIN sends the worker to the fake instead, so no test reaches the real OLIS, whichever
+ * rows the feed holds and whether or not the fake serves the files (test/CLAUDE.md, "Hermetic").
+ */
+function workerEnvironment(olis: FakeOlis, databasePath: string): Record<string, string> {
+  return {
+    SESSION_KEY: "2025R1",
+    OLIS_BASE_URL: olis.baseUrl,
+    OLIS_DOCUMENT_ORIGIN: olis.origin,
+    DATABASE_PATH: databasePath,
+  };
+}
+
 describe("the entry scripts", () => {
   it("serve what the worker pulled: ingest.ts, then server.ts, then a client on its port", async () => {
     const { olis, database } = await fakeOlisAndDatabase();
-    const env = { SESSION_KEY: "2025R1", OLIS_BASE_URL: olis.baseUrl, DATABASE_PATH: database.path };
+    const env = workerEnvironment(olis, database.path);
 
     const pulled = await run("src/bin/ingest.ts", env);
     expect(pulled.code, pulled.stderr).toBe(0);
@@ -110,20 +129,9 @@ describe("the entry scripts", () => {
   }, 20_000);
 
   it("fetch and serve documents: ingest.ts pulls from OLIS_DOCUMENT_ORIGIN, then server.ts serves the text", async () => {
-    // The feed links documents on olis.oregonlegislature.gov; OLIS_DOCUMENT_ORIGIN sends the worker to the
-    // fake instead, so no test reaches the real OLIS. The documents are served only because this test asks.
-    const olis = await startFakeOlis({ clock: createSimulatedClock("2025-01-29T17:00:00Z"), documents: true });
-    const database = createTempDatabase();
-    cleanups.push(async () => {
-      await olis.close();
-      database.remove();
-    });
-    const env = {
-      SESSION_KEY: "2025R1",
-      OLIS_BASE_URL: olis.baseUrl,
-      OLIS_DOCUMENT_ORIGIN: olis.origin,
-      DATABASE_PATH: database.path,
-    };
+    // The documents are served only because this test asks.
+    const { olis, database } = await fakeOlisAndDatabase({ clockAt: "2025-01-29T17:00:00Z", documents: true });
+    const env = workerEnvironment(olis, database.path);
 
     const pulled = await run("src/bin/ingest.ts", env);
     expect(pulled.code, pulled.stderr).toBe(0);
@@ -163,19 +171,8 @@ describe("the entry scripts", () => {
   })();
 
   it("ingest.ts stops and says why when the PDF extractor cannot load, and does not report every document as not a PDF", async () => {
-    const olis = await startFakeOlis({ clock: createSimulatedClock("2025-01-29T17:00:00Z"), documents: true });
-    const database = createTempDatabase();
-    cleanups.push(async () => {
-      await olis.close();
-      database.remove();
-    });
-    const env = {
-      SESSION_KEY: "2025R1",
-      OLIS_BASE_URL: olis.baseUrl,
-      OLIS_DOCUMENT_ORIGIN: olis.origin,
-      DATABASE_PATH: database.path,
-      NODE_OPTIONS: withoutPdfjsBundle,
-    };
+    const { olis, database } = await fakeOlisAndDatabase({ clockAt: "2025-01-29T17:00:00Z", documents: true });
+    const env = { ...workerEnvironment(olis, database.path), NODE_OPTIONS: withoutPdfjsBundle };
 
     const finished = await run("src/bin/ingest.ts", env);
 
@@ -196,7 +193,7 @@ describe("the entry scripts", () => {
       stop: () => Promise<number | null>;
     }> {
       const { olis, database } = await fakeOlisAndDatabase();
-      const env = { SESSION_KEY: "2025R1", OLIS_BASE_URL: olis.baseUrl, DATABASE_PATH: database.path };
+      const env = workerEnvironment(olis, database.path);
       const pulled = await run("src/bin/ingest.ts", env);
       expect(pulled.code, pulled.stderr).toBe(0);
       const port = await freePort();
@@ -284,12 +281,7 @@ describe("the entry scripts", () => {
     { timeout: 20_000 },
     async ([script, variable, value]) => {
       const { olis, database } = await fakeOlisAndDatabase();
-      const env = {
-        SESSION_KEY: "2025R1",
-        OLIS_BASE_URL: olis.baseUrl,
-        DATABASE_PATH: database.path,
-        [variable]: value,
-      };
+      const env = { ...workerEnvironment(olis, database.path), [variable]: value };
 
       const finished = await run(script, env);
 
@@ -303,7 +295,7 @@ describe("the entry scripts", () => {
     // SQLite answers a request for WAL without an error and keeps the journal mode it had when it cannot
     // switch: an in-memory database is one such case, a filesystem without shared memory is another.
     const { olis } = await fakeOlisAndDatabase();
-    const env = { SESSION_KEY: "2025R1", OLIS_BASE_URL: olis.baseUrl, DATABASE_PATH: ":memory:" };
+    const env = workerEnvironment(olis, ":memory:");
 
     const finished = await run("src/bin/ingest.ts", env);
 

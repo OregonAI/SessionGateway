@@ -52,9 +52,10 @@ export type FakeOlisOptions = {
    */
   pagingFault?: "repeats-the-first-page" | "never-ends";
   /**
-   * Serve the rows that link documents and the documents themselves. Off by default: extracting the
-   * fixture's 278 PDFs takes seconds, so only a test that reads documents asks for them. When off,
-   * those entity sets are served empty, as in a Session that has posted nothing yet.
+   * Serve the documents themselves. Off by default: extracting the fixture's 278 PDFs takes seconds, so
+   * only a test that reads documents asks for them. The feed is the same either way, rows that link a
+   * document included; when this is off every request for a document is answered 404 (Not Found), as
+   * OLIS does for a file it does not have, and the worker lists the document as not fetched.
    */
   documents?: boolean;
   /**
@@ -97,16 +98,6 @@ export type FakeOlis = {
 const fixtureDirectory = new URL("../fixtures/olis-2025R1/", import.meta.url);
 const feedDirectory = new URL("feed/", fixtureDirectory);
 const serviceRoot = ["odata", "odataservice.svc"];
-
-/** The entity sets whose rows link a document (a meeting row links its agenda). */
-const documentEntitySets = new Set([
-  "MeasureDocuments",
-  "MeasureAnalysisDocuments",
-  "CommitteeProposedAmendments",
-  "CommitteeMeetingDocuments",
-  "CommitteePublicTestimonies",
-  "CommitteeMeetings",
-]);
 
 /** The fixture's documents by the path they are served at: the pathname of each manifest `source_url`. */
 function loadDocumentPaths(): Map<string, URL> {
@@ -197,17 +188,12 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
       return { error: `The fake OLIS understands only "$filter=SessionKey eq '<key>'", not "${filter}".` };
     }
     const now = pacificWallClock(options.clock.now());
-    const rows = (servesDocuments || !documentEntitySets.has(entitySet) ? (feed.get(entitySet) ?? []) : []).filter(
-      (row) => {
-        if (sessionKey !== undefined && row["SessionKey"] !== sessionKey) return false;
-        const created = row["CreatedDate"];
-        return typeof created !== "string" || feedWallClock(created) <= now;
-      },
-    );
-    return [
-      ...rows,
-      ...(servesDocuments || !documentEntitySets.has(entitySet) ? (options.strayRows?.[entitySet] ?? []) : []),
-    ];
+    const rows = (feed.get(entitySet) ?? []).filter((row) => {
+      if (sessionKey !== undefined && row["SessionKey"] !== sessionKey) return false;
+      const created = row["CreatedDate"];
+      return typeof created !== "string" || feedWallClock(created) <= now;
+    });
+    return [...rows, ...(options.strayRows?.[entitySet] ?? [])];
   }
 
   /** A document, as OLIS serves one: the bytes of a PDF at the path of its `source_url`. */

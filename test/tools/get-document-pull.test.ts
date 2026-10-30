@@ -192,6 +192,27 @@ describe("a row OLIS changes after its file was fetched", () => {
   });
 });
 
+describe("a fake OLIS that serves no document files", () => {
+  // The default for a test that reads no document. The feed is still the feed (spec #1, "Testing Decisions":
+  // the rows with a CreatedDate up to the clock's time): at 2025-07-15 10:00 in Oregon the fixture holds
+  // 12 Committees and 36 CommitteeMeetings, and the rows that link a document add up to 275 (23
+  // MeasureDocuments, 34 MeasureAnalysisDocuments, 15 CommitteeProposedAmendments, 83 of the 86
+  // CommitteeMeetingDocuments, 84 CommitteePublicTestimonies, and 36 agendas). The files are not there,
+  // so each of those is left out and reported.
+  it("still serves the committees and meetings, and reports each linked document as not fetched", async () => {
+    const system = await start({ clockAt: "2025-07-15T17:00:00Z", documents: false });
+
+    const connected = await connectClient("2026-07-28", system.handler);
+    const overview = await callTool(connected, "session_overview", {});
+    await connected.close();
+
+    expect(overview.structured).toMatchObject({ counts: { committees: 12, meetings: 36, documents: 0 } });
+    const notFetched = system.buildReport()["documents_not_fetched"] as { reason: string }[];
+    expect(notFetched).toHaveLength(275);
+    expect(notFetched[0]?.reason).toContain("404");
+  });
+});
+
 describe("a document that cannot be had", () => {
   const clockAt = "2025-01-29T17:00:00Z";
   const sb69Introduced = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/Introduced";
