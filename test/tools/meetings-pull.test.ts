@@ -68,7 +68,7 @@ describe.for(eras)("meetings with a database of its own, for a %s client", (era)
 
       const byId = new Map(meetings.map((meeting) => [meeting.id, meeting]));
       expect(byId.get("meeting-2025r1-slb-2025-01-30-0800")?.["recording_logs"]).toEqual([
-        { id: "recording-log-2025r1-900101", label: "Recording Log", source_url: recordingLogUrl },
+        { id: "recording-log-2025r1-900101", label: "Recording Log", source_url: recordingLogUrl, fetched: true },
       ]);
       // It is the meeting's Recording Log and not an Exhibit, and no other meeting has it.
       expect(
@@ -147,6 +147,112 @@ describe.for(eras)("meetings with a database of its own, for a %s client", (era)
           comments: '<b>A notice.</b>\n<a href="https://example.org/">link</a>',
         }),
         expect.objectContaining({ print_order: null, measure_id: null }),
+      ]);
+    });
+  });
+
+  describe("a file this index has not fetched", () => {
+    // OLIS's feed says what is posted to a meeting; the files are fetched after the feed is read (ADR-0011,
+    // "Order of a pull"), and a fetch can fail (a 404, three timeouts) or not have been reached yet. The
+    // feed row says -2 was posted to SLB's 2025-01-30 meeting and adopted there (feed/CommitteeProposedAmendments.json,
+    // ProposedAmendmentId 26288), so spec #1 case (c), "-1 and -2 posted", holds whether or not its file is held.
+    const posting26288 = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/ProposedAmendment/26288";
+
+    it("still lists a posting whose file failed, with the feed's Meaning and a flag, until a later pull fetches it", async () => {
+      const { system, connected } = await start(era, {
+        clockAt: "2025-01-29T20:00:00Z",
+        documents: true,
+        olis: { documentFailures: { [posting26288]: [404] } },
+      });
+      const postedOn0130 = async (): Promise<unknown> => {
+        const meetings = await meetingsOnSb69(connected);
+        return meetings.find((meeting) => meeting.id === "meeting-2025r1-slb-2025-01-30-0800")?.["proposed_amendments"];
+      };
+
+      expect(await postedOn0130()).toEqual([
+        {
+          id: "amendment-2025r1-sb69-1",
+          number: "-1",
+          measure_id: "measure-2025r1-sb69",
+          meaning: "Proposed",
+          document_id: "posting-2025r1-26287",
+          source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/ProposedAmendment/26287",
+          fetched: true,
+        },
+        {
+          id: "amendment-2025r1-sb69-2",
+          number: "-2",
+          measure_id: "measure-2025r1-sb69",
+          meaning: "Adopted",
+          document_id: "posting-2025r1-26288",
+          source_url: posting26288,
+          fetched: false,
+        },
+      ]);
+      // The flag says what get_document will do with the id.
+      const unserved = await callTool(connected, "get_document", { id: "posting-2025r1-26288" });
+      expect(unserved.isError).toBe(true);
+      // The file is fetched by a later pull, and the same entry then says so.
+      await system.pullAgain();
+      expect(await postedOn0130()).toMatchObject([
+        { number: "-1", fetched: true },
+        { number: "-2", meaning: "Adopted", document_id: "posting-2025r1-26288", fetched: true },
+      ]);
+      expect((await callTool(connected, "get_document", { id: "posting-2025r1-26288" })).isError).toBe(false);
+    });
+
+    // A first pull that has reached no file: the fake serves none (documents: false), as an index in the
+    // hours of its first pull would be. The feed's rows for SB 69's three meetings (Proposed Amendments
+    // 26284 to 26288; Exhibits 287879, 288365, 288569 and 288650; the three agendas) are all listed, none held.
+    it("lists what the feed lists for each meeting, every file flagged as not fetched, before the first file is in", async () => {
+      const { connected } = await start(era, { clockAt: "2025-01-29T20:00:00Z", documents: false });
+
+      const meetings = (await meetingsOnSb69(connected)) as (MeetingOutput & {
+        agenda: { id: string; fetched: boolean } | null;
+        proposed_amendments: { number: string; document_id: string; meaning: string; fetched: boolean }[];
+        exhibits: { id: string; label: string; fetched: boolean }[];
+      })[];
+
+      expect(
+        meetings.map((meeting) => [
+          meeting.id,
+          meeting.agenda,
+          meeting.proposed_amendments.map((amendment) => [
+            amendment.number,
+            amendment.document_id,
+            amendment.meaning,
+            amendment.fetched,
+          ]),
+          meeting.exhibits.map((exhibit) => [exhibit.id, exhibit.label, exhibit.fetched]),
+        ]),
+      ).toEqual([
+        [
+          "meeting-2025r1-slb-2025-01-21-0800",
+          expect.objectContaining({ id: "agenda-2025r1-slb-2025-01-21-0800", fetched: false }),
+          [["-1", "posting-2025r1-26284", "Proposed", false]],
+          [["exhibit-2025r1-287879", "Meeting Material", false]],
+        ],
+        [
+          "meeting-2025r1-slb-2025-01-28-0800",
+          expect.objectContaining({ id: "agenda-2025r1-slb-2025-01-28-0800", fetched: false }),
+          [
+            ["-1", "posting-2025r1-26285", "Proposed", false],
+            ["-2", "posting-2025r1-26286", "Proposed", false],
+          ],
+          [
+            ["exhibit-2025r1-288365", "Preliminary SMS", false],
+            ["exhibit-2025r1-288569", "Witness Registration", false],
+          ],
+        ],
+        [
+          "meeting-2025r1-slb-2025-01-30-0800",
+          expect.objectContaining({ id: "agenda-2025r1-slb-2025-01-30-0800", fetched: false }),
+          [
+            ["-1", "posting-2025r1-26287", "Proposed", false],
+            ["-2", "posting-2025r1-26288", "Adopted", false],
+          ],
+          [["exhibit-2025r1-288650", "Preliminary SMS", false]],
+        ],
       ]);
     });
   });

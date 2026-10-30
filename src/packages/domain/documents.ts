@@ -18,6 +18,14 @@ export const documentKinds = [
 ] as const;
 export type DocumentKind = (typeof documentKinds)[number];
 
+/** The kinds of document a meeting lists: its agenda, Exhibits, Recording Logs and the postings of Proposed Amendments. */
+export const meetingDocumentKinds = [
+  "agenda",
+  "exhibit",
+  "recording_log",
+  "proposed_amendment",
+] as const satisfies readonly DocumentKind[];
+
 /**
  * How a document points at a node: the Measure, committee or meeting it belongs to, the Version an
  * analysis is of or a Printed Amendment amends, the meeting a posting was posted to, the amendment a
@@ -237,9 +245,11 @@ export type PostedAmendment = {
   /** The posting: the document with the file posted to this meeting. */
   documentId: DocumentId;
   sourceUrl: string;
+  /** Whether the store holds the posting's file. The feed lists the posting either way. */
+  fetched: boolean;
 };
 
-/** A document the store holds that belongs to a meeting, by what the feed calls it. */
+/** A document the feed lists for a meeting, by what the feed calls it. */
 export type MeetingDocument = {
   id: DocumentId;
   /** The feed's type for it: "Meeting Material", "Preliminary SMS", "Witness Registration"... */
@@ -247,15 +257,19 @@ export type MeetingDocument = {
   sourceUrl: string;
   /** The Measure the feed files it under, when it names one. */
   measureId: MeasureId | null;
+  /** Whether the store holds the file. The feed lists the document either way. */
+  fetched: boolean;
 };
 
 /**
- * What a meeting holds: its agenda document, its agenda items in print order, the Proposed Amendments
- * posted to it by Measure and number, its Exhibits and its Recording Logs. The feed has a Recording Log for
- * most meetings and more than one for a few.
+ * What the feed lists for a meeting: its agenda document, its agenda items in print order, the Proposed
+ * Amendments posted to it by Measure and number, its Exhibits and its Recording Logs. The feed has a
+ * Recording Log for most meetings and more than one for a few. A document is listed whether or not its
+ * file has been fetched (`fetched`): the feed is read before the files are (ADR-0011, "Order of a pull"),
+ * and a fetch can fail.
  */
 export type MeetingContents = {
-  /** The agenda document, when the feed links one and the store holds it. */
+  /** The agenda document, when the feed links one. */
   agenda: MeetingDocument | null;
   agendaItems: AgendaItem[];
   amendments: PostedAmendment[];

@@ -1,13 +1,15 @@
 // The ingest worker's side of the database. The server has no way to reach this file's functions:
 // it imports reader.ts only.
 import { z } from "zod";
-import type {
-  AgendaItem,
-  Committee,
-  DocumentId,
-  DocumentLink,
-  Meeting,
-  StoredDocument,
+import {
+  meetingDocumentKinds,
+  type AgendaItem,
+  type Committee,
+  type DocumentId,
+  type DocumentKind,
+  type DocumentLink,
+  type Meeting,
+  type StoredDocument,
 } from "#/packages/domain/documents.ts";
 import type { Measure, SessionKey } from "#/packages/domain/index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
@@ -26,6 +28,13 @@ export type IndexWriter = {
     meetings: readonly Meeting[],
     agendaItems: readonly AgendaItem[],
   ): void;
+  /**
+   * Stores what the feed lists for each meeting (its agenda, Exhibits, Recording Logs and the postings of
+   * Proposed Amendments), in one transaction, whether or not the files are fetched: a document that was
+   * not fetched is still listed. The label, Measure and a posting's Meaning are the feed's latest. A full
+   * pull never deletes (ADR-0005). A link to any other kind of document, or to no meeting, is ignored.
+   */
+  recordMeetingDocuments(session: SessionKey, links: readonly DocumentLink[]): void;
   /** The ids of the documents already stored for the Session: a stored document is never fetched again. */
   storedDocumentIds(session: SessionKey): Set<DocumentId>;
   /**
@@ -44,6 +53,15 @@ export type IndexWriter = {
 
 const idRow = z.object({ id: z.string() });
 const scanRow = z.object({ id: z.string(), source_url: z.string() });
+
+/** The meeting a link is listed under and, for a posting, what the committee did with it there. */
+function meetingListingOf(link: DocumentLink): { meetingId: string; meaning: string | null } | undefined {
+  if (!(meetingDocumentKinds as readonly DocumentKind[]).includes(link.kind)) return undefined;
+  const bound =
+    link.relations.find((relation) => relation.relation === "posted_to") ??
+    link.relations.find((relation) => relation.relation === "meeting");
+  return bound === undefined ? undefined : { meetingId: bound.to, meaning: bound.meaning };
+}
 
 export function openIndexWriter(path: string): IndexWriter {
   const database = openWriteConnection(path);
@@ -122,6 +140,38 @@ export function openIndexWriter(path: string): IndexWriter {
             item.comments,
             item.boardName,
             item.executiveAppointee,
+          );
+        }
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    recordMeetingDocuments(session, links) {
+      const upsertListing = database.prepare(
+        `INSERT INTO meeting_document (document_id, meeting_id, session_key, kind, node_id, label, source_url,
+                                       measure_id, meaning)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (document_id) DO UPDATE SET meeting_id = excluded.meeting_id, kind = excluded.kind,
+           node_id = excluded.node_id, label = excluded.label, source_url = excluded.source_url,
+           measure_id = excluded.measure_id, meaning = excluded.meaning`,
+      );
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        for (const link of links) {
+          const listing = meetingListingOf(link);
+          if (listing === undefined) continue;
+          upsertListing.run(
+            link.id,
+            listing.meetingId,
+            session,
+            link.kind,
+            link.nodeId,
+            link.label,
+            link.sourceUrl,
+            link.relations.find((relation) => relation.relation === "measure")?.to ?? null,
+            listing.meaning,
           );
         }
         database.exec("COMMIT");

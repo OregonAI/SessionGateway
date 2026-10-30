@@ -50,9 +50,14 @@ const meetingOutput = z.object({
       id: z.string().describe("The agenda's id, such as agenda-2025r1-slb-2025-01-30-0800. Give it to get_document."),
       label: z.string().describe("What OLIS calls it: Agenda."),
       source_url: z.string().describe("Where the Legislature publishes the file."),
+      fetched: z
+        .boolean()
+        .describe(
+          "True when this index holds the file, so get_document serves the id. False when OLIS lists it but the file is not here yet (a failed or not yet reached fetch): source_url is where to read it, and get_document does not know the id until a later pull fetches it.",
+        ),
     })
     .nullable()
-    .describe("The meeting's agenda document, when OLIS links one and this index holds it."),
+    .describe("The meeting's agenda document, when OLIS links one."),
   agenda_items: z
     .array(
       z.object({
@@ -86,10 +91,15 @@ const meetingOutput = z.object({
           ),
         measure_id: z.string().nullable().describe("The Measure OLIS files the Exhibit under, when it names one."),
         source_url: z.string().describe("Where the Legislature publishes the file."),
+        fetched: z
+          .boolean()
+          .describe(
+            "True when this index holds the file, so get_document serves the id. False when OLIS lists it but the file is not here yet (a failed or not yet reached fetch): source_url is where to read it, and get_document does not know the id until a later pull fetches it.",
+          ),
       }),
     )
     .describe(
-      "The Exhibits posted to this meeting, whichever Measure they are filed under. Only documents this index has fetched are listed.",
+      "The Exhibits OLIS lists for this meeting, whichever Measure they are filed under, fetched or not (see `fetched`).",
     ),
   recording_logs: z
     .array(
@@ -99,10 +109,15 @@ const meetingOutput = z.object({
           .describe("The Recording Log's id, such as recording-log-2025r1-288741. Give it to get_document."),
         label: z.string().describe("What OLIS calls it: Recording Log."),
         source_url: z.string().describe("Where the Legislature publishes the file."),
+        fetched: z
+          .boolean()
+          .describe(
+            "True when this index holds the file, so get_document serves the id. False when OLIS lists it but the file is not here yet (a failed or not yet reached fetch): source_url is where to read it, and get_document does not know the id until a later pull fetches it.",
+          ),
       }),
     )
     .describe(
-      "The committee's timecoded index of the meeting's recording: agenda items, motions, votes and speakers. Empty before it is posted or fetched, and sometimes more than one.",
+      "The committee's timecoded index of the meeting's recording: agenda items, motions, votes and speakers. Empty before OLIS lists one, and sometimes more than one.",
     ),
   proposed_amendments: z
     .array(
@@ -120,10 +135,15 @@ const meetingOutput = z.object({
           .string()
           .describe("The posting: the document with the text posted to this meeting. Give it to get_document."),
         source_url: z.string().describe("Where the Legislature publishes the posted file."),
+        fetched: z
+          .boolean()
+          .describe(
+            "True when this index holds the file, so get_document serves the id. False when OLIS lists it but the file is not here yet (a failed or not yet reached fetch): source_url is where to read it, and get_document does not know the id until a later pull fetches it.",
+          ),
       }),
     )
     .describe(
-      "The Proposed Amendments posted to this meeting, by Measure and number. Only postings this index has fetched are listed.",
+      "The Proposed Amendments OLIS lists as posted to this meeting, by Measure and number, fetched or not (see `fetched`, which is about the posting's file, `document_id`).",
     ),
 });
 
@@ -214,7 +234,12 @@ export function meetings(
           agenda:
             contents.agenda === null
               ? null
-              : { id: contents.agenda.id, label: contents.agenda.label, source_url: contents.agenda.sourceUrl },
+              : {
+                  id: contents.agenda.id,
+                  label: contents.agenda.label,
+                  source_url: contents.agenda.sourceUrl,
+                  fetched: contents.agenda.fetched,
+                },
           agenda_items: contents.agendaItems.map((item) => ({
             print_order: item.printOrder,
             measure_id: item.measure === null ? null : measureIdOf(item.measure),
@@ -229,11 +254,13 @@ export function meetings(
             label: exhibit.label,
             measure_id: exhibit.measureId,
             source_url: exhibit.sourceUrl,
+            fetched: exhibit.fetched,
           })),
           recording_logs: contents.recordingLogs.map((log) => ({
             id: log.id,
             label: log.label,
             source_url: log.sourceUrl,
+            fetched: log.fetched,
           })),
           proposed_amendments: contents.amendments.map((amendment) => ({
             id: amendment.id,
@@ -242,6 +269,7 @@ export function meetings(
             meaning: amendment.meaning,
             document_id: amendment.documentId,
             source_url: amendment.sourceUrl,
+            fetched: amendment.fetched,
           })),
         };
       }),

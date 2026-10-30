@@ -14,6 +14,7 @@ Seam-1 tests read state back through the tools, never through tables, SQL or int
 ## Expected values
 
 Expected values are literals from an independent source:
+
 - the spec's worked examples, such as HB 3131's 42 Testimony rows (41 support, 1 oppose), or SB 69-2, adopted by SLB on 2025-01-30;
 - the Statutes Affected Table;
 - the document itself.
@@ -37,8 +38,9 @@ Expected values are literals from an independent source:
 ## Layout
 
 The layout is the deep-module one in `src/packages/README.md`:
+
 - seam 2 in the parser package's own `tests/` folder, next to the parser it tests;
-- seam 1 in `test/tools/`, one file per kind of database use: `get-measure.test.ts` shares one read-only database, `get-measure-feed.test.ts` builds its own for each case, `get-document.test.ts` shares one database of the whole fixture and `get-document-pull.test.ts` builds its own for each case (fetch counts, failures, rows the fixture lacks), `meetings.test.ts` shares one database at the clock of spec #1's case (c), `meetings-past.test.ts` one at a clock after the whole fixture exists, and `meetings-pull.test.ts` builds its own for each case (another clock, a made-up row), and the real-port and entry-script tests are files of their own;
+- seam 1 in `test/tools/`, one file per kind of database use: `get-measure.test.ts` shares one read-only database, `get-measure-feed.test.ts` builds its own for each case, `get-document.test.ts` shares one database of the whole fixture and `get-document-pull.test.ts` builds its own for each case (fetch counts, failures, rows the fixture lacks), `meetings.test.ts` shares one database at the clock of spec #1's case (c), `meetings-past.test.ts` one at a clock after the whole fixture exists, and `meetings-pull.test.ts` builds its own for each case (another clock, a clock moved after the pull, a failed fetch, a made-up row), and the real-port and entry-script tests are files of their own;
 - the shared harness (fake OLIS, clock, MCP client) in `test/support/`;
 - fixtures in `test/fixtures/`.
 
@@ -49,6 +51,7 @@ Seam 1 and the harness span packages, so they live at the top. Every test import
 `npm test` should finish in under a minute, so it runs before every commit. The evaluation run against a full local build (#23) has its own script and never runs in `npm test`.
 
 fast-check (`@fast-check/vitest`) covers invariants that tables can't enumerate:
+
 - an expanded ORS range stays inside the snapshot's section list, sorted, with both ends present;
 - a parser never throws on arbitrary text.
 

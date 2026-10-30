@@ -46,6 +46,21 @@ const schema = `
     executive_appointee TEXT
   ) STRICT;
   CREATE INDEX IF NOT EXISTS agenda_item_meeting ON agenda_item (meeting_id);
+  -- What the feed lists for a meeting (its agenda, Exhibits, Recording Logs and the postings of Proposed
+  -- Amendments), written for every link before any file is fetched. A row here has a row in "document" only
+  -- once its file is in: a fetch can fail, or not have been reached yet (ADR-0011, "Order of a pull").
+  CREATE TABLE IF NOT EXISTS meeting_document (
+    document_id TEXT NOT NULL PRIMARY KEY,
+    meeting_id TEXT NOT NULL,
+    session_key TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    source_url TEXT NOT NULL,
+    measure_id TEXT,
+    meaning TEXT
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS meeting_document_meeting ON meeting_document (meeting_id);
   CREATE TABLE IF NOT EXISTS document (
     id TEXT NOT NULL PRIMARY KEY,
     node_id TEXT NOT NULL,

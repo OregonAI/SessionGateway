@@ -85,6 +85,7 @@ describe.for(eras)("meetings for a %s client", (era) => {
         meaning: "Proposed",
         document_id: "posting-2025r1-26287",
         source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/ProposedAmendment/26287",
+        fetched: true,
       },
       {
         id: "amendment-2025r1-sb69-2",
@@ -93,6 +94,7 @@ describe.for(eras)("meetings for a %s client", (era) => {
         meaning: "Adopted",
         document_id: "posting-2025r1-26288",
         source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/ProposedAmendment/26288",
+        fetched: true,
       },
     ]);
   });
@@ -172,6 +174,7 @@ describe.for(eras)("meetings for a %s client", (era) => {
             label: "Meeting Material",
             measure_id: "measure-2025r1-sb69",
             source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/287879",
+            fetched: true,
           },
         ],
       ],
@@ -183,12 +186,14 @@ describe.for(eras)("meetings for a %s client", (era) => {
             label: "Preliminary SMS",
             measure_id: "measure-2025r1-sb69",
             source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/288365",
+            fetched: true,
           },
           {
             id: "exhibit-2025r1-288569",
             label: "Witness Registration",
             measure_id: "measure-2025r1-sb69",
             source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/288569",
+            fetched: true,
           },
         ],
       ],
@@ -200,6 +205,7 @@ describe.for(eras)("meetings for a %s client", (era) => {
             label: "Preliminary SMS",
             measure_id: "measure-2025r1-sb69",
             source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/288650",
+            fetched: true,
           },
         ],
       ],
@@ -219,6 +225,7 @@ describe.for(eras)("meetings for a %s client", (era) => {
           id: "agenda-2025r1-slb-2025-01-21-0800",
           label: "Agenda",
           source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeAgenda/SLB/2025-01-21-08-00",
+          fetched: true,
         },
       ],
       [
@@ -227,6 +234,7 @@ describe.for(eras)("meetings for a %s client", (era) => {
           id: "agenda-2025r1-slb-2025-01-28-0800",
           label: "Agenda",
           source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeAgenda/SLB/2025-01-28-08-00",
+          fetched: true,
         },
       ],
       [
@@ -235,23 +243,26 @@ describe.for(eras)("meetings for a %s client", (era) => {
           id: "agenda-2025r1-slb-2025-01-30-0800",
           label: "Agenda",
           source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeAgenda/SLB/2025-01-30-08-00",
+          fetched: true,
         },
       ],
     ]);
   });
 
   // The brief: "Every document a meeting lists has an id get_document resolves", and it is the document the
-  // meeting says it is, at the address the meeting gives. A Proposed Amendment lists two: the amendment
-  // (the node, which serves its latest posting) and the posting (the text posted to this meeting).
+  // meeting says it is, at the address the meeting gives. Here every file is in the index, so every listed
+  // document says `fetched: true` and resolves (meetings-pull.test.ts has the ones whose file is not in).
+  // A Proposed Amendment lists two: the amendment (the node, which serves its latest posting) and the
+  // posting (the text posted to this meeting).
   it("lists only documents that get_document resolves, each at the source_url the meeting gives", async () => {
     const outcome = await callTool(connected, "meetings", { measure: "SB 69" });
 
-    type Listed = { id: string; source_url: string };
+    type Listed = { id: string; source_url: string; fetched: boolean };
     const meetings = outcome.structured?.["meetings"] as {
       agenda: Listed | null;
       exhibits: Listed[];
       recording_logs: Listed[];
-      proposed_amendments: { id: string; document_id: string; source_url: string }[];
+      proposed_amendments: { id: string; document_id: string; source_url: string; fetched: boolean }[];
     }[];
     const listed: Listed[] = meetings.flatMap((meeting) => [
       ...(meeting.agenda === null ? [] : [meeting.agenda]),
@@ -260,11 +271,13 @@ describe.for(eras)("meetings for a %s client", (era) => {
       ...meeting.proposed_amendments.map((amendment) => ({
         id: amendment.document_id,
         source_url: amendment.source_url,
+        fetched: amendment.fetched,
       })),
     ]);
     // 3 agendas, 4 Exhibits and 5 postings (-1 three times, -2 twice).
     expect(listed).toHaveLength(12);
     for (const document of listed) {
+      expect(document.fetched, document.id).toBe(true);
       const served = await callTool(connected, "get_document", { id: document.id });
       expect(served.isError, document.id).toBe(false);
       expect(served.structured?.["source_url"], document.id).toBe(document.source_url);

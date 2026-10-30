@@ -15,6 +15,7 @@ import {
   type MeetingHeader,
   type MeetingId,
   type NodeId,
+  type PostedAmendment,
   type Relation,
   type RelatedNode,
 } from "#/packages/domain/documents.ts";
@@ -97,17 +98,13 @@ const agendaItemRow = z.object({
 });
 const meetingDocumentRow = z.object({
   id: z.string(),
+  node_id: z.string(),
+  kind: z.string(),
   label: z.string(),
   source_url: z.string(),
   measure_id: z.string().nullable(),
-});
-const postedAmendmentRow = z.object({
-  node_id: z.string(),
-  id: z.string(),
-  label: z.string(),
-  source_url: z.string(),
   meaning: z.string().nullable(),
-  measure_id: z.string(),
+  fetched: z.number(),
 });
 const countRow = z.object({ n: z.number() });
 const kindCountRow = z.object({ kind: z.string(), n: z.number() });
@@ -151,17 +148,11 @@ export function openIndexReader(path: string): IndexReader {
   const selectAgendaItems = database.prepare(
     "SELECT * FROM agenda_item WHERE meeting_id = ? ORDER BY print_order IS NULL, CAST(print_order AS INTEGER), id",
   );
-  const selectPostedAmendments = database.prepare(
-    `SELECT d.id, d.node_id, d.label, d.source_url, r.meaning,
-            (SELECT x.to_id FROM document_relation x WHERE x.document_id = d.id AND x.relation = 'measure') AS measure_id
-     FROM document_relation r JOIN document d ON d.id = r.document_id
-     WHERE r.relation = 'posted_to' AND r.to_id = ?`,
-  );
+  // What the feed lists for a meeting, and whether the document table holds each file yet.
   const selectMeetingDocuments = database.prepare(
-    `SELECT d.id, d.label, d.source_url,
-            (SELECT x.to_id FROM document_relation x WHERE x.document_id = d.id AND x.relation = 'measure') AS measure_id
-     FROM document_relation r JOIN document d ON d.id = r.document_id
-     WHERE r.relation = 'meeting' AND r.to_id = ? AND d.kind = ?`,
+    `SELECT l.document_id AS id, l.node_id, l.kind, l.label, l.source_url, l.measure_id, l.meaning,
+            EXISTS (SELECT 1 FROM document d WHERE d.id = l.document_id) AS fetched
+     FROM meeting_document l WHERE l.meeting_id = ?`,
   );
   const numbersInOrder = new Intl.Collator("en", { numeric: true });
   function documentOf(row: unknown): DocumentView["document"] {
@@ -179,18 +170,6 @@ export function openIndexReader(path: string): IndexReader {
       postedAt: stored.posted_at as Timestamp | null,
       text: stored.text,
     };
-  }
-  function meetingDocumentsOf(meeting: MeetingId, kind: DocumentKind): MeetingDocument[] {
-    const documents = selectMeetingDocuments.all(meeting, kind).map((row) => {
-      const stored = meetingDocumentRow.parse(row);
-      return {
-        id: stored.id as DocumentId,
-        label: stored.label,
-        sourceUrl: stored.source_url,
-        measureId: stored.measure_id as MeasureId | null,
-      };
-    });
-    return documents.sort((a, b) => numbersInOrder.compare(a.id, b.id));
   }
   function relationsOf(documentId: DocumentId): RelatedNode[] {
     return selectRelations.all(documentId).map((row) => {
@@ -308,17 +287,32 @@ export function openIndexReader(path: string): IndexReader {
           executiveAppointee: stored.executive_appointee,
         };
       });
-      const amendments = selectPostedAmendments.all(meeting).map((row) => {
-        const stored = postedAmendmentRow.parse(row);
-        return {
-          id: stored.node_id as AmendmentId,
-          number: stored.label,
-          measureId: stored.measure_id as MeasureId,
-          meaning: stored.meaning,
-          documentId: stored.id as DocumentId,
-          sourceUrl: stored.source_url,
-        };
-      });
+      const listed = selectMeetingDocuments.all(meeting).map((row) => meetingDocumentRow.parse(row));
+      const documentsOfKind = (kind: DocumentKind): MeetingDocument[] =>
+        listed
+          .filter((stored) => stored.kind === kind)
+          .map((stored) => ({
+            id: stored.id as DocumentId,
+            label: stored.label,
+            sourceUrl: stored.source_url,
+            measureId: stored.measure_id as MeasureId | null,
+            fetched: stored.fetched === 1,
+          }))
+          .sort((a, b) => numbersInOrder.compare(a.id, b.id));
+      const amendments = listed
+        .filter((stored) => stored.kind === "proposed_amendment")
+        .map((stored): PostedAmendment => {
+          if (stored.measure_id === null) throw new Error(`The posting ${stored.id} is listed with no Measure`);
+          return {
+            id: stored.node_id as AmendmentId,
+            number: stored.label,
+            measureId: stored.measure_id as MeasureId,
+            meaning: stored.meaning,
+            documentId: stored.id as DocumentId,
+            sourceUrl: stored.source_url,
+            fetched: stored.fetched === 1,
+          };
+        });
       amendments.sort(
         (a, b) =>
           numbersInOrder.compare(a.measureId, b.measureId) ||
@@ -326,11 +320,11 @@ export function openIndexReader(path: string): IndexReader {
           numbersInOrder.compare(a.documentId, b.documentId),
       );
       return {
-        agenda: meetingDocumentsOf(meeting, "agenda")[0] ?? null,
+        agenda: documentsOfKind("agenda")[0] ?? null,
         agendaItems,
         amendments,
-        exhibits: meetingDocumentsOf(meeting, "exhibit"),
-        recordingLogs: meetingDocumentsOf(meeting, "recording_log"),
+        exhibits: documentsOfKind("exhibit"),
+        recordingLogs: documentsOfKind("recording_log"),
       };
     },
     findMeasure(key) {
