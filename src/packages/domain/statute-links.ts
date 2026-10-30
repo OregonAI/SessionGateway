@@ -2,7 +2,7 @@
 // (ADR-0004): `ors-163a.040` for a section, with a subsection cut back to its section, and
 // `ors-chapter-657b` for a chapter, which OregonAI has no page for. Those ids are minted and parsed in
 // oregonai.ts, the one module for OregonAI's id forms (src/CLAUDE.md, "Shape").
-import type { AmendmentId, AmendmentPosting, DocumentId } from "./documents.ts";
+import type { AmendmentHeader, AmendmentId, AmendmentPosting, DocumentId } from "./documents.ts";
 import type { MeasureId } from "./index.ts";
 import type { OrsChapterId, OrsSectionId } from "./oregonai.ts";
 
@@ -56,8 +56,8 @@ export type StatuteParse = {
    * mean the document has no Statute Links.
    */
   textRead: boolean;
-  /** For a posting: the Version its header names ("Introduced", "A-Engrossed"), or null when the header could not be read. Always null for a Version. */
-  amendedVersionHeader: string | null;
+  /** For a posting: the Version and the Measure its header names, or null when the header could not be read. Always null for a Version. */
+  amendedVersionHeader: AmendmentHeader | null;
   links: StatuteLink[];
   /** Edits to the relating clause. Always empty for a Version. */
   relatingClauseEdits: RelatingClauseEdit[];
