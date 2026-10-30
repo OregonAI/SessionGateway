@@ -1,6 +1,6 @@
 // The MCP server's side of the database: read-only.
 import { z } from "zod";
-import type { Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
+import type { HistoryAction, Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
 import { comparePrintOrder, type LegislatorId, type Sponsor } from "#/packages/domain/legislators.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openReadConnection } from "./lib/connection.ts";
@@ -13,6 +13,8 @@ export type IndexReader = {
   findCommitteeSponsors(key: MeasureKey): string[];
   /** The messages of a Measure's Presession rows, as the feed gives them, in print order. */
   findPresessionMessages(key: MeasureKey): string[];
+  /** A Measure's history, oldest action first: by the time it happened, then by the feed's id. */
+  findHistory(key: MeasureKey): HistoryAction[];
   /** When the last completed full pull started, or undefined if none has completed. */
   asOf(session: SessionKey): Timestamp | undefined;
   close(): void;
@@ -27,6 +29,12 @@ const measureRow = z.object({
 });
 const stateRow = z.object({ full_pull_as_of: z.string() });
 const textRow = z.object({ text: z.string() });
+const historyRow = z.object({
+  history_id: z.number(),
+  chamber: z.enum(["house", "senate"]),
+  action_date: z.string(),
+  action_text: z.string(),
+});
 const sponsorRow = z.object({
   sponsor_id: z.number(),
   print_order: z.number(),
@@ -57,6 +65,10 @@ export function openIndexReader(path: string): IndexReader {
     `SELECT presession_message AS text FROM sponsor
      WHERE session_key = ? AND prefix = ? AND number = ? AND kind = 'presession'
      ORDER BY print_order, sponsor_id`,
+  );
+  const selectHistory = database.prepare(
+    `SELECT history_id, chamber, action_date, action_text FROM history_action
+     WHERE session_key = ? AND prefix = ? AND number = ? ORDER BY action_date, history_id`,
   );
   const selectAsOf = database.prepare("SELECT full_pull_as_of FROM index_state WHERE session_key = ?");
   return {
@@ -98,6 +110,18 @@ export function openIndexReader(path: string): IndexReader {
     },
     findPresessionMessages(key) {
       return selectPresessionMessages.all(key.session, key.prefix, key.number).map((row) => textRow.parse(row).text);
+    },
+    findHistory(key) {
+      return selectHistory.all(key.session, key.prefix, key.number).map((row) => {
+        const stored = historyRow.parse(row);
+        return {
+          id: stored.history_id,
+          measure: key,
+          chamber: stored.chamber,
+          date: stored.action_date as Timestamp,
+          text: stored.action_text,
+        };
+      });
     },
     asOf(session) {
       const row = selectAsOf.get(session);

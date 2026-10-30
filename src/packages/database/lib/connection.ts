@@ -25,6 +25,17 @@ const schema = `
     name TEXT NOT NULL,
     PRIMARY KEY (session_key, id)
   ) STRICT;
+  CREATE TABLE IF NOT EXISTS history_action (
+    session_key TEXT NOT NULL,
+    history_id INTEGER NOT NULL,
+    prefix TEXT NOT NULL,
+    number INTEGER NOT NULL,
+    chamber TEXT NOT NULL CHECK (chamber IN ('house', 'senate')),
+    action_date TEXT NOT NULL,
+    action_text TEXT NOT NULL,
+    PRIMARY KEY (session_key, history_id)
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS history_action_of_measure ON history_action (session_key, prefix, number);
   CREATE TABLE IF NOT EXISTS sponsor (
     session_key TEXT NOT NULL,
     sponsor_id INTEGER NOT NULL,

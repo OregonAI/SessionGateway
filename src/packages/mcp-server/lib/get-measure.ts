@@ -59,6 +59,17 @@ export const getMeasureOutput = z.object({
     .describe(
       'The messages of the Measure\'s presession rows as OLIS publishes them, in print order, such as "(Presession filed.)". Empty when OLIS has none. A presession row names no Legislator.',
     ),
+  history: z
+    .array(
+      z.object({
+        chamber: z.enum(["house", "senate"]).describe("The chamber the action happened in."),
+        date: z.string().describe("When the action happened, in Pacific time with its UTC offset."),
+        text: z.string().describe("The action as OLIS prints it."),
+      }),
+    )
+    .describe(
+      "The Measure's history as of the last full pull (see as_of), oldest action first as OLIS prints it, so the last entry is the latest action.",
+    ),
   as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
   notice: z.string().describe("A reminder that this is not the official record."),
 });
@@ -99,6 +110,11 @@ export function getMeasure(
         .findCommitteeSponsors(measure)
         .map((committeeCode) => ({ committee_code: committeeCode })),
       presession_messages: reader.findPresessionMessages(measure),
+      history: reader.findHistory(measure).map((action) => ({
+        chamber: action.chamber,
+        date: action.date,
+        text: action.text,
+      })),
       as_of: asOf,
       notice: NON_OFFICIAL_NOTICE,
     },

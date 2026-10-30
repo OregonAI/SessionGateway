@@ -36,6 +36,21 @@ export type Measure = MeasureKey & {
   modifiedAt: Timestamp | null;
 };
 
+/** The two chambers of the Legislative Assembly. */
+export type Chamber = "house" | "senate";
+
+/** One line of a Measure's history: something that happened to it, in one chamber, at one time. */
+export type HistoryAction = {
+  /** The feed's `MeasureHistoryId`. */
+  id: number;
+  measure: MeasureKey;
+  chamber: Chamber;
+  /** When the action happened, in Pacific time with its offset (not when OLIS recorded it). */
+  date: Timestamp;
+  /** The action as OLIS prints it, spaces included. */
+  text: string;
+};
+
 /** A Measure's id in OregonAI's form: lower-case Session and prefix, no leading zeros. */
 export type MeasureId = string & { readonly brand: "MeasureId" };
 

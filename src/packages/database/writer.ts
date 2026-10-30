@@ -1,6 +1,6 @@
 // The ingest worker's side of the database. The server has no way to reach this file's functions:
 // it imports reader.ts only.
-import type { Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
+import type { HistoryAction, Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
 import type { Legislator, LegislatorId, SponsorLevel } from "#/packages/domain/legislators.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openWriteConnection } from "./lib/connection.ts";
@@ -50,14 +50,20 @@ function kindColumnsOf(sponsor: SponsorRecord): {
 
 export type IndexWriter = {
   /** Stores what a full pull read, and when, in one transaction. A full pull never deletes (ADR-0005). */
-  recordFullPull(session: SessionKey, measures: readonly Measure[], asOf: Timestamp, people: PeopleRecord): void;
+  recordFullPull(
+    session: SessionKey,
+    measures: readonly Measure[],
+    asOf: Timestamp,
+    people: PeopleRecord,
+    history: readonly HistoryAction[],
+  ): void;
   close(): void;
 };
 
 export function openIndexWriter(path: string): IndexWriter {
   const database = openWriteConnection(path);
   return {
-    recordFullPull(session, measures, asOf, people) {
+    recordFullPull(session, measures, asOf, people, history) {
       const upsertMeasure = database.prepare(
         `INSERT INTO measure (session_key, prefix, number, catchline, location, committee_code, created_at, modified_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -78,6 +84,13 @@ export function openIndexWriter(path: string): IndexWriter {
            print_order = excluded.print_order, legislator_code = excluded.legislator_code,
            legislator_id = excluded.legislator_id, committee_code = excluded.committee_code,
            presession_message = excluded.presession_message`,
+      );
+      const upsertHistory = database.prepare(
+        `INSERT INTO history_action (session_key, history_id, prefix, number, chamber, action_date, action_text)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (session_key, history_id) DO UPDATE SET
+           prefix = excluded.prefix, number = excluded.number, chamber = excluded.chamber,
+           action_date = excluded.action_date, action_text = excluded.action_text`,
       );
       const recordAsOf = database.prepare(
         `INSERT INTO index_state (session_key, full_pull_as_of) VALUES (?, ?)
@@ -112,6 +125,17 @@ export function openIndexWriter(path: string): IndexWriter {
             columns.legislatorId,
             columns.committeeCode,
             columns.message,
+          );
+        }
+        for (const action of history) {
+          upsertHistory.run(
+            session,
+            action.id,
+            action.measure.prefix,
+            action.measure.number,
+            action.chamber,
+            action.date,
+            action.text,
           );
         }
         recordAsOf.run(session, asOf);

@@ -77,6 +77,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
   const measures = await olis.readMeasures(config.session, deps.signal);
   const legislatorRows = await olis.readLegislators(config.session, deps.signal);
   const sponsorships = await olis.readSponsorships(config.session, deps.signal);
+  const history = await olis.readHistoryActions(config.session, deps.signal);
 
   // A Member sponsor names a Legislator by a Legislator Code; the resolver says who that is.
   const resolver = createLegislatorResolver({
@@ -88,7 +89,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
 
   const writer = openIndexWriter(config.databasePath);
   try {
-    writer.recordFullPull(config.session, measures, asOf, { legislators: resolver.people, sponsors });
+    writer.recordFullPull(config.session, measures, asOf, { legislators: resolver.people, sponsors }, history);
   } finally {
     writer.close();
   }
