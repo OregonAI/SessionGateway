@@ -40,12 +40,15 @@ SECTION 1. ORS 409.711 is amended to read:
     expected: [["amends", "ors-409.711", "1"]],
   },
   {
-    // No fixture document repeals an ORS section. The wording is ADR-0001's: "ORS 657B.070 is
-    // amended to read", "is repealed". The section number is the row's own.
+    // No committed fixture document repeals an ORS section. This row quotes the research cache
+    // (.cache/olis-2025R1/, not committed: the Acceptable Use Agreement grants no redistribution license)
+    // and replaces a row that put ADR-0001's "is repealed" under a "SECTION 3." header of the row's own
+    // making (#6 F8). The Statutes Affected Table lists "238A.010 R §8 SB 851".
     name: "ORS X is repealed",
-    source: "docs/adr/0001-live-session-first-statute-links-from-text.md, paragraph 1 (not a fixture document)",
-    text: "SECTION 3. ORS 657B.070 is repealed.",
-    expected: [["repeals", "ors-657b.070", "3"]],
+    source:
+      "research cache documents-sample-1/MeasureDocuments_8.pdf (SB 851 Enrolled, not in the committed fixture), line 403. Statutes Affected Table: 238A.010 R §8 SB 851",
+    text: "SECTION 8. ORS 238A.010 is repealed.",
+    expected: [["repeals", "ors-238a.010", "8"]],
   },
   {
     name: "is added to and made a part of ORS chapter X",
