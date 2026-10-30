@@ -11,11 +11,31 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "lint:boundaries": "depcruise src test"
+    "check": "node scripts/check.ts format:check lint typecheck guard:tsc lint:boundaries fixture:verify test",
+    "format:check": "prettier --check \"{src,test,scripts}/**/*.ts\" vitest.config.ts",
+    "format": "prettier --write \"{src,test,scripts}/**/*.ts\" vitest.config.ts",
+    "lint": "eslint \"{src,test,scripts}/**/*.ts\" vitest.config.ts",
+    "typecheck": "tsc --noEmit",
+    "guard:tsc": "node scripts/guard.ts tsc-version",
+    "lint:boundaries": "node scripts/guard.ts boundaries",
+    "fixture:verify": "node scripts/fixture/verify.ts",
+    "test": "vitest run"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@modelcontextprotocol/client": "2.3.1",
+    "@types/node": "26.6.5",
     "@typescript/native": "npm:typescript@7.0.2",
     "dependency-cruiser": "18.6.0",
-    "typescript": "npm:@typescript/typescript6@6.0.2"
+    "eslint": "10.12.0",
+    "prettier": "3.9.10",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "typescript-eslint": "8.71.2",
+    "vitest": "5.0.5"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/node": "2.1.1",
+    "@modelcontextprotocol/server": "2.3.1",
+    "zod": "4.6.7"
   }
 }

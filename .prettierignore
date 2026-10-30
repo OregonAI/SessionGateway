@@ -1,0 +1,4 @@
+# Committed public records, byte for byte as the feed and OLIS served them (ticket #3).
+test/fixtures/
+node_modules/
+coverage/
