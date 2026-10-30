@@ -1,6 +1,8 @@
 // The whole system for one seam-1 test: a fake OLIS at a simulated time, the ingest worker's full
 // pull into a database in a disposable directory, and the MCP handler reading that database. It
 // wires the production packages through their entry points, the way src/bin/ does.
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { loadIngestConfig, loadServerConfig, type ServerConfig } from "#/packages/config/index.ts";
 import { runFullPull, type FullPullResult } from "#/packages/ingest/index.ts";
 import { createSessionGatewayHandler, type SessionGatewayHandler } from "#/packages/mcp-server/handler.ts";
@@ -46,6 +48,11 @@ export type System = {
   serverConfig: ServerConfig;
   /** The MCP handler, serving the database the full pull wrote. */
   handler: SessionGatewayHandler;
+  /**
+   * The build report the worker wrote beside the database at the end of its last full pull
+   * (`build-report.json`): what an operator reads to chase scans and failed fetches.
+   */
+  buildReport(): Record<string, unknown>;
   /** Runs the worker's full pull again, at the clock's time now, into the same database. */
   pullAgain(): Promise<FullPullResult>;
   stop(): Promise<void>;
@@ -75,6 +82,13 @@ export async function startSystem(options: SystemOptions): Promise<System> {
       database,
       serverConfig,
       handler,
+      buildReport: () => {
+        const report: unknown = JSON.parse(readFileSync(join(dirname(database.path), "build-report.json"), "utf8"));
+        if (typeof report !== "object" || report === null || Array.isArray(report)) {
+          throw new Error("The build report is not a JSON object");
+        }
+        return report as Record<string, unknown>;
+      },
       pullAgain: pull,
       stop: async () => {
         await handler.close();

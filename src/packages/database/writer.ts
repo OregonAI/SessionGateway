@@ -11,12 +11,15 @@ export type IndexWriter = {
   recordFullPull(session: SessionKey, measures: readonly Measure[], asOf: Timestamp): void;
   /** The ids of the documents already stored for the Session: a stored document is never fetched again. */
   storedDocumentIds(session: SessionKey): Set<DocumentId>;
+  /** Every stored document of the Session whose file has no text layer, by id. */
+  documentsWithoutTextLayer(session: SessionKey): { id: DocumentId; sourceUrl: string }[];
   /** Keeps one fetched document, its text and the nodes it points at, in one transaction. */
   storeDocument(session: SessionKey, document: StoredDocument): void;
   close(): void;
 };
 
 const idRow = z.object({ id: z.string() });
+const scanRow = z.object({ id: z.string(), source_url: z.string() });
 
 export function openIndexWriter(path: string): IndexWriter {
   const database = openWriteConnection(path);
@@ -53,6 +56,15 @@ export function openIndexWriter(path: string): IndexWriter {
     storedDocumentIds(session) {
       const rows = database.prepare("SELECT id FROM document WHERE session_key = ?").all(session);
       return new Set(rows.map((row) => idRow.parse(row).id as DocumentId));
+    },
+    documentsWithoutTextLayer(session) {
+      const rows = database
+        .prepare("SELECT id, source_url FROM document WHERE session_key = ? AND has_text_layer = 0 ORDER BY id")
+        .all(session);
+      return rows.map((row) => {
+        const stored = scanRow.parse(row);
+        return { id: stored.id as DocumentId, sourceUrl: stored.source_url };
+      });
     },
     storeDocument(session, document) {
       const insertDocument = database.prepare(

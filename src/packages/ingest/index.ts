@@ -4,6 +4,7 @@
 import { createHash } from "node:crypto";
 import type { IngestConfig } from "#/packages/config/index.ts";
 import { openIndexWriter } from "#/packages/database/writer.ts";
+import { buildReportPath, writeBuildReport } from "./lib/build-report.ts";
 import { createOlisClient } from "#/packages/olis-client/index.ts";
 import { extractPdfText } from "#/packages/pdf-text/index.ts";
 import type { Clock } from "#/packages/time/clock.ts";
@@ -64,6 +65,14 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       });
       documentsFetched += 1;
     }
+    writeBuildReport(buildReportPath(config.databasePath), {
+      session: config.session,
+      as_of: asOf,
+      documents_without_text_layer: writer.documentsWithoutTextLayer(config.session).map((document) => ({
+        id: document.id,
+        source_url: document.sourceUrl,
+      })),
+    });
   } finally {
     writer.close();
   }

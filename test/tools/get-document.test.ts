@@ -291,4 +291,49 @@ describe.for(eras)("get_document for a %s client", (era) => {
       expect(outcome.text).toContain("2 parts");
     });
   });
+
+  describe("a document with no text layer", () => {
+    // The fixture has three, none of which `pdftotext` finds a character in (test/fixtures/olis-2025R1/
+    // README.md): Exhibit 288141 (SB 64, a 2-page scan) and the photographs behind SB 921's Testimony 148731
+    // and 148734 (1 page each).
+    it.for([
+      ["Exhibit 288141, a scan of SB 64's tax expenditure report", "exhibit-2025r1-288141", 2],
+      ["Testimony 148731, a photograph", "testimony-2025r1-148731", 1],
+      ["Testimony 148734, a photograph", "testimony-2025r1-148734", 1],
+    ] as const)("is flagged, and its empty text is not taken for the document: %s", async ([, id, pages]) => {
+      const outcome = await callTool(connected, "get_document", { id });
+
+      expect(outcome.isError).toBe(false);
+      expect(outcome.structured).toMatchObject({
+        id,
+        has_text_layer: false,
+        text: "",
+        page_count: pages,
+        part_count: 1,
+      });
+    });
+  });
+});
+
+describe("the build report", () => {
+  // The same three documents (test/fixtures/olis-2025R1/README.md), by the id and source_url the manifest
+  // gives them. The report is a file beside the database, which the harness reads.
+  it("lists every document with no text layer", () => {
+    const report = system.buildReport();
+
+    expect(report["documents_without_text_layer"]).toEqual([
+      {
+        id: "exhibit-2025r1-288141",
+        source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/288141",
+      },
+      {
+        id: "testimony-2025r1-148731",
+        source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/PublicTestimonyDocument/148731",
+      },
+      {
+        id: "testimony-2025r1-148734",
+        source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/PublicTestimonyDocument/148734",
+      },
+    ]);
+  });
 });

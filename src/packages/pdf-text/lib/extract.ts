@@ -19,7 +19,9 @@ export async function extractPdfText(bytes: Uint8Array): Promise<ExtractedPdf> {
     // which is rewriting; the per-page text is what pdf.js read, line ends included.
     const { text: pages } = await extractText(document, { mergePages: false });
     const text = pages.join("\f");
-    return { pageCount: pages.length, text, hasTextLayer: /\S/.test(text) };
+    const hasTextLayer = /\S/.test(text);
+    // Pages that hold no characters leave nothing to publish, not the page breaks between them.
+    return { pageCount: pages.length, text: hasTextLayer ? text : "", hasTextLayer };
   } finally {
     await document.loadingTask.destroy();
   }
