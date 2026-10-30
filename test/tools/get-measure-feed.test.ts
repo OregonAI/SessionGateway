@@ -161,6 +161,28 @@ describe("the OLIS base URL", () => {
   });
 });
 
+describe("a pull that is refused", () => {
+  it("leaves the index answering from the last complete pull", async () => {
+    const system = await startSystem({ clockAt: "2025-01-29T17:00:00Z" });
+    started.push(system);
+    const connected = await connectClient("2026-07-28", system.handler);
+    try {
+      const before = await callTool(connected, "get_measure", { measure: "SB 69" });
+
+      // Six months later the feed counts its rows and then pages one fewer: the next pull is refused.
+      system.clock.set("2025-07-15T17:00:00Z");
+      system.olis.withholdLastRows(1);
+      await expect(system.pullAgain()).rejects.toThrow(/counted \d+.*read \d+/);
+
+      const after = await callTool(connected, "get_measure", { measure: "SB 69" });
+      expect(before.structured).toMatchObject({ as_of: "2025-01-29T09:00:00-08:00" });
+      expect(after.structured).toMatchObject({ id: "measure-2025r1-sb69", as_of: "2025-01-29T09:00:00-08:00" });
+    } finally {
+      await connected.close();
+    }
+  });
+});
+
 describe("the feed's paging", () => {
   // The fixture holds these eight Measures of 2025R1 (test/fixtures/olis-2025R1/measures.txt).
   const fixtureMeasures = [

@@ -46,6 +46,8 @@ export type FakeOlisOptions = {
 export type FakeOlis = {
   /** The service root with a trailing slash, for the OLIS client's base URL. */
   baseUrl: string;
+  /** From now on, leave the last `count` rows of each set out of the pages (see `withholdLastRows`). */
+  withholdLastRows(count: number): void;
   close(): Promise<void>;
 };
 
@@ -110,6 +112,7 @@ function sendError(response: ServerResponse, status: number, message: string): v
 export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis> {
   const feed = loadFeed();
   const pageSize = options.pageSize ?? 5000;
+  let withheldRows = options.withholdLastRows ?? 0;
   const supportedQueryOptions = new Set(["$filter", "$inlinecount", "$skiptoken"]);
 
   /** The rows of one entity set that match the request's `$filter`, as the feed stood at the clock's time. */
@@ -179,7 +182,7 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
       return;
     }
 
-    const delivered = rows.slice(0, rows.length - (options.withholdLastRows ?? 0));
+    const delivered = rows.slice(0, rows.length - withheldRows);
     const skip = Number(url.searchParams.get("$skiptoken") ?? 0);
     const body: Record<string, unknown> = {};
     if (url.searchParams.get("$inlinecount") === "allpages") body["odata.count"] = String(rows.length);
@@ -202,6 +205,9 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
   const { port } = server.address() as AddressInfo;
   return {
     baseUrl: `http://127.0.0.1:${port}/odata/odataservice.svc/`,
+    withholdLastRows: (count) => {
+      withheldRows = count;
+    },
     close: () =>
       new Promise<void>((resolve, reject) => {
         server.close((error) => {

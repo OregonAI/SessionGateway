@@ -2,7 +2,7 @@
 // pull into a database in a disposable directory, and the MCP handler reading that database. It
 // wires the production packages through their entry points, the way src/bin/ does.
 import { loadIngestConfig, loadServerConfig, type ServerConfig } from "#/packages/config/index.ts";
-import { runFullPull } from "#/packages/ingest/index.ts";
+import { runFullPull, type FullPullResult } from "#/packages/ingest/index.ts";
 import { createSessionGatewayHandler, type SessionGatewayHandler } from "#/packages/mcp-server/handler.ts";
 import { createSimulatedClock, type SimulatedClock } from "./clock.ts";
 import { startFakeOlis, type FakeOlis, type FakeOlisOptions } from "./fake-olis.ts";
@@ -41,6 +41,8 @@ export type System = {
   serverConfig: ServerConfig;
   /** The MCP handler, serving the database the full pull wrote. */
   handler: SessionGatewayHandler;
+  /** Runs the worker's full pull again, at the clock's time now, into the same database. */
+  pullAgain(): Promise<FullPullResult>;
   stop(): Promise<void>;
 };
 
@@ -55,8 +57,10 @@ export async function startSystem(options: SystemOptions): Promise<System> {
     OLIS_BASE_URL: options.olisBaseUrl === undefined ? olis.baseUrl : options.olisBaseUrl(olis.baseUrl),
     DATABASE_PATH: database.path,
   };
+  const pull = (): Promise<FullPullResult> =>
+    runFullPull(loadIngestConfig(env), { fetch, clock, signal: AbortSignal.timeout(30_000) });
   try {
-    await runFullPull(loadIngestConfig(env), { fetch, clock, signal: AbortSignal.timeout(30_000) });
+    await pull();
     const serverConfig = loadServerConfig({ ...env, ...options.serverEnv });
     const handler = createSessionGatewayHandler(serverConfig);
     return {
@@ -65,6 +69,7 @@ export async function startSystem(options: SystemOptions): Promise<System> {
       database,
       serverConfig,
       handler,
+      pullAgain: pull,
       stop: async () => {
         await handler.close();
         await olis.close();
