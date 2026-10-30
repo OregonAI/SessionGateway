@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
-import { parseMeasureReference, type SessionKey } from "#/packages/domain/index.ts";
+import { olisMeetingPageUrlOf } from "#/packages/domain/documents.ts";
+import { measureIdOf, parseMeasureReference, type SessionKey } from "#/packages/domain/index.ts";
 import { formatPacific, isAtOrAfter } from "#/packages/time/pacific.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 
@@ -22,6 +23,66 @@ const meetingOutput = z.object({
       'What OLIS says of the meeting: "Scheduled", "Cancelled" or "No Meeting Scheduled". Check it before relying on a meeting.',
     ),
   upcoming: z.boolean().describe("True when the meeting starts at or after the time in `now`."),
+  olis_page_url: z
+    .string()
+    .describe(
+      "The meeting's page on OLIS, where its agenda, documents and recording are. This service links it and never opens it.",
+    ),
+  agenda_items: z
+    .array(
+      z.object({
+        print_order: z.string().nullable().describe('The item\'s place on the agenda, as OLIS writes it ("1", "10").'),
+        measure_id: z.string().nullable().describe("The Measure the item is about, when it is about one."),
+        meeting_type: z
+          .string()
+          .nullable()
+          .describe('What the committee does with the item: "Public Hearing", "Work Session"...'),
+        action: z
+          .string()
+          .nullable()
+          .describe('What the committee did: "Heard", "Heard and Reported Out with Amendments"... Null before it has.'),
+        comments: z
+          .string()
+          .nullable()
+          .describe("OLIS's text for the item, as published. It can hold HTML tags, tabs and line breaks."),
+        board_name: z.string().nullable().describe("For an executive appointment: the board."),
+        executive_appointee: z.string().nullable().describe("For an executive appointment: the appointee."),
+      }),
+    )
+    .describe("The meeting's agenda items, in print order. They are the meeting's, not only the Measure asked for."),
+  exhibits: z
+    .array(
+      z.object({
+        id: z.string().describe("The Exhibit's id, such as exhibit-2025r1-288650. Give it to get_document."),
+        label: z
+          .string()
+          .describe(
+            'What kind of Exhibit OLIS says it is: "Meeting Material", "Preliminary SMS", "Witness Registration"...',
+          ),
+        measure_id: z.string().nullable().describe("The Measure OLIS files the Exhibit under, when it names one."),
+        source_url: z.string().describe("Where the Legislature publishes the file."),
+      }),
+    )
+    .describe("The Exhibits posted to this meeting, whichever Measure they are filed under."),
+  proposed_amendments: z
+    .array(
+      z.object({
+        id: z
+          .string()
+          .describe("The Proposed Amendment's id, such as amendment-2025r1-sb69-2. Give it to get_document."),
+        number: z.string().describe('Its number, such as "-2" or "-A3".'),
+        measure_id: z.string().describe("The Measure it would amend."),
+        meaning: z
+          .string()
+          .nullable()
+          .describe("What the committee did with it at this meeting: Proposed, Adopted, Combined or Recommended."),
+        document_id: z
+          .string()
+          .describe("The posting: the document with the text posted to this meeting. Give it to get_document."),
+        source_url: z.string().describe("Where the Legislature publishes the posted file."),
+      }),
+    )
+    .describe("The Proposed Amendments posted to this meeting, by Measure and number."),
 });
 
 export const meetingsOutput = z.object({
@@ -63,13 +124,40 @@ export function meetings(
     kind: "found",
     meetings: {
       now: formatPacific(now),
-      meetings: found.map((meeting) => ({
-        id: meeting.id,
-        committee: meeting.committee,
-        at: meeting.at,
-        status: meeting.status,
-        upcoming: meeting.upcoming,
-      })),
+      meetings: found.map((meeting) => {
+        const contents = reader.meetingContents(meeting.id);
+        return {
+          id: meeting.id,
+          committee: meeting.committee,
+          at: meeting.at,
+          status: meeting.status,
+          upcoming: meeting.upcoming,
+          olis_page_url: olisMeetingPageUrlOf(session, meeting.committee.code, meeting.at),
+          agenda_items: contents.agendaItems.map((item) => ({
+            print_order: item.printOrder,
+            measure_id: item.measure === null ? null : measureIdOf(item.measure),
+            meeting_type: item.meetingType,
+            action: item.action,
+            comments: item.comments,
+            board_name: item.boardName,
+            executive_appointee: item.executiveAppointee,
+          })),
+          exhibits: contents.exhibits.map((exhibit) => ({
+            id: exhibit.id,
+            label: exhibit.label,
+            measure_id: exhibit.measureId,
+            source_url: exhibit.sourceUrl,
+          })),
+          proposed_amendments: contents.amendments.map((amendment) => ({
+            id: amendment.id,
+            number: amendment.number,
+            measure_id: amendment.measureId,
+            meaning: amendment.meaning,
+            document_id: amendment.documentId,
+            source_url: amendment.sourceUrl,
+          })),
+        };
+      }),
       next_meeting_id: found.find((meeting) => meeting.upcoming && meeting.status === "Scheduled")?.id ?? null,
       as_of: asOf,
       notice: NON_OFFICIAL_NOTICE,

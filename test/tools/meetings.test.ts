@@ -52,6 +52,176 @@ describe.for(eras)("meetings for a %s client", (era) => {
     });
   });
 
+  // Spec #1 case (c): "-1 and -2 posted", and, from the spec's graph section, "SB 69's -1 was posted to
+  // three meetings". Each posting is a document of its own (ADR-0011) with the feed's
+  // ProposedAmendmentId (feed/CommitteeProposedAmendments.json: 26284 for 01-21, 26285 and 26286 for
+  // 01-28, 26287 and 26288 for 01-30) and its own file. The fixture holds each row's final state
+  // (test/support/fake-olis.ts), so the Meaning is what the feed says now, not what it said on
+  // 2025-01-29: the committee adopted -2 on 2025-01-30.
+  it("lists the Proposed Amendments posted to each meeting on SB 69, -1 at all three", async () => {
+    const outcome = await callTool(connected, "meetings", { measure: "SB 69" });
+
+    const meetings = outcome.structured?.["meetings"] as { id: string; proposed_amendments: unknown[] }[];
+    expect(meetings.map((meeting) => [meeting.id, meeting.proposed_amendments.length])).toEqual([
+      ["meeting-2025r1-slb-2025-01-21-0800", 1],
+      ["meeting-2025r1-slb-2025-01-28-0800", 2],
+      ["meeting-2025r1-slb-2025-01-30-0800", 2],
+    ]);
+    expect(meetings[2]?.proposed_amendments).toEqual([
+      {
+        id: "amendment-2025r1-sb69-1",
+        number: "-1",
+        measure_id: "measure-2025r1-sb69",
+        meaning: "Proposed",
+        document_id: "posting-2025r1-26287",
+        source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/ProposedAmendment/26287",
+      },
+      {
+        id: "amendment-2025r1-sb69-2",
+        number: "-2",
+        measure_id: "measure-2025r1-sb69",
+        meaning: "Adopted",
+        document_id: "posting-2025r1-26288",
+        source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/ProposedAmendment/26288",
+      },
+    ]);
+  });
+
+  // The agenda items are the rows of feed/CommitteeAgendaItems.json (ids 201898, 202157 and 202165) as
+  // they are written: the 01-21 item's Comments hold the witnesses, one to a line, tab-indented. The fixture
+  // holds each row's final state, so the 01-30 Action is what the feed says now ("Heard and Reported Out
+  // with Amendments", written when the committee had met), not what it said on 2025-01-29.
+  it("lists each meeting's agenda items as the feed publishes them", async () => {
+    const outcome = await callTool(connected, "meetings", { measure: "SB 69" });
+
+    const meetings = outcome.structured?.["meetings"] as { id: string; agenda_items: unknown[] }[];
+    expect(meetings.map((meeting) => [meeting.id, meeting.agenda_items])).toEqual([
+      [
+        "meeting-2025r1-slb-2025-01-21-0800",
+        [
+          {
+            print_order: "7",
+            measure_id: "measure-2025r1-sb69",
+            meeting_type: "Informational Meeting",
+            action: "Heard",
+            comments:
+              "Requires the Employment Department to study issues related to laws concerning job-protected leave from work.\n\tJosh Nasbe, Legislative Director, Oregon Bureau of Labor and Industries (BOLI)\n\tKaren Madden Humelbaugh, Paid Leave Oregon Division Director, Oregon Employment Department",
+            board_name: null,
+            executive_appointee: null,
+          },
+        ],
+      ],
+      [
+        "meeting-2025r1-slb-2025-01-28-0800",
+        [
+          {
+            print_order: "2",
+            measure_id: "measure-2025r1-sb69",
+            meeting_type: "Public Hearing",
+            action: "Heard",
+            comments:
+              "Requires the Employment Department to study issues related to laws concerning job-protected leave from work.",
+            board_name: null,
+            executive_appointee: null,
+          },
+        ],
+      ],
+      [
+        "meeting-2025r1-slb-2025-01-30-0800",
+        [
+          {
+            print_order: "1",
+            measure_id: "measure-2025r1-sb69",
+            meeting_type: "Public Hearing and Work Session",
+            action: "Heard and Reported Out with Amendments",
+            comments:
+              "Requires the Employment Department to study issues related to laws concerning job-protected leave from work.",
+            board_name: null,
+            executive_appointee: null,
+          },
+        ],
+      ],
+    ]);
+  });
+
+  // The Exhibits are the CommitteeMeetingDocuments rows of the three meetings (feed/CommitteeMeetingDocuments.json:
+  // 287879 for 01-21, 288365 and 288569 for 01-28, 288650 for 01-30), with the type the feed gives each
+  // ("DocumentType"). A row created after the clock is not there yet: the 01-30 Witness Registration list (289456)
+  // was created on 02-04. Row 287879 is a report on SB 1515 that the row files under SB 69, so it is the Measure
+  // the row names that the Exhibit carries.
+  it("lists the Exhibits posted to each meeting on SB 69, with the type and Measure the feed gives each", async () => {
+    const outcome = await callTool(connected, "meetings", { measure: "SB 69" });
+
+    const meetings = outcome.structured?.["meetings"] as { id: string; exhibits: unknown[] }[];
+    expect(meetings.map((meeting) => [meeting.id, meeting.exhibits])).toEqual([
+      [
+        "meeting-2025r1-slb-2025-01-21-0800",
+        [
+          {
+            id: "exhibit-2025r1-287879",
+            label: "Meeting Material",
+            measure_id: "measure-2025r1-sb69",
+            source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/287879",
+          },
+        ],
+      ],
+      [
+        "meeting-2025r1-slb-2025-01-28-0800",
+        [
+          {
+            id: "exhibit-2025r1-288365",
+            label: "Preliminary SMS",
+            measure_id: "measure-2025r1-sb69",
+            source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/288365",
+          },
+          {
+            id: "exhibit-2025r1-288569",
+            label: "Witness Registration",
+            measure_id: "measure-2025r1-sb69",
+            source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/288569",
+          },
+        ],
+      ],
+      [
+        "meeting-2025r1-slb-2025-01-30-0800",
+        [
+          {
+            id: "exhibit-2025r1-288650",
+            label: "Preliminary SMS",
+            measure_id: "measure-2025r1-sb69",
+            source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/288650",
+          },
+        ],
+      ],
+    ]);
+  });
+
+  // The URL form is docs/research/hearing-video.md section 2: /liz/{session}/Committees/{CommitteeCode}/
+  // {yyyy-MM-dd-HH-mm}/Agenda, "exactly" the feed's CommitteeCode and MeetingDate. The 01-30 agenda link
+  // in feed/CommitteeMeetings.json (.../Downloads/CommitteeAgenda/SLB/2025-01-30-08-00) writes the same
+  // date and time. The service links the page and never opens it (spec #1, "Out of Scope"): the fake
+  // OLIS answers every /liz/ request and lists it, and the page is not among them.
+  it("links each meeting's OLIS page, built from its committee code and time, and never fetches it", async () => {
+    const outcome = await callTool(connected, "meetings", { measure: "SB 69" });
+
+    const meetings = outcome.structured?.["meetings"] as { id: string; olis_page_url: string }[];
+    expect(meetings.map((meeting) => [meeting.id, meeting.olis_page_url])).toEqual([
+      [
+        "meeting-2025r1-slb-2025-01-21-0800",
+        "https://olis.oregonlegislature.gov/liz/2025R1/Committees/SLB/2025-01-21-08-00/Agenda",
+      ],
+      [
+        "meeting-2025r1-slb-2025-01-28-0800",
+        "https://olis.oregonlegislature.gov/liz/2025R1/Committees/SLB/2025-01-28-08-00/Agenda",
+      ],
+      [
+        "meeting-2025r1-slb-2025-01-30-0800",
+        "https://olis.oregonlegislature.gov/liz/2025R1/Committees/SLB/2025-01-30-08-00/Agenda",
+      ],
+    ]);
+    expect(system.olis.documentRequests().filter((path) => path.includes("/Committees/"))).toEqual([]);
+  });
+
   // An unknown Measure is an expected outcome, so it is a tool error that tells the agent what to give
   // (src/CLAUDE.md, "Errors"). The fixture holds no SB 9999.
   it("answers a Measure the Session does not have with an error that says what to give", async () => {

@@ -135,6 +135,16 @@ export function meetingIdOf(session: SessionKey, committeeCode: string, at: Time
   return `meeting-${session.toLowerCase()}-${slug(committeeCode)}-${meetingKey(at)}` as MeetingId;
 }
 
+/**
+ * The meeting's page on OLIS, built from its committee code and its start time: the form is
+ * `/liz/{session}/Committees/{CommitteeCode}/{yyyy-MM-dd-HH-mm}/Agenda`
+ * (docs/research/hearing-video.md section 2). It is linked and never fetched (spec #1, "Out of Scope").
+ */
+export function olisMeetingPageUrlOf(session: SessionKey, committeeCode: string, at: Timestamp): string {
+  const time = `${at.slice(0, 10)}-${at.slice(11, 13)}-${at.slice(14, 16)}`;
+  return `https://olis.oregonlegislature.gov/liz/${session}/Committees/${committeeCode}/${time}/Agenda`;
+}
+
 /** A meeting's agenda is a document of its own. */
 export function agendaIdOf(session: SessionKey, committeeCode: string, at: Timestamp): DocumentId {
   return `agenda-${session.toLowerCase()}-${slug(committeeCode)}-${meetingKey(at)}` as DocumentId;
@@ -214,6 +224,39 @@ export type MeetingHeader = {
   committee: { id: CommitteeId; code: string; name: string };
   at: Timestamp;
   status: string;
+};
+
+/** A Proposed Amendment posted to a meeting: the node, and the posting with the text posted there. */
+export type PostedAmendment = {
+  id: AmendmentId;
+  /** The amendment's number as the feed writes it, trimmed: "-1", "-A3". */
+  number: string;
+  measureId: MeasureId;
+  /** What the committee did with it at that meeting: Proposed, Adopted... */
+  meaning: string | null;
+  /** The posting: the document with the file posted to this meeting. */
+  documentId: DocumentId;
+  sourceUrl: string;
+};
+
+/** A document the store holds that belongs to a meeting, by what the feed calls it. */
+export type MeetingDocument = {
+  id: DocumentId;
+  /** The feed's type for it: "Meeting Material", "Preliminary SMS", "Witness Registration"... */
+  label: string;
+  sourceUrl: string;
+  /** The Measure the feed files it under, when it names one. */
+  measureId: MeasureId | null;
+};
+
+/**
+ * What a meeting holds: its agenda items in print order, the Proposed Amendments posted to it by Measure
+ * and number, and its Exhibits.
+ */
+export type MeetingContents = {
+  agendaItems: AgendaItem[];
+  amendments: PostedAmendment[];
+  exhibits: MeetingDocument[];
 };
 
 /**
