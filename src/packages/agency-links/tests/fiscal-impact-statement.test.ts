@@ -20,6 +20,17 @@ type UnitRow = {
   unresolved: string[];
 };
 
+function expectUnits({ text, registry, agencies, unresolved }: UnitRow): void {
+  expect(fiscalImpactAgencyLinks(text, registry)).toEqual({
+    kind: "units",
+    links: agencies.map(({ slug, unit }) => ({
+      agency: slug,
+      evidence: { kind: "fiscal-impact-statement", unit },
+    })),
+    unresolvedUnits: unresolved,
+  });
+}
+
 describe("Fiscal Impact Statement: Government Unit(s) Affected", () => {
   describe("one Agency", () => {
     test.for<UnitRow>([
@@ -52,15 +63,117 @@ describe("Fiscal Impact Statement: Government Unit(s) Affected", () => {
         agencies: [{ slug: "department-of-human-services", unit: "Department of Human Services" }],
         unresolved: [],
       },
-    ])("$source", ({ text, registry, agencies, unresolved }) => {
-      expect(fiscalImpactAgencyLinks(text, registry)).toEqual({
-        kind: "units",
-        links: agencies.map(({ slug, unit }) => ({
-          agency: slug,
-          evidence: { kind: "fiscal-impact-statement", unit },
-        })),
-        unresolvedUnits: unresolved,
-      });
-    });
+    ])("$source", expectUnits);
+  });
+
+  describe("several Agencies, the list wrapped onto a second line", () => {
+    test.for<UnitRow>([
+      {
+        source:
+          "measure-analysis-documents/85414.pdf (Fiscal Impact Statement, SB 69, A-Engrossed): the line breaks after a comma",
+        text: [
+          "Bill Title: Relating to laws concerning job-protected leave from work.",
+          "Government Unit(s) Affected: Bureau of Labor and Industries, Employment Department, Judicial Department,",
+          "Department of Justice",
+          "Summary of Fiscal Impact",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [
+          { slug: "bureau-of-labor-and-industries", unit: "Bureau of Labor and Industries" },
+          { slug: "employment-department", unit: "Employment Department" },
+          { slug: "judicial-department", unit: "Judicial Department" },
+          { slug: "department-of-justice", unit: "Department of Justice" },
+        ],
+        unresolved: [],
+      },
+      {
+        source:
+          "measure-analysis-documents/85868.pdf (Fiscal Impact Statement, HB 3027, Introduced): the line breaks inside a name",
+        text: [
+          "Bill Title: Relating to injunctions regarding career school regulatory violations.",
+          "Government Unit(s) Affected: Higher Education Coordinating Commission, Department of Justice, Judicial",
+          "Department",
+          "Summary of Fiscal Impact",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [
+          {
+            slug: "higher-education-coordinating-commission",
+            unit: "Higher Education Coordinating Commission",
+          },
+          { slug: "department-of-justice", unit: "Department of Justice" },
+          { slug: "judicial-department", unit: "Judicial Department" },
+        ],
+        unresolved: [],
+      },
+    ])("$source", expectUnits);
+  });
+
+  describe("several Agencies on one line", () => {
+    test.for<UnitRow>([
+      {
+        source: "measure-analysis-documents/90573.pdf (Fiscal Impact Statement, SB 121, Introduced)",
+        text: [
+          "Bill Title: Relating to earned income tax credits.",
+          "Government Unit(s) Affected: Judicial Department, Department of Revenue",
+          "Summary of Fiscal Impact",
+          "The proposed legislation has been determined to have",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [
+          { slug: "judicial-department", unit: "Judicial Department" },
+          { slug: "department-of-revenue", unit: "Department of Revenue" },
+        ],
+        unresolved: [],
+      },
+      {
+        source: "measure-analysis-documents/85476.pdf (Fiscal Impact Statement, SB 64, Introduced)",
+        text: [
+          "Bill Title: Relating to payment of dependent care tax credits in installments; prescribing an effective date.",
+          "Government Unit(s) Affected: Department of Human Services, Department of Revenue",
+          "Summary of Fiscal Impact",
+          "The proposed legislation has been determined to have",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [
+          { slug: "department-of-human-services", unit: "Department of Human Services" },
+          { slug: "department-of-revenue", unit: "Department of Revenue" },
+        ],
+        unresolved: [],
+      },
+    ])("$source", expectUnits);
+  });
+  describe("units that are not state agencies stay unresolved", () => {
+    test.for<UnitRow>([
+      {
+        source:
+          "measure-analysis-documents/88044.pdf (Fiscal Impact Statement, SB 983, Introduced): no unit is a state agency",
+        text: [
+          "Bill Title: Relating to the adoption of local budgets.",
+          "Government Unit(s) Affected: Cities, Counties, School Districts, Special Districts, Metro, TriMet",
+          "Summary of Fiscal Impact",
+          "The proposed legislation has been determined to have",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [],
+        unresolved: ["Cities", "Counties", "School Districts", "Special Districts", "Metro", "TriMet"],
+      },
+      {
+        // The same line as the SB 121 row above, read with a registry that lacks the Judicial
+        // Department. A unit the registry does not name stays in the list in its place, and the
+        // unit it does name still resolves.
+        source:
+          "measure-analysis-documents/90573.pdf (Fiscal Impact Statement, SB 121, Introduced): registry without the Judicial Department",
+        text: [
+          "Bill Title: Relating to earned income tax credits.",
+          "Government Unit(s) Affected: Judicial Department, Department of Revenue",
+          "Summary of Fiscal Impact",
+          "The proposed legislation has been determined to have",
+        ].join("\n"),
+        registry: testRegistry.filter((agency) => agency.slug !== "judicial-department"),
+        agencies: [{ slug: "department-of-revenue", unit: "Department of Revenue" }],
+        unresolved: ["Judicial Department"],
+      },
+    ])("$source", expectUnits);
   });
 });
