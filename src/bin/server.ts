@@ -11,6 +11,16 @@ import { systemClock } from "#/packages/time/clock.ts";
 // and portability"). pino's `err` key writes an Error's type, message and stack as fields of the line.
 const logger = pino();
 
+// SIGINT and SIGTERM are claimed before anything is opened. A port accepts connections as soon as it is
+// bound, so a supervisor that waits for the port can signal the process while it is still starting up, and
+// with no handler registered yet Node's default action ends the process there: no "listening" line and no
+// graceful close. A signal that comes early is remembered, and the shutdown below runs once start-up is done.
+const stopRequested = new Promise<void>((resolve) => {
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.once(signal, resolve);
+  }
+});
+
 const config = loadServerConfig(process.env);
 const handler = createSessionGatewayHandler(config, { clock: systemClock });
 const server = await serveMcp(handler, config, {
@@ -21,14 +31,11 @@ const server = await serveMcp(handler, config, {
 logger.info({ host: config.host, port: server.port, path: config.mcpPath }, "MCP server listening");
 
 // On SIGINT or SIGTERM stop accepting requests, then release the database, and let the process end.
-for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.once(signal, () => {
-    server
-      .close()
-      .then(() => handler.close())
-      .catch((error: unknown) => {
-        logger.error({ err: error }, "The MCP server did not shut down cleanly");
-        process.exitCode = 1;
-      });
-  });
+await stopRequested;
+try {
+  await server.close();
+  await handler.close();
+} catch (error) {
+  logger.error({ err: error }, "The MCP server did not shut down cleanly");
+  process.exitCode = 1;
 }

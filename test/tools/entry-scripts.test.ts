@@ -185,6 +185,64 @@ describe("the entry scripts", () => {
       expect(failure).toMatchObject({ msg: "The MCP adapter reported an error", err: { message: "aborted" } });
       expect(String((failure?.["err"] as Record<string, unknown> | undefined)?.["stack"])).toContain("aborted");
     }, 20_000);
+
+    /**
+     * Resolves the moment the port accepts a connection: retries at once, where `listening` waits 50 ms.
+     * The kernel accepts as soon as the server has bound the port, before Node has run the script's next line.
+     */
+    async function acceptsAtOnce(port: number): Promise<void> {
+      for (;;) {
+        const open = await new Promise<boolean>((resolve) => {
+          const socket = connect(port, "127.0.0.1");
+          socket.once("connect", () => {
+            socket.destroy();
+            resolve(true);
+          });
+          socket.once("error", () => {
+            resolve(false);
+          });
+        });
+        if (open) return;
+      }
+    }
+
+    it("a SIGTERM that arrives the moment the port accepts still ends it with exit code 0, after the listening line", async () => {
+      // A supervisor that waits for the port may signal a server that is still starting up. Without a handler
+      // registered yet, Node's default action ends the process by the signal, with nothing logged and no close.
+      const { olis, database } = await fakeOlisAndDatabase();
+      const env = { SESSION_KEY: "2025R1", OLIS_BASE_URL: olis.baseUrl, DATABASE_PATH: database.path };
+      const pulled = await run("src/bin/ingest.ts", env);
+      expect(pulled.code, pulled.stderr).toBe(0);
+
+      for (let start = 1; start <= 5; start += 1) {
+        const port = await freePort();
+        const child = spawn(process.execPath, ["src/bin/server.ts"], {
+          env: childEnvironment({ ...env, MCP_PORT: String(port) }),
+        });
+        let out = "";
+        let err = "";
+        child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
+        child.stderr.on("data", (chunk: Buffer) => (err += chunk.toString()));
+        const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
+          child.once("close", (code, signal) => {
+            resolve({ code, signal });
+          }),
+        );
+        cleanups.push(() => {
+          child.kill("SIGKILL");
+        });
+
+        await acceptsAtOnce(port);
+        child.kill("SIGTERM");
+
+        expect(await exited, `start ${start}: how it ended`).toEqual({ code: 0, signal: null });
+        expect(err, `start ${start}: stderr`).toBe("");
+        expect(jsonLines(out)[0], `start ${start}: first stdout line`).toMatchObject({
+          msg: "MCP server listening",
+          port,
+        });
+      }
+    }, 30_000);
   });
 
   // [script, variable, a value the variable must refuse]
