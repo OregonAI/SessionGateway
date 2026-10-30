@@ -70,6 +70,7 @@ const rows: readonly { slug: string; name: string; aliases: readonly string[] }[
     name: "Oregon Watershed Enhancement Board",
     aliases: [],
   },
+  { slug: "secretary-of-state", name: "Secretary of State", aliases: [] },
 ];
 
 export const testRegistry: readonly RegistryAgency[] = rows.map((row) => ({ ...row, slug: testAgencyId(row.slug) }));

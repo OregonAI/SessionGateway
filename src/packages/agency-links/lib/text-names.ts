@@ -1,4 +1,5 @@
 import type { AgencyId } from "#/packages/domain/agencies.ts";
+import { withoutPrintedBoilerplate } from "./boilerplate.ts";
 import { flattenText } from "./flatten-text.ts";
 import { slugsByTerm } from "./registry-index.ts";
 import type { AgencyLink, RegistryAgency } from "./types.ts";
@@ -19,7 +20,7 @@ export function findNamedAgencies(text: string, registry: readonly RegistryAgenc
     "gu",
   );
   const termsBySlug = new Map<AgencyId, string[]>();
-  for (const match of flattenText(text).matchAll(pattern)) {
+  for (const match of flattenText(withoutPrintedBoilerplate(text)).matchAll(pattern)) {
     const term = match[0];
     const slug = slugs.get(term);
     if (slug === undefined) continue;

@@ -307,4 +307,112 @@ describe("Agencies named in Version and Proposed Amendment text", () => {
       },
     ])("$document: $variant", expectLinks);
   });
+
+  describe("the Secretary of State in an Enrolled Version's filing block is not a link", () => {
+    // Every Enrolled Version ends with the filing block: "Filed in Office of Secretary of State:"
+    // and the Secretary of State's signature line. The registry has a row for the Secretary of
+    // State, but the block says nothing about the Measure.
+    test.for<TextRow>([
+      {
+        document: "SB 983 Enrolled",
+        variant: "filing block, lines 53 to 82",
+        path: "measure-documents/SB983/Enrolled.pdf",
+        text: [
+          "Passed by Senate May 15, 2025",
+          "",
+          "Received by Governor:",
+          "........................M.,........................................................., 2025",
+          "",
+          "..................................................................................",
+          "Obadiah Rutledge, Secretary of Senate",
+          "",
+          "Approved:",
+          "........................M.,........................................................., 2025",
+          "",
+          "..................................................................................",
+          "Rob Wagner, President of Senate",
+          "Passed by House June 17, 2025",
+          "",
+          "..................................................................................",
+          "Tina Kotek, Governor",
+          "Filed in Office of Secretary of State:",
+          "",
+          "..................................................................................",
+          "Julie Fahey, Speaker of House",
+          "",
+          "........................M.,........................................................., 2025",
+          "",
+          "..................................................................................",
+          "Tobias Read, Secretary of State",
+          "",
+          "Enrolled Senate Bill 983 (SB 983-A)",
+          "",
+          "Page 2",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [],
+      },
+      {
+        // pdftotext reads this page's two columns in another order, so the filing label and the
+        // signature line are further apart than in SB 983.
+        document: "HB 3795 Enrolled",
+        variant: "filing block, lines 62 to 91",
+        path: "measure-documents/HB3795/Enrolled.pdf",
+        text: [
+          "Passed by House April 14, 2025",
+          "",
+          "Received by Governor:",
+          "",
+          "Repassed by House June 16, 2025",
+          "",
+          "........................M.,........................................................., 2025",
+          "Approved:",
+          "",
+          "..................................................................................",
+          "Timothy G. Sekerak, Chief Clerk of House",
+          "",
+          "..................................................................................",
+          "Julie Fahey, Speaker of House",
+          "",
+          "........................M.,........................................................., 2025",
+          "",
+          "..................................................................................",
+          "Tina Kotek, Governor",
+          "Filed in Office of Secretary of State:",
+          "",
+          "Passed by Senate June 11, 2025",
+          "........................M.,........................................................., 2025",
+          "..................................................................................",
+          "Rob Wagner, President of Senate",
+          "",
+          "Enrolled House Bill 3795 (HB 3795-B)",
+          "",
+          "..................................................................................",
+          "Tobias Read, Secretary of State",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [],
+      },
+    ])("$document: $variant", expectLinks);
+  });
+
+  describe("the Secretary of State named in the text is a link", () => {
+    // The fixture's Versions name the Secretary of State only in the filing block. An agenda's
+    // summary of SB 224 is the fixture's text where the Secretary of State is named in prose.
+    test.for<TextRow>([
+      {
+        document: "HRULES agenda 2025-06-09",
+        variant: "Secretary of State in a sentence",
+        path: "committee-agendas/HRULES/2025-06-09-08-30.pdf",
+        text: [
+          "SB 224 A",
+          "Prohibits the Secretary of State from publishing the residence address of certain individuals who",
+          "are affiliated with apolitical committee on the electronic filing system maintained by the",
+          "secretary.",
+        ].join("\n"),
+        registry: testRegistry,
+        agencies: [{ slug: "secretary-of-state", terms: ["Secretary of State"] }],
+      },
+    ])("$document: $variant", expectLinks);
+  });
 });
