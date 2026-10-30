@@ -32,7 +32,8 @@ const UNLISTED_POSITION_LABEL = "unlisted position";
  * and 17 with more than 1,000 (counted over the full local cache on 2026-10-30), so a Measure's whole Testimony would
  * overflow an agent's context. An item is about 525 characters of JSON (HB 3131's 42 items are 22,045 characters, and a
  * page of 100 made-up rows is 48,347), so a page is about 50,000 characters, two and a half `get_document` parts
- * (20,000 characters each) and the same again when the client reads the structured copy as well as the text.
+ * (20,000 characters each). Every tool here sends the JSON as text and as structured content, so a client may hold
+ * it twice.
  */
 const PAGE_SIZE = 100;
 
@@ -106,7 +107,7 @@ const itemOutput = z.object({
     .string()
     .nullable()
     .describe(
-      "The id to read (id_to_read of an entry of identical_letters) when this row's letter is the same text as another row's of the Measure, this row's own id included when it is the lowest. Null when no other row has the same text.",
+      "When another row of the Measure has the same text as this one: the id to read, which is id_to_read of their entry in identical_letters (and this row's own id for the lowest row of the set). Null when no other row has the same text.",
     ),
   agency_id: z
     .string()
@@ -139,7 +140,7 @@ const organizationGroupOutput = z.object({
   spellings: z
     .array(z.string())
     .describe(
-      "Every spelling of the Organization the group holds, as written, in the order of the first row to use each. Rows whose spellings differ only in capitals or in spaces are one group.",
+      "Every spelling of the Organization the group holds, as written, in the order of the first row to use each. Rows whose spellings differ only in capitals or in spaces are one group. Empty for the group of rows that give no organization.",
     ),
   count: z.number().describe("How many of the Measure's rows in this position are in the group, on every page."),
   items: z.array(itemOutput).describe("The group's rows that are on this page, in CommTestId order."),
