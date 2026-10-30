@@ -23,7 +23,11 @@ export const analysisDocumentsOutput = z
     by_version: z
       .array(
         z.object({
-          version_id: z.string().describe("The Version's id, which get_document resolves."),
+          version_id: z
+            .string()
+            .describe(
+              "The Version's id. get_document resolves it when this index holds the Version's file, and has no document for it when the Legislature's file could not be fetched.",
+            ),
           version: z.string().describe("The Version: Introduced, A-Engrossed, B-Engrossed..."),
           documents: z
             .array(analysisEntry)
@@ -40,9 +44,15 @@ export const analysisDocumentsOutput = z
       .describe(
         "The analysis documents the feed's label does not place on a Version of the Measure, and the ones the feed flags as a minority report's. They are listed, never dropped; the reason says what the feed leaves unsaid.",
       ),
+    not_held: z
+      .number()
+      .int()
+      .describe(
+        "How many analysis documents the Legislature lists for the Measure that this index has not fetched, so that they are in neither list above and have no id here. The next refresh tries them again. 0 when the index holds every one.",
+      ),
   })
   .describe(
-    "The Measure's analysis documents held by this index (a document the worker could not fetch is reported in the build report and not listed here, so that every id resolves).",
+    "The Measure's analysis documents held by this index, so that every id listed resolves in get_document, with a count of the ones the Legislature lists and the index does not hold.",
   );
 
 export type AnalysisDocumentsOutput = z.infer<typeof analysisDocumentsOutput>;
@@ -75,7 +85,11 @@ function entryOf(analysis: StoredAnalysis): Entry {
   };
 }
 
-export function analysisDocumentsOf(key: MeasureKey, stored: readonly StoredAnalysis[]): AnalysisDocumentsOutput {
+export function analysisDocumentsOf(
+  key: MeasureKey,
+  stored: readonly StoredAnalysis[],
+  notHeld: number,
+): AnalysisDocumentsOutput {
   const groups = new Map<string, { order: number; version: string; documents: StoredAnalysis[] }>();
   const unmapped: AnalysisDocumentsOutput["unmapped"] = [];
   for (const analysis of stored.toSorted(compareEntries)) {
@@ -110,5 +124,6 @@ export function analysisDocumentsOf(key: MeasureKey, stored: readonly StoredAnal
         documents: group.documents.map(entryOf),
       })),
     unmapped,
+    not_held: notHeld,
   };
 }

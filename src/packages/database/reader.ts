@@ -31,6 +31,11 @@ export type IndexReader = {
    * that each is a document `findDocument` resolves.
    */
   analysisDocuments(key: MeasureKey): StoredAnalysis[];
+  /**
+   * How many analysis documents the feed lists for a Measure that the store does not hold, because the
+   * worker could not fetch their files. The next pull tries them again.
+   */
+  analysisNotHeld(key: MeasureKey): number;
   /** What the index holds of the Session. */
   counts(session: SessionKey): IndexCounts;
   close(): void;
@@ -94,6 +99,11 @@ export function openIndexReader(path: string): IndexReader {
       WHERE d.kind = 'analysis' AND r.relation = 'measure' AND r.to_id = ?
       ORDER BY d.id`,
   );
+  const countNotHeld = database.prepare(
+    `SELECT COUNT(*) AS n
+       FROM analysis_listing l LEFT JOIN document d ON d.id = l.document_id
+      WHERE l.measure_id = ? AND d.id IS NULL`,
+  );
   function documentOf(row: unknown): DocumentView["document"] {
     const stored = documentRow.parse(row);
     return {
@@ -132,6 +142,9 @@ export function openIndexReader(path: string): IndexReader {
           placedVersionId: (related.find((node) => node.relation === "version")?.to as DocumentId | undefined) ?? null,
         };
       });
+    },
+    analysisNotHeld(key) {
+      return countRow.parse(countNotHeld.get(measureIdOf(key))).n;
     },
     counts(session) {
       const documentsByKind = Object.fromEntries(documentKinds.map((kind) => [kind, 0])) as Record<

@@ -58,6 +58,12 @@ const schema = `
     PRIMARY KEY (document_id, relation, to_id)
   ) STRICT;
   CREATE INDEX IF NOT EXISTS document_relation_to ON document_relation (to_id, relation);
+  CREATE TABLE IF NOT EXISTS analysis_listing (
+    document_id TEXT NOT NULL PRIMARY KEY,
+    session_key TEXT NOT NULL,
+    measure_id TEXT NOT NULL
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS analysis_listing_measure ON analysis_listing (measure_id);
 `;
 
 /** The default timeout of 0 fails at once on a busy database, so both sides wait up to 5 seconds. */

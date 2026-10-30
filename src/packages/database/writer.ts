@@ -20,6 +20,12 @@ export type IndexWriter = {
    * are left alone. A link whose document is not stored is ignored.
    */
   refreshDocuments(session: SessionKey, links: readonly DocumentLink[]): void;
+  /**
+   * Records which analysis documents the feed lists for each Measure, as the last full pull read it, in
+   * one transaction: it replaces the Session's listing. The server compares it with the documents held,
+   * so that a Measure whose statement the worker could not fetch is not read as having none.
+   */
+  recordListedAnalyses(session: SessionKey, links: readonly DocumentLink[]): void;
   /** Every stored document of the Session whose file has no text layer, by id. */
   documentsWithoutTextLayer(session: SessionKey): { id: DocumentId; sourceUrl: string }[];
   /** Keeps one fetched document, its text and the nodes it points at, in one transaction. */
@@ -104,6 +110,25 @@ export function openIndexWriter(path: string): IndexWriter {
         const stored = scanRow.parse(row);
         return { id: stored.id as DocumentId, sourceUrl: stored.source_url };
       });
+    },
+    recordListedAnalyses(session, links) {
+      const insertListing = database.prepare(
+        "INSERT INTO analysis_listing (document_id, session_key, measure_id) VALUES (?, ?, ?)",
+      );
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database.prepare("DELETE FROM analysis_listing WHERE session_key = ?").run(session);
+        for (const link of links) {
+          if (link.kind !== "analysis") continue;
+          const measure = link.relations.find((relation) => relation.relation === "measure");
+          if (measure === undefined) throw new Error(`The analysis document ${link.id} names no Measure`);
+          insertListing.run(link.id, session, measure.to);
+        }
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
     },
     refreshDocuments(session, links) {
       const updateDocument = database.prepare(

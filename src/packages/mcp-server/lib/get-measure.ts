@@ -55,7 +55,11 @@ export function getMeasure(
       id: measureIdOf(measure),
       catchline: measure.catchline,
       digest: measure.digest,
-      analysis_documents: analysisDocumentsOf(measure, reader.analysisDocuments(measure)),
+      analysis_documents: analysisDocumentsOf(
+        measure,
+        reader.analysisDocuments(measure),
+        reader.analysisNotHeld(measure),
+      ),
       source_url: olisPageUrlOf(measure),
       created_at: measure.createdAt,
       modified_at: measure.modifiedAt,

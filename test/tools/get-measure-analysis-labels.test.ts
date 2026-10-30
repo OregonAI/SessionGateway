@@ -367,7 +367,7 @@ describe.for(eras)("a Measure with no digest and no analysis documents, for a %s
       expect(outcome.structured).toMatchObject({
         id: "measure-2025r1-hb9002",
         digest: null,
-        analysis_documents: { by_version: [], unmapped: [] },
+        analysis_documents: { by_version: [], unmapped: [], not_held: 0 },
       });
     } finally {
       await connected.close();

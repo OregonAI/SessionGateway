@@ -13,7 +13,13 @@ let system: System;
 beforeAll(async () => {
   // 2026-08-01 10:00 in Oregon: every row of the fixture exists by then, so the pull fetches all 278
   // documents, the analysis documents among them.
-  system = await startSystem({ clockAt: "2026-08-01T17:00:00Z", documents: true });
+  // The cases make more than the default 120 tool calls in a minute together (the simulated clock never
+  // moves, so the window never ends); the limit has its own file, get-measure-rate-limit.test.ts.
+  system = await startSystem({
+    clockAt: "2026-08-01T17:00:00Z",
+    documents: true,
+    serverEnv: { MCP_RATE_LIMIT: "1000" },
+  });
 }, 60_000);
 
 afterAll(async () => {
@@ -165,6 +171,35 @@ describe.for(eras)("get_measure's analysis documents for a %s client", (era) => 
         ],
       },
     ]);
+  });
+
+  // The documents a group holds are the statements; the group itself is the Version they are of, and its
+  // id is one an agent follows to read the text the statements are about. The whole fixture is held, so
+  // every group's Version resolves (when the Version's own file is missing it does not: see
+  // get-measure-analysis-pull.test.ts).
+  it("gives each Version it groups under an id that resolves in get_document", async () => {
+    const versionIds = new Set<string>();
+    for (const measure of ["SB 69", "HB 3795", "HB 3131", "SB 64", "SB 121", "SB 921", "SB 983", "HB 3027"]) {
+      for (const group of (await analysisOf(measure)).by_version) versionIds.add(group.version_id);
+    }
+
+    expect([...versionIds].toSorted()).toEqual([
+      "version-2025r1-hb3027-introduced",
+      "version-2025r1-hb3131-introduced",
+      "version-2025r1-hb3795-a-engrossed",
+      "version-2025r1-hb3795-b-engrossed",
+      "version-2025r1-sb121-introduced",
+      "version-2025r1-sb64-introduced",
+      "version-2025r1-sb69-a-engrossed",
+      "version-2025r1-sb921-a-engrossed",
+      "version-2025r1-sb983-a-engrossed",
+      "version-2025r1-sb983-introduced",
+    ]);
+    for (const id of versionIds) {
+      const outcome = await callTool(connected, "get_document", { id });
+      expect.soft(outcome.isError, id).toBe(false);
+      expect.soft(outcome.structured, id).toMatchObject({ id, kind: "version" });
+    }
   });
 
   // Row 85989, HB 3131's Staff Measure Summary, has Version "" (688 of the Session's 5,260 rows do:

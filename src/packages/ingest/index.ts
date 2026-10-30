@@ -97,6 +97,8 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
   try {
     writer.recordFullPull(config.session, measures, asOf);
     writer.recordMeetings(config.session, committees, meetings);
+    // Before any file is fetched, so that the server can say a Measure has a statement it does not hold yet.
+    writer.recordListedAnalyses(config.session, links);
     const stored = writer.storedDocumentIds(config.session);
     // A fetched file is unchanging (ADR-0005) but its feed row is not: OLIS changes a posting's Meaning,
     // a Testimony's Measure. What the row says about a stored document is refreshed without fetching it.
