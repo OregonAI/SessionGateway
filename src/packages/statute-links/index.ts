@@ -10,7 +10,10 @@ export type { RelatingClauseEdit } from "./lib/relating-clause.ts";
 
 export type ParseStatuteLinksInput = {
   documentKind: StatuteLinkDocumentKind;
-  /** The document's extracted text, as `pdftotext` prints it. */
+  /**
+   * The document's extracted text: as the pdf-text package extracts it with PDF.js, which is the text the store holds,
+   * or as `pdftotext` prints it. The two differ in the page furniture (line numbers, footers), and both are read.
+   */
   text: string;
   /** The ORS sections that exist, from the OregonAI snapshot. A range is expanded against it, and holds only sections of this list. */
   orsSections: readonly OrsSectionId[];
