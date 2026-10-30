@@ -40,11 +40,16 @@ SESSION_KEY=2025R1 DATABASE_PATH=data/index.db node src/bin/server.ts   # serves
 | `SESSION_KEY` | both | none | The one Session this deployment serves (ADR-0003), such as `2025R1`. |
 | `DATABASE_PATH` | both | none | The SQLite file. The worker writes it and the server reads it. |
 | `OLIS_BASE_URL` | worker | none | The OLIS OData service root, such as `https://api.oregonlegislature.gov/odata/odataservice.svc` (a trailing slash is added if it is missing). |
+| `OLIS_DOCUMENT_ORIGIN` | worker | `https://olis.oregonlegislature.gov` | Where the worker fetches the documents the feed links. They are not on the feed's host. Only a test sets it. |
 | `MCP_PATH` | server | `/mcp` | Where the endpoint is mounted. |
 | `MCP_HOST`, `MCP_PORT` | server | `127.0.0.1`, `3000` | Where it listens. |
 | `MCP_ALLOWED_HOSTS` | server | `localhost,127.0.0.1,[::1]` | Host names a request may be addressed to; any other `Host` is refused with 403. |
 | `MCP_ALLOWED_ORIGINS` | server | none | Origin host names a browser request may come from. A request with another `Origin` is refused with 403; one with no `Origin` passes. |
 | `MCP_RATE_LIMIT`, `MCP_RATE_WINDOW_SECONDS` | server | `120`, `60` | The most tool calls the server answers in one window, over every caller together. A call over the limit gets a tool error that says when to try again. The MCP specification requires a limit, so one is always on. |
+
+A full pull also fetches every document the feed links that the database does not hold yet, once each,
+and writes `build-report.json` beside the database: the documents that are scans with no text layer, and
+the ones it could not get or read (ADR-0011).
 
 A full pull against the live feed is allowed only between 5 pm and 6 am Pacific (ADR-0005). Nothing
 schedules it yet, so run it by hand inside that window.

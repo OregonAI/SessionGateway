@@ -21,6 +21,21 @@ Everything a deployment holds of its Session, pulled from OLIS.
 **Full pull**:
 A pass that reads every row of the Session from the OLIS feed. It counts as complete only when every set's rows match the feed's own count (ADR-0005).
 
+**Document**:
+One file OLIS links (a Version, a Printed Amendment, a posting of a Proposed Amendment, an analysis document, an Exhibit, a Recording Log, Testimony or an agenda), fetched once and kept with its extracted text, `source_url`, retrieval time and content hash.
+_Avoid_: attachment, file, when the text is meant
+
+**Part**:
+One slice of a Document's text, at most 20,000 characters and ending at the end of a line, so a long Document is read a Part at a time. The Parts joined are the text exactly.
+_Avoid_: page, chunk (which search will mean)
+
+**Text layer**:
+The text a PDF carries, as opposed to a picture of text. A scan or a photograph has none, and its Document is flagged.
+_Avoid_: OCR, which reads a picture and is out of scope
+
+**Build report**:
+The file the ingest worker writes after a full pull, beside the database: the Documents with no Text layer and the Documents it could not get or read.
+
 **As of**:
 When the Index was last refreshed from OLIS: the moment the latest completed full pull began, shown in Pacific time with its UTC offset. Every result carries it.
 
@@ -49,6 +64,10 @@ _Avoid_: draft, revision
 **Proposed Amendment**:
 A committee's draft change to a Version, numbered like SB 69-1 or -A3 and posted for a meeting. A bare "amendment" means this.
 
+**Posting**:
+One appearance of a Proposed Amendment at a committee meeting, with the file posted there and what the committee did with it (Proposed, Adopted, ...). A Proposed Amendment is one node however many Postings it has, and each Posting is a Document.
+_Avoid_: version of an amendment
+
 **Printed Amendment**:
 The printed text of amendments a chamber adopted, such as "House Amendments to Introduced".
 _Avoid_: amendment, unqualified
@@ -60,6 +79,15 @@ _Avoid_: comment, letter
 **Exhibit**:
 A document posted to a committee meeting's record, other than Testimony: meeting materials, presentations, witness-registration lists.
 _Avoid_: meeting document, attachment
+
+**Committee**:
+A House, Senate or joint committee of one Session, by the code the feed gives it (`SLB`).
+
+**Meeting**:
+One sitting of a Committee, identified by the Committee and its start time in Pacific time (`meeting-2025r1-slb-2025-01-30-0800`).
+
+**Agenda**:
+A Meeting's published agenda, a Document of its own.
 
 **Recording Log**:
 A committee's timecoded index of one meeting's recording: agenda items, motions, votes and each speaker.

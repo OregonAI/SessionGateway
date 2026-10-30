@@ -1,8 +1,8 @@
 /**
- * The most characters one part of a document's text holds. At about four characters to a token that is
- * some 5,000 tokens: well inside an agent's context, and under the 10,000 tokens at which MCP clients
- * start to warn about a tool result. The longest fixture document, a 94-page letter of 393,000
- * characters, is 20 parts.
+ * The most characters one part of a document's text holds. At about four characters to a token
+ * (docs/research/olis-odata.md section 7, inferred) that is some 5,000 tokens: a few percent of an
+ * agent's context. The longest fixture document, a 94-page letter of 393,000 characters, is 20 parts
+ * (docs/adr/0011-an-amendment-is-a-node-and-its-postings-are-documents.md).
  */
 export const PART_SIZE_CHARACTERS = 20_000;
 

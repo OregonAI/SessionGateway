@@ -21,6 +21,8 @@ Expected values are literals from an independent source:
 ## The harness
 
 - **Fake OLIS.** An in-process `node:http` server on `127.0.0.1:0` replays `test/fixtures/` as the feed stood at the clock time. It reproduces the real feed's quirks: `$inlinecount`, 5,000-row pages with a relative `odata.nextLink`, `/$count` answered only without a JSON `Accept` header, misspelled property names, and decimal keys as strings. Because it fakes OLIS at the wire, the OLIS client's quirk handling runs in every seam-1 test, which a mocked OLIS adapter would skip.
+  - **Documents.** With `documents: true` it also serves the rows that link documents and the documents themselves, at the paths of the manifest's `source_url`s (`/liz/2025R1/Downloads/...`) on the same port. The worker is pointed at them with `OLIS_DOCUMENT_ORIGIN` (`olis.origin`), so no test reaches the real OLIS. They are off by default: pulling the fixture's 278 documents takes about four seconds, and a test of `get_measure` reads none.
+  - **Counts and failures.** `olis.documentRequests()` lists every document request, so a test reads how often a file was fetched from the harness and never from the database. `documentFailures` (or `olis.failDocumentOnce`) makes a chosen document hang past the worker's timeout, or answer a status, before it is served; `strayRows` and `strayDocuments` add a row the fixture lacks, with a fixture file served for it.
 - **Clock.** One injected `Clock` drives the fake OLIS, the worker and the server. Global fake timers freeze `performance` for the whole worker, so seam-1 tests move the injected clock instead.
 - **Time zone.** The Vitest config sets `TZ` to a zone other than Pacific before workers start. Code that quietly relies on local time then fails.
 - **Database.** A WAL file in a disposable temp directory, because WAL can't run in memory.
@@ -28,7 +30,7 @@ Expected values are literals from an independent source:
   - Cases that change state (increments, removals, revised agendas) build their own.
   - Keep the two kinds in separate files.
 - **MCP client.** Drive `createMcpHandler` in-process through `handler.fetch`, once with a 2026-07-28 client and once with a legacy client. Call `listTools()` first so the client validates `structuredContent`. One test runs on a real port for the Node adapter, the `Host` and `Origin` guards, and the mount path.
-- **One system.** `startSystem` (`test/support/system.ts`) starts the fake OLIS at a simulated time, runs the ingest worker's full pull into a temp database and builds the MCP handler, wiring the packages through their entry points the way `src/bin/` does. It refuses to run under the Pacific zone, so a lost `TZ` setting fails loudly. Its `pullAgain()` runs the full pull again after a test moves the clock or changes the fake (for example `olis.withholdLastRows(1)`, so the pull is refused and the test reads the tools to see the index stayed as it was).
+- **One system.** `startSystem` (`test/support/system.ts`) starts the fake OLIS at a simulated time, runs the ingest worker's full pull into a temp database and builds the MCP handler, wiring the packages through their entry points the way `src/bin/` does. It refuses to run under the Pacific zone, so a lost `TZ` setting fails loudly. Its `documents` option turns the documents on (default off), `documentTimeoutMs` shortens the worker's wait for a hung document, and the worker never pauses between attempts. `buildReport()` reads the `build-report.json` the worker wrote beside the database. Its `pullAgain()` runs the full pull again after a test moves the clock or changes the fake (for example `olis.withholdLastRows(1)`, so the pull is refused and the test reads the tools to see the index stayed as it was).
 - **Entry scripts.** One test file runs `src/bin/ingest.ts` and `src/bin/server.ts` as child processes against the fake OLIS, because nothing else executes them.
 - **Hermetic.** The suite reaches only localhost. A contract test of the OLIS client against live OLIS is run by hand, outside `npm test`.
 
@@ -36,7 +38,7 @@ Expected values are literals from an independent source:
 
 The layout is the deep-module one in `src/packages/README.md`:
 - seam 2 in the parser package's own `tests/` folder, next to the parser it tests;
-- seam 1 in `test/tools/`, one file per kind of database use: `get-measure.test.ts` shares one read-only database, `get-measure-feed.test.ts` builds its own for each case, and the real-port and entry-script tests are files of their own;
+- seam 1 in `test/tools/`, one file per kind of database use: `get-measure.test.ts` shares one read-only database, `get-measure-feed.test.ts` builds its own for each case, `get-document.test.ts` shares one database of the whole fixture and `get-document-pull.test.ts` builds its own for each case (fetch counts, failures, rows the fixture lacks), and the real-port and entry-script tests are files of their own;
 - the shared harness (fake OLIS, clock, MCP client) in `test/support/`;
 - fixtures in `test/fixtures/`.
 
