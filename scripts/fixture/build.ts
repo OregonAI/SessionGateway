@@ -49,6 +49,7 @@ const MIN_GAP_MS = 1_000; // between the end of one response and the next reques
 const REQUEST_TIMEOUT_MS = 120_000;
 const RETRY_WAITS_MS = [3_000, 9_000, 27_000]; // three retries, each wait longer than the last
 const MAX_REDIRECTS = 3;
+const MAX_FAILURES_IN_A_ROW = 5; // a streak means something systemic: stop instead of hammering OLIS
 
 // The Statutes Affected Table is not on OLIS and no feed row links it. The source_url comes from
 // docs/research/olis-odata.md section 5; the cache's .hdr file has the response headers only.
@@ -331,7 +332,7 @@ function describeFailure(error: unknown): string {
 async function fetchOnce(url: string): Promise<Fetched> {
   let current = url;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    if (!current.startsWith(OLIS_ORIGIN)) throw new BuildError(`${url} redirected outside OLIS to ${current}`);
+    if (!current.startsWith(OLIS_ORIGIN)) throw new BuildError(`redirected outside OLIS to ${current}`);
     const wait = lastResponseEnd + MIN_GAP_MS - Date.now();
     if (wait > 0) await sleep(wait);
     try {
@@ -346,18 +347,18 @@ async function fetchOnce(url: string): Promise<Fetched> {
       if (response.status >= 300 && response.status < 400) {
         await response.body?.cancel();
         const location = response.headers.get("location");
-        if (location === null) throw new BuildError(`${current}: HTTP ${response.status} with no Location`);
+        if (location === null) throw new BuildError(`HTTP ${response.status} with no Location`);
         current = new URL(location, current).href;
         continue;
       }
       if (response.status !== 200) {
         await response.body?.cancel();
         if (response.status >= 500) throw new TransientError(`HTTP ${response.status}`);
-        throw new BuildError(`${current}: HTTP ${response.status}`);
+        throw new BuildError(`HTTP ${response.status}`);
       }
       const body = Buffer.from(await response.arrayBuffer());
       const contentType = response.headers.get("content-type") ?? "application/octet-stream";
-      if (/^text\/html/i.test(contentType)) throw new BuildError(`${current}: OLIS answered with HTML, not a document`);
+      if (/^text\/html/i.test(contentType)) throw new BuildError("OLIS answered with HTML, not a document");
       return { body, contentType, finalUrl: current, at: Date.now() };
     } catch (error) {
       if (error instanceof BuildError || error instanceof TransientError) throw error;
@@ -367,13 +368,14 @@ async function fetchOnce(url: string): Promise<Fetched> {
       lastResponseEnd = Date.now();
     }
   }
-  throw new BuildError(`${url}: more than ${MAX_REDIRECTS} redirects`);
+  throw new BuildError(`more than ${MAX_REDIRECTS} redirects`);
 }
 
 type RunStats = { fetched: number; reused: number; retries: number; failures: string[]; bytes: number };
 
 async function fetchMissing(downloadsDir: string, missing: Doc[], stats: RunStats): Promise<void> {
   let done = 0;
+  let streak = 0;
   for (const doc of missing) {
     done++;
     const started = Date.now();
@@ -396,10 +398,14 @@ async function fetchMissing(downloadsDir: string, missing: Doc[], stats: RunStat
       }
     }
     if (fetched === null) {
-      stats.failures.push(`${doc.url} (${lastProblem})`);
+      stats.failures.push(`${doc.url}: ${lastProblem}`);
       console.log(`[${done}/${missing.length}] FAILED ${doc.stem}: ${lastProblem}`);
+      if (++streak >= MAX_FAILURES_IN_A_ROW) {
+        throw new BuildError(`${streak} documents in a row failed (last: ${lastProblem}): stopping the run. Failed so far:\n  ${stats.failures.join("\n  ")}`);
+      }
       continue;
     }
+    streak = 0;
     const file = join(downloadsDir, ...doc.stem.split("/"));
     mkdirSync(dirname(file), { recursive: true });
     // Body first, then the sidecar: an entry counts as cached only when both exist and agree.
@@ -550,11 +556,14 @@ async function main(): Promise<void> {
   const stats: RunStats = { fetched: 0, reused: cached.size, retries: 0, failures: [], bytes: 0 };
   if (missing.length > 0) {
     console.log(`fetching ${missing.length} documents from ${OLIS_ORIGIN}, one at a time`);
-    await fetchMissing(downloadsDir, missing, stats);
-    console.log(
-      `download summary: fetched=${stats.fetched} reused=${stats.reused} retries=${stats.retries} ` +
-        `failures=${stats.failures.length} bytes=${stats.bytes}`,
-    );
+    try {
+      await fetchMissing(downloadsDir, missing, stats);
+    } finally {
+      console.log(
+        `download summary: fetched=${stats.fetched} reused=${stats.reused} retries=${stats.retries} ` +
+          `failures=${stats.failures.length} bytes=${stats.bytes}`,
+      );
+    }
     if (stats.failures.length > 0) {
       throw new BuildError(`${stats.failures.length} document(s) could not be fetched; run again to fetch only those:\n  ${stats.failures.join("\n  ")}`);
     }
