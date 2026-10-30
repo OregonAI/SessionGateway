@@ -95,8 +95,11 @@ export type HitDetails = {
 };
 
 export type SearchIndexReader = {
-  /** The passages that match an FTS5 expression, best first (BM25), at most `limit`. */
-  keyword(match: string, filter: SearchFilter, limit: number): PassageMatch[];
+  /**
+   * The passages that match an FTS5 expression, best first (BM25), at most `limit`; only the passages of
+   * keyword-only documents when `keywordOnly` is true.
+   */
+  keyword(match: string, filter: SearchFilter, limit: number, keywordOnly?: boolean): PassageMatch[];
   /**
    * The Versions of a Measure that pass the filter, in the order they came: Introduced first, Enrolled last.
    * The Measure's own texts are what its citation names.
@@ -223,7 +226,7 @@ export function openSearchReader(path: string): SearchIndexReader {
     };
   };
   return {
-    keyword(match, filter, limit) {
+    keyword(match, filter, limit, keywordOnly = false) {
       const terms = filterTerms(filter);
       const rows = database
         .prepare(
@@ -231,7 +234,7 @@ export function openSearchReader(path: string): SearchIndexReader {
            FROM passage_fts
              JOIN passage p ON p.id = passage_fts.rowid
              JOIN search_document sd ON sd.document_id = p.document_id
-           WHERE passage_fts MATCH ? AND ${terms.sql}
+           WHERE passage_fts MATCH ? AND ${terms.sql}${keywordOnly ? " AND sd.keyword_only = 1" : ""}
            ORDER BY passage_fts.rank, p.id
            LIMIT ?`,
         )

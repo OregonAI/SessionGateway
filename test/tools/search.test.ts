@@ -100,6 +100,26 @@ describe.for(eras)("search for a %s client", (era) => {
     expect(hits[0]).toMatchObject({ id: document, found_by: ["embedding"] });
   });
 
+  // A keyword-only document is found by its words and never by meaning (ADR-0006), so a question with a word that
+  // the document lacks must still find it by the words it has. SLB's agenda for 2025-01-21 lists SB 397, "Provides
+  // that laws regarding employee entitlements for recovery of unpaid wages and penalties do not apply to wages and
+  // penalties lost as a result of an employer's time-rounding policies"
+  // (documents/committee-agendas/SLB/2025-01-21-08-00.pdf, `pdftotext -raw`). It is the only document of the fixture
+  // that holds "time-rounding", and it lacks "claims". The corpus has three more agendas, none of which holds
+  // "time-rounding" or "claims".
+  it("finds an agenda from a question that has a word the agenda lacks", async () => {
+    const query = "time-rounding wage claims";
+
+    const everything = await callTool(connected, "search", { query });
+    const agendas = await callTool(connected, "search", { query, kind: "agenda" });
+
+    const slb = (everything.structured?.["results"] as { id: string; found_by: string[] }[]).find(
+      (hit) => hit.id === "agenda-2025r1-slb-2025-01-21-0800",
+    );
+    expect(slb?.found_by).toEqual(["keyword"]);
+    expect((agendas.structured?.["results"] as { id: string }[])[0]?.id).toBe("agenda-2025r1-slb-2025-01-21-0800");
+  });
+
   // Testimony. HB 3131's Testimony 117165, 117166 and 117167 (CommitteePublicTestimonies rows, all three
   // written on 2025-01-17 for HB 3131) are letters from the Oregon Climate and Agriculture Network, American
   // Farmland Trust and the Oregon Association of Conservation Districts about the Oregon Agricultural

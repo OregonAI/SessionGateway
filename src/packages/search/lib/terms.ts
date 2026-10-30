@@ -81,16 +81,26 @@ function quoted(text: string): string {
 }
 
 /**
- * The FTS5 expression for the keyword side: a passage matches when it holds every one of the keywords, or
- * holds one of the phrases (a phrase is words next to each other, in order). Every keyword and not any
- * one: a question has words in it that the document has no need of, and a passage that holds one of
- * them is no evidence it is the answer; the embedding side is for the question that is not in the
- * document's words. Undefined when there is nothing to look for.
+ * The FTS5 expression for the keyword side's first tier: a passage matches when it holds every one of the
+ * keywords, or holds one of the phrases (a phrase is words next to each other, in order). A passage that holds
+ * every word of a question is much better evidence than one that holds a few, and a question has words in it that
+ * the document has no need of ("must", "year"): the passages that hold every keyword come first
+ * (docs/adr/0025). Undefined when there is nothing to look for.
  */
 export function matchExpressionOf(terms: readonly string[], phrases: readonly string[]): string | undefined {
   const parts = phrases.map((phrase) => quoted(phrase));
   if (terms.length > 0) parts.push(`(${terms.map((term) => quoted(term)).join(" AND ")})`);
   return parts.length === 0 ? undefined : parts.join(" OR ");
+}
+
+/**
+ * The FTS5 expression for the keyword side's second tier: a passage matches when it holds any one of the
+ * keywords. It follows the first tier, so that a document that is found by its words alone (an agenda, a
+ * Recording Log, a witness-registration list: they are never embedded) is found when the question has a word it
+ * lacks. Undefined when the first tier already is "any" (fewer than two keywords).
+ */
+export function looseMatchExpressionOf(terms: readonly string[]): string | undefined {
+  return terms.length < 2 ? undefined : terms.map((term) => quoted(term)).join(" OR ");
 }
 
 /**
