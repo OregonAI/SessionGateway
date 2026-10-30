@@ -81,6 +81,9 @@ describe("amendments the fixture has no row for", () => {
   // SB 69-4: the file is a scan with no text layer (Exhibit 288141, the fixture's SB 64 scan).
   // SB 69-AB3: SB 69-2's file again, with a number that names no Version.
   // SB 69-B1: SB 69-2's file again, with a number that names B-Engrossed.
+  // SB 69-5: two postings whose files are two different scans, Exhibit 288141 and Testimony 148731, neither with a
+  //   text layer, so neither is read.
+  // SB 69-6: two postings of the same scan (Exhibit 288141), so one file posted twice.
   const madeUp = [
     postingRow(990001, "-A9", `${root}/ProposedAmendment/26286`),
     postingRow(990002, "-3", `${root}/MeasureDocument/SB69/Introduced`),
@@ -90,6 +93,10 @@ describe("amendments the fixture has no row for", () => {
     postingRow(990005, "-AB3", `${root}/ProposedAmendment/26286`),
     // SB 69-B1: a number that names B-Engrossed ("-B1", as the brief and Legislative Counsel's numbering have it).
     postingRow(990006, "-B1", `${root}/ProposedAmendment/26286`),
+    postingRow(990007, "-5", `${root}/ProposedAmendment/990007`),
+    postingRow(990008, "-5", `${root}/ProposedAmendment/990008`),
+    postingRow(990009, "-6", `${root}/ProposedAmendment/990009`),
+    postingRow(990010, "-6", `${root}/ProposedAmendment/990009`),
   ];
   let system: System;
 
@@ -100,7 +107,12 @@ describe("amendments the fixture has no row for", () => {
       serverEnv: { MCP_RATE_LIMIT: "1000" },
       olis: {
         strayRows: { CommitteeProposedAmendments: madeUp },
-        strayDocuments: { "/liz/2025R1/Downloads/ProposedAmendment/990004": "committee-meeting-documents/288141.pdf" },
+        strayDocuments: {
+          "/liz/2025R1/Downloads/ProposedAmendment/990004": "committee-meeting-documents/288141.pdf",
+          "/liz/2025R1/Downloads/ProposedAmendment/990007": "committee-meeting-documents/288141.pdf",
+          "/liz/2025R1/Downloads/ProposedAmendment/990008": "testimony/148731.pdf",
+          "/liz/2025R1/Downloads/ProposedAmendment/990009": "committee-meeting-documents/288141.pdf",
+        },
       },
     });
   }, 60_000);
@@ -228,6 +240,21 @@ describe("amendments the fixture has no row for", () => {
         },
       ]);
       expect(comparison.amended_version.known).toBe(false);
+    });
+
+    // Two scans are two different files, and neither was read, so nothing says they read the same: each is listed
+    // with its own posting (finding F7). Postings that share one scan are one file.
+    it("lists two different files that were both not read separately, and one file posted twice once", async () => {
+      const different = await compare("SB 69-5");
+      expect(different.files.map((file) => [file.posting_ids, file.text_read])).toEqual([
+        [["posting-2025r1-990007"], false],
+        [["posting-2025r1-990008"], false],
+      ]);
+
+      const same = await compare("SB 69-6");
+      expect(same.files.map((file) => [file.posting_ids, file.text_read])).toEqual([
+        [["posting-2025r1-990009", "posting-2025r1-990010"], false],
+      ]);
     });
 
     // The operator reads the same fact in the build report (spec #1, story 54): a posting with no text layer is on its list of
