@@ -4,8 +4,10 @@
 // case adds a feed row to the fake OLIS (`strayRows`), served with a fixture file (`strayDocuments`).
 // EVERY ROW BELOW IS MADE UP: its id (9001xx), its Measure and its files are not the feed's. What is
 // real is the label it carries: "B*", "MRA", "MRB", "MRC" and "A" on a Measure without A-Engrossed
-// occur in the full 2025R1 cache (olis-odata.md gotcha 9; docs/adr/0012 has the rows). "Z9" and a null
-// Version do not, and are made up to show the branches for a label nobody has met. Made-up row 900110 is
+// occur in the full 2025R1 cache (olis-odata.md gotcha 9; docs/adr/0012 has the rows), and so does a row
+// flagged IsMinority=true beside a majority row of the same type, committee and label (SB 916's 87550
+// and 87549, Staff Measure Summaries labelled "A"). "Z9" and a null Version do not, and are made up to
+// show the branches for a label nobody has met. Made-up row 900110 is
 // an "INTRO" statement with the highest id of its Measure, so that the order of the Versions is not the
 // order of the ids.
 // Cases that only read the fixture are in get-measure-analysis.test.ts.
