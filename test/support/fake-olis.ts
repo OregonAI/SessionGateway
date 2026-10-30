@@ -60,8 +60,8 @@ export type FakeOlisOptions = {
   documents?: boolean;
   /**
    * Failures to give a document before it is served, by `source_url`: each request for the document
-   * takes the next one off its list, and once the list is empty the document is served (see
-   * `failDocumentOnce`).
+   * takes the next one off its list, and once the list is empty the document is served. A list of one
+   * is a document that fails once.
    */
   documentFailures?: Record<string, DocumentFailure[]>;
   /**
@@ -85,11 +85,6 @@ export type FakeOlis = {
    * in order. A test reads how often a file was fetched from here, never from the database.
    */
   documentRequests(): readonly string[];
-  /**
-   * Makes the next request for this document fail, once: `"hang"` gives no answer until the client
-   * gives up on it, and a number answers that HTTP status. `source_url` is the manifest's.
-   */
-  failDocumentOnce(sourceUrl: string, failure: DocumentFailure): void;
   /** From now on, leave the last `count` rows of each set out of the pages (see `withholdLastRows`). */
   withholdLastRows(count: number): void;
   close(): Promise<void>;
@@ -297,10 +292,6 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
     baseUrl: `http://127.0.0.1:${port}/odata/odataservice.svc/`,
     origin: `http://127.0.0.1:${port}`,
     documentRequests: () => [...documentRequests],
-    failDocumentOnce: (sourceUrl, failure) => {
-      const path = new URL(sourceUrl).pathname;
-      failures.set(path, [...(failures.get(path) ?? []), failure]);
-    },
     withholdLastRows: (count) => {
       withheldRows = count;
     },
