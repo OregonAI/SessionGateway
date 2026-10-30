@@ -114,6 +114,8 @@ export type IndexReader = {
    * what was read of it. Undefined when the feed lists no such amendment.
    */
   findAmendment(id: AmendmentId): StoredAmendment | undefined;
+  /** Every Proposed Amendment the feed lists for a Measure, as `findAmendment` gives it, ordered by number ("-1", "-2", "-A3"). */
+  findMeasureAmendments(key: MeasureKey): StoredAmendment[];
   /** The Versions of a Measure the store holds (not its Printed Amendments), in no particular order, each with what was read of its text. */
   findMeasureVersions(key: MeasureKey): StoredVersion[];
   /** What the index holds of the Session. */
@@ -432,6 +434,9 @@ export function openIndexReader(path: string): IndexReader {
      WHERE l.kind = 'proposed_amendment' AND l.node_id = ?
      ORDER BY m.at`,
   );
+  const selectAmendmentsOfMeasure = database.prepare(
+    "SELECT DISTINCT node_id FROM meeting_document WHERE kind = 'proposed_amendment' AND measure_id = ?",
+  );
   const selectVersionsOfMeasure = database.prepare(
     `SELECT d.id, d.label, d.source_url, d.content_hash
      FROM document d JOIN document_relation r ON r.document_id = d.id
@@ -503,6 +508,53 @@ export function openIndexReader(path: string): IndexReader {
       return { relation: stored.relation as Relation, to: stored.to_id as NodeId, meaning: stored.meaning, documentId };
     });
   }
+  function amendmentOf(id: AmendmentId): StoredAmendment | undefined {
+    const rows = selectPostingsOfAmendment.all(id).map((row) => postingRow.parse(row));
+    const first = rows[0];
+    if (first === undefined) return undefined;
+    const listed = rows.map((stored) => ({
+      contentHash: stored.content_hash,
+      posting: {
+        documentId: stored.document_id as DocumentId,
+        sourceUrl: stored.source_url,
+        meetingId: stored.meeting_id as MeetingId,
+        meetingAt: stored.meeting_at as Timestamp,
+        committeeCode: stored.committee_code,
+        committeeName: stored.committee_name,
+        meaning: stored.meaning,
+        fetched: stored.fetched === 1,
+      } satisfies AmendmentPosting,
+    }));
+    // The same meeting's postings are told apart by the feed's number, compared as a number.
+    listed.sort(
+      (a, b) =>
+        a.posting.meetingAt.localeCompare(b.posting.meetingAt) ||
+        numbersInOrder.compare(a.posting.documentId, b.posting.documentId),
+    );
+    // Postings are told apart by their files, and files by what was read of them: postings that share a file
+    // (the same bytes) share one reading, and so do files that differ in bytes only (the PDF's modification date
+    // differs between SB 69-1's three postings, ADR-0011) and read the same. Each such set is one entry, with
+    // every posting it covers, so no posting is picked and none is left out.
+    const readings = new Map<string, AmendmentFile>();
+    const parsed = new Map<string, StatuteParse>();
+    for (const { contentHash, posting } of listed) {
+      if (contentHash === null) continue;
+      const parse = parsed.get(contentHash) ?? statuteParseOf(contentHash, "proposed_amendment");
+      parsed.set(contentHash, parse);
+      const reading = JSON.stringify(parse);
+      const file = readings.get(reading) ?? { postingIds: [], parse };
+      file.postingIds.push(posting.documentId);
+      readings.set(reading, file);
+    }
+    const files = readings;
+    return {
+      id,
+      number: first.label,
+      measureId: first.measure_id as MeasureId,
+      postings: listed.map(({ posting }) => posting),
+      files: [...files.values()],
+    };
+  }
   return {
     analysisDocuments(key) {
       return selectAnalyses.all(measureIdOf(key)).map((row) => {
@@ -573,51 +625,14 @@ export function openIndexReader(path: string): IndexReader {
       return { document: latest, related };
     },
     findAmendment(id) {
-      const rows = selectPostingsOfAmendment.all(id).map((row) => postingRow.parse(row));
-      const first = rows[0];
-      if (first === undefined) return undefined;
-      const listed = rows.map((stored) => ({
-        contentHash: stored.content_hash,
-        posting: {
-          documentId: stored.document_id as DocumentId,
-          sourceUrl: stored.source_url,
-          meetingId: stored.meeting_id as MeetingId,
-          meetingAt: stored.meeting_at as Timestamp,
-          committeeCode: stored.committee_code,
-          committeeName: stored.committee_name,
-          meaning: stored.meaning,
-          fetched: stored.fetched === 1,
-        } satisfies AmendmentPosting,
-      }));
-      // The same meeting's postings are told apart by the feed's number, compared as a number.
-      listed.sort(
-        (a, b) =>
-          a.posting.meetingAt.localeCompare(b.posting.meetingAt) ||
-          numbersInOrder.compare(a.posting.documentId, b.posting.documentId),
-      );
-      // Postings are told apart by their files, and files by what was read of them: postings that share a file
-      // (the same bytes) share one reading, and so do files that differ in bytes only (the PDF's modification date
-      // differs between SB 69-1's three postings, ADR-0011) and read the same. Each such set is one entry, with
-      // every posting it covers, so no posting is picked and none is left out.
-      const readings = new Map<string, AmendmentFile>();
-      const parsed = new Map<string, StatuteParse>();
-      for (const { contentHash, posting } of listed) {
-        if (contentHash === null) continue;
-        const parse = parsed.get(contentHash) ?? statuteParseOf(contentHash, "proposed_amendment");
-        parsed.set(contentHash, parse);
-        const reading = JSON.stringify(parse);
-        const file = readings.get(reading) ?? { postingIds: [], parse };
-        file.postingIds.push(posting.documentId);
-        readings.set(reading, file);
-      }
-      const files = readings;
-      return {
-        id,
-        number: first.label,
-        measureId: first.measure_id as MeasureId,
-        postings: listed.map(({ posting }) => posting),
-        files: [...files.values()],
-      };
+      return amendmentOf(id);
+    },
+    findMeasureAmendments(key) {
+      const ids = selectAmendmentsOfMeasure
+        .all(measureIdOf(key))
+        .map((row) => z.object({ node_id: z.string() }).parse(row).node_id);
+      const amendments = ids.flatMap((id) => amendmentOf(id as AmendmentId) ?? []);
+      return amendments.sort((a, b) => numbersInOrder.compare(a.number, b.number));
     },
     findMeasureVersions(key) {
       return selectVersionsOfMeasure.all(measureIdOf(key)).map((row): StoredVersion => {

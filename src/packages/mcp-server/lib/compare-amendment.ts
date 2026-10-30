@@ -1,12 +1,18 @@
 // compare_amendment (ticket #13, spec #1 case (b)): a Proposed Amendment against the Version it amends.
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
-import { parseAmendmentReference, placeAmendment } from "#/packages/domain/documents.ts";
+import { parseAmendmentReference } from "#/packages/domain/documents.ts";
 import { parseMeasureReference, type MeasureKey, type SessionKey } from "#/packages/domain/index.ts";
 import type { StoredAmendment, StoredVersion } from "#/packages/domain/statute-links.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 import {
+  amendedVersionOutput,
+  fileOutput,
+  fileShown,
   notReadReasonOf,
+  placeStoredAmendment,
+  postingOutput,
+  postingShown,
   relatingClauseEditOutput,
   relatingClauseEditShown,
   statuteLinkOutput,
@@ -25,42 +31,7 @@ export const compareAmendmentInput = z.object({
     ),
 });
 
-const postingOutput = z.object({
-  id: z.string().describe("The posting's id, which get_document resolves to the file posted to that meeting."),
-  source_url: z.string().describe("Where the Legislature publishes the file posted to that meeting."),
-  meeting_id: z.string().describe("The id of the meeting the amendment was posted to."),
-  meeting_date: z.string().describe("When that meeting starts, in Pacific time with its UTC offset."),
-  committee_code: z.string().describe("The code of the committee that met, such as SLB."),
-  committee_name: z.string().describe("The committee's name, such as Labor and Business."),
-  meaning: z
-    .string()
-    .nullable()
-    .describe(
-      "What the committee did with the amendment at that meeting, as the Legislature words it: Proposed, Adopted...",
-    ),
-  fetched: z
-    .boolean()
-    .describe(
-      "True when this index holds the posted file, so that get_document can read it. The Legislature lists the posting either way.",
-    ),
-});
-
-const amendedVersionOutput = z.object({
-  known: z
-    .boolean()
-    .describe(
-      "True when the Version the amendment amends is known: its header and its number name the same Version, and this index holds it. Nothing is guessed.",
-    ),
-  id: z
-    .string()
-    .nullable()
-    .describe("The Version's id, which get_document resolves. Null when the Version is not known."),
-  label: z
-    .string()
-    .nullable()
-    .describe('The Version, such as "Introduced" or "A-Engrossed". Null when it is not known.'),
-  source_url: z.string().nullable().describe("Where the Legislature publishes the Version. Null when it is not known."),
-  reason: z.string().describe("How the Version was read, or why it is not known."),
+const comparedVersionOutput = amendedVersionOutput.extend({
   text_read: z
     .boolean()
     .nullable()
@@ -78,23 +49,7 @@ const amendedVersionOutput = z.object({
     ),
 });
 
-const fileOutput = z.object({
-  posting_ids: z
-    .array(z.string())
-    .describe(
-      "The postings (ids that get_document resolves) at which this exact file was posted. Postings of one amendment usually share one file; when a committee posted a revised file, each distinct file is listed on its own.",
-    ),
-  text_read: z
-    .boolean()
-    .describe(
-      "True when this index read the file's text for Statute Links. False when it did not (no text layer, or not read yet): statute_links is then empty, and that does not mean the amendment has none.",
-    ),
-  not_read_reason: z.string().nullable().describe("Why the file was not read. Null when text_read is true."),
-  statute_links: z
-    .array(statuteLinkOutput)
-    .describe(
-      "The Statute Links in the sections the amendment inserts, by kind (amends, repeals, adds-to, cites) and then by measure section. A link of the Version that the amendment deletes is not among them.",
-    ),
+const comparedFileOutput = fileOutput.extend({
   relating_clause_edits: z
     .array(relatingClauseEditOutput)
     .describe(
@@ -117,11 +72,11 @@ export const compareAmendmentOutput = z.object({
         .describe("Each time the amendment was posted to a committee meeting, earliest meeting first."),
     })
     .describe("The Proposed Amendment."),
-  amended_version: amendedVersionOutput.describe(
+  amended_version: comparedVersionOutput.describe(
     "The Version the amendment amends, read from the amendment's own header and checked against the letter in its number.",
   ),
   files: z
-    .array(fileOutput)
+    .array(comparedFileOutput)
     .describe("The distinct files posted for the amendment that this index holds, each with what was read of it."),
   deletions_note: z.string().describe("What this comparison does not cover: what the amendment deletes."),
   as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
@@ -139,60 +94,24 @@ function amendmentShown(amendment: StoredAmendment): CompareAmendmentOutput["ame
     id: amendment.id,
     number: amendment.number,
     measure_id: amendment.measureId,
-    postings: amendment.postings.map((posting) => ({
-      id: posting.documentId,
-      source_url: posting.sourceUrl,
-      meeting_id: posting.meetingId,
-      meeting_date: posting.meetingAt,
-      committee_code: posting.committeeCode,
-      committee_name: posting.committeeName,
-      meaning: posting.meaning,
-      fetched: posting.fetched,
-    })),
+    postings: amendment.postings.map(postingShown),
   };
 }
 
-/** Which Version the amendment amends, from its files' headers, its number and the Versions the store holds. */
-function amendedVersionShown(
+/** The Version the amendment amends, with its links beside the amendment's. */
+function comparedVersionShown(
   amendment: StoredAmendment,
   key: MeasureKey,
   versions: readonly StoredVersion[],
 ): CompareAmendmentOutput["amended_version"] {
-  const placement = placeAmendment(
-    key,
-    amendment.number,
-    amendment.files.map((file) => file.parse.amendedVersionHeader),
-    (versionId) => versions.some((version) => version.id === versionId),
-  );
-  switch (placement.kind) {
-    case "version": {
-      const version = versions.find((held) => held.id === placement.versionId);
-      if (version === undefined) throw new Error(`The Version ${placement.versionId} was placed but is not held`);
-      return {
-        known: true,
-        id: version.id,
-        label: version.label,
-        source_url: version.sourceUrl,
-        reason: placement.reason,
-        text_read: version.parse.textRead,
-        not_read_reason: notReadReasonOf(version.parse),
-        statute_links: statuteLinksShown(version.parse.links),
-      };
-    }
-    case "unknown":
-      return {
-        known: false,
-        id: null,
-        label: null,
-        source_url: null,
-        reason: placement.reason,
-        text_read: null,
-        not_read_reason: null,
-        statute_links: [],
-      };
-    default:
-      return placement satisfies never;
-  }
+  const { version, shown } = placeStoredAmendment(amendment, key, versions);
+  if (version === undefined) return { ...shown, text_read: null, not_read_reason: null, statute_links: [] };
+  return {
+    ...shown,
+    text_read: version.parse.textRead,
+    not_read_reason: notReadReasonOf(version.parse),
+    statute_links: statuteLinksShown(version.parse.links),
+  };
 }
 
 export function compareAmendment(
@@ -215,12 +134,9 @@ export function compareAmendment(
     kind: "found",
     comparison: {
       amendment: amendmentShown(amendment),
-      amended_version: amendedVersionShown(amendment, measure, reader.findMeasureVersions(measure)),
+      amended_version: comparedVersionShown(amendment, measure, reader.findMeasureVersions(measure)),
       files: amendment.files.map((file) => ({
-        posting_ids: file.postingIds,
-        text_read: file.parse.textRead,
-        not_read_reason: notReadReasonOf(file.parse),
-        statute_links: statuteLinksShown(file.parse.links),
+        ...fileShown(file),
         relating_clause_edits: file.parse.relatingClauseEdits.map(relatingClauseEditShown),
       })),
       deletions_note: DELETIONS_NOT_EVALUATED_NOTE,

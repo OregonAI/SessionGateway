@@ -75,6 +75,18 @@ export function amendedVersionDescriptionOf(printedAmendmentDescription: string)
   return named === undefined || named === "" ? undefined : named;
 }
 
+/**
+ * Where a Version sits in the order Versions are printed in: Introduced first, then A-Engrossed, B-Engrossed and
+ * so on by letter, then Enrolled. Undefined for a description that sits nowhere in that chain ("Minority Report
+ * A-Engrossed"): nothing is guessed about where it falls (ADR-0013's rule).
+ */
+export function versionRankOf(description: string): number | undefined {
+  if (description === "Introduced") return 0;
+  if (description === "Enrolled") return 27;
+  const letter = /^([A-Z])-Engrossed$/.exec(description)?.[1];
+  return letter === undefined ? undefined : letter.charCodeAt(0) - 64;
+}
+
 /** The id of a Version (`version-2025r1-sb69-a-engrossed`) or of a Printed Amendment, by the feed's description. */
 export function versionIdOf(key: MeasureKey, versionDescription: string): DocumentId {
   const kind = isPrintedAmendment(versionDescription) ? "printed-amendment" : "version";
