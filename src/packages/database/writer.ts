@@ -160,10 +160,15 @@ export type IndexWriter = {
   /**
    * Brings what the feed says about documents already stored up to date, in one transaction: each one's
    * label, the node it belongs to, when it was posted, an analysis document's Version label and minority
-   * flag and the nodes it points at. A fetched file is unchanging (ADR-0005), so its text, hash and retrieval time
-   * are left alone. A link whose document is not stored is ignored.
+   * flag and the nodes it points at, and what search files it under (its Measure, committee, title and date). A
+   * fetched file is unchanging (ADR-0005), so its text, hash, retrieval time, passages and vectors are left alone.
+   * A link whose document is not stored is ignored.
    */
-  refreshDocuments(session: SessionKey, links: readonly DocumentLink[]): void;
+  refreshDocuments(
+    session: SessionKey,
+    links: readonly DocumentLink[],
+    searchEntries: ReadonlyMap<DocumentId, SearchEntry>,
+  ): void;
   /** Which of these passage hashes already have a vector under this model id. */
   storedVectorHashes(modelId: string, hashes: readonly string[]): Set<string>;
   /** Every stored document of the Session whose file has no text layer, by id. */
@@ -487,9 +492,14 @@ export function openIndexWriter(path: string): IndexWriter {
         return { id: stored.id as DocumentId, sourceUrl: stored.source_url };
       });
     },
-    refreshDocuments(session, links) {
+    refreshDocuments(session, links, searchEntries) {
       const updateDocument = database.prepare(
         "UPDATE document SET node_id = ?, label = ?, posted_at = ?, analysis_version_label = ?, analysis_is_minority = ? WHERE id = ? AND session_key = ?",
+      );
+      const updateSearchDocument = database.prepare(
+        `UPDATE search_document SET node_id = ?, kind = ?, title = ?, measure_id = ?, committee_id = ?, dated_at = ?,
+                keyword_only = ?
+         WHERE document_id = ? AND session_key = ?`,
       );
       const deleteRelations = database.prepare("DELETE FROM document_relation WHERE document_id = ?");
       const insertRelation = database.prepare(
@@ -508,6 +518,19 @@ export function openIndexWriter(path: string): IndexWriter {
             session,
           );
           if (updated.changes === 0) continue;
+          const entry = searchEntries.get(link.id);
+          if (entry === undefined) throw new Error(`No search entry was made for the stored document ${link.id}`);
+          updateSearchDocument.run(
+            entry.nodeId,
+            entry.kind,
+            entry.title,
+            entry.measureId,
+            entry.committeeId,
+            entry.date,
+            entry.keywordOnly ? 1 : 0,
+            link.id,
+            session,
+          );
           deleteRelations.run(link.id);
           for (const relation of link.relations) {
             insertRelation.run(link.id, relation.relation, relation.to, relation.meaning, relation.provenance);

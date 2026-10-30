@@ -99,3 +99,52 @@ describe("identical Testimony", () => {
     await connected.close();
   }, 60_000);
 });
+
+// A document's file never changes (ADR-0005) but its feed row can: OLIS changes the Measure a piece of Testimony is
+// filed under (ADR-0011). Search files each document under the Measure its row names now. The row here is made up:
+// Testimony 900006, to SLB's meeting of 2025-01-28, served with the file of Testimony 117165 (a letter from the Oregon
+// Climate and Agriculture Network), first filed under SB 69 and then under HB 3131.
+describe("a row OLIS changes after the pull", () => {
+  const olisRoot = "https://olis.oregonlegislature.gov/liz/2025R1";
+  const row: Record<string, unknown> = {
+    SessionKey: "2025R1",
+    CommTestId: 900006,
+    CommitteeCode: "SLB",
+    MeetingDate: "2025-01-28T08:00:00",
+    DocumentDescription: "Testimony",
+    MeasurePrefix: "SB",
+    MeasureNumber: 69,
+    DocumentUrl: olisRoot,
+  };
+
+  it("is found under the Measure the row names now", async () => {
+    const system = await startSystem({
+      clockAt: "2025-01-15T22:00:00Z",
+      documents: true,
+      olis: {
+        strayRows: { CommitteePublicTestimonies: [row] },
+        strayDocuments: { "/liz/2025R1/Downloads/PublicTestimonyDocument/900006": "testimony/117165.pdf" },
+      },
+    });
+    systems.push(system);
+    const connected = await connectClient("2026-07-28", system.handler);
+    const idsFor = async (measure: string): Promise<string[]> => {
+      const outcome = await callTool(connected, "search", { query: "Oregon Climate and Agriculture Network", measure });
+      return (outcome.structured?.["results"] as { id: string }[]).map((hit) => hit.id);
+    };
+
+    expect(await idsFor("SB 69")).toContain("testimony-2025r1-900006");
+    expect(await idsFor("HB 3131")).not.toContain("testimony-2025r1-900006");
+
+    row["MeasurePrefix"] = "HB";
+    row["MeasureNumber"] = 3131;
+    // The next pull begins later, so the index has a later as-of time, which is what tells the server to read its
+    // vectors again.
+    system.clock.advance(60 * 60 * 1000);
+    await system.pullAgain();
+
+    expect(await idsFor("HB 3131")).toContain("testimony-2025r1-900006");
+    expect(await idsFor("SB 69")).not.toContain("testimony-2025r1-900006");
+    await connected.close();
+  }, 60_000);
+});
