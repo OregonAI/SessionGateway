@@ -14,6 +14,11 @@ export const getMeasureOutput = z.object({
   id: z.string().describe("The Measure's id in OregonAI's form."),
   catchline: z.string().nullable().describe("The Measure's catchline, as OLIS publishes it."),
   source_url: z.string().describe("The Measure's page on OLIS."),
+  created_at: z.string().describe("When OLIS created the Measure, in Pacific time with its UTC offset."),
+  modified_at: z
+    .string()
+    .nullable()
+    .describe("When OLIS last changed the Measure, in Pacific time with its UTC offset."),
   as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
   notice: z.string().describe("A reminder that this is not the official record."),
 });
@@ -42,6 +47,8 @@ export function getMeasure(
       id: measureIdOf(measure),
       catchline: measure.catchline,
       source_url: olisPageUrlOf(measure),
+      created_at: measure.createdAt,
+      modified_at: measure.modifiedAt,
       as_of: asOf,
       notice: NON_OFFICIAL_NOTICE,
     },

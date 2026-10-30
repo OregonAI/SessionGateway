@@ -11,20 +11,30 @@ export type IndexReader = {
   close(): void;
 };
 
-const measureRow = z.object({ catchline: z.string().nullable() });
+const measureRow = z.object({
+  catchline: z.string().nullable(),
+  created_at: z.string(),
+  modified_at: z.string().nullable(),
+});
 const stateRow = z.object({ full_pull_as_of: z.string() });
 
 export function openIndexReader(path: string): IndexReader {
   const database = openReadConnection(path);
   const selectMeasure = database.prepare(
-    "SELECT catchline FROM measure WHERE session_key = ? AND prefix = ? AND number = ?",
+    "SELECT catchline, created_at, modified_at FROM measure WHERE session_key = ? AND prefix = ? AND number = ?",
   );
   const selectAsOf = database.prepare("SELECT full_pull_as_of FROM index_state WHERE session_key = ?");
   return {
     findMeasure(key) {
       const row = selectMeasure.get(key.session, key.prefix, key.number);
       if (row === undefined) return undefined;
-      return { ...key, catchline: measureRow.parse(row).catchline };
+      const stored = measureRow.parse(row);
+      return {
+        ...key,
+        catchline: stored.catchline,
+        createdAt: stored.created_at as Timestamp,
+        modifiedAt: stored.modified_at as Timestamp | null,
+      };
     },
     asOf(session) {
       const row = selectAsOf.get(session);

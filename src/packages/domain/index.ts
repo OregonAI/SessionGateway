@@ -1,6 +1,8 @@
 // The words of GLOSSARY.md as types, and the one place that mints and parses ids (src/CLAUDE.md,
 // "Shape"): the OregonAI forms of ADR-0004, such as `measure-2025r1-sb69`.
 
+import type { Timestamp } from "#/packages/time/pacific.ts";
+
 /** One Session as OLIS keys it: `2025R1`. */
 export type SessionKey = string & { readonly brand: "SessionKey" };
 
@@ -19,6 +21,10 @@ export type MeasureKey = {
 
 export type Measure = MeasureKey & {
   catchline: string | null;
+  /** When OLIS created the Measure's row, in Pacific time with its offset. */
+  createdAt: Timestamp;
+  /** When OLIS last changed it, if it ever did. */
+  modifiedAt: Timestamp | null;
 };
 
 /** A Measure's id in OregonAI's form: lower-case Session and prefix, no leading zeros. */

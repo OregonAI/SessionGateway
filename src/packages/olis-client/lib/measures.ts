@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Measure, SessionKey } from "#/packages/domain/index.ts";
+import { readPacificLocal } from "#/packages/time/pacific.ts";
 import type { OlisClientOptions } from "./options.ts";
 
 const page = z.object({
@@ -9,6 +10,8 @@ const page = z.object({
       MeasurePrefix: z.string(),
       MeasureNumber: z.number().int(),
       CatchLine: z.string().nullable(),
+      CreatedDate: z.string(),
+      ModifiedDate: z.string().nullable(),
     }),
   ),
 });
@@ -31,5 +34,7 @@ export async function readMeasureRows(
     prefix: row.MeasurePrefix,
     number: row.MeasureNumber,
     catchline: row.CatchLine,
+    createdAt: readPacificLocal(row.CreatedDate),
+    modifiedAt: row.ModifiedDate === null ? null : readPacificLocal(row.ModifiedDate),
   }));
 }

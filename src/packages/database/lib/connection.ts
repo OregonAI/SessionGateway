@@ -9,6 +9,8 @@ const schema = `
     prefix TEXT NOT NULL,
     number INTEGER NOT NULL,
     catchline TEXT,
+    created_at TEXT NOT NULL,
+    modified_at TEXT,
     PRIMARY KEY (session_key, prefix, number)
   ) STRICT;
   CREATE TABLE IF NOT EXISTS index_state (
