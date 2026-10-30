@@ -298,6 +298,44 @@ describe("committee votes that share a meeting", () => {
   });
 });
 
+describe("a Legislator whose code changed, in committee votes", () => {
+  // The fixture's CommitteeVotes hold no row for either of Courtney Neron's codes (its floor votes do: see
+  // get-measure-votes.test.ts). Two rows are added to SB 69, each in a committee vote of its own (reports
+  // 900011 and 900012), one under the code she had in the House and one under the code she has had in the
+  // Senate since May 2025. The committee votes are made up; the two codes and the person are the committed
+  // alias file's.
+  const stray = [
+    committeeVoteRow(900011, "Rep Neron", "Aye", {
+      reportId: 900011,
+      committeeCode: "HLWS",
+      meetingDate: "2025-04-30T15:00:00",
+    }),
+    committeeVoteRow(900012, "Sen Neron Misslin", "Nay", {
+      reportId: 900012,
+      committeeCode: "SLB",
+      meetingDate: "2025-05-21T08:00:00",
+    }),
+  ];
+
+  it("is one Legislator whichever of her two codes the committee vote uses", async () => {
+    const outcome = await getMeasure(
+      { clockAt: afterTheSession, olis: { strayRows: { CommitteeVotes: stray } } },
+      "SB 69",
+    );
+
+    const castsOfHers = (committeeVotesOf(outcome) ?? []).flatMap((vote) =>
+      vote.votes
+        .filter((cast) => cast.legislator_code === "Rep Neron" || cast.legislator_code === "Sen Neron Misslin")
+        .map((cast) => [vote.committee_code, cast.legislator_code, cast.legislator, cast.vote]),
+    );
+    const neron = { id: "legislator-2025r1-neron", name: "Courtney Neron Misslin" };
+    expect(castsOfHers).toEqual([
+      ["HLWS", "Rep Neron", neron, "Aye"],
+      ["SLB", "Sen Neron Misslin", neron, "Nay"],
+    ]);
+  });
+});
+
 describe("a timestamp the feed does not send", () => {
   // As for Measures (get-measure-feed.test.ts): the feed's times carry no offset, so one that does is
   // refused instead of having its clock digits read as Pacific time.
