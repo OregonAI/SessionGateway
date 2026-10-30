@@ -1,13 +1,21 @@
 // The OLIS client: the only code that sees the feed's own shapes (src/CLAUDE.md, "Shape"). It reads
 // the OData v3 feed and hands everything else domain types named as GLOSSARY.md names them.
-import type { Measure, SessionKey } from "#/packages/domain/index.ts";
+import type { HistoryAction, Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
+import type { AgendaItem, Committee, DocumentLink, Meeting } from "#/packages/domain/documents.ts";
 import type { LegislatorRow, Sponsorship } from "#/packages/domain/legislators.ts";
+import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
+import { readCommitteeVoteRows } from "./lib/committee-votes.ts";
+import { downloadDocument, readDocumentLinks, type Download } from "./lib/documents.ts";
+import { readFloorVoteRows } from "./lib/floor-votes.ts";
+import { readHistoryActionRows } from "./lib/history.ts";
 import { readLegislatorRows } from "./lib/legislators.ts";
+import { readMeasureLive, type MeasureLiveRead } from "./lib/live.ts";
 import { readMeasureRows } from "./lib/measures.ts";
+import { readAgendaItems, readCommittees, readMeetings } from "./lib/meetings.ts";
 import type { OlisClientOptions } from "./lib/options.ts";
 import { readSponsorshipRows } from "./lib/sponsors.ts";
 
-export type { OlisClientOptions };
+export type { Download, OlisClientOptions, MeasureLiveRead };
 
 export type OlisClient = {
   /** Every Measure of the Session, as the feed lists them. */
@@ -16,6 +24,28 @@ export type OlisClient = {
   readLegislators(session: SessionKey, signal: AbortSignal): Promise<LegislatorRow[]>;
   /** Every MeasureSponsors row of the Session, in the feed's order. */
   readSponsorships(session: SessionKey, signal: AbortSignal): Promise<Sponsorship[]>;
+  /** Every MeasureHistoryActions row of the Session, in the feed's order. */
+  readHistoryActions(session: SessionKey, signal: AbortSignal): Promise<HistoryAction[]>;
+  /** Every CommitteeVotes row of the Session: one entry for each member in each committee vote, in the feed's order. */
+  readCommitteeVotes(session: SessionKey, signal: AbortSignal): Promise<CommitteeVoteEntry[]>;
+  /** Every MeasureVotes row of the Session: one entry for each Legislator in each floor vote, in the feed's order. */
+  readFloorVotes(session: SessionKey, signal: AbortSignal): Promise<FloorVoteEntry[]>;
+  /**
+   * What OLIS says now about one Measure (the live lookup, ticket #21): only that Measure's rows, one
+   * request for each of five kinds of row. It reads no other Measure and never pulls a whole set. `readAt`
+   * is the time of the read: the schedule is the meetings at or after it.
+   */
+  readMeasureLive(key: MeasureKey, readAt: Date, signal: AbortSignal): Promise<MeasureLiveRead>;
+  /** Every committee of the Session. */
+  readCommittees(session: SessionKey, signal: AbortSignal): Promise<Committee[]>;
+  /** Every committee meeting of the Session, each with its agenda document when the feed links one. */
+  readMeetings(session: SessionKey, signal: AbortSignal): Promise<Meeting[]>;
+  /** Every agenda item of every committee meeting of the Session. */
+  readAgendaItems(session: SessionKey, signal: AbortSignal): Promise<AgendaItem[]>;
+  /** Every document the feed links for the Session, apart from agendas (a meeting's), not yet fetched. */
+  readDocumentLinks(session: SessionKey, signal: AbortSignal): Promise<DocumentLink[]>;
+  /** Fetches one document from OLIS. */
+  downloadDocument(link: DocumentLink, signal: AbortSignal): Promise<Download>;
 };
 
 export function createOlisClient(options: OlisClientOptions): OlisClient {
@@ -23,5 +53,14 @@ export function createOlisClient(options: OlisClientOptions): OlisClient {
     readMeasures: (session, signal) => readMeasureRows(options, session, signal),
     readLegislators: (session, signal) => readLegislatorRows(options, session, signal),
     readSponsorships: (session, signal) => readSponsorshipRows(options, session, signal),
+    readHistoryActions: (session, signal) => readHistoryActionRows(options, session, signal),
+    readCommitteeVotes: (session, signal) => readCommitteeVoteRows(options, session, signal),
+    readFloorVotes: (session, signal) => readFloorVoteRows(options, session, signal),
+    readMeasureLive: (key, readAt, signal) => readMeasureLive(options, key, readAt, signal),
+    readCommittees: (session, signal) => readCommittees(options, session, signal),
+    readMeetings: (session, signal) => readMeetings(options, session, signal),
+    readAgendaItems: (session, signal) => readAgendaItems(options, session, signal),
+    readDocumentLinks: (session, signal) => readDocumentLinks(options, session, signal),
+    downloadDocument: (link, signal) => downloadDocument(options, link, signal),
   };
 }

@@ -2,7 +2,7 @@
 // containers run them, with their configuration in the environment. The fake OLIS is the only
 // thing in this process; the worker and the server are child processes.
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { connect, createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -11,6 +11,7 @@ import { createSimulatedClock } from "../support/clock.ts";
 import { callTool, connectClientToUrl } from "../support/mcp-clients.ts";
 import { memberSponsorRow } from "../support/sponsors.ts";
 import { createTempDatabase, type TempDatabase } from "../support/temp-database.ts";
+import { snapshotFixturePath } from "../support/oregonai-snapshot.ts";
 
 type Finished = { code: number | null; stdout: string; stderr: string };
 
@@ -72,9 +73,14 @@ async function listening(port: number): Promise<void> {
 }
 
 async function fakeOlisAndDatabase(
-  options: Omit<FakeOlisOptions, "clock"> = {},
+  options: Omit<FakeOlisOptions, "clock" | "documents"> & { clockAt?: string; documents?: boolean } = {},
 ): Promise<{ olis: FakeOlis; database: TempDatabase }> {
-  const olis = await startFakeOlis({ clock: createSimulatedClock("2025-07-15T17:00:00Z"), ...options });
+  const { clockAt, documents, ...fakeOptions } = options;
+  const olis = await startFakeOlis({
+    clock: createSimulatedClock(clockAt ?? "2025-07-15T17:00:00Z"),
+    documents: documents ?? false,
+    ...fakeOptions,
+  });
   const database = createTempDatabase();
   cleanups.push(async () => {
     await olis.close();
@@ -83,10 +89,25 @@ async function fakeOlisAndDatabase(
   return { olis, database };
 }
 
+/**
+ * The worker's environment against this fake OLIS. The feed links documents on olis.oregonlegislature.gov;
+ * OLIS_DOCUMENT_ORIGIN sends the worker to the fake instead, so no test reaches the real OLIS, whichever
+ * rows the feed holds and whether or not the fake serves the files (test/CLAUDE.md, "Hermetic").
+ */
+function workerEnvironment(olis: FakeOlis, databasePath: string): Record<string, string> {
+  return {
+    SNAPSHOT_PATH: snapshotFixturePath,
+    SESSION_KEY: "2025R1",
+    OLIS_BASE_URL: olis.baseUrl,
+    OLIS_DOCUMENT_ORIGIN: olis.origin,
+    DATABASE_PATH: databasePath,
+  };
+}
+
 describe("the entry scripts", () => {
   it("serve what the worker pulled: ingest.ts, then server.ts, then a client on its port", async () => {
     const { olis, database } = await fakeOlisAndDatabase();
-    const env = { SESSION_KEY: "2025R1", OLIS_BASE_URL: olis.baseUrl, DATABASE_PATH: database.path };
+    const env = workerEnvironment(olis, database.path);
 
     const pulled = await run("src/bin/ingest.ts", env);
     expect(pulled.code, pulled.stderr).toBe(0);
@@ -109,6 +130,14 @@ describe("the entry scripts", () => {
     expect(outcome.structured).toMatchObject({ id: "measure-2025r1-sb69" });
     // The worker dated the pull with the system clock: Pacific time, an offset of -08:00 or -07:00.
     expect(outcome.structured?.["as_of"]).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-0[78]:00$/);
+    // The server read the Measure from OLIS with the `fetch`, the base URL and the system clock the entry
+    // script gave it, and dated the read.
+    expect(outcome.structured?.["live_status"]).toMatchObject({
+      source: "olis",
+      lookup_failed: false,
+      as_of: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-0[78]:00$/) as unknown,
+      location: { current: "Chapter Number Assigned", committee_code: null },
+    });
     expect(await exited).toBe(0);
   }, 20_000);
 
@@ -117,7 +146,7 @@ describe("the entry scripts", () => {
     // all resolve, so the report would otherwise be empty.
     const stray = memberSponsorRow("900001", "Rep Fahey", "Chief", "1");
     const { olis, database } = await fakeOlisAndDatabase({ strayRows: { MeasureSponsors: [stray] } });
-    const env = { SESSION_KEY: "2025R1", OLIS_BASE_URL: olis.baseUrl, DATABASE_PATH: database.path };
+    const env = workerEnvironment(olis, database.path);
 
     const pulled = await run("src/bin/ingest.ts", env);
 
@@ -133,21 +162,77 @@ describe("the entry scripts", () => {
     });
   }, 20_000);
 
+  it("fetch and serve documents: ingest.ts pulls from OLIS_DOCUMENT_ORIGIN, then server.ts serves the text", async () => {
+    // The documents are served only because this test asks.
+    const { olis, database } = await fakeOlisAndDatabase({ clockAt: "2025-01-29T17:00:00Z", documents: true });
+    const env = workerEnvironment(olis, database.path);
+
+    const pulled = await run("src/bin/ingest.ts", env);
+    expect(pulled.code, pulled.stderr).toBe(0);
+
+    const port = await freePort();
+    const server = spawn(process.execPath, ["src/bin/server.ts"], {
+      env: childEnvironment({ ...env, MCP_PORT: String(port) }),
+    });
+    const exited = new Promise<number | null>((resolve) => server.once("close", resolve));
+    cleanups.push(() => {
+      server.kill("SIGKILL");
+    });
+    await listening(port);
+    const connected = await connectClientToUrl("2026-07-28", new URL(`http://127.0.0.1:${port}/mcp`));
+    const outcome = await callTool(connected, "get_document", { id: "version-2025r1-sb69-introduced" });
+    const overview = await callTool(connected, "session_overview", {});
+    await connected.close();
+    server.kill("SIGTERM");
+
+    // The text is SB 69's Introduced Version as `pdftotext -raw` prints it; the link is the feed row's.
+    expect(outcome.structured).toMatchObject({
+      source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/Introduced",
+      has_text_layer: true,
+    });
+    expect(String(outcome.structured?.["text"])).toContain("SECTION 2. Section 1 of this 2025 Act is repealed");
+    expect(overview.structured).toMatchObject({ session: "2025R1" });
+    expect(await exited).toBe(0);
+  }, 30_000);
+
+  // A broken install of the extractor: Node cannot resolve "unpdf/pdfjs", the PDF.js bundle unpdf loads for
+  // the first document. A resolve hook, passed in NODE_OPTIONS as a data: URL so that no file is needed,
+  // throws for that specifier alone.
+  const withoutPdfjsBundle = (() => {
+    const registrar =
+      'import { registerHooks } from "node:module"; registerHooks({ resolve(specifier, context, next) { if (specifier === "unpdf/pdfjs") throw new Error("the bundle is not installed"); return next(specifier, context); } });';
+    return `--import=data:text/javascript,${encodeURIComponent(registrar)}`;
+  })();
+
+  it("ingest.ts stops and says why when the PDF extractor cannot load, and does not report every document as not a PDF", async () => {
+    const { olis, database } = await fakeOlisAndDatabase({ clockAt: "2025-01-29T17:00:00Z", documents: true });
+    const env = { ...workerEnvironment(olis, database.path), NODE_OPTIONS: withoutPdfjsBundle };
+
+    const finished = await run("src/bin/ingest.ts", env);
+
+    // A bug or a failed install is not an outcome to report per document: the pull fails, and the
+    // error says what broke and for which document.
+    expect(finished.code).not.toBe(0);
+    expect(finished.stderr).toContain("Serverless PDF.js bundle could not be resolved");
+    expect(finished.stderr).toContain("version-2025r1-");
+    expect(existsSync(join(dirname(database.path), "build-report.json"))).toBe(false);
+  }, 30_000);
+
   describe("src/bin/server.ts logs", () => {
     /** Pulls into a fresh database, starts the server on a free port and waits until it listens. */
-    async function runningServer(): Promise<{
+    async function runningServer(serverEnv: Record<string, string> = {}): Promise<{
       port: number;
       stdout: () => string;
       stderr: () => string;
       stop: () => Promise<number | null>;
     }> {
       const { olis, database } = await fakeOlisAndDatabase();
-      const env = { SESSION_KEY: "2025R1", OLIS_BASE_URL: olis.baseUrl, DATABASE_PATH: database.path };
+      const env = workerEnvironment(olis, database.path);
       const pulled = await run("src/bin/ingest.ts", env);
       expect(pulled.code, pulled.stderr).toBe(0);
       const port = await freePort();
       const child = spawn(process.execPath, ["src/bin/server.ts"], {
-        env: childEnvironment({ ...env, MCP_PORT: String(port), MCP_PATH: "/session-gateway/mcp" }),
+        env: childEnvironment({ ...env, MCP_PORT: String(port), MCP_PATH: "/session-gateway/mcp", ...serverEnv }),
       });
       let out = "";
       let err = "";
@@ -236,7 +321,7 @@ describe("the entry scripts", () => {
       // A supervisor that waits for the port may signal a server that is still starting up. Without a handler
       // registered yet, Node's default action ends the process by the signal, with nothing logged and no close.
       const { olis, database } = await fakeOlisAndDatabase();
-      const env = { SESSION_KEY: "2025R1", OLIS_BASE_URL: olis.baseUrl, DATABASE_PATH: database.path };
+      const env = workerEnvironment(olis, database.path);
       const pulled = await run("src/bin/ingest.ts", env);
       expect(pulled.code, pulled.stderr).toBe(0);
 
@@ -269,30 +354,77 @@ describe("the entry scripts", () => {
         });
       }
     }, 30_000);
+
+    it("a live lookup that fails, as a JSON line with the Measure and the error, while get_measure answers from the cache", async () => {
+      // Nothing listens on this port, so the server's connection to "OLIS" is refused.
+      const nothingListens = await freePort();
+      const server = await runningServer({
+        OLIS_BASE_URL: `http://127.0.0.1:${nothingListens}/odata/odataservice.svc/`,
+      });
+      const connected = await connectClientToUrl(
+        "2026-07-28",
+        new URL(`http://127.0.0.1:${server.port}/session-gateway/mcp`),
+      );
+
+      const outcome = await callTool(connected, "get_measure", { measure: "SB 69" });
+      await connected.close();
+      await server.stop();
+
+      expect(outcome.isError).toBe(false);
+      expect(outcome.structured?.["live_status"]).toMatchObject({
+        source: "cache",
+        lookup_failed: true,
+        // The reason an agent reads says what went wrong, and leaves out the address that was refused.
+        notice: expect.stringMatching(
+          /live lookup of OLIS failed: the connection to OLIS failed \(ECONNREFUSED\)\./,
+        ) as unknown,
+      });
+      expect(server.stderr()).toBe("");
+      const failure = jsonLines(server.stdout()).find((line) => line["level"] === 40);
+      expect(failure).toMatchObject({
+        msg: "The live lookup of OLIS failed; get_measure answered from the cache",
+        measure: { session: "2025R1", prefix: "SB", number: 69 },
+        err: { message: expect.stringContaining("ECONNREFUSED") as unknown },
+      });
+    }, 20_000);
   });
 
   // [script, variable, a value the variable must refuse]
   const badVariables: readonly (readonly [string, string, string])[] = [
     ["src/bin/ingest.ts", "SESSION_KEY", "not-a-session-key"],
     ["src/bin/ingest.ts", "OLIS_BASE_URL", "not a url at all"],
+    ["src/bin/ingest.ts", "OLIS_DOCUMENT_ORIGIN", "not a url at all"],
     ["src/bin/server.ts", "SESSION_KEY", "not-a-session-key"],
+    ["src/bin/server.ts", "OLIS_BASE_URL", "not a url at all"],
+    ["src/bin/server.ts", "OLIS_LIVE_TIMEOUT_MS", "soon"],
+    // Over the bound the lookup may take (30 seconds: half the 60 seconds an MCP client waits for a tool
+    // by default, so the cache's answer still reaches it), and over what a Node timer can count (2^31 - 1
+    // ms), which it would take for 1 ms.
+    ["src/bin/server.ts", "OLIS_LIVE_TIMEOUT_MS", "30001"],
+    ["src/bin/server.ts", "OLIS_LIVE_TIMEOUT_MS", "3000000000"],
     ["src/bin/server.ts", "MCP_PORT", "seventy"],
     ["src/bin/server.ts", "MCP_PATH", "no-leading-slash"],
     ["src/bin/server.ts", "MCP_RATE_LIMIT", "plenty"],
     ["src/bin/server.ts", "MCP_RATE_WINDOW_SECONDS", "never"],
   ];
 
+  it("src/bin/server.ts fails at start-up when OLIS_BASE_URL is missing, naming the variable", async () => {
+    // The server reads OLIS for the live status of get_measure, so a deployment without it would answer
+    // every call from the cache. It is refused at start-up instead (src/CLAUDE.md, "Configuration").
+    const { database } = await fakeOlisAndDatabase();
+
+    const finished = await run("src/bin/server.ts", { SESSION_KEY: "2025R1", DATABASE_PATH: database.path });
+
+    expect(finished.code).not.toBe(0);
+    expect(finished.stderr).toContain("OLIS_BASE_URL");
+  });
+
   it.for(badVariables)(
     "%s fails at start-up on a bad %s, naming the variable and never its value",
     { timeout: 20_000 },
     async ([script, variable, value]) => {
       const { olis, database } = await fakeOlisAndDatabase();
-      const env = {
-        SESSION_KEY: "2025R1",
-        OLIS_BASE_URL: olis.baseUrl,
-        DATABASE_PATH: database.path,
-        [variable]: value,
-      };
+      const env = { ...workerEnvironment(olis, database.path), [variable]: value };
 
       const finished = await run(script, env);
 
@@ -302,11 +434,22 @@ describe("the entry scripts", () => {
     },
   );
 
+  it("src/bin/ingest.ts fails at start-up when SNAPSHOT_PATH is not set, naming the variable", async () => {
+    const { olis, database } = await fakeOlisAndDatabase();
+    const withoutSnapshot: Record<string, string> = workerEnvironment(olis, database.path);
+    delete withoutSnapshot["SNAPSHOT_PATH"];
+
+    const finished = await run("src/bin/ingest.ts", withoutSnapshot);
+
+    expect(finished.code).not.toBe(0);
+    expect(finished.stderr).toContain("SNAPSHOT_PATH");
+  }, 20_000);
+
   it("src/bin/ingest.ts refuses a database that cannot run in WAL mode, instead of writing in another mode", async () => {
     // SQLite answers a request for WAL without an error and keeps the journal mode it had when it cannot
     // switch: an in-memory database is one such case, a filesystem without shared memory is another.
     const { olis } = await fakeOlisAndDatabase();
-    const env = { SESSION_KEY: "2025R1", OLIS_BASE_URL: olis.baseUrl, DATABASE_PATH: ":memory:" };
+    const env = workerEnvironment(olis, ":memory:");
 
     const finished = await run("src/bin/ingest.ts", env);
 

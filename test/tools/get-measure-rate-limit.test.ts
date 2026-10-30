@@ -45,6 +45,23 @@ describe.for(eras)("the tool-call rate limit for a %s client", (era) => {
     expect(refused.text).toContain("in 60 seconds");
   });
 
+  it("counts every tool's calls together: get_measure, session_overview and get_document share the limit", async () => {
+    const { agent } = await connect(era, { MCP_RATE_LIMIT: "3", MCP_RATE_WINDOW_SECONDS: "60" });
+
+    const measure = await callTool(agent, "get_measure", { measure: "SB 69" });
+    const overview = await callTool(agent, "session_overview", {});
+    // This system serves no documents, so the id is unknown: an answer, counted as a call, but not a refusal.
+    const document = await callTool(agent, "get_document", { id: "version-2025r1-sb69-introduced" });
+    const refusedOverview = await callTool(agent, "session_overview", {});
+    const refusedDocument = await callTool(agent, "get_document", { id: "version-2025r1-sb69-introduced" });
+
+    expect([measure.isError, overview.isError, document.isError]).toEqual([false, false, true]);
+    expect(document.text).not.toMatch(/rate limit/i);
+    expect(refusedOverview.isError).toBe(true);
+    expect(refusedOverview.text).toMatch(/rate limit/i);
+    expect(refusedDocument.text).toMatch(/rate limit/i);
+  });
+
   it("answers again once the window has passed", async () => {
     const { system, agent } = await connect(era, { MCP_RATE_LIMIT: "2", MCP_RATE_WINDOW_SECONDS: "60" });
     await callTool(agent, "get_measure", { measure: "SB 69" });
