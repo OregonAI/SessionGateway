@@ -48,7 +48,7 @@ describe.for(eras)("testimony on rows the fixture lacks, for a %s client", (era)
   describe("a Testimony file the worker has not fetched", () => {
     // The fake OLIS serves no files by default, so the worker lists every document as not fetched (test/CLAUDE.md). The
     // feed still says who testified, so HB 3131's 42 rows are listed all the same, each saying that get_document does
-    // not know its id yet and that nothing is known of its text layer. Nothing can be called an identical letter.
+    // not hold its file yet and that nothing is known of its text layer. Nothing can be called an identical letter.
     it("is listed with fetched false, an unknown text layer and no identical letters", async () => {
       const system = await start({ documents: false });
 
@@ -66,10 +66,58 @@ describe.for(eras)("testimony on rows the fixture lacks, for a %s client", (era)
       try {
         const document = await callTool(connected, "get_document", { id: "testimony-2025r1-117165" });
         expect(document.isError).toBe(true);
+        expect(document.text).toContain("testimony-2025r1-117165");
+        expect(document.text).toMatch(/does not hold its file/);
       } finally {
         await connected.close();
       }
     });
+
+    // Ticket #14, box 4: "Each item has an id that get_document resolves". It holds for every item whose file is fetched.
+    // The tool still lists a Testimony whose download failed (ADR-0016, listing before fetch: a person who testified
+    // must not vanish from the answer because a download failed), and get_document answers for it with an error that
+    // says what is true: the id is the Testimony's, the index does not hold the file, and the next pull fetches it
+    // again. It must not say what it says of an id that is no document's, "Give a document id such as ...", which
+    // tells the agent that the id the tool just handed out is malformed. The fixture's 117165 (HB 3131, Sophie Els) is
+    // a real row; the failure is made up: the fake OLIS answers its download 404 once, as it does in
+    // get-document-pull.test.ts for a Version, and then serves it.
+    it("is answered by get_document with an error that says the file is not held and the next pull fetches it", async () => {
+      const download = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/PublicTestimonyDocument/117165";
+      const system = await start({ documents: true, olis: { documentFailures: { [download]: [404] } } });
+
+      const listed = await testimonyOf(system, era, "HB 3131");
+      const items = positionsOf(listed)
+        .flatMap((position) => position.organizations)
+        .flatMap((group) => group.items);
+      expect(items).toHaveLength(42);
+      expect(items.filter((item) => item["fetched"] === false).map((item) => item.id)).toEqual([
+        "testimony-2025r1-117165",
+      ]);
+      const connected = await connectClient(era, system.handler);
+      try {
+        const missing = await callTool(connected, "get_document", { id: "testimony-2025r1-117165" });
+        expect(missing.isError).toBe(true);
+        expect(missing.text).toContain('Testimony "testimony-2025r1-117165" is listed in the 2025R1 Session');
+        expect(missing.text).toMatch(/does not hold its file/);
+        expect(missing.text).toMatch(/next pull fetches it again/);
+        expect(missing.text).not.toContain("Give a document id such as");
+        const neighbour = await callTool(connected, "get_document", { id: "testimony-2025r1-117167" });
+        expect(neighbour.isError).toBe(false);
+        // An id that no feed row names is still unknown, and still told how to ask.
+        const unknown = await callTool(connected, "get_document", { id: "testimony-2025r1-999999" });
+        expect(unknown.isError).toBe(true);
+        expect(unknown.text).toContain("Give a document id such as");
+        expect(unknown.text).not.toMatch(/next pull/);
+
+        await system.pullAgain();
+
+        const fetched = await callTool(connected, "get_document", { id: "testimony-2025r1-117165" });
+        expect(fetched.isError).toBe(false);
+        expect(fetched.structured).toMatchObject({ id: "testimony-2025r1-117165", kind: "testimony" });
+      } finally {
+        await connected.close();
+      }
+    }, 60_000);
   });
 
   describe("a position id that is not one of the four", () => {

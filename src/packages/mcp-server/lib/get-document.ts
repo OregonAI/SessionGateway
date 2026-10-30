@@ -57,6 +57,8 @@ export type GetDocumentOutput = z.infer<typeof getDocumentOutput>;
 export type GetDocumentResult =
   | { kind: "found"; document: GetDocumentOutput }
   | { kind: "unknown"; id: string; session: SessionKey }
+  /** A Testimony the feed lists and the store has not fetched: a fact about the index, not a wrong id. */
+  | { kind: "not_held"; id: string; session: SessionKey }
   | { kind: "no_such_part"; id: string; part: number; partCount: number };
 
 export function getDocument(
@@ -66,7 +68,10 @@ export function getDocument(
 ): GetDocumentResult {
   const id = parseDocumentReference(input.id, session);
   const found = id === undefined ? undefined : reader.findDocument(id);
-  if (id === undefined || found === undefined) return { kind: "unknown", id: input.id, session };
+  if (id === undefined) return { kind: "unknown", id: input.id, session };
+  if (found === undefined) {
+    return reader.listsTestimony(id) ? { kind: "not_held", id, session } : { kind: "unknown", id: input.id, session };
+  }
   const stored = found.document;
   const parts = splitIntoParts(stored.text);
   const part = input.part ?? 1;
@@ -105,6 +110,14 @@ export function getDocument(
 /** What an agent is told when no document matches, so it can correct the call. */
 export function unknownDocumentMessage(id: string, session: SessionKey): string {
   return `No document "${id}" in the ${session} Session. Give a document id such as version-${session.toLowerCase()}-sb69-a-engrossed.`;
+}
+
+/**
+ * What an agent is told when the id is a Testimony that `testimony` lists but whose file the worker has not fetched
+ * (a failed or not yet reached download). The id is right; the next pull fetches the file again.
+ */
+export function testimonyNotHeldMessage(id: string, session: SessionKey): string {
+  return `Testimony "${id}" is listed in the ${session} Session, but this index does not hold its file yet. The next pull fetches it again.`;
 }
 
 /** What an agent is told when it asks for a part past the last one. */

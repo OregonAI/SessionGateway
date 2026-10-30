@@ -110,6 +110,11 @@ export type IndexReader = {
    * its file is fetched.
    */
   findTestimony(key: MeasureKey): TestimonyEntry[];
+  /**
+   * Whether the feed lists a Testimony with this id, whether or not its file is fetched. A Testimony that is
+   * listed and whose file the store lacks is one `findDocument` does not resolve yet: the next pull fetches it.
+   */
+  listsTestimony(id: DocumentId | AmendmentId): boolean;
   close(): void;
 };
 
@@ -357,6 +362,7 @@ export function openIndexReader(path: string): IndexReader {
      FROM testimony t LEFT JOIN document d ON d.id = t.document_id
      WHERE t.measure_id = ? ORDER BY t.comm_test_id`,
   );
+  const selectTestimonyListing = database.prepare("SELECT 1 AS listed FROM testimony WHERE document_id = ?");
   const numbersInOrder = new Intl.Collator("en", { numeric: true });
   function documentOf(row: unknown): DocumentView["document"] {
     const stored = documentRow.parse(row);
@@ -549,6 +555,9 @@ export function openIndexReader(path: string): IndexReader {
         exhibits: documentsOfKind("exhibit"),
         recordingLogs: documentsOfKind("recording_log"),
       };
+    },
+    listsTestimony(id) {
+      return selectTestimonyListing.get(id) !== undefined;
     },
     findTestimony(key) {
       return selectTestimony.all(measureIdOf(key)).map((row): TestimonyEntry => {

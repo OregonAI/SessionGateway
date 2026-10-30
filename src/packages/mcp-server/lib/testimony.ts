@@ -95,7 +95,7 @@ const itemOutput = z.object({
   fetched: z
     .boolean()
     .describe(
-      "True when this index holds the file, so get_document serves the id. False when OLIS lists the Testimony but the file is not here yet (a failed or not yet reached fetch): source_url is where to read it.",
+      "True when this index holds the file, so get_document serves the id. False when OLIS lists the Testimony but the file is not here yet (a failed or not yet reached fetch): get_document then answers with an error that says the next pull fetches it, and source_url is where to read it.",
     ),
   has_text_layer: z
     .boolean()
@@ -123,7 +123,11 @@ const identicalLetterOutput = z.object({
     .describe(
       "The id of the set's Testimony with the lowest CommTestId. Give it to get_document to read the letter once.",
     ),
-  count: z.number().describe("How many of the Measure's Testimony rows have this letter."),
+  count: z
+    .number()
+    .describe(
+      "How many of the Measure's Testimony rows have this letter. It counts only rows whose files this index holds: a row listed with fetched false is not counted, because nothing is known of its text until the next pull fetches it.",
+    ),
   ids: z
     .array(z.string())
     .describe(`The ids of the rows that have it, lowest CommTestId first, at most the first ${MAX_LISTED_IDS}.`),

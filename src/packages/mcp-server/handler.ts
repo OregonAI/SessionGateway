@@ -10,6 +10,7 @@ import {
   getDocumentInput,
   getDocumentOutput,
   noSuchPartMessage,
+  testimonyNotHeldMessage,
   unknownDocumentMessage,
 } from "./lib/get-document.ts";
 import { getMeasure, getMeasureInput, getMeasureOutput, unknownMeasureMessage } from "./lib/get-measure.ts";
@@ -126,6 +127,11 @@ function buildServer(
           return {
             isError: true,
             content: [{ type: "text", text: unknownDocumentMessage(result.id, result.session) }],
+          };
+        case "not_held":
+          return {
+            isError: true,
+            content: [{ type: "text", text: testimonyNotHeldMessage(result.id, result.session) }],
           };
         case "no_such_part":
           return {

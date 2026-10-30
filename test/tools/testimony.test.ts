@@ -346,6 +346,19 @@ describe.for(eras)("testimony for a %s client", (era) => {
     expect(tool?.annotations?.readOnlyHint).toBe(true);
   });
 
+  // An identical-letter set is decided by the text a file holds, so a Testimony whose file is not fetched is in no set
+  // (testimony-made-up.test.ts shows it). The output schema, which an agent reads before a result, says that the
+  // count is of the rows whose files are held.
+  it("says in its output schema that a set of identical letters counts only the rows whose files are held", async () => {
+    const { tools } = await connected.client.listTools();
+
+    const schema = tools.find((candidate) => candidate.name === "testimony")?.outputSchema as
+      { properties: { identical_letters: { items: { properties: { count: { description: string } } } } } } | undefined;
+    expect(schema?.properties.identical_letters.items.properties.count.description).toMatch(
+      /counts only rows whose files this index holds/,
+    );
+  });
+
   // An unknown Measure is an MCP error, as for get_measure and meetings (spec #1: "Errors are reported as MCP
   // errors"), and the message names what was asked for and how to ask.
   it("answers an unknown Measure with an error that names it", async () => {
