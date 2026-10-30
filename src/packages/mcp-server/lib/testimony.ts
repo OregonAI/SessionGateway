@@ -20,11 +20,10 @@ export const testimonyInput = z.object({
  * a Measure's whole Testimony would overflow an agent's context.
  *
  * Measured the same day through the tool: HB 3131's whole answer, 42 items in 33 groups, is 23,124 characters of
- * JSON, and a page of 50 made-up items in 7 groups is 24,678, so an item is about 470 characters (HB 3131's
- * longest, 514) plus the header of its group, and a page of 50 is about 25,000 to 27,500 characters. That is a
- * part and a quarter to a part and a third of a `get_document` part (PART_SIZE_CHARACTERS, 20,000, "a few percent of
- * an agent's context"). 100 items would have been 2.5 parts. 50 also keeps HB 3131's 42 rows, the Measure spec #1
- * uses as its example, on one page. Every tool here sends the JSON as text and as structured content, so a client
+ * JSON, and a page of 50 made-up items in 6 groups is 24,678, so an item is about 470 characters (HB 3131's
+ * longest, 514) plus the header of its group, and a page of 50 is about 25,000 to 27,500 characters. That is 1.25 to
+ * 1.4 `get_document` parts (PART_SIZE_CHARACTERS, 20,000, "a few percent of an agent's context"). 100 items would
+ * have been 2.5 parts. 50 also keeps HB 3131's 42 rows, the Measure spec #1 uses as its example, on one page. Every tool here sends the JSON as text and as structured content, so a client
  * may hold it twice.
  *
  * A page is rows and not groups, because a group can be larger than a page (SB 210's Portland under oppose has 4,431
