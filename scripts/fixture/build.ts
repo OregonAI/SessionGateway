@@ -69,6 +69,9 @@ const ARTABLES = {
 /** An expected failure: printed as one message, with no stack. */
 class BuildError extends Error {}
 
+/** The run must not go on: a limit would be broken. Exit code 2, and never retried or skipped. */
+class StopError extends BuildError {}
+
 type Args = { cache: string; offline: boolean; plan: boolean; fixture: string };
 
 function parseArgs(args: string[]): Args {
@@ -345,8 +348,9 @@ function describeFailure(error: unknown): string {
 /**
  * One document, one request at a time, at least MIN_GAP_MS after the previous response ended.
  * Redirects are followed by hand so each hop stays under OLIS_ORIGIN and keeps the same gap.
+ * A response that declares more bytes than `budget` (what the fixture may still take) is not read.
  */
-async function fetchOnce(url: string): Promise<Fetched> {
+async function fetchOnce(url: string, budget: number): Promise<Fetched> {
   let current = url;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     if (!current.startsWith(OLIS_ORIGIN)) throw new BuildError(`redirected outside OLIS to ${current}`);
@@ -373,12 +377,17 @@ async function fetchOnce(url: string): Promise<Fetched> {
         if (response.status >= 500) throw new TransientError(`HTTP ${response.status}`);
         throw new BuildError(`HTTP ${response.status}`);
       }
+      const declared = response.headers.get("content-length");
+      if (declared !== null && Number(declared) > budget) {
+        await response.body?.cancel();
+        throw new StopError(`STOP: ${current} declares ${declared} bytes, but the fixture has only ${Math.max(budget, 0)} of its ${MAX_FIXTURE_BYTES} bytes left. Nothing more was fetched.`);
+      }
       const body = Buffer.from(await response.arrayBuffer());
       const contentType = response.headers.get("content-type") ?? "application/octet-stream";
       if (/^text\/html/i.test(contentType)) throw new BuildError("OLIS answered with HTML, not a document");
       return { body, contentType, finalUrl: current, at: Date.now() };
     } catch (error) {
-      if (error instanceof BuildError || error instanceof TransientError) throw error;
+      if (error instanceof BuildError || error instanceof TransientError) throw error; // StopError is a BuildError
       // fetch() rejects on network errors and when our AbortSignal times out, mid-body included.
       throw new TransientError(describeFailure(error));
     } finally {
@@ -390,7 +399,12 @@ async function fetchOnce(url: string): Promise<Fetched> {
 
 type RunStats = { fetched: number; reused: number; retries: number; failures: string[]; bytes: number };
 
-async function fetchMissing(downloadsDir: string, missing: Doc[], stats: RunStats): Promise<void> {
+/**
+ * `held` is what the fixture will hold whatever is fetched: the documents already in the download
+ * cache, the Statutes Affected Table and the feed files. The limit is on the whole fixture, so the
+ * run stops when held + fetched passes it, not when the fetched part alone does.
+ */
+async function fetchMissing(downloadsDir: string, missing: Doc[], stats: RunStats, held: number): Promise<void> {
   let done = 0;
   let streak = 0;
   for (const doc of missing) {
@@ -400,9 +414,10 @@ async function fetchMissing(downloadsDir: string, missing: Doc[], stats: RunStat
     let lastProblem = "";
     for (let attempt = 0; attempt <= RETRY_WAITS_MS.length; attempt++) {
       try {
-        fetched = await fetchOnce(doc.url);
+        fetched = await fetchOnce(doc.url, MAX_FIXTURE_BYTES - held - stats.bytes);
         break;
       } catch (error) {
+        if (error instanceof StopError) throw error;
         if (error instanceof TransientError && attempt < RETRY_WAITS_MS.length) {
           stats.retries++;
           lastProblem = error.message;
@@ -442,8 +457,10 @@ async function fetchMissing(downloadsDir: string, missing: Doc[], stats: RunStat
     stats.fetched++;
     stats.bytes += fetched.body.length;
     console.log(`[${done}/${missing.length}] fetched ${doc.stem} ${fetched.body.length} B in ${Date.now() - started} ms`);
-    if (stats.bytes > MAX_FIXTURE_BYTES) {
-      throw new BuildError(`downloaded ${stats.bytes} bytes, over the ${MAX_FIXTURE_BYTES} byte limit: stopping`);
+    if (held + stats.bytes > MAX_FIXTURE_BYTES) {
+      throw new StopError(
+        `STOP: the fixture would hold ${held + stats.bytes} bytes (${held} already held, ${stats.bytes} fetched now), over the ${MAX_FIXTURE_BYTES} byte limit. Nothing more was fetched.`,
+      );
     }
   }
 }
@@ -528,6 +545,16 @@ async function main(): Promise<void> {
       `${selection.unresolved.length} references the full cache cannot resolve, ${docs.length} linked documents`,
   );
 
+  // The feed files this build writes count toward the fixture's 100 MB, like the documents.
+  const feedFiles = new Map<string, string>();
+  for (const entitySet of Object.keys(entitySets)) {
+    const indexes = selection.included.get(entitySet);
+    if (indexes === undefined || indexes.length === 0) continue;
+    const rows = feed.get(entitySet) as Row[];
+    feedFiles.set(entitySet, rowsFile(indexes.map((i) => rows[i] as Row)));
+  }
+  const feedBytes = [...feedFiles.values()].reduce((sum, text) => sum + Buffer.byteLength(text), 0);
+
   const cached = new Map<Doc, { meta: CacheMeta; file: string }>();
   const missing: Doc[] = [];
   for (const doc of docs) {
@@ -535,35 +562,36 @@ async function main(): Promise<void> {
     if (hit === null) missing.push(doc);
     else cached.set(doc, hit);
   }
-  const estimate =
-    missing.reduce((sum, doc) => sum + doc.meanBytes, 0) + [...cached.values()].reduce((sum, hit) => sum + hit.meta.bytes, 0);
+  // What the fixture holds whatever is fetched, and what it would hold if every missing document were an average one.
+  const held = [...cached.values()].reduce((sum, hit) => sum + hit.meta.bytes, 0) + artables.entry.bytes + feedBytes;
+  const estimate = held + missing.reduce((sum, doc) => sum + doc.meanBytes, 0);
   console.log(
     `documents: ${docs.length} linked, ${cached.size} in the download cache, ${missing.length} ${args.offline ? "missing" : "to fetch"}; ` +
-      `estimated fixture documents ${megabytes(estimate)} (means from olis-odata.md section 7)`,
+      `estimated fixture ${megabytes(estimate)} (document means from olis-odata.md section 7; feed rows and the Statutes Affected Table included)`,
   );
 
   if (args.plan) {
     for (const doc of missing) console.log(`  would fetch ${doc.stem}  ${doc.url}`);
   }
-  if (missing.length > MAX_DOCUMENTS || estimate > MAX_FIXTURE_BYTES) {
-    throw new BuildError(
-      `STOP: ${missing.length} documents to fetch (limit ${MAX_DOCUMENTS}), estimated ${megabytes(estimate)} (limit ${megabytes(MAX_FIXTURE_BYTES)}). Nothing was fetched.`,
-    );
-  }
-  if (args.plan) return;
-
+  // --offline never fetches, so a missing document is an error that names it, whatever their number.
   if (args.offline && missing.length > 0) {
     throw new BuildError(
       `--offline: ${missing.length} document(s) are not in the download cache ${downloadsDir}:\n` +
         missing.map((doc) => `  ${doc.stem}  ${doc.url}`).join("\n"),
     );
   }
+  if (missing.length > MAX_DOCUMENTS || estimate > MAX_FIXTURE_BYTES) {
+    throw new StopError(
+      `STOP: ${missing.length} documents to fetch (limit ${MAX_DOCUMENTS}), estimated ${megabytes(estimate)} (limit ${megabytes(MAX_FIXTURE_BYTES)}). Nothing was fetched.`,
+    );
+  }
+  if (args.plan) return;
 
   const stats: RunStats = { fetched: 0, reused: cached.size, retries: 0, failures: [], bytes: 0 };
   if (missing.length > 0) {
     console.log(`fetching ${missing.length} documents from ${OLIS_ORIGIN}, one at a time`);
     try {
-      await fetchMissing(downloadsDir, missing, stats);
+      await fetchMissing(downloadsDir, missing, stats, held);
     } finally {
       console.log(
         `download summary: fetched=${stats.fetched} reused=${stats.reused} retries=${stats.retries} ` +
@@ -605,38 +633,36 @@ async function main(): Promise<void> {
   entries.push(artables.entry);
   entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 
-  const total = entries.reduce((sum, entry) => sum + entry.bytes, 0);
-  if (total > MAX_FIXTURE_BYTES) throw new BuildError(`the documents total ${total} bytes, over the ${MAX_FIXTURE_BYTES} byte limit`);
+  const manifestText = jsonFile({ documents: entries });
+  const unresolvedText = jsonFile({ unresolved: selection.unresolved });
+  const documentBytes = entries.reduce((sum, entry) => sum + entry.bytes, 0);
+  const total = documentBytes + feedBytes + Buffer.byteLength(manifestText) + Buffer.byteLength(unresolvedText);
+  if (total > MAX_FIXTURE_BYTES) throw new StopError(`STOP: the fixture would be ${total} bytes, over the ${MAX_FIXTURE_BYTES} byte limit. Nothing was written.`);
 
   // Write: the generated parts are replaced wholesale; measures.txt and README.md stay.
   rmSync(join(args.fixture, "feed"), { recursive: true, force: true });
   rmSync(join(args.fixture, "documents"), { recursive: true, force: true });
   mkdirSync(join(args.fixture, "feed"), { recursive: true });
-  for (const entitySet of Object.keys(entitySets)) {
-    const indexes = selection.included.get(entitySet);
-    if (indexes === undefined || indexes.length === 0) continue;
-    const rows = feed.get(entitySet) as Row[];
-    writeFileSync(join(args.fixture, "feed", `${entitySet}.json`), rowsFile(indexes.map((i) => rows[i] as Row)));
-  }
+  for (const [entitySet, text] of feedFiles) writeFileSync(join(args.fixture, "feed", `${entitySet}.json`), text);
   for (const { from, to } of copies) {
     const destination = join(args.fixture, ...to.split("/"));
     mkdirSync(dirname(destination), { recursive: true });
     copyFileSync(from, destination);
     if (statSync(destination).size !== statSync(from).size) throw new BuildError(`copy of ${from} to ${destination} is the wrong size`);
   }
-  writeFileSync(join(args.fixture, "manifest.json"), jsonFile({ documents: entries }));
-  writeFileSync(join(args.fixture, "unresolved.json"), jsonFile({ unresolved: selection.unresolved }));
+  writeFileSync(join(args.fixture, "manifest.json"), manifestText);
+  writeFileSync(join(args.fixture, "unresolved.json"), unresolvedText);
 
   console.log(
     `wrote ${args.fixture}: ${selection.included.size} feed files, ${rowCount} rows, ${entries.length} documents ` +
-      `(${megabytes(total)}), ${selection.unresolved.length} unresolved references listed`,
+      `(${megabytes(documentBytes)}), ${selection.unresolved.length} unresolved references listed`,
   );
 }
 
 main().catch((error: unknown) => {
   if (error instanceof BuildError) {
     console.error(`build: ${error.message}`);
-    exit(error.message.startsWith("STOP") ? 2 : 1);
+    exit(error instanceof StopError ? 2 : 1);
   }
   throw error;
 });
