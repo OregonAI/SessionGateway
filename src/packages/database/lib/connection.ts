@@ -9,6 +9,7 @@ const schema = `
     prefix TEXT NOT NULL,
     number INTEGER NOT NULL,
     catchline TEXT,
+    digest TEXT,
     created_at TEXT NOT NULL,
     modified_at TEXT,
     PRIMARY KEY (session_key, prefix, number)
@@ -80,6 +81,8 @@ const schema = `
     page_count INTEGER NOT NULL,
     has_text_layer INTEGER NOT NULL,
     posted_at TEXT,
+    analysis_version_label TEXT,
+    analysis_is_minority INTEGER,
     text TEXT NOT NULL
   ) STRICT;
   CREATE INDEX IF NOT EXISTS document_node ON document (node_id);
@@ -91,6 +94,13 @@ const schema = `
     provenance TEXT NOT NULL,
     PRIMARY KEY (document_id, relation, to_id)
   ) STRICT;
+  CREATE INDEX IF NOT EXISTS document_relation_to ON document_relation (to_id, relation);
+  CREATE TABLE IF NOT EXISTS analysis_listing (
+    document_id TEXT NOT NULL PRIMARY KEY,
+    session_key TEXT NOT NULL,
+    measure_id TEXT NOT NULL
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS analysis_listing_measure ON analysis_listing (measure_id);
 `;
 
 /** The default timeout of 0 fails at once on a busy database, so both sides wait up to 5 seconds. */

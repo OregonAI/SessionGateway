@@ -43,11 +43,17 @@ export type IndexWriter = {
   storedDocumentIds(session: SessionKey): Set<DocumentId>;
   /**
    * Brings what the feed says about documents already stored up to date, in one transaction: each one's
-   * label, the node it belongs to, when it was posted and the nodes it points at. A fetched file is
-   * unchanging (ADR-0005), so its text, hash and retrieval time are left alone. A link whose document is
-   * not stored is ignored.
+   * label, the node it belongs to, when it was posted, an analysis document's Version label and minority
+   * flag and the nodes it points at. A fetched file is unchanging (ADR-0005), so its text, hash and retrieval time
+   * are left alone. A link whose document is not stored is ignored.
    */
   refreshDocuments(session: SessionKey, links: readonly DocumentLink[]): void;
+  /**
+   * Records which analysis documents the feed lists for each Measure, as the last full pull read it, in
+   * one transaction: it replaces the Session's listing. The server compares it with the documents held,
+   * so that a Measure whose statement the worker could not fetch is not read as having none.
+   */
+  recordListedAnalyses(session: SessionKey, links: readonly DocumentLink[]): void;
   /** Every stored document of the Session whose file has no text layer, by id. */
   documentsWithoutTextLayer(session: SessionKey): { id: DocumentId; sourceUrl: string }[];
   /** Keeps one fetched document, its text and the nodes it points at, in one transaction. */
@@ -57,6 +63,11 @@ export type IndexWriter = {
 
 const idRow = z.object({ id: z.string() });
 const scanRow = z.object({ id: z.string(), source_url: z.string() });
+
+/** SQLite has no boolean: an analysis document's flag is 0 or 1, and any other document's is NULL. */
+function minorityColumn(isMinority: boolean | undefined): 0 | 1 | null {
+  return isMinority === undefined ? null : isMinority ? 1 : 0;
+}
 
 /** The meeting a link is listed under and, for a posting, what the committee did with it there. */
 function meetingListingOf(link: DocumentLink): { meetingId: string; meaning: string | null } | undefined {
@@ -72,9 +83,11 @@ export function openIndexWriter(path: string): IndexWriter {
   return {
     recordFullPull(session, measures, asOf, snapshot) {
       const upsertMeasure = database.prepare(
-        `INSERT INTO measure (session_key, prefix, number, catchline, created_at, modified_at) VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO measure (session_key, prefix, number, catchline, digest, created_at, modified_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (session_key, prefix, number) DO UPDATE SET
-           catchline = excluded.catchline, created_at = excluded.created_at, modified_at = excluded.modified_at`,
+           catchline = excluded.catchline, digest = excluded.digest, created_at = excluded.created_at,
+           modified_at = excluded.modified_at`,
       );
       const recordAsOf = database.prepare(
         `INSERT INTO index_state (session_key, full_pull_as_of) VALUES (?, ?)
@@ -93,6 +106,7 @@ export function openIndexWriter(path: string): IndexWriter {
             measure.prefix,
             measure.number,
             measure.catchline,
+            measure.digest,
             measure.createdAt,
             measure.modifiedAt,
           );
@@ -204,9 +218,28 @@ export function openIndexWriter(path: string): IndexWriter {
         return { id: stored.id as DocumentId, sourceUrl: stored.source_url };
       });
     },
+    recordListedAnalyses(session, links) {
+      const insertListing = database.prepare(
+        "INSERT INTO analysis_listing (document_id, session_key, measure_id) VALUES (?, ?, ?)",
+      );
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database.prepare("DELETE FROM analysis_listing WHERE session_key = ?").run(session);
+        for (const link of links) {
+          if (link.kind !== "analysis") continue;
+          const measure = link.relations.find((relation) => relation.relation === "measure");
+          if (measure === undefined) throw new Error(`The analysis document ${link.id} names no Measure`);
+          insertListing.run(link.id, session, measure.to);
+        }
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+    },
     refreshDocuments(session, links) {
       const updateDocument = database.prepare(
-        "UPDATE document SET node_id = ?, label = ?, posted_at = ? WHERE id = ? AND session_key = ?",
+        "UPDATE document SET node_id = ?, label = ?, posted_at = ?, analysis_version_label = ?, analysis_is_minority = ? WHERE id = ? AND session_key = ?",
       );
       const deleteRelations = database.prepare("DELETE FROM document_relation WHERE document_id = ?");
       const insertRelation = database.prepare(
@@ -215,7 +248,15 @@ export function openIndexWriter(path: string): IndexWriter {
       database.exec("BEGIN IMMEDIATE");
       try {
         for (const link of links) {
-          const updated = updateDocument.run(link.nodeId, link.label, link.postedAt, link.id, session);
+          const updated = updateDocument.run(
+            link.nodeId,
+            link.label,
+            link.postedAt,
+            link.versionLabel ?? null,
+            minorityColumn(link.isMinority),
+            link.id,
+            session,
+          );
           if (updated.changes === 0) continue;
           deleteRelations.run(link.id);
           for (const relation of link.relations) {
@@ -231,8 +272,9 @@ export function openIndexWriter(path: string): IndexWriter {
     storeDocument(session, document) {
       const insertDocument = database.prepare(
         `INSERT INTO document (id, node_id, session_key, kind, label, source_url, retrieved_at, content_hash,
-                               page_count, has_text_layer, posted_at, text)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                               page_count, has_text_layer, posted_at, analysis_version_label,
+                               analysis_is_minority, text)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       const insertRelation = database.prepare(
         `INSERT INTO document_relation (document_id, relation, to_id, meaning, provenance) VALUES (?, ?, ?, ?, ?)`,
@@ -251,6 +293,8 @@ export function openIndexWriter(path: string): IndexWriter {
           document.pageCount,
           document.hasTextLayer ? 1 : 0,
           document.postedAt,
+          document.versionLabel ?? null,
+          minorityColumn(document.isMinority),
           document.text,
         );
         for (const relation of document.relations) {

@@ -102,6 +102,8 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
   try {
     writer.recordFullPull(config.session, measures, asOf, snapshot.version);
     writer.recordMeetings(config.session, committees, meetings, agendaItems);
+    // Before any file is fetched, so that the server can say a Measure has a statement it does not hold yet.
+    writer.recordListedAnalyses(config.session, links);
     // What each meeting lists is the feed's, so it is stored before any file is fetched: a file that fails
     // to come is still listed, as not fetched.
     writer.recordMeetingDocuments(config.session, links);

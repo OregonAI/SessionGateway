@@ -1,5 +1,6 @@
 // The MCP server's side of the database: read-only.
 import { z } from "zod";
+import type { StoredAnalysis } from "#/packages/domain/analysis.ts";
 import {
   documentKinds,
   type AgendaItem,
@@ -19,7 +20,13 @@ import {
   type Relation,
   type RelatedNode,
 } from "#/packages/domain/documents.ts";
-import type { Measure, MeasureId, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
+import {
+  measureIdOf,
+  type Measure,
+  type MeasureId,
+  type MeasureKey,
+  type SessionKey,
+} from "#/packages/domain/index.ts";
 import type { SnapshotVersion } from "#/packages/domain/oregonai.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openReadConnection } from "./lib/connection.ts";
@@ -47,6 +54,16 @@ export type IndexReader = {
    * nodes all its postings point at.
    */
   findDocument(id: DocumentId | AmendmentId): DocumentView | undefined;
+  /**
+   * The analysis documents the store holds for a Measure: the ones whose files the worker fetched, so
+   * that each is a document `findDocument` resolves.
+   */
+  analysisDocuments(key: MeasureKey): StoredAnalysis[];
+  /**
+   * How many analysis documents the feed lists for a Measure that the store does not hold, because the
+   * worker could not fetch their files. The next pull tries them again.
+   */
+  analysisNotHeld(key: MeasureKey): number;
   /** What the index holds of the Session. */
   counts(session: SessionKey): IndexCounts;
   /** A committee by its code or its id, in either case. */
@@ -60,6 +77,7 @@ export type IndexReader = {
 
 const measureRow = z.object({
   catchline: z.string().nullable(),
+  digest: z.string().nullable(),
   created_at: z.string(),
   modified_at: z.string().nullable(),
 });
@@ -81,6 +99,13 @@ const documentRow = z.object({
   has_text_layer: z.number(),
   posted_at: z.string().nullable(),
   text: z.string(),
+});
+const analysisRow = z.object({
+  id: z.string(),
+  label: z.string(),
+  source_url: z.string(),
+  analysis_version_label: z.string(),
+  analysis_is_minority: z.number(),
 });
 const committeeRow = z.object({ code: z.string(), id: z.string(), name: z.string() });
 const meetingRow = z.object({
@@ -126,7 +151,7 @@ const relationRow = z.object({
 export function openIndexReader(path: string): IndexReader {
   const database = openReadConnection(path);
   const selectMeasure = database.prepare(
-    "SELECT catchline, created_at, modified_at FROM measure WHERE session_key = ? AND prefix = ? AND number = ?",
+    "SELECT catchline, digest, created_at, modified_at FROM measure WHERE session_key = ? AND prefix = ? AND number = ?",
   );
   const selectAsOf = database.prepare("SELECT full_pull_as_of FROM index_state WHERE session_key = ?");
   const selectSnapshot = database.prepare(
@@ -142,6 +167,17 @@ export function openIndexReader(path: string): IndexReader {
   );
   const selectRelations = database.prepare(
     "SELECT relation, to_id, meaning FROM document_relation WHERE document_id = ? ORDER BY rowid",
+  );
+  const selectAnalyses = database.prepare(
+    `SELECT d.id, d.label, d.source_url, d.analysis_version_label, d.analysis_is_minority
+       FROM document d JOIN document_relation r ON r.document_id = d.id
+      WHERE d.kind = 'analysis' AND r.relation = 'measure' AND r.to_id = ?
+      ORDER BY d.id`,
+  );
+  const countNotHeld = database.prepare(
+    `SELECT COUNT(*) AS n
+       FROM analysis_listing l LEFT JOIN document d ON d.id = l.document_id
+      WHERE l.measure_id = ? AND d.id IS NULL`,
   );
   const selectCommittee = database.prepare(
     "SELECT code, id, name FROM committee WHERE session_key = ? AND (upper(code) = upper(?) OR id = lower(?))",
@@ -190,6 +226,25 @@ export function openIndexReader(path: string): IndexReader {
     });
   }
   return {
+    analysisDocuments(key) {
+      return selectAnalyses.all(measureIdOf(key)).map((row) => {
+        const stored = analysisRow.parse(row);
+        const id = stored.id as DocumentId;
+        const related = relationsOf(id);
+        return {
+          id,
+          type: stored.label,
+          versionLabel: stored.analysis_version_label,
+          isMinority: stored.analysis_is_minority === 1,
+          sourceUrl: stored.source_url,
+          committeeId: (related.find((node) => node.relation === "committee")?.to as CommitteeId | undefined) ?? null,
+          placedVersionId: (related.find((node) => node.relation === "version")?.to as DocumentId | undefined) ?? null,
+        };
+      });
+    },
+    analysisNotHeld(key) {
+      return countRow.parse(countNotHeld.get(measureIdOf(key))).n;
+    },
     counts(session) {
       const documentsByKind = Object.fromEntries(documentKinds.map((kind) => [kind, 0])) as Record<
         DocumentKind,
@@ -347,6 +402,7 @@ export function openIndexReader(path: string): IndexReader {
       return {
         ...key,
         catchline: stored.catchline,
+        digest: stored.digest,
         createdAt: stored.created_at as Timestamp,
         modifiedAt: stored.modified_at as Timestamp | null,
       };

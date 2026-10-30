@@ -49,6 +49,10 @@ _Avoid_: bill, when resolutions and memorials are included
 A Measure's one-sentence statement of what it does, as the feed's `CatchLine` gives it.
 _Avoid_: title, summary
 
+**Digest**:
+The text OLIS publishes about what a Measure does, from the feed's `MeasureSummary`: a line headed "Digest:" and a line for each provision, served as published with OLIS's markup (`<b>` for new text, `[<i>...</i>]` for text deleted from the prior Version).
+_Avoid_: summary, abstract
+
 **Citation**:
 A Measure written the way people say it, such as "SB 69". The Session is the deployment's.
 _Avoid_: bill number
@@ -103,6 +107,14 @@ _Avoid_: minutes
 **Fiscal Impact Statement**:
 The Legislative Fiscal Office's statement of what a Version would cost government, naming the Agencies affected under "Government Unit(s) Affected".
 _Avoid_: fiscal note
+
+**Analysis document**:
+A Fiscal Impact Statement, revenue impact statement, Staff Measure Summary or Budget Report that the feed ties to a Measure, with a Version label. `get_measure` lists them by Version.
+_Avoid_: fiscal document, report, unqualified
+
+**Version label**:
+The feed's own mark of the Version an analysis document is of: "INTRO", "A", "B", "C", or one the feed does not define ("B*", "MRA", blank). "INTRO" and a single letter name a Version; the others do not, and neither does any label on a document the feed flags as a minority report's (`IsMinority`). Such a document is listed as unmapped with the reason (ADR-0013).
+_Avoid_: version, unqualified
 
 ### People
 

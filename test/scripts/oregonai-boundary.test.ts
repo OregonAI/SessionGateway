@@ -125,7 +125,11 @@ const plants: readonly (readonly [string, string, string, string])[] = [
   ],
 ];
 
-describe("the rules that keep OregonAI out of the server path", () => {
+// Each case runs dependency-cruiser or ESLint over a temporary copy of the source in a child process: about a
+// second here, but over 5 s (Vitest's default) on a GitHub Actions runner, so these cases get their own bound.
+const childProcessTimeout = 60_000;
+
+describe("the rules that keep OregonAI out of the server path", { timeout: childProcessTimeout }, () => {
   it("pass on the source as it is, and cruise a real number of modules", () => {
     const clean = cruise();
 
@@ -231,27 +235,31 @@ const lintPlants: readonly (readonly [string, string, string, string])[] = [
   ],
 ];
 
-describe("the rules that keep a network client out of the server path (ESLint)", () => {
-  it("pass on the source as it is: the entry script that makes fetch may use it, the server's createServer is allowed", () => {
-    const clean = lint();
+describe(
+  "the rules that keep a network client out of the server path (ESLint)",
+  { timeout: childProcessTimeout },
+  () => {
+    it("pass on the source as it is: the entry script that makes fetch may use it, the server's createServer is allowed", () => {
+      const clean = lint();
 
-    expect(clean.status, clean.output).toBe(0);
-    expect(clean.messages.get("src/bin/ingest.ts")).toEqual([]);
-    expect(clean.messages.get("src/packages/mcp-server/http.ts")).toEqual([]);
-  });
+      expect(clean.status, clean.output).toBe(0);
+      expect(clean.messages.get("src/bin/ingest.ts")).toEqual([]);
+      expect(clean.messages.get("src/packages/mcp-server/http.ts")).toEqual([]);
+    });
 
-  it("fail, naming the rule and the file, for each way to a network that is planted", () => {
-    const planted = lintWithPlants(Object.fromEntries(lintPlants.map(([, file, text]) => [file, text])));
+    it("fail, naming the rule and the file, for each way to a network that is planted", () => {
+      const planted = lintWithPlants(Object.fromEntries(lintPlants.map(([, file, text]) => [file, text])));
 
-    expect(planted.status).not.toBe(0);
-    for (const [what, file, , rule] of lintPlants) {
-      expect(planted.messages.get(file), what).toContain(rule);
-    }
-  });
+      expect(planted.status).not.toBe(0);
+      for (const [what, file, , rule] of lintPlants) {
+        expect(planted.messages.get(file), what).toContain(rule);
+      }
+    });
 
-  it("pass again once the planted files are gone", () => {
-    const clean = lint();
+    it("pass again once the planted files are gone", () => {
+      const clean = lint();
 
-    expect(clean.status, clean.output).toBe(0);
-  });
-});
+      expect(clean.status, clean.output).toBe(0);
+    });
+  },
+);
