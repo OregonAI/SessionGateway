@@ -12,6 +12,7 @@ import {
   type RelatedNode,
 } from "#/packages/domain/documents.ts";
 import type { Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
+import type { SnapshotVersion } from "#/packages/domain/oregonai.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openReadConnection } from "./lib/connection.ts";
 
@@ -19,6 +20,8 @@ export type IndexReader = {
   findMeasure(key: MeasureKey): Measure | undefined;
   /** When the last completed full pull started, or undefined if none has completed. */
   asOf(session: SessionKey): Timestamp | undefined;
+  /** The version of the OregonAI snapshot the last completed full pull built the index with. */
+  snapshotVersion(session: SessionKey): SnapshotVersion | undefined;
   /**
    * A document by its id, or a Proposed Amendment by its id: the text of its latest posting, with the
    * nodes all its postings point at.
@@ -35,6 +38,11 @@ const measureRow = z.object({
   modified_at: z.string().nullable(),
 });
 const stateRow = z.object({ full_pull_as_of: z.string() });
+const snapshotRow = z.object({
+  source: z.literal("executive-regulatory-frameworks"),
+  commit_sha: z.string(),
+  commit_date: z.string(),
+});
 const documentRow = z.object({
   id: z.string(),
   node_id: z.string(),
@@ -62,6 +70,9 @@ export function openIndexReader(path: string): IndexReader {
     "SELECT catchline, created_at, modified_at FROM measure WHERE session_key = ? AND prefix = ? AND number = ?",
   );
   const selectAsOf = database.prepare("SELECT full_pull_as_of FROM index_state WHERE session_key = ?");
+  const selectSnapshot = database.prepare(
+    "SELECT source, commit_sha, commit_date FROM snapshot_state WHERE session_key = ?",
+  );
   const countOf = (sql: string, session: SessionKey): number => countRow.parse(database.prepare(sql).get(session)).n;
   const selectKindCounts = database.prepare(
     "SELECT kind, COUNT(*) AS n FROM document WHERE session_key = ? GROUP BY kind",
@@ -159,6 +170,12 @@ export function openIndexReader(path: string): IndexReader {
     asOf(session) {
       const row = selectAsOf.get(session);
       return row === undefined ? undefined : (stateRow.parse(row).full_pull_as_of as Timestamp);
+    },
+    snapshotVersion(session) {
+      const row = selectSnapshot.get(session);
+      if (row === undefined) return undefined;
+      const stored = snapshotRow.parse(row);
+      return { source: stored.source, commit: stored.commit_sha, commitDate: stored.commit_date as Timestamp };
     },
     close() {
       database.close();

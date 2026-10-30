@@ -36,6 +36,15 @@ export const sessionOverviewOutput = z.object({
     })
     .describe("What the index holds."),
   as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
+  snapshot: z
+    .object({
+      source: z.string().describe("The OregonAI corpus the data was copied from: executive-regulatory-frameworks."),
+      commit: z.string().describe("The commit of that corpus's repository the data was copied from."),
+      commit_date: z.string().describe("When that commit was made, in Pacific time with its UTC offset."),
+    })
+    .describe(
+      "The OregonAI data this index was built with: the agency registry, the ORS section ids and the table of which Agencies' rules implement each ORS chapter. It was copied at build time and is not looked up again while serving.",
+    ),
   notice: z.string().describe("A reminder that this is not the official record."),
 });
 
@@ -44,6 +53,8 @@ export type SessionOverviewOutput = z.infer<typeof sessionOverviewOutput>;
 export function sessionOverview(reader: IndexReader, session: SessionKey): SessionOverviewOutput {
   const asOf = reader.asOf(session);
   if (asOf === undefined) throw new Error(`The index holds no completed full pull of ${session} to date it by`);
+  const snapshot = reader.snapshotVersion(session);
+  if (snapshot === undefined) throw new Error(`The index records no OregonAI snapshot for ${session}`);
   const counts = reader.counts(session);
   return {
     session,
@@ -57,6 +68,7 @@ export function sessionOverview(reader: IndexReader, session: SessionKey): Sessi
       documents_by_kind: counts.documentsByKind,
     },
     as_of: asOf,
+    snapshot: { source: snapshot.source, commit: snapshot.commit, commit_date: snapshot.commitDate },
     notice: NON_OFFICIAL_NOTICE,
   };
 }

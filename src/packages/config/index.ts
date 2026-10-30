@@ -13,6 +13,8 @@ export type IngestConfig = {
   /** The origin documents are fetched from: OLIS's own, unless a test points the worker elsewhere. */
   olisDocumentOrigin: string;
   databasePath: string;
+  /** The OregonAI snapshot file the worker copies into the build (scripts/snapshot/build.ts writes it). */
+  snapshotPath: string;
 };
 
 export type ServerConfig = {
@@ -61,6 +63,7 @@ const ingestSchema = z.object({
     .default("https://olis.oregonlegislature.gov")
     .transform((text) => new URL(text).origin),
   DATABASE_PATH: z.string().min(1),
+  SNAPSHOT_PATH: z.string().min(1),
 });
 
 const list = (text: string): string[] =>
@@ -111,6 +114,7 @@ export function loadIngestConfig(env: Environment): IngestConfig {
     olisBaseUrl: parsed.OLIS_BASE_URL,
     olisDocumentOrigin: parsed.OLIS_DOCUMENT_ORIGIN,
     databasePath: parsed.DATABASE_PATH,
+    snapshotPath: parsed.SNAPSHOT_PATH,
   };
 }
 

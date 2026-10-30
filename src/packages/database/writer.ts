@@ -3,12 +3,16 @@
 import { z } from "zod";
 import type { Committee, DocumentId, DocumentLink, Meeting, StoredDocument } from "#/packages/domain/documents.ts";
 import type { Measure, SessionKey } from "#/packages/domain/index.ts";
+import type { SnapshotVersion } from "#/packages/domain/oregonai.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openWriteConnection } from "./lib/connection.ts";
 
 export type IndexWriter = {
-  /** Stores what a full pull read, and when, in one transaction. A full pull never deletes (ADR-0005). */
-  recordFullPull(session: SessionKey, measures: readonly Measure[], asOf: Timestamp): void;
+  /**
+   * Stores what a full pull read, when, and the version of the OregonAI snapshot the build used, in one
+   * transaction. A full pull never deletes (ADR-0005).
+   */
+  recordFullPull(session: SessionKey, measures: readonly Measure[], asOf: Timestamp, snapshot: SnapshotVersion): void;
   /** Stores the committees and meetings a full pull read, in one transaction. A full pull never deletes (ADR-0005). */
   recordMeetings(session: SessionKey, committees: readonly Committee[], meetings: readonly Meeting[]): void;
   /** The ids of the documents already stored for the Session: a stored document is never fetched again. */
@@ -33,7 +37,7 @@ const scanRow = z.object({ id: z.string(), source_url: z.string() });
 export function openIndexWriter(path: string): IndexWriter {
   const database = openWriteConnection(path);
   return {
-    recordFullPull(session, measures, asOf) {
+    recordFullPull(session, measures, asOf, snapshot) {
       const upsertMeasure = database.prepare(
         `INSERT INTO measure (session_key, prefix, number, catchline, created_at, modified_at) VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (session_key, prefix, number) DO UPDATE SET
@@ -42,6 +46,11 @@ export function openIndexWriter(path: string): IndexWriter {
       const recordAsOf = database.prepare(
         `INSERT INTO index_state (session_key, full_pull_as_of) VALUES (?, ?)
          ON CONFLICT (session_key) DO UPDATE SET full_pull_as_of = excluded.full_pull_as_of`,
+      );
+      const recordSnapshot = database.prepare(
+        `INSERT INTO snapshot_state (session_key, source, commit_sha, commit_date) VALUES (?, ?, ?, ?)
+         ON CONFLICT (session_key) DO UPDATE SET
+           source = excluded.source, commit_sha = excluded.commit_sha, commit_date = excluded.commit_date`,
       );
       database.exec("BEGIN IMMEDIATE");
       try {
@@ -56,6 +65,7 @@ export function openIndexWriter(path: string): IndexWriter {
           );
         }
         recordAsOf.run(session, asOf);
+        recordSnapshot.run(session, snapshot.source, snapshot.commit, snapshot.commitDate);
         database.exec("COMMIT");
       } catch (error) {
         database.exec("ROLLBACK");

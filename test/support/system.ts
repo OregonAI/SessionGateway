@@ -8,6 +8,7 @@ import { runFullPull, type FullPullResult } from "#/packages/ingest/index.ts";
 import { createSessionGatewayHandler, type SessionGatewayHandler } from "#/packages/mcp-server/handler.ts";
 import { createSimulatedClock, type SimulatedClock } from "./clock.ts";
 import { startFakeOlis, type FakeOlis, type FakeOlisOptions } from "./fake-olis.ts";
+import { createMadeUpSnapshot, type MadeUpSnapshot } from "./made-up-snapshot.ts";
 import { createTempDatabase, type TempDatabase } from "./temp-database.ts";
 
 /** Seam 1 runs under a zone other than Pacific, so code that relies on local time fails (test/CLAUDE.md). */
@@ -25,6 +26,8 @@ export type SystemOptions = {
   clockAt: string;
   /** The deployment's Session (the SESSION_KEY variable). */
   sessionKey?: string;
+  /** The path of the OregonAI snapshot file the worker builds with (the SNAPSHOT_PATH variable). */
+  snapshot?: string;
   /**
    * Whether the fake OLIS serves the rows that link documents, and the documents. Off by default:
    * pulling the fixture's 278 documents takes seconds, and a test of `get_measure` reads none.
@@ -66,11 +69,14 @@ export async function startSystem(options: SystemOptions): Promise<System> {
   const clock = createSimulatedClock(options.clockAt);
   const olis = await startFakeOlis({ clock, documents: options.documents ?? false, ...options.olis });
   const database = createTempDatabase();
+  // A test that is not about the snapshot is given a made-up one.
+  const ownSnapshot: MadeUpSnapshot | undefined = options.snapshot === undefined ? createMadeUpSnapshot() : undefined;
   const env = {
     SESSION_KEY: options.sessionKey ?? "2025R1",
     OLIS_BASE_URL: options.olisBaseUrl === undefined ? olis.baseUrl : options.olisBaseUrl(olis.baseUrl),
     DATABASE_PATH: database.path,
     OLIS_DOCUMENT_ORIGIN: olis.origin,
+    SNAPSHOT_PATH: options.snapshot ?? ownSnapshot?.path ?? "",
   };
   const pull = (): Promise<FullPullResult> =>
     runFullPull(loadIngestConfig(env), {
@@ -103,11 +109,13 @@ export async function startSystem(options: SystemOptions): Promise<System> {
         await handler.close();
         await olis.close();
         database.remove();
+        ownSnapshot?.remove();
       },
     };
   } catch (error) {
     await olis.close();
     database.remove();
+    ownSnapshot?.remove();
     throw error;
   }
 }

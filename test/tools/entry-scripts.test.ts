@@ -10,6 +10,7 @@ import { startFakeOlis, type FakeOlis } from "../support/fake-olis.ts";
 import { createSimulatedClock } from "../support/clock.ts";
 import { callTool, connectClientToUrl } from "../support/mcp-clients.ts";
 import { createTempDatabase, type TempDatabase } from "../support/temp-database.ts";
+import { createMadeUpSnapshot } from "../support/made-up-snapshot.ts";
 
 type Finished = { code: number | null; stdout: string; stderr: string };
 
@@ -91,7 +92,12 @@ async function fakeOlisAndDatabase(
  * rows the feed holds and whether or not the fake serves the files (test/CLAUDE.md, "Hermetic").
  */
 function workerEnvironment(olis: FakeOlis, databasePath: string): Record<string, string> {
+  const snapshot = createMadeUpSnapshot();
+  cleanups.push(() => {
+    snapshot.remove();
+  });
   return {
+    SNAPSHOT_PATH: snapshot.path,
     SESSION_KEY: "2025R1",
     OLIS_BASE_URL: olis.baseUrl,
     OLIS_DOCUMENT_ORIGIN: olis.origin,
@@ -290,6 +296,17 @@ describe("the entry scripts", () => {
       expect(finished.stderr).not.toContain(value);
     },
   );
+
+  it("src/bin/ingest.ts fails at start-up when SNAPSHOT_PATH is not set, naming the variable", async () => {
+    const { olis, database } = await fakeOlisAndDatabase();
+    const withoutSnapshot: Record<string, string> = workerEnvironment(olis, database.path);
+    delete withoutSnapshot["SNAPSHOT_PATH"];
+
+    const finished = await run("src/bin/ingest.ts", withoutSnapshot);
+
+    expect(finished.code).not.toBe(0);
+    expect(finished.stderr).toContain("SNAPSHOT_PATH");
+  }, 20_000);
 
   it("src/bin/ingest.ts refuses a database that cannot run in WAL mode, instead of writing in another mode", async () => {
     // SQLite answers a request for WAL without an error and keeps the journal mode it had when it cannot

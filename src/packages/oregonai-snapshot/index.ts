@@ -62,6 +62,7 @@ export async function loadSnapshot(path: string): Promise<Snapshot> {
   try {
     return parseSnapshot(raw);
   } catch (error) {
-    throw new Error(`The file at "${path}" is not an OregonAI snapshot`, { cause: error });
+    const problem = error instanceof Error ? error.message : String(error);
+    throw new Error(`The file at "${path}" is not an OregonAI snapshot. ${problem}`, { cause: error });
   }
 }

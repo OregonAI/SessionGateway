@@ -9,6 +9,7 @@ import { openIndexWriter } from "#/packages/database/writer.ts";
 import { buildReportPath, writeBuildReport, type BuildReport } from "./lib/build-report.ts";
 import type { DocumentLink } from "#/packages/domain/documents.ts";
 import { createOlisClient, type OlisClient } from "#/packages/olis-client/index.ts";
+import { loadSnapshot } from "#/packages/oregonai-snapshot/index.ts";
 import { extractPdfText, type ExtractedPdf } from "#/packages/pdf-text/index.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
@@ -74,6 +75,8 @@ async function readPdf(link: DocumentLink, bytes: Uint8Array): ReturnType<typeof
 }
 
 export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promise<FullPullResult> {
+  // The snapshot is read before OLIS is: a build with no usable snapshot fails at once, naming the file.
+  const snapshot = await loadSnapshot(config.snapshotPath);
   const asOf = formatPacific(deps.clock.now());
   const olis = createOlisClient({
     baseUrl: config.olisBaseUrl,
@@ -95,7 +98,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
   let documentsFetched = 0;
   const notFetched: BuildReport["documents_not_fetched"] = [];
   try {
-    writer.recordFullPull(config.session, measures, asOf);
+    writer.recordFullPull(config.session, measures, asOf, snapshot.version);
     writer.recordMeetings(config.session, committees, meetings);
     const stored = writer.storedDocumentIds(config.session);
     // A fetched file is unchanging (ADR-0005) but its feed row is not: OLIS changes a posting's Meaning,
