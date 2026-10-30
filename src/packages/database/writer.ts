@@ -23,6 +23,9 @@ export type SponsorRecord =
   | (SponsorRecordFields & { kind: "committee"; committeeCode: string })
   | (SponsorRecordFields & { kind: "presession"; message: string });
 
+/** A Legislator Code and the id of the Legislator it names. */
+export type LegislatorCodeRecord = { code: string; legislatorId: LegislatorId };
+
 /** What the worker stores of a floor vote entry: the entry and the Legislator its code resolved to, if any. */
 export type FloorVoteRecord = FloorVoteEntry & { legislatorId: LegislatorId | null };
 
@@ -38,6 +41,8 @@ export type FullPullRecord = {
   history: readonly HistoryAction[];
   /** The Legislators the resolver can name. */
   legislators: readonly Legislator[];
+  /** Every Legislator Code the resolver can resolve, with the id of the Legislator it names (the live lookup resolves codes OLIS sends later). */
+  legislatorCodes: readonly LegislatorCodeRecord[];
   /** The MeasureSponsors rows, with the Legislator each Member row's code resolved to. */
   sponsors: readonly SponsorRecord[];
   floorVotes: readonly FloorVoteRecord[];
@@ -84,6 +89,10 @@ export function openIndexWriter(path: string): IndexWriter {
       const upsertLegislator = database.prepare(
         `INSERT INTO legislator (session_key, id, name) VALUES (?, ?, ?)
          ON CONFLICT (session_key, id) DO UPDATE SET name = excluded.name`,
+      );
+      const upsertLegislatorCode = database.prepare(
+        `INSERT INTO legislator_code (session_key, code, legislator_id) VALUES (?, ?, ?)
+         ON CONFLICT (session_key, code) DO UPDATE SET legislator_id = excluded.legislator_id`,
       );
       const upsertSponsor = database.prepare(
         `INSERT INTO sponsor (session_key, sponsor_id, prefix, number, kind, level, print_order,
@@ -139,6 +148,8 @@ export function openIndexWriter(path: string): IndexWriter {
           );
         }
         for (const legislator of pulled.legislators) upsertLegislator.run(session, legislator.id, legislator.name);
+        for (const record of pulled.legislatorCodes)
+          upsertLegislatorCode.run(session, record.code, record.legislatorId);
         for (const sponsor of pulled.sponsors) {
           const columns = kindColumnsOf(sponsor);
           upsertSponsor.run(

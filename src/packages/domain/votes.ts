@@ -62,3 +62,90 @@ export type FloorVote = {
   action: string;
   votes: LegislatorVote[];
 };
+
+/** Orders the entries of floor votes the way the votes are taken: by when, then the vote, then the feed's id for the entry. */
+export function compareFloorVoteEntries(a: FloorVoteEntry, b: FloorVoteEntry): number {
+  if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+  return a.historyId - b.historyId || a.id - b.id;
+}
+
+/** Orders the entries of committee votes the way the committees met: by when, then the report, then the feed's id for the entry. */
+export function compareCommitteeVoteEntries(a: CommitteeVoteEntry, b: CommitteeVoteEntry): number {
+  if (a.meetingDate !== b.meetingDate) return a.meetingDate < b.meetingDate ? -1 : 1;
+  return a.reportId - b.reportId || a.id - b.id;
+}
+
+/** One entry of a floor vote with the Legislator its code names: what a vote is grouped from. */
+export type FloorVoteCast = {
+  historyId: number;
+  chamber: Chamber;
+  date: Timestamp;
+  action: string;
+  cast: LegislatorVote;
+};
+
+/** One entry of a committee vote with the Legislator its code names: what a vote is grouped from. */
+export type CommitteeVoteCast = {
+  reportId: number;
+  committeeCode: string;
+  meetingDate: Timestamp;
+  cast: LegislatorVote;
+};
+
+/** The rows in order, cut into runs of neighbours that share a key: the rows of one vote come next to each other. */
+function runsOf<Row>(rows: readonly Row[], keyOf: (row: Row) => unknown): [Row, ...Row[]][] {
+  const runs: [Row, ...Row[]][] = [];
+  for (const row of rows) {
+    const last = runs.at(-1);
+    if (last !== undefined && keyOf(last[0]) === keyOf(row)) last.push(row);
+    else runs.push([row]);
+  }
+  return runs;
+}
+
+/**
+ * Groups entries into floor votes: the entries that share a `MeasureHistoryId` are one vote. The entries
+ * come ordered as `compareFloorVoteEntries` orders them, so the rows of a vote are neighbours.
+ */
+export function groupFloorVotes(casts: readonly FloorVoteCast[]): FloorVote[] {
+  return runsOf(casts, (entry) => entry.historyId).map((run) => ({
+    chamber: run[0].chamber,
+    date: run[0].date,
+    action: run[0].action,
+    votes: run.map((entry) => entry.cast),
+  }));
+}
+
+/** A committee vote's committee, meeting and who voted what, whatever order the feed lists the members in. */
+function rollOf(vote: CommitteeVote): string {
+  const cast = vote.votes.map((entry) => `${entry.legislatorCode}\u0000${entry.vote}`).sort();
+  return JSON.stringify([vote.committeeCode, vote.meetingDate, cast]);
+}
+
+/**
+ * The cache gives every agenda item that has two reports the same roll twice (docs/research/olis-votes.md
+ * §3), so a roll the feed gives under two reports is listed once. Rolls that differ are never merged.
+ */
+function withoutRepeatedRolls(votes: readonly CommitteeVote[]): CommitteeVote[] {
+  const listed = new Set<string>();
+  return votes.filter((vote) => {
+    const roll = rollOf(vote);
+    if (listed.has(roll)) return false;
+    listed.add(roll);
+    return true;
+  });
+}
+
+/**
+ * Groups entries into committee votes: the entries that share a `CommitteeReportId` are one report, and a
+ * roll that a later report repeats is listed once. The entries come ordered as `compareCommitteeVoteEntries`
+ * orders them, so the rows of a report are neighbours.
+ */
+export function groupCommitteeVotes(casts: readonly CommitteeVoteCast[]): CommitteeVote[] {
+  const reports = runsOf(casts, (entry) => entry.reportId).map((run) => ({
+    committeeCode: run[0].committeeCode,
+    meetingDate: run[0].meetingDate,
+    votes: run.map((entry) => entry.cast),
+  }));
+  return withoutRepeatedRolls(reports);
+}

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { CommitteeVoteEntry } from "#/packages/domain/votes.ts";
-import { readSessionRows } from "./feed.ts";
+import { readSessionRows, type MeasureScope } from "./feed.ts";
 import type { OlisClientOptions } from "./options.ts";
 import { feedTimestamp } from "./timestamps.ts";
 
@@ -23,8 +23,9 @@ export async function readCommitteeVoteRows(
   options: OlisClientOptions,
   session: SessionKey,
   signal: AbortSignal,
+  scope?: MeasureScope,
 ): Promise<CommitteeVoteEntry[]> {
-  const rows = await readSessionRows(options, "CommitteeVotes", session, committeeVoteRow, signal);
+  const rows = await readSessionRows(options, "CommitteeVotes", session, committeeVoteRow, signal, scope);
   return rows.map((row) => ({
     id: row.CommitteeVoteId,
     measure: { session, prefix: row.MeasurePrefix, number: row.MeasureNumber },

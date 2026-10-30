@@ -115,6 +115,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       measures,
       history,
       legislators: resolver.people,
+      legislatorCodes: resolver.codes.map(({ code, legislator }) => ({ code, legislatorId: legislator.id })),
       sponsors,
       floorVotes: floorVoteRecords,
       committeeVotes: committeeVoteRecords,

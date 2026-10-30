@@ -8,7 +8,7 @@ import {
   type MeasureLocation,
   type SessionKey,
 } from "#/packages/domain/index.ts";
-import type { LegislatorVote } from "#/packages/domain/votes.ts";
+import type { CommitteeVote, FloorVote, LegislatorVote } from "#/packages/domain/votes.ts";
 import type { LiveLookup, LiveStatusReader } from "./live-status.ts";
 
 /** The notice every result carries (ADR-0002, spec #1 "What every result must carry"). */
@@ -35,6 +35,23 @@ const historyActionOutput = z.object({
   chamber: z.enum(["house", "senate"]).describe("The chamber the action happened in."),
   date: z.string().describe("When the action happened, in Pacific time with its UTC offset."),
   text: z.string().describe("The action as OLIS prints it."),
+});
+
+const floorVoteOutput = z.object({
+  chamber: z.enum(["house", "senate"]).describe("The chamber that voted."),
+  date: z.string().describe("When the chamber voted, in Pacific time with its UTC offset."),
+  action: z.string().describe('The history action the vote was taken at, such as "Third reading.  Passed.".'),
+  votes: z
+    .array(legislatorVoteOutput)
+    .describe("Each Legislator's vote, in the order of the ids the feed gives the entries."),
+});
+
+const committeeVoteOutput = z.object({
+  committee_code: z.string().describe("The code of the committee that voted, such as SLB."),
+  meeting_date: z.string().describe("When the committee met, in Pacific time with its UTC offset."),
+  votes: z
+    .array(legislatorVoteOutput)
+    .describe("Each member's vote, in the order of the ids the feed gives the entries."),
 });
 
 /** The live status block: the Measure's location, history, schedule and votes from OLIS now, or from the cache. */
@@ -64,6 +81,14 @@ const liveStatusOutput = z
     history: z
       .array(historyActionOutput)
       .describe("The Measure's history (see as_of), oldest action first as OLIS prints it."),
+    floor_votes: z
+      .array(floorVoteOutput)
+      .describe("The Measure's floor votes (see as_of), in the order they were taken, as the top-level floor_votes."),
+    committee_votes: z
+      .array(committeeVoteOutput)
+      .describe(
+        "The Measure's committee votes (see as_of), in the order the committees met, as the top-level committee_votes, including the note there that a meeting_date can be later than as_of.",
+      ),
   })
   .describe(
     "The Measure's current status, read from OLIS when the call arrived. If OLIS could not be read, the same fields come from the cache, and source and notice say so.",
@@ -124,29 +149,12 @@ export const getMeasureOutput = z.object({
       "The Measure's history as of the last full pull (see as_of), oldest action first as OLIS prints it, so the last entry is the latest action.",
     ),
   floor_votes: z
-    .array(
-      z.object({
-        chamber: z.enum(["house", "senate"]).describe("The chamber that voted."),
-        date: z.string().describe("When the chamber voted, in Pacific time with its UTC offset."),
-        action: z.string().describe('The history action the vote was taken at, such as "Third reading.  Passed.".'),
-        votes: z
-          .array(legislatorVoteOutput)
-          .describe("Each Legislator's vote, in the order of the ids the feed gives the entries."),
-      }),
-    )
+    .array(floorVoteOutput)
     .describe(
       "The Measure's floor votes as of the last full pull (see as_of), in the order they were taken. A Legislator who changed Legislator Code during the Session is one Legislator in every vote.",
     ),
   committee_votes: z
-    .array(
-      z.object({
-        committee_code: z.string().describe("The code of the committee that voted, such as SLB."),
-        meeting_date: z.string().describe("When the committee met, in Pacific time with its UTC offset."),
-        votes: z
-          .array(legislatorVoteOutput)
-          .describe("Each member's vote, in the order of the ids the feed gives the entries."),
-      }),
-    )
+    .array(committeeVoteOutput)
     .describe(
       "The Measure's committee votes as of the last full pull (see as_of), in the order the committees met. A roll that OLIS gives under two reports, as it does for a joint committee, is listed once; two different rolls of one committee at one meeting are two entries. OLIS creates these rows before the meeting is held, so a vote whose meeting_date is later than as_of can already list answers; the feed does not say whether that vote has been taken.",
     ),
@@ -168,7 +176,13 @@ export type GetMeasureResult =
 /** The live block of a call whose lookup answered, or the cache's values when it did not. */
 function liveStatusOf(
   live: LiveLookup,
-  cached: { location: MeasureLocation; history: readonly HistoryAction[]; asOf: string },
+  cached: {
+    location: MeasureLocation;
+    history: readonly HistoryAction[];
+    floorVotes: readonly FloorVote[];
+    committeeVotes: readonly CommitteeVote[];
+    asOf: string;
+  },
 ): z.infer<typeof liveStatusOutput> {
   switch (live.kind) {
     case "answered":
@@ -179,19 +193,40 @@ function liveStatusOf(
         notice: `Read from OLIS when this call arrived, as of ${live.asOf}.`,
         location: { current: live.location.current, committee_code: live.location.committeeCode },
         history: live.history.map(historyShown),
+        floor_votes: live.floorVotes.map(floorVoteShown),
+        committee_votes: live.committeeVotes.map(committeeVoteShown),
       };
     case "failed":
       return {
         source: "cache",
         lookup_failed: true,
         as_of: cached.asOf,
-        notice: `The live lookup of OLIS failed (${live.reason}). The location and history in this block come from the cache, as of ${cached.asOf}, the index's as-of time, and may be out of date.`,
+        notice: `The live lookup of OLIS failed (${live.reason}). The location, history and votes in this block come from the cache, as of ${cached.asOf}, the index's as-of time, and may be out of date.`,
         location: { current: cached.location.current, committee_code: cached.location.committeeCode },
         history: cached.history.map(historyShown),
+        floor_votes: cached.floorVotes.map(floorVoteShown),
+        committee_votes: cached.committeeVotes.map(committeeVoteShown),
       };
     default:
       return live satisfies never;
   }
+}
+
+function floorVoteShown(vote: FloorVote): z.infer<typeof floorVoteOutput> {
+  return {
+    chamber: vote.chamber,
+    date: vote.date,
+    action: vote.action,
+    votes: vote.votes.map(legislatorVoteShown),
+  };
+}
+
+function committeeVoteShown(vote: CommitteeVote): z.infer<typeof committeeVoteOutput> {
+  return {
+    committee_code: vote.committeeCode,
+    meeting_date: vote.meetingDate,
+    votes: vote.votes.map(legislatorVoteShown),
+  };
 }
 
 function historyShown(action: HistoryAction): z.infer<typeof historyActionOutput> {
@@ -212,6 +247,8 @@ export async function getMeasure(
     throw new Error(`The index holds Measures of ${session} but no completed full pull to date them by`);
   }
   const history = reader.findHistory(measure);
+  const floorVotes = reader.findFloorVotes(measure);
+  const committeeVotes = reader.findCommitteeVotes(measure);
   // The Measure is in the index, so OLIS is asked about it; a reference the index does not know never reaches OLIS.
   const live = await liveStatus.lookup(measure);
   return {
@@ -233,18 +270,9 @@ export async function getMeasure(
         .map((committeeCode) => ({ committee_code: committeeCode })),
       presession_messages: reader.findPresessionMessages(measure),
       history: history.map(historyShown),
-      floor_votes: reader.findFloorVotes(measure).map((vote) => ({
-        chamber: vote.chamber,
-        date: vote.date,
-        action: vote.action,
-        votes: vote.votes.map(legislatorVoteShown),
-      })),
-      committee_votes: reader.findCommitteeVotes(measure).map((vote) => ({
-        committee_code: vote.committeeCode,
-        meeting_date: vote.meetingDate,
-        votes: vote.votes.map(legislatorVoteShown),
-      })),
-      live_status: liveStatusOf(live, { location: measure.location, history, asOf }),
+      floor_votes: floorVotes.map(floorVoteShown),
+      committee_votes: committeeVotes.map(committeeVoteShown),
+      live_status: liveStatusOf(live, { location: measure.location, history, floorVotes, committeeVotes, asOf }),
       as_of: asOf,
       notice: NON_OFFICIAL_NOTICE,
     },

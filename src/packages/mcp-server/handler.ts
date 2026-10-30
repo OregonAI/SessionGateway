@@ -88,6 +88,7 @@ export function createSessionGatewayHandler(config: ServerConfig, deps: HandlerD
   });
   const liveStatus = createLiveStatusReader({
     olis: createOlisClient({ baseUrl: config.olisBaseUrl, fetch: deps.fetch }),
+    legislatorOfCode: (session, code) => reader.findLegislatorOfCode(session, code),
     clock: deps.clock,
     timeoutMs: config.olisLiveTimeoutMs,
     signal: deps.signal,

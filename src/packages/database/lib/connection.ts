@@ -25,6 +25,12 @@ const schema = `
     name TEXT NOT NULL,
     PRIMARY KEY (session_key, id)
   ) STRICT;
+  CREATE TABLE IF NOT EXISTS legislator_code (
+    session_key TEXT NOT NULL,
+    code TEXT NOT NULL,
+    legislator_id TEXT NOT NULL,
+    PRIMARY KEY (session_key, code)
+  ) STRICT;
   CREATE TABLE IF NOT EXISTS history_action (
     session_key TEXT NOT NULL,
     history_id INTEGER NOT NULL,

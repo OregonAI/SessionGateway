@@ -1,9 +1,23 @@
 // The live lookup of get_measure (ticket #21; spec #1, module 11; ADR-0005): when a call arrives, one
 // Measure's location, history, schedule and votes are read from OLIS and dated by the injected clock.
 // A lookup that fails is a value, not an error: the cache still answers (src/CLAUDE.md, "Errors").
-import type { HistoryAction, MeasureKey, MeasureLocation } from "#/packages/domain/index.ts";
-import { compareHistoryActions } from "#/packages/domain/index.ts";
-import type { OlisClient } from "#/packages/olis-client/index.ts";
+import type { SessionKey } from "#/packages/domain/index.ts";
+import {
+  compareHistoryActions,
+  type HistoryAction,
+  type MeasureKey,
+  type MeasureLocation,
+} from "#/packages/domain/index.ts";
+import type { Legislator } from "#/packages/domain/legislators.ts";
+import {
+  compareCommitteeVoteEntries,
+  compareFloorVoteEntries,
+  groupCommitteeVotes,
+  groupFloorVotes,
+  type CommitteeVote,
+  type FloorVote,
+} from "#/packages/domain/votes.ts";
+import type { MeasureLiveRead, OlisClient } from "#/packages/olis-client/index.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
 
@@ -15,6 +29,8 @@ export type LiveLookup =
       asOf: Timestamp;
       location: MeasureLocation;
       history: HistoryAction[];
+      floorVotes: FloorVote[];
+      committeeVotes: CommitteeVote[];
     }
   | { kind: "failed"; reason: string };
 
@@ -27,6 +43,8 @@ export type LiveStatusReader = {
 
 export type LiveStatusDeps = {
   olis: OlisClient;
+  /** Says who a Legislator Code names, as the index's last full pull resolved it. */
+  legislatorOfCode: (session: SessionKey, code: string) => Legislator | undefined;
   clock: Clock;
   /** How long a lookup may take, all its requests together. */
   timeoutMs: number;
@@ -59,24 +77,56 @@ export function createLiveStatusReader(deps: LiveStatusDeps): LiveStatusReader {
       const readAt = deps.clock.now();
       const timeout = AbortSignal.timeout(deps.timeoutMs);
       const signal = AbortSignal.any([deps.signal, timeout]);
-      try {
-        const read = await deps.olis.readMeasureLive(key, signal);
-        if (read.measure === undefined) {
-          throw new Error(`OLIS lists no Measure ${key.prefix} ${key.number} in ${key.session}`);
-        }
-        return {
-          kind: "answered",
-          asOf: formatPacific(readAt),
-          location: read.measure.location,
-          history: read.history.toSorted(compareHistoryActions),
-        };
-      } catch (error) {
+      /** A lookup that failed is reported to the deployment and answered as a value. */
+      const failed = (error: unknown): LiveLookup => {
         deps.onFailure({
           measure: key,
           error: error instanceof Error ? error : new Error("The live lookup failed", { cause: error }),
         });
         return { kind: "failed", reason: reasonOf(error, timeout.aborted, deps.timeoutMs) };
+      };
+
+      let read: MeasureLiveRead;
+      try {
+        read = await deps.olis.readMeasureLive(key, signal);
+      } catch (error) {
+        return failed(error);
       }
+      if (read.measure === undefined) {
+        return failed(new Error(`OLIS lists no Measure ${key.prefix} ${key.number} in ${key.session}`));
+      }
+      const legislatorOf = (code: string): Legislator | null => deps.legislatorOfCode(key.session, code) ?? null;
+      return {
+        kind: "answered",
+        asOf: formatPacific(readAt),
+        location: read.measure.location,
+        history: read.history.toSorted(compareHistoryActions),
+        floorVotes: groupFloorVotes(
+          read.floorVotes.toSorted(compareFloorVoteEntries).map((entry) => ({
+            historyId: entry.historyId,
+            chamber: entry.chamber,
+            date: entry.date,
+            action: entry.action,
+            cast: {
+              legislatorCode: entry.legislatorCode,
+              legislator: legislatorOf(entry.legislatorCode),
+              vote: entry.vote,
+            },
+          })),
+        ),
+        committeeVotes: groupCommitteeVotes(
+          read.committeeVotes.toSorted(compareCommitteeVoteEntries).map((entry) => ({
+            reportId: entry.reportId,
+            committeeCode: entry.committeeCode,
+            meetingDate: entry.meetingDate,
+            cast: {
+              legislatorCode: entry.legislatorCode,
+              legislator: legislatorOf(entry.legislatorCode),
+              vote: entry.vote,
+            },
+          })),
+        ),
+      };
     },
   };
 }
