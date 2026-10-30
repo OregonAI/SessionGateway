@@ -1,0 +1,108 @@
+{
+  "unresolved": [
+    {
+      "entity_set": "MeasureVotes",
+      "row_key": {
+        "MeasureVoteId": 1437980
+      },
+      "property": "VoteName",
+      "refers_to": "Legislators",
+      "target_key": {
+        "SessionKey": "2025R1",
+        "LegislatorCode": "Sen Woods"
+      },
+      "reason": "No Legislators row with this LegislatorCode in the full 2025R1 feed cache: Legislators is a current snapshot (docs/research/olis-odata.md section 8, gotcha 4)."
+    },
+    {
+      "entity_set": "MeasureVotes",
+      "row_key": {
+        "MeasureVoteId": 1438100
+      },
+      "property": "VoteName",
+      "refers_to": "Legislators",
+      "target_key": {
+        "SessionKey": "2025R1",
+        "LegislatorCode": "Sen Woods"
+      },
+      "reason": "No Legislators row with this LegislatorCode in the full 2025R1 feed cache: Legislators is a current snapshot (docs/research/olis-odata.md section 8, gotcha 4)."
+    },
+    {
+      "entity_set": "MeasureVotes",
+      "row_key": {
+        "MeasureVoteId": 1443750
+      },
+      "property": "VoteName",
+      "refers_to": "Legislators",
+      "target_key": {
+        "SessionKey": "2025R1",
+        "LegislatorCode": "Rep Neron"
+      },
+      "reason": "No Legislators row with this LegislatorCode in the full 2025R1 feed cache: Legislators is a current snapshot (docs/research/olis-odata.md section 8, gotcha 4)."
+    },
+    {
+      "entity_set": "MeasureVotes",
+      "row_key": {
+        "MeasureVoteId": 1456830
+      },
+      "property": "VoteName",
+      "refers_to": "Legislators",
+      "target_key": {
+        "SessionKey": "2025R1",
+        "LegislatorCode": "Rep Neron"
+      },
+      "reason": "No Legislators row with this LegislatorCode in the full 2025R1 feed cache: Legislators is a current snapshot (docs/research/olis-odata.md section 8, gotcha 4)."
+    },
+    {
+      "entity_set": "MeasureVotes",
+      "row_key": {
+        "MeasureVoteId": 1468790
+      },
+      "property": "VoteName",
+      "refers_to": "Legislators",
+      "target_key": {
+        "SessionKey": "2025R1",
+        "LegislatorCode": "Rep Neron"
+      },
+      "reason": "No Legislators row with this LegislatorCode in the full 2025R1 feed cache: Legislators is a current snapshot (docs/research/olis-odata.md section 8, gotcha 4)."
+    },
+    {
+      "entity_set": "MeasureSponsors",
+      "row_key": {
+        "MeasureSponsorId": "146507"
+      },
+      "property": "LegislatoreCode",
+      "refers_to": "Legislators",
+      "target_key": {
+        "SessionKey": "2025R1",
+        "LegislatorCode": "Rep Neron"
+      },
+      "reason": "No Legislators row with this LegislatorCode in the full 2025R1 feed cache: Legislators is a current snapshot (docs/research/olis-odata.md section 8, gotcha 4)."
+    },
+    {
+      "entity_set": "CommitteeVotes",
+      "row_key": {
+        "CommitteeVoteId": 324941
+      },
+      "property": "VoteName",
+      "refers_to": "Legislators",
+      "target_key": {
+        "SessionKey": "2025R1",
+        "LegislatorCode": "Sen Woods"
+      },
+      "reason": "No Legislators row with this LegislatorCode in the full 2025R1 feed cache: Legislators is a current snapshot (docs/research/olis-odata.md section 8, gotcha 4)."
+    },
+    {
+      "entity_set": "CommitteeVotes",
+      "row_key": {
+        "CommitteeVoteId": 327885
+      },
+      "property": "VoteName",
+      "refers_to": "Legislators",
+      "target_key": {
+        "SessionKey": "2025R1",
+        "LegislatorCode": "Sen Woods"
+      },
+      "reason": "No Legislators row with this LegislatorCode in the full 2025R1 feed cache: Legislators is a current snapshot (docs/research/olis-odata.md section 8, gotcha 4)."
+    }
+  ]
+}

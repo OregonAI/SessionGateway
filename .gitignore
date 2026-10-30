@@ -3,5 +3,8 @@ dist/
 coverage/
 data/*.db
 data/*.db-*
+data/unresolved-legislator-codes.json
+data/snapshot.json
 .env
 .cache/
+CLAUDE.local.md

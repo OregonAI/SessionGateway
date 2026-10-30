@@ -1,0 +1,27 @@
+# Weekly updates for npm and GitHub Actions, minor and patch grouped into one PR each. The cooldown
+# matches .npmrc's min-release-age (14 days); security updates skip the cooldown (.github/CLAUDE.md).
+# Docker joins this list with the Dockerfile (ticket #25): there is nothing for it to update yet.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      npm-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      actions-minor-and-patch:
+        update-types:
+          - minor
+          - patch
