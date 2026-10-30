@@ -197,7 +197,7 @@ export const fileOutput = z.object({
   posting_ids: z
     .array(z.string())
     .describe(
-      "The postings (ids that get_document resolves) whose files read the same. Postings of one amendment usually share one file, or hold files that differ only in how the PDF was saved; when a committee posted a revised text, each distinct reading is listed on its own.",
+      "The postings (ids that get_document resolves) whose files read the same. Postings of one amendment usually share one file, or hold files that differ only in how the PDF was saved; when a committee posted a revised text, each distinct reading is listed on its own. Files that were not read (text_read false) are never listed together unless they are the same file.",
     ),
   text_read: z
     .boolean()
