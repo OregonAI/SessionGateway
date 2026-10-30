@@ -55,13 +55,13 @@ function reasonForUnreadLabel(label: string): string {
 
 /**
  * Places an analysis document on a Version from what the feed's row says. A document the feed flags as
- * a minority report's is placed on none, whatever its label: the label ("A") names the majority's text,
- * and the feed does not say that the minority report's document is of it. Otherwise only the
- * unambiguous labels name a Version: "INTRO" is Introduced and a single letter is that letter's
- * Engrossed Version ("A" is A-Engrossed). A blank label, and the ones more than one Version could answer
- * ("B*", "MRA"; docs/research/olis-odata.md gotcha 9), name none, and neither does a label for a Version
- * the feed does not list for the Measure: an edge to a document that is not there is worse than none.
- * Nothing is guessed. `isListed` says whether the Measure has a Version.
+ * a minority report's is placed on none, whatever its label: the label ("A") is the letter of the
+ * majority's Version, and the feed does not say that a minority report's document is of that text.
+ * Otherwise only the unambiguous labels name a Version: "INTRO" is Introduced and a single letter is
+ * that letter's Engrossed Version ("A" is A-Engrossed). A blank label, and the ones more than one
+ * Version could answer ("B*", "MRA"; docs/research/olis-odata.md gotcha 9), name none, and neither does
+ * a label for a Version the feed does not list for the Measure: an edge to a document that is not there
+ * is worse than none. Nothing is guessed. `isListed` says whether the Measure has a Version.
  */
 export function placeAnalysis(
   key: MeasureKey,
