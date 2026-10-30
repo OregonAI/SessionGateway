@@ -34,12 +34,17 @@ describe.for(eras)("meetings for a %s client", (era) => {
   // test/fixtures/olis-2025R1/feed/CommitteeAgendaItems.json and CommitteeMeetings.json, and spec #1's
   // case (c): "SLB's 2025-01-30 Public Hearing and Work Session, with -1 and -2 posted". The fixture
   // holds SB 69's later meetings too (HLWS, in April), but their rows were created after the clock.
-  it("names SLB's 2025-01-30 Public Hearing and Work Session as the next meeting on SB 69", async () => {
+  it("names SLB's 2025-01-30 Public Hearing and Work Session, with -1 and -2 posted, as the next meeting on SB 69", async () => {
     const outcome = await callTool(connected, "meetings", { measure: "SB 69" });
 
     expect(outcome.isError).toBe(false);
     expect(outcome.structured?.["next_meeting_id"]).toBe("meeting-2025r1-slb-2025-01-30-0800");
-    const meetings = outcome.structured?.["meetings"] as { id: string; upcoming: boolean }[];
+    const meetings = outcome.structured?.["meetings"] as {
+      id: string;
+      upcoming: boolean;
+      agenda_items: { meeting_type: string }[];
+      proposed_amendments: { number: string }[];
+    }[];
     expect(meetings.map((meeting) => [meeting.id, meeting.upcoming])).toEqual([
       ["meeting-2025r1-slb-2025-01-21-0800", false],
       ["meeting-2025r1-slb-2025-01-28-0800", false],
@@ -50,6 +55,10 @@ describe.for(eras)("meetings for a %s client", (era) => {
       at: "2025-01-30T08:00:00-08:00",
       status: "Scheduled",
     });
+    // The next meeting is a Public Hearing and Work Session on SB 69, with -1 and -2 posted to it.
+    const next = meetings.find((meeting) => meeting.id === outcome.structured?.["next_meeting_id"]);
+    expect(next?.agenda_items.map((item) => item.meeting_type)).toEqual(["Public Hearing and Work Session"]);
+    expect(next?.proposed_amendments.map((amendment) => amendment.number)).toEqual(["-1", "-2"]);
   });
 
   // Spec #1 case (c): "-1 and -2 posted", and, from the spec's graph section, "SB 69's -1 was posted to
