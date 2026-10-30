@@ -38,7 +38,9 @@ export const getMeasureOutput = z.object({
       committee_code: z
         .string()
         .nullable()
-        .describe("The code of the committee the Measure is in, such as JWM, or null when it is in none."),
+        .describe(
+          'The committee code OLIS gives with the location, such as JWM, or null when it gives none. It is the feed\'s field, not a statement that the Measure is in that committee: OLIS can give a code while `current` says the Measure is elsewhere, such as "At Presidents Desk Upon Adjournment", and none while `current` says "In House Committee". Read `current` for where the Measure is.',
+        ),
     })
     .describe("The Measure's current location as of the last full pull (see as_of)."),
   created_at: z.string().describe("When OLIS created the Measure, in Pacific time with its UTC offset."),

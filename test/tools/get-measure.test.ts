@@ -12,6 +12,13 @@ import { startSystem, type System } from "../support/system.ts";
 const sb69Catchline =
   "Specifies that the Bureau of Labor and Industries is responsible for certain administrative and regulatory oversight regarding certain provisions under the laws governing paid family and medical leave that relate to retaliation and discrimination.";
 
+/** The description of a property of a JSON schema, found by the names of its properties from the root. */
+function describedAs(schema: unknown, path: readonly string[]): string {
+  let node = schema as { properties?: Record<string, unknown>; description?: unknown } | undefined;
+  for (const name of path) node = node?.properties?.[name] as typeof node;
+  return typeof node?.description === "string" ? node.description : "";
+}
+
 let system: System;
 
 beforeAll(async () => {
@@ -81,6 +88,17 @@ describe.for(eras)("get_measure for a %s client", (era) => {
     const unknown = await callTool(connected, "get_measure", { measure: "SB 9999" });
 
     expect(unknown.text).toContain(String(found.structured?.["id"]));
+  });
+
+  // The cache's Measures rows keep a CurrentCommitteeCode where CurrentLocation says the Measure is at the
+  // President's desk (8 of 3,466) and give none for one that is "In House Committee" (docs/research/
+  // olis-votes.md section 6), so the code says nothing about where the Measure is by itself.
+  it("tells an agent that the committee code is the feed's and can be set where the Measure is no longer in committee", async () => {
+    const { tools } = await connected.client.listTools();
+
+    const description = describedAs(tools[0]?.outputSchema, ["location", "committee_code"]);
+    expect(description).toContain("At Presidents Desk Upon Adjournment");
+    expect(description).not.toMatch(/the committee the Measure is in/i);
   });
 
   it("advertises get_measure as the one read-only tool, with an output schema", async () => {

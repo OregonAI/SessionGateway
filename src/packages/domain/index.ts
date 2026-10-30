@@ -23,7 +23,11 @@ export type MeasureKey = {
 export type MeasureLocation = {
   /** The feed's `CurrentLocation`, such as "In Senate Committee" or "Chapter Number Assigned". */
   current: string;
-  /** The feed's `CurrentCommitteeCode`: the committee the Measure is in, null when it is in none. */
+  /**
+   * The feed's `CurrentCommitteeCode`, as it gives it: null when it gives none. It does not say the Measure is
+   * in that committee, because the feed keeps it for some Measures at the President's desk and gives none for one
+   * in a House committee (docs/research/olis-votes.md §6); `current` says where the Measure is.
+   */
   committeeCode: string | null;
 };
 

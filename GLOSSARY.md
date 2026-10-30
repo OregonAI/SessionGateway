@@ -70,7 +70,7 @@ The Legislative Fiscal Office's statement of what a Version would cost governmen
 _Avoid_: fiscal note
 
 **Location**:
-Where a Measure is now, as the feed's `CurrentLocation` says it ("In Senate Committee", "Chapter Number Assigned", "House Desk - Vetoed"), with the code of the committee when the Measure is in one (`CurrentCommitteeCode`, such as `JWM`). `get_measure` shows what the last full pull stored, dated by the As of time; the live status block comes in its own ticket (#21).
+Where a Measure is now, as the feed's `CurrentLocation` says it ("In Senate Committee", "Chapter Number Assigned", "House Desk - Vetoed"), with the committee code the feed gives beside it (`CurrentCommitteeCode`, such as `JWM`). The code is the feed's field as it stands, not a statement that the Measure is in that committee: the cache has it set on some Measures whose Location says they are at the President's desk, and null on one in a House committee (`docs/research/olis-votes.md` §6). `get_measure` shows what the last full pull stored, dated by the As of time; the live status block comes in its own ticket (#21).
 _Avoid_: status, which names that live block
 
 **History**:

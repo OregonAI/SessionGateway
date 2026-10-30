@@ -95,6 +95,45 @@ describe("a Measure with no history and no vote", () => {
   });
 });
 
+describe("a committee code that does not follow the location", () => {
+  // The feed's two fields are shown as it gives them. The cache has the pair both ways round (olis-votes.md
+  // section 6): SB 310 "At Presidents Desk Upon Adjournment" with CurrentCommitteeCode "SED", and HB 3029
+  // "In House Committee" with none. The Measure rows here are made up (HB 9002 and HB 9003) around those
+  // two pairs of location fields.
+  const measureAt = (number: number, location: string, committeeCode: string | null) => ({
+    SessionKey: "2025R1",
+    MeasurePrefix: "HB",
+    MeasureNumber: number,
+    CatchLine: "A Measure whose location fields are the cache's.",
+    CurrentLocation: location,
+    CurrentCommitteeCode: committeeCode,
+    CreatedDate: "2025-02-01T10:00:00",
+    ModifiedDate: null,
+  });
+
+  it("shows a code beside a location that is no committee, and none beside In House Committee", async () => {
+    const outcomes = await getMeasures(
+      {
+        clockAt: afterTheSession,
+        olis: {
+          strayRows: {
+            Measures: [
+              measureAt(9002, "At Presidents Desk Upon Adjournment", "SED"),
+              measureAt(9003, "In House Committee", null),
+            ],
+          },
+        },
+      },
+      ["HB 9002", "HB 9003"],
+    );
+
+    expect(outcomes.map((outcome) => outcome.structured?.["location"])).toEqual([
+      { current: "At Presidents Desk Upon Adjournment", committee_code: "SED" },
+      { current: "In House Committee", committee_code: null },
+    ]);
+  });
+});
+
 describe("history the feed sends out of order", () => {
   // SB 69's first real row is 615374 at 2025-01-13T09:07:30. Three rows are added after all the others:
   //   900001 at 2025-01-02T10:00:00, earlier than every real row
