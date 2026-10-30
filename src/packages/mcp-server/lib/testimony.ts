@@ -30,12 +30,15 @@ const UNLISTED_POSITION_LABEL = "unlisted position";
 /**
  * How many Testimony rows one page lists. The 2025R1 feed has Measures with 14,223 rows (SB 210) and 4,204 (HB 2025),
  * and 17 with more than 1,000 (counted over the full local cache on 2026-10-30), so a Measure's whole Testimony would
- * overflow an agent's context. An item is about 525 characters of JSON (HB 3131's 42 items are 22,045 characters, and a
- * page of 100 made-up rows is 48,347), so a page is about 50,000 characters, two and a half `get_document` parts
- * (20,000 characters each). Every tool here sends the JSON as text and as structured content, so a client may hold
- * it twice.
+ * overflow an agent's context. An item is about 525 characters of JSON (measured 2026-10-30: HB 3131's 42 items are
+ * 22,045 characters, and a page of 100 made-up items with short fields was 48,347), so 100 items would be about
+ * 50,000 characters, two and a half `get_document` parts (PART_SIZE_CHARACTERS, 20,000, "a few percent of an agent's
+ * context"). 50 items are about 26,000 characters, a part and a third, and keep HB 3131's 42 rows, the Measure spec #1
+ * uses as its example, on one page. Every tool here sends the JSON as text and as structured content, so a client
+ * may hold it twice.
  */
-const PAGE_SIZE = 100;
+export const TESTIMONY_PAGE_SIZE = 50;
+const PAGE_SIZE = TESTIMONY_PAGE_SIZE;
 
 /**
  * The most ids one set of identical letters lists. A form letter can run to hundreds of rows on one Measure,

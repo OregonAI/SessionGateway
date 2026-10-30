@@ -72,8 +72,8 @@ describe.for(eras)("testimony on a Measure with 251 rows, for a %s client", (era
   });
 
   // The order is fixed: position (support, oppose, neutral), then organization group in alphabetical order, then
-  // CommTestId. 100 items to a page. Page 1 is the first 100 of support's 150 rows: Town 02, 03, 04 and 07, 25 each.
-  it("returns the first 100 items of 251 as page 1 of 3, with the Measure's totals", async () => {
+  // CommTestId. 50 items to a page. Page 1 is the first 50 of support's 150 rows: Town 02 and 03, 25 each.
+  it("returns the first 50 items of 251 as page 1 of 6, with the Measure's totals", async () => {
     const outcome = await callTool(connected, "testimony", { measure: "SB 983" });
 
     expect(outcome.isError).toBe(false);
@@ -81,13 +81,12 @@ describe.for(eras)("testimony on a Measure with 251 rows, for a %s client", (era
       measure_id: "measure-2025r1-sb983",
       total: 251,
       page: 1,
-      last_page: 3,
+      last_page: 6,
+      page_size: 50,
     });
     expect(shapeOf(outcome.structured?.["positions"] as Position[])).toEqual([
       [3983, "Town 02", 25, 25],
       [3983, "Town 03", 25, 25],
-      [3983, "Town 04", 25, 25],
-      [3983, "Town 07", 25, 25],
     ]);
   });
 
@@ -96,39 +95,56 @@ describe.for(eras)("testimony on a Measure with 251 rows, for a %s client", (era
   it("names the number of the last page last_page, as page_count is a PDF's pages in get_document", async () => {
     const outcome = await callTool(connected, "testimony", { measure: "SB 983" });
 
-    expect(outcome.structured).toHaveProperty("last_page", 3);
+    expect(outcome.structured).toHaveProperty("last_page", 6);
     expect(outcome.structured).not.toHaveProperty("page_count");
   });
 
-  // Page 2 is the last 50 of support (Town 08 and 09), then the first 50 of oppose's 51: "Newberg" (the real row),
-  // Town 00 (25) and 24 of Town 05's 25. Oppose has 50 made-up rows and the real one.
-  it("continues in the same order on page 2, a group split across the page break keeping its whole count", async () => {
-    const outcome = await callTool(connected, "testimony", { measure: "SB 983", page: 2 });
+  // Pages 2 and 3 finish support: Town 04 and 07, then Town 08 and 09.
+  it("continues in the same order on pages 2 and 3, to the end of support", async () => {
+    const second = await callTool(connected, "testimony", { measure: "SB 983", page: 2 });
+    const third = await callTool(connected, "testimony", { measure: "SB 983", page: 3 });
 
-    expect(outcome.structured).toMatchObject({ total: 251, page: 2, last_page: 3 });
-    expect(shapeOf(outcome.structured?.["positions"] as Position[])).toEqual([
+    expect(second.structured).toMatchObject({ total: 251, page: 2, last_page: 6 });
+    expect(shapeOf(second.structured?.["positions"] as Position[])).toEqual([
+      [3983, "Town 04", 25, 25],
+      [3983, "Town 07", 25, 25],
+    ]);
+    expect(shapeOf(third.structured?.["positions"] as Position[])).toEqual([
       [3983, "Town 08", 25, 25],
       [3983, "Town 09", 25, 25],
+    ]);
+  });
+
+  // Page 4 is the first 50 of oppose's 51: "Newberg" (the real row), Town 00 (25) and 24 of Town 05's 25, a group that
+  // runs across the page break and keeps its whole count of 25 on both pages. Oppose has 50 made-up rows and the real one.
+  it("shows a group split across a page break on both pages, with its whole count", async () => {
+    const fourth = await callTool(connected, "testimony", { measure: "SB 983", page: 4 });
+    const fifth = await callTool(connected, "testimony", { measure: "SB 983", page: 5 });
+
+    expect(fourth.structured).toMatchObject({ total: 251, page: 4, last_page: 6 });
+    expect(shapeOf(fourth.structured?.["positions"] as Position[])).toEqual([
       [3982, "Newberg", 1, 1],
       [3982, "Town 00", 25, 25],
       [3982, "Town 05", 25, 24],
     ]);
-  });
-
-  it("ends on page 3 with the last row of oppose and all of neutral", async () => {
-    const outcome = await callTool(connected, "testimony", { measure: "SB 983", page: 3 });
-
-    expect(outcome.structured).toMatchObject({ total: 251, page: 3, last_page: 3 });
-    expect(shapeOf(outcome.structured?.["positions"] as Position[])).toEqual([
+    // Page 5: Town 05's last row, then neutral's Town 01 (25) and 24 of Town 06's 25.
+    expect(shapeOf(fifth.structured?.["positions"] as Position[])).toEqual([
       [3982, "Town 05", 25, 1],
       [3981, "Town 01", 25, 25],
-      [3981, "Town 06", 25, 25],
+      [3981, "Town 06", 25, 24],
     ]);
   });
 
-  it("lists every row once across the three pages, in a fixed order", async () => {
+  it("ends on page 6 with the one row left, the last of neutral's Town 06", async () => {
+    const outcome = await callTool(connected, "testimony", { measure: "SB 983", page: 6 });
+
+    expect(outcome.structured).toMatchObject({ total: 251, page: 6, last_page: 6 });
+    expect(shapeOf(outcome.structured?.["positions"] as Position[])).toEqual([[3981, "Town 06", 25, 1]]);
+  });
+
+  it("lists every row once across the six pages, in a fixed order", async () => {
     const ids: string[] = [];
-    for (const page of [1, 2, 3]) {
+    for (const page of [1, 2, 3, 4, 5, 6]) {
       const outcome = await callTool(connected, "testimony", { measure: "SB 983", page });
       for (const position of outcome.structured?.["positions"] as Position[]) {
         for (const group of position.organizations) ids.push(...group.items.map((item) => item.id));
@@ -148,7 +164,7 @@ describe.for(eras)("testimony on a Measure with 251 rows, for a %s client", (era
   // groups, the identical letters, and "page N of M". 11 groups: six of support, three of oppose, two of neutral.
   it("carries the totals, the counts by position, the number of groups and the identical letters on every page", async () => {
     const pages = [];
-    for (const page of [1, 2, 3]) {
+    for (const page of [1, 2, 3, 4, 5, 6]) {
       const outcome = await callTool(connected, "testimony", { measure: "SB 983", page });
       pages.push(outcome.structured);
     }
@@ -192,10 +208,10 @@ describe.for(eras)("testimony on a Measure with 251 rows, for a %s client", (era
   });
 
   it("answers with an error that names the last page when the page asked for is past it", async () => {
-    const outcome = await callTool(connected, "testimony", { measure: "SB 983", page: 4 });
+    const outcome = await callTool(connected, "testimony", { measure: "SB 983", page: 7 });
 
     expect(outcome.isError).toBe(true);
-    expect(outcome.text).toMatch(/3 pages/);
-    expect(outcome.text).toMatch(/no page 4/);
+    expect(outcome.text).toMatch(/6 pages/);
+    expect(outcome.text).toMatch(/no page 7/);
   });
 });

@@ -58,6 +58,18 @@ describe.for(eras)("testimony for a %s client", (era) => {
     ]);
   });
 
+  // A page is 50 items, and HB 3131, the Measure spec #1 uses as its example, has 42 rows: all of them are on page 1 of
+  // 1, and the answer says how many a page holds at the most.
+  it("lists HB 3131's 42 rows on one page of at most 50", async () => {
+    const outcome = await callTool(connected, "testimony", { measure: "HB 3131" });
+
+    expect(outcome.structured).toMatchObject({ page: 1, last_page: 1, page_size: 50 });
+    const items = (outcome.structured?.["positions"] as Position[])
+      .flatMap((position) => position.organizations)
+      .flatMap((group) => group.items);
+    expect(items).toHaveLength(42);
+  });
+
   // The ticket's first box says "grouped by organization", and spec #1 case (d) says: "Portland" is the most
   // common Organization value. Eight of HB 3131's rows give it (feed/CommitteePublicTestimonies.json, all
   // support): 117167, 117201, 117213, 117225, 117226, 117282, 117386 spell it "Portland" and 117326 spells it
