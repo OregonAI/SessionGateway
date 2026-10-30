@@ -21,8 +21,12 @@ import type { VectorCache } from "./vector-cache.ts";
 export const DEFAULT_LIMIT = 20;
 export const MAX_LIMIT = 50;
 
-/** How many passages each side of the search puts forward before the two are fused (docs/adr/0025). */
-const CANDIDATE_PASSAGES = 200;
+/**
+ * How many passages each side of the search puts forward before the two are fused: ten for each of the most
+ * hits a call may ask for, because one long document can hold dozens of the best passages and the hits are
+ * documents (docs/adr/0025).
+ */
+const CANDIDATE_PASSAGES = 10 * MAX_LIMIT;
 
 export const searchInput = z.object({
   query: z
