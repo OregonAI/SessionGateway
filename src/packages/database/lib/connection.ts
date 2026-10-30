@@ -9,6 +9,7 @@ const schema = `
     prefix TEXT NOT NULL,
     number INTEGER NOT NULL,
     catchline TEXT,
+    digest TEXT,
     created_at TEXT NOT NULL,
     modified_at TEXT,
     PRIMARY KEY (session_key, prefix, number)

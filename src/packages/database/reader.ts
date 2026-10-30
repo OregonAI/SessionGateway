@@ -31,6 +31,7 @@ export type IndexReader = {
 
 const measureRow = z.object({
   catchline: z.string().nullable(),
+  digest: z.string().nullable(),
   created_at: z.string(),
   modified_at: z.string().nullable(),
 });
@@ -59,7 +60,7 @@ const relationRow = z.object({
 export function openIndexReader(path: string): IndexReader {
   const database = openReadConnection(path);
   const selectMeasure = database.prepare(
-    "SELECT catchline, created_at, modified_at FROM measure WHERE session_key = ? AND prefix = ? AND number = ?",
+    "SELECT catchline, digest, created_at, modified_at FROM measure WHERE session_key = ? AND prefix = ? AND number = ?",
   );
   const selectAsOf = database.prepare("SELECT full_pull_as_of FROM index_state WHERE session_key = ?");
   const countOf = (sql: string, session: SessionKey): number => countRow.parse(database.prepare(sql).get(session)).n;
@@ -152,6 +153,7 @@ export function openIndexReader(path: string): IndexReader {
       return {
         ...key,
         catchline: stored.catchline,
+        digest: stored.digest,
         createdAt: stored.created_at as Timestamp,
         modifiedAt: stored.modified_at as Timestamp | null,
       };

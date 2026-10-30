@@ -35,9 +35,11 @@ export function openIndexWriter(path: string): IndexWriter {
   return {
     recordFullPull(session, measures, asOf) {
       const upsertMeasure = database.prepare(
-        `INSERT INTO measure (session_key, prefix, number, catchline, created_at, modified_at) VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO measure (session_key, prefix, number, catchline, digest, created_at, modified_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (session_key, prefix, number) DO UPDATE SET
-           catchline = excluded.catchline, created_at = excluded.created_at, modified_at = excluded.modified_at`,
+           catchline = excluded.catchline, digest = excluded.digest, created_at = excluded.created_at,
+           modified_at = excluded.modified_at`,
       );
       const recordAsOf = database.prepare(
         `INSERT INTO index_state (session_key, full_pull_as_of) VALUES (?, ?)
@@ -51,6 +53,7 @@ export function openIndexWriter(path: string): IndexWriter {
             measure.prefix,
             measure.number,
             measure.catchline,
+            measure.digest,
             measure.createdAt,
             measure.modifiedAt,
           );

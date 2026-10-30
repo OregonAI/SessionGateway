@@ -13,6 +13,12 @@ export const getMeasureInput = z.object({
 export const getMeasureOutput = z.object({
   id: z.string().describe("The Measure's id in OregonAI's form."),
   catchline: z.string().nullable().describe("The Measure's catchline, as OLIS publishes it."),
+  digest: z
+    .string()
+    .nullable()
+    .describe(
+      "The Measure's digest and summary exactly as OLIS publishes it (the feed's MeasureSummary), with its tabs, newlines and markup: <b> marks new text and [<i>...</i>] marks text deleted from the prior Version. Null when OLIS publishes none.",
+    ),
   source_url: z.string().describe("The Measure's page on OLIS."),
   created_at: z.string().describe("When OLIS created the Measure, in Pacific time with its UTC offset."),
   modified_at: z
@@ -46,6 +52,7 @@ export function getMeasure(
     measure: {
       id: measureIdOf(measure),
       catchline: measure.catchline,
+      digest: measure.digest,
       source_url: olisPageUrlOf(measure),
       created_at: measure.createdAt,
       modified_at: measure.modifiedAt,
