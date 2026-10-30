@@ -44,7 +44,7 @@ afterAll(async () => {
   await system.stop();
 });
 
-type Item = { id: string; same_letter_as: string | null };
+type Item = { id: string; same_letter_as: string | null; same_letter_count: number | null };
 type Group = { organization: string | null; count: number; items: Item[] };
 type Position = { position_id: number; count: number; organizations: Group[] };
 
@@ -185,26 +185,32 @@ describe.for(eras)("testimony on a Measure with 251 rows, for a %s client", (era
     expect(pages[1]?.["identical_letters"]).toEqual(pages[2]?.["identical_letters"]);
   });
 
-  // The 250 made-up rows have one file, so they are one letter: the set lists the first 100 ids and says how many it
-  // leaves out. Every item of it points at the lowest id; the real row (212098) has a file of its own.
-  it("lists at most the first 100 ids of a set of identical letters and says how many it leaves out", async () => {
-    const outcome = await callTool(connected, "testimony", { measure: "SB 983" });
+  // The 250 made-up rows have one file, so they are one letter. The summary lists it once, as the id to read and the
+  // count, with no list of the 250 ids and nothing left out. Every item of it, on whatever page, carries the same two
+  // facts; the real row (212098) has a file of its own, and carries neither.
+  it("reports a set of 250 identical letters once, as its id to read and its count, and every item of it carries both", async () => {
+    for (const page of [1, 6]) {
+      const outcome = await callTool(connected, "testimony", { measure: "SB 983", page });
 
-    const letters = outcome.structured?.["identical_letters"] as {
-      id_to_read: string;
-      count: number;
-      ids: string[];
-      ids_left_out: number;
-    }[];
-    expect(letters).toHaveLength(1);
-    expect(letters[0]).toMatchObject({ id_to_read: idOf(first), count: 250, ids_left_out: 150 });
-    expect(letters[0]?.ids).toHaveLength(100);
-    expect(letters[0]?.ids.slice(0, 2)).toEqual([idOf(first), idOf(first + 1)]);
-    expect(letters[0]?.ids.at(-1)).toBe(idOf(first + 99));
-    const items = (outcome.structured?.["positions"] as Position[])
+      expect(outcome.structured?.["identical_letters"], `page ${page}`).toEqual([
+        { id_to_read: idOf(first), count: 250 },
+      ]);
+      expect(outcome.structured, `page ${page}`).toMatchObject({ identical_letters_left_out: 0 });
+      const items = (outcome.structured?.["positions"] as Position[])
+        .flatMap((position) => position.organizations)
+        .flatMap((group) => group.items);
+      expect(items.length, `page ${page}`).toBeGreaterThan(0);
+      expect(
+        items.every((item) => item.same_letter_as === idOf(first) && item.same_letter_count === 250),
+        `page ${page}`,
+      ).toBe(true);
+    }
+    const fourth = await callTool(connected, "testimony", { measure: "SB 983", page: 4 });
+    const real = (fourth.structured?.["positions"] as Position[])
       .flatMap((position) => position.organizations)
-      .flatMap((group) => group.items);
-    expect(items.every((item) => item.same_letter_as === idOf(first))).toBe(true);
+      .flatMap((group) => group.items)
+      .find((item) => item.id === idOf(212_098));
+    expect(real).toMatchObject({ same_letter_as: null, same_letter_count: null });
   });
 
   it("answers with an error that names the last page when the page asked for is past it", async () => {

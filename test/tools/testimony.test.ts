@@ -28,7 +28,6 @@ afterAll(async () => {
 type PositionCount = { position_id: number; position: string; count: number };
 type Item = { id: string; [field: string]: unknown };
 type Group = { organization: string | null; spellings: string[]; count: number; items: Item[] };
-type IdenticalLetter = { id_to_read: string; count: number; ids: string[]; ids_left_out: number };
 type Position = { position_id: number; position: string; count: number; organizations: Group[] };
 
 describe.for(eras)("testimony for a %s client", (era) => {
@@ -151,6 +150,7 @@ describe.for(eras)("testimony for a %s client", (era) => {
         "meeting_date",
         "organization",
         "same_letter_as",
+        "same_letter_count",
         "source_url",
         "submitter",
       ]);
@@ -234,40 +234,36 @@ describe.for(eras)("testimony for a %s client", (era) => {
     const outcome = await callTool(connected, "testimony", { measure: "HB 3131" });
 
     expect(outcome.structured?.["identical_letters"]).toEqual([]);
+    expect(outcome.structured).toMatchObject({ identical_letters_left_out: 0 });
     const items = (outcome.structured?.["positions"] as Position[])
       .flatMap((position) => position.organizations)
       .flatMap((group) => group.items);
     expect(items.map((item) => item["same_letter_as"])).toEqual(Array<null>(42).fill(null));
+    expect(items.map((item) => item["same_letter_count"])).toEqual(Array<null>(42).fill(null));
   });
 
   // SB 64's Testimony 117286 and 117289 (Cedric Hayden, "Oregon State Senate ", SHS, 2025-01-23) are byte-identical
   // files: `sha256sum` gives c0bf7b78e4df... for both (98,777 bytes), and `pdftotext -raw` prints the same text.
   // 117281, 117283, 117284, 117288 and 117290 are the same submitter's other files; their hashes and their text
   // differ. The set is reported once, with the lowest CommTestId to read and the count; both items stay listed and
-  // point at it, so the rows still add up to the Measure's 12 and who submitted what is not lost.
+  // point at it, each saying the count too, so the rows still add up to the Measure's 12 and who submitted what is not lost.
   it("reports SB 64's two byte-identical letters once, with a count, and points both items at it", async () => {
     const outcome = await callTool(connected, "testimony", { measure: "SB 64" });
 
     expect(outcome.isError).toBe(false);
     expect(outcome.structured).toMatchObject({ measure_id: "measure-2025r1-sb64", total: 12 });
-    expect(outcome.structured?.["identical_letters"] as IdenticalLetter[]).toEqual([
-      {
-        id_to_read: "testimony-2025r1-117286",
-        count: 2,
-        ids: ["testimony-2025r1-117286", "testimony-2025r1-117289"],
-        ids_left_out: 0,
-      },
-    ]);
+    expect(outcome.structured?.["identical_letters"]).toEqual([{ id_to_read: "testimony-2025r1-117286", count: 2 }]);
+    expect(outcome.structured).toMatchObject({ identical_letters_left_out: 0 });
     const items = (outcome.structured?.["positions"] as Position[])
       .flatMap((position) => position.organizations)
       .flatMap((group) => group.items);
     expect(items).toHaveLength(12);
     const pointers = items
       .filter((item) => item["same_letter_as"] !== null)
-      .map((item) => [item.id, item["same_letter_as"]]);
+      .map((item) => [item.id, item["same_letter_as"], item["same_letter_count"]]);
     expect(pointers).toEqual([
-      ["testimony-2025r1-117286", "testimony-2025r1-117286"],
-      ["testimony-2025r1-117289", "testimony-2025r1-117286"],
+      ["testimony-2025r1-117286", "testimony-2025r1-117286", 2],
+      ["testimony-2025r1-117289", "testimony-2025r1-117286", 2],
     ]);
   });
 

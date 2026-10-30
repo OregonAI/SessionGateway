@@ -41,10 +41,13 @@ export const TESTIMONY_PAGE_SIZE = 50;
 const PAGE_SIZE = TESTIMONY_PAGE_SIZE;
 
 /**
- * The most ids one set of identical letters lists. A form letter can run to hundreds of rows on one Measure,
- * and the set is on every page.
+ * The most sets of identical letters a page lists. A page carries the summary whatever its items, and a Measure of
+ * thousands of rows can have hundreds of sets (a form letter sent by many people, once for each wording), so the
+ * summary names the largest 10 and says how many it leaves out. Each item of a set carries the set's id to read and
+ * its count, so no set depends on the summary.
  */
-const MAX_LISTED_IDS = 100;
+export const TESTIMONY_MAX_LISTED_LETTER_SETS = 10;
+const MAX_LISTED_SETS = TESTIMONY_MAX_LISTED_LETTER_SETS;
 
 function positionLabelOf(id: number): string {
   return listedPositions.find((position) => position.id === id)?.label ?? UNLISTED_POSITION_LABEL;
@@ -110,7 +113,13 @@ const itemOutput = z.object({
     .string()
     .nullable()
     .describe(
-      "When another row of the Measure has the same text as this one: the id to read, which is id_to_read of their entry in identical_letters (and this row's own id for the lowest row of the set). Null when no other row has the same text.",
+      "When another row of the Measure has the same text as this one: the id to read, which is id_to_read of their set (and this row's own id for the lowest row of the set), whether or not the set is one identical_letters lists. Null when no other row has the same text.",
+    ),
+  same_letter_count: z
+    .number()
+    .nullable()
+    .describe(
+      "How many of the Measure's rows whose files this index holds have this row's text, this row included: the size of its set, whether or not identical_letters lists the set. Null when no other row has the same text.",
     ),
   agency_id: z
     .string()
@@ -131,10 +140,6 @@ const identicalLetterOutput = z.object({
     .describe(
       "How many of the Measure's Testimony rows have this letter. It counts only rows whose files this index holds: a row listed with fetched false is not counted, because nothing is known of its text until the next pull fetches it.",
     ),
-  ids: z
-    .array(z.string())
-    .describe(`The ids of the rows that have it, lowest CommTestId first, at most the first ${MAX_LISTED_IDS}.`),
-  ids_left_out: z.number().describe("How many of the rows are not in ids: count minus the ids listed."),
 });
 
 const organizationGroupOutput = z.object({
@@ -178,7 +183,12 @@ export const testimonyOutput = z.object({
   identical_letters: z
     .array(identicalLetterOutput)
     .describe(
-      "Each text that two or more of the Measure's rows share, listed once, on every page. The rows stay one item each, so who testified is not lost and the counts add up to total. Texts are compared as stored, exactly. A file with no text layer is never the same as another.",
+      `The largest sets of identical letters of the Measure, at most ${MAX_LISTED_SETS}, by count (the largest first) and then by the lowest CommTestId, on every page. A set is the id to read and its count. The rows stay one item each, so who testified is not lost and the counts add up to total; an item of a set says its set's id to read and count (same_letter_as, same_letter_count), so the rows of a set are found by reading the pages. Texts are compared as stored, exactly. A file with no text layer is never the same as another.`,
+    ),
+  identical_letters_left_out: z
+    .number()
+    .describe(
+      "How many more sets of identical letters the Measure has than identical_letters lists: the smaller ones. Their items still say their id to read and count.",
     ),
   page: z.number().describe("Which page this is, from 1."),
   last_page: z
@@ -222,7 +232,7 @@ function compareGroupKeys(a: string, b: string): number {
 
 type Item = TestimonyOutput["positions"][number]["organizations"][number]["items"][number];
 
-function itemOf(entry: TestimonyEntry, sameLetterAs: ReadonlyMap<DocumentId, DocumentId>): Item {
+function itemOf(entry: TestimonyEntry, sameLetterAs: ReadonlyMap<DocumentId, LetterSet>): Item {
   return {
     id: entry.id,
     source_url: entry.sourceUrl,
@@ -235,7 +245,8 @@ function itemOf(entry: TestimonyEntry, sameLetterAs: ReadonlyMap<DocumentId, Doc
     meeting_date: entry.meetingAt,
     fetched: entry.fetched,
     has_text_layer: entry.hasTextLayer,
-    same_letter_as: sameLetterAs.get(entry.id) ?? null,
+    same_letter_as: sameLetterAs.get(entry.id)?.idToRead ?? null,
+    same_letter_count: sameLetterAs.get(entry.id)?.count ?? null,
     agency_id: entry.agencyId,
   };
 }
@@ -284,7 +295,7 @@ function positionsOf(
   page: readonly Placed[],
   groups: ReadonlyMap<string, GroupFacts>,
   countByPosition: ReadonlyMap<number, number>,
-  sameLetterAs: ReadonlyMap<DocumentId, DocumentId>,
+  sameLetterAs: ReadonlyMap<DocumentId, LetterSet>,
 ): Position[] {
   const positions: Position[] = [];
   const groupsOnPage = new Map<string, Group>();
@@ -314,32 +325,47 @@ function positionsOf(
 
 type IdenticalLetter = TestimonyOutput["identical_letters"][number];
 
+/** One text that two or more rows share: the id to read (the row with the lowest CommTestId) and how many rows. */
+type LetterSet = { idToRead: DocumentId; lowestCommTestId: number; count: number };
+
 /**
- * The texts two or more of the rows share (entries are in CommTestId order, so the first of a set is the
- * lowest), and which set each row of one is in. A file with no text layer is never the same as another: its
- * empty text says nothing about what the file shows.
+ * The sets of rows that share a text (entries are in CommTestId order, so the first of a set is the lowest), the
+ * largest MAX_LISTED_SETS of them for the summary, how many the summary leaves out, and the set each row of
+ * one is in. A file with no text layer is never the same as another: its empty text says nothing about what the
+ * file shows.
  */
 function identicalLettersOf(entries: readonly TestimonyEntry[]): {
   letters: IdenticalLetter[];
-  sameLetterAs: Map<DocumentId, DocumentId>;
+  lettersLeftOut: number;
+  setOf: Map<DocumentId, LetterSet>;
 } {
-  const byText = new Map<string, DocumentId[]>();
+  const byText = new Map<string, TestimonyEntry[]>();
   for (const entry of entries) {
     if (entry.hasTextLayer !== true || entry.textHash === null) continue;
-    const ids = byText.get(entry.textHash);
-    if (ids === undefined) byText.set(entry.textHash, [entry.id]);
-    else ids.push(entry.id);
+    const sharing = byText.get(entry.textHash);
+    if (sharing === undefined) byText.set(entry.textHash, [entry]);
+    else sharing.push(entry);
   }
-  const letters: IdenticalLetter[] = [];
-  const sameLetterAs = new Map<DocumentId, DocumentId>();
-  for (const ids of byText.values()) {
-    const [idToRead] = ids;
-    if (idToRead === undefined || ids.length < 2) continue;
-    for (const id of ids) sameLetterAs.set(id, idToRead);
-    const listed = ids.slice(0, MAX_LISTED_IDS);
-    letters.push({ id_to_read: idToRead, count: ids.length, ids: listed, ids_left_out: ids.length - listed.length });
+  const sets: LetterSet[] = [];
+  const setOf = new Map<DocumentId, LetterSet>();
+  for (const sharing of byText.values()) {
+    const [lowest] = sharing;
+    if (lowest === undefined || sharing.length < 2) continue;
+    const set: LetterSet = {
+      idToRead: lowest.id,
+      lowestCommTestId: lowest.commTestId,
+      count: sharing.length,
+    };
+    sets.push(set);
+    for (const entry of sharing) setOf.set(entry.id, set);
   }
-  return { letters, sameLetterAs };
+  sets.sort((a, b) => b.count - a.count || a.lowestCommTestId - b.lowestCommTestId);
+  const listed = sets.slice(0, MAX_LISTED_SETS);
+  return {
+    letters: listed.map((set) => ({ id_to_read: set.idToRead, count: set.count })),
+    lettersLeftOut: sets.length - listed.length,
+    setOf,
+  };
 }
 
 export function testimony(
@@ -374,6 +400,7 @@ export function testimony(
         .map((id) => ({ position_id: id, position: positionLabelOf(id), count: countByPosition.get(id) ?? 0 })),
       organization_groups: groups.size,
       identical_letters: identical.letters,
+      identical_letters_left_out: identical.lettersLeftOut,
       page,
       last_page: lastPage,
       page_size: PAGE_SIZE,
@@ -381,7 +408,7 @@ export function testimony(
         ordered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
         groups,
         countByPosition,
-        identical.sameLetterAs,
+        identical.setOf,
       ),
       as_of: asOf,
       notice: NON_OFFICIAL_NOTICE,

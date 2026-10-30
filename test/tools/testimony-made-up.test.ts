@@ -290,14 +290,7 @@ describe.for(eras)("testimony on rows the fixture lacks, for a %s client", (era)
 
       const outcome = await testimonyOf(system, era, "SB 983");
 
-      expect(outcome.structured?.["identical_letters"]).toEqual([
-        {
-          id_to_read: "testimony-2025r1-930031",
-          count: 2,
-          ids: ["testimony-2025r1-930031", "testimony-2025r1-930032"],
-          ids_left_out: 0,
-        },
-      ]);
+      expect(outcome.structured?.["identical_letters"]).toEqual([{ id_to_read: "testimony-2025r1-930031", count: 2 }]);
       const connected = await connectClient(era, system.handler);
       try {
         const first = await callTool(connected, "get_document", { id: "testimony-2025r1-930031" });
