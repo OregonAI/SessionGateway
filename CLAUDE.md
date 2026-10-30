@@ -25,7 +25,7 @@ A ticket is done when all of these hold:
 `package.json` is the source of truth for every script.
 
 - `npm ci`: the only way to install.
-- `npm run check`: the whole gate. It runs `format:check`, `lint`, `typecheck`, `guard:tsc`, `lint:boundaries`, `fixture:verify` and `test`, keeps going after a failure, prints each step's result, and exits 1 if any failed. CI runs the same command.
+- `npm run check`: the whole gate. It runs `format:check`, `lint`, `typecheck`, `guard:tsc`, `lint:boundaries`, `fixture:verify`, `snapshot:verify` and `test`, keeps going after a failure, prints each step's result, and exits 1 if any failed. CI runs the same command.
 - `npx vitest run <file>`: one test file, for the inner loop.
 - `npm run format`: rewrites src, test and scripts with Prettier. `test/fixtures/` is never formatted.
 - `npm run license:check`: the licence allowlist over the production tree (CI's supply-chain job; it needs no network).

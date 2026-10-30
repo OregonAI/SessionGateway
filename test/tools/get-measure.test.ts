@@ -122,12 +122,14 @@ describe.for(eras)("get_measure for a %s client", (era) => {
     },
   );
 
-  it("advertises get_measure as the one read-only tool, with an output schema", async () => {
+  it("advertises every tool as read-only, with an output schema, get_measure among them", async () => {
     const { tools } = await connected.client.listTools();
 
-    expect(tools.map((tool) => tool.name)).toEqual(["get_measure"]);
-    expect(tools[0]?.annotations?.readOnlyHint).toBe(true);
-    expect(tools[0]?.outputSchema).toBeDefined();
+    expect(tools.map((tool) => tool.name)).toContain("get_measure");
+    for (const tool of tools) {
+      expect.soft(tool.annotations?.readOnlyHint, tool.name).toBe(true);
+      expect.soft(tool.outputSchema, tool.name).toBeDefined();
+    }
   });
 
   // The tool reads OLIS when a call arrives (ticket #21), so it touches a world outside the index.

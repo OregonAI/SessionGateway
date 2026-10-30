@@ -29,3 +29,8 @@ export function formatPacific(instant: Date): Timestamp {
 export function pacificWallClock(instant: Date): Temporal.PlainDateTime {
   return Temporal.Instant.fromEpochMilliseconds(instant.getTime()).toZonedDateTimeISO(PACIFIC).toPlainDateTime();
 }
+
+/** Whether a Timestamp is at or after an instant: "has not started yet", for a meeting and the clock's now. */
+export function isAtOrAfter(at: Timestamp, instant: Date): boolean {
+  return Temporal.Instant.from(at).epochMilliseconds >= instant.getTime();
+}

@@ -2,7 +2,7 @@
 // containers run them, with their configuration in the environment. The fake OLIS is the only
 // thing in this process; the worker and the server are child processes.
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { connect, createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -11,6 +11,7 @@ import { createSimulatedClock } from "../support/clock.ts";
 import { callTool, connectClientToUrl } from "../support/mcp-clients.ts";
 import { memberSponsorRow } from "../support/sponsors.ts";
 import { createTempDatabase, type TempDatabase } from "../support/temp-database.ts";
+import { snapshotFixturePath } from "../support/oregonai-snapshot.ts";
 
 type Finished = { code: number | null; stdout: string; stderr: string };
 
@@ -72,9 +73,14 @@ async function listening(port: number): Promise<void> {
 }
 
 async function fakeOlisAndDatabase(
-  options: Omit<FakeOlisOptions, "clock"> = {},
+  options: Omit<FakeOlisOptions, "clock" | "documents"> & { clockAt?: string; documents?: boolean } = {},
 ): Promise<{ olis: FakeOlis; database: TempDatabase }> {
-  const olis = await startFakeOlis({ clock: createSimulatedClock("2025-07-15T17:00:00Z"), ...options });
+  const { clockAt, documents, ...fakeOptions } = options;
+  const olis = await startFakeOlis({
+    clock: createSimulatedClock(clockAt ?? "2025-07-15T17:00:00Z"),
+    documents: documents ?? false,
+    ...fakeOptions,
+  });
   const database = createTempDatabase();
   cleanups.push(async () => {
     await olis.close();
@@ -83,10 +89,25 @@ async function fakeOlisAndDatabase(
   return { olis, database };
 }
 
+/**
+ * The worker's environment against this fake OLIS. The feed links documents on olis.oregonlegislature.gov;
+ * OLIS_DOCUMENT_ORIGIN sends the worker to the fake instead, so no test reaches the real OLIS, whichever
+ * rows the feed holds and whether or not the fake serves the files (test/CLAUDE.md, "Hermetic").
+ */
+function workerEnvironment(olis: FakeOlis, databasePath: string): Record<string, string> {
+  return {
+    SNAPSHOT_PATH: snapshotFixturePath,
+    SESSION_KEY: "2025R1",
+    OLIS_BASE_URL: olis.baseUrl,
+    OLIS_DOCUMENT_ORIGIN: olis.origin,
+    DATABASE_PATH: databasePath,
+  };
+}
+
 describe("the entry scripts", () => {
   it("serve what the worker pulled: ingest.ts, then server.ts, then a client on its port", async () => {
     const { olis, database } = await fakeOlisAndDatabase();
-    const env = { SESSION_KEY: "2025R1", OLIS_BASE_URL: olis.baseUrl, DATABASE_PATH: database.path };
+    const env = workerEnvironment(olis, database.path);
 
     const pulled = await run("src/bin/ingest.ts", env);
     expect(pulled.code, pulled.stderr).toBe(0);
@@ -125,7 +146,7 @@ describe("the entry scripts", () => {
     // all resolve, so the report would otherwise be empty.
     const stray = memberSponsorRow("900001", "Rep Fahey", "Chief", "1");
     const { olis, database } = await fakeOlisAndDatabase({ strayRows: { MeasureSponsors: [stray] } });
-    const env = { SESSION_KEY: "2025R1", OLIS_BASE_URL: olis.baseUrl, DATABASE_PATH: database.path };
+    const env = workerEnvironment(olis, database.path);
 
     const pulled = await run("src/bin/ingest.ts", env);
 
@@ -141,6 +162,62 @@ describe("the entry scripts", () => {
     });
   }, 20_000);
 
+  it("fetch and serve documents: ingest.ts pulls from OLIS_DOCUMENT_ORIGIN, then server.ts serves the text", async () => {
+    // The documents are served only because this test asks.
+    const { olis, database } = await fakeOlisAndDatabase({ clockAt: "2025-01-29T17:00:00Z", documents: true });
+    const env = workerEnvironment(olis, database.path);
+
+    const pulled = await run("src/bin/ingest.ts", env);
+    expect(pulled.code, pulled.stderr).toBe(0);
+
+    const port = await freePort();
+    const server = spawn(process.execPath, ["src/bin/server.ts"], {
+      env: childEnvironment({ ...env, MCP_PORT: String(port) }),
+    });
+    const exited = new Promise<number | null>((resolve) => server.once("close", resolve));
+    cleanups.push(() => {
+      server.kill("SIGKILL");
+    });
+    await listening(port);
+    const connected = await connectClientToUrl("2026-07-28", new URL(`http://127.0.0.1:${port}/mcp`));
+    const outcome = await callTool(connected, "get_document", { id: "version-2025r1-sb69-introduced" });
+    const overview = await callTool(connected, "session_overview", {});
+    await connected.close();
+    server.kill("SIGTERM");
+
+    // The text is SB 69's Introduced Version as `pdftotext -raw` prints it; the link is the feed row's.
+    expect(outcome.structured).toMatchObject({
+      source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/Introduced",
+      has_text_layer: true,
+    });
+    expect(String(outcome.structured?.["text"])).toContain("SECTION 2. Section 1 of this 2025 Act is repealed");
+    expect(overview.structured).toMatchObject({ session: "2025R1" });
+    expect(await exited).toBe(0);
+  }, 30_000);
+
+  // A broken install of the extractor: Node cannot resolve "unpdf/pdfjs", the PDF.js bundle unpdf loads for
+  // the first document. A resolve hook, passed in NODE_OPTIONS as a data: URL so that no file is needed,
+  // throws for that specifier alone.
+  const withoutPdfjsBundle = (() => {
+    const registrar =
+      'import { registerHooks } from "node:module"; registerHooks({ resolve(specifier, context, next) { if (specifier === "unpdf/pdfjs") throw new Error("the bundle is not installed"); return next(specifier, context); } });';
+    return `--import=data:text/javascript,${encodeURIComponent(registrar)}`;
+  })();
+
+  it("ingest.ts stops and says why when the PDF extractor cannot load, and does not report every document as not a PDF", async () => {
+    const { olis, database } = await fakeOlisAndDatabase({ clockAt: "2025-01-29T17:00:00Z", documents: true });
+    const env = { ...workerEnvironment(olis, database.path), NODE_OPTIONS: withoutPdfjsBundle };
+
+    const finished = await run("src/bin/ingest.ts", env);
+
+    // A bug or a failed install is not an outcome to report per document: the pull fails, and the
+    // error says what broke and for which document.
+    expect(finished.code).not.toBe(0);
+    expect(finished.stderr).toContain("Serverless PDF.js bundle could not be resolved");
+    expect(finished.stderr).toContain("version-2025r1-");
+    expect(existsSync(join(dirname(database.path), "build-report.json"))).toBe(false);
+  }, 30_000);
+
   describe("src/bin/server.ts logs", () => {
     /** Pulls into a fresh database, starts the server on a free port and waits until it listens. */
     async function runningServer(serverEnv: Record<string, string> = {}): Promise<{
@@ -150,7 +227,7 @@ describe("the entry scripts", () => {
       stop: () => Promise<number | null>;
     }> {
       const { olis, database } = await fakeOlisAndDatabase();
-      const env = { SESSION_KEY: "2025R1", OLIS_BASE_URL: olis.baseUrl, DATABASE_PATH: database.path };
+      const env = workerEnvironment(olis, database.path);
       const pulled = await run("src/bin/ingest.ts", env);
       expect(pulled.code, pulled.stderr).toBe(0);
       const port = await freePort();
@@ -244,7 +321,7 @@ describe("the entry scripts", () => {
       // A supervisor that waits for the port may signal a server that is still starting up. Without a handler
       // registered yet, Node's default action ends the process by the signal, with nothing logged and no close.
       const { olis, database } = await fakeOlisAndDatabase();
-      const env = { SESSION_KEY: "2025R1", OLIS_BASE_URL: olis.baseUrl, DATABASE_PATH: database.path };
+      const env = workerEnvironment(olis, database.path);
       const pulled = await run("src/bin/ingest.ts", env);
       expect(pulled.code, pulled.stderr).toBe(0);
 
@@ -316,6 +393,7 @@ describe("the entry scripts", () => {
   const badVariables: readonly (readonly [string, string, string])[] = [
     ["src/bin/ingest.ts", "SESSION_KEY", "not-a-session-key"],
     ["src/bin/ingest.ts", "OLIS_BASE_URL", "not a url at all"],
+    ["src/bin/ingest.ts", "OLIS_DOCUMENT_ORIGIN", "not a url at all"],
     ["src/bin/server.ts", "SESSION_KEY", "not-a-session-key"],
     ["src/bin/server.ts", "OLIS_BASE_URL", "not a url at all"],
     ["src/bin/server.ts", "OLIS_LIVE_TIMEOUT_MS", "soon"],
@@ -346,12 +424,7 @@ describe("the entry scripts", () => {
     { timeout: 20_000 },
     async ([script, variable, value]) => {
       const { olis, database } = await fakeOlisAndDatabase();
-      const env = {
-        SESSION_KEY: "2025R1",
-        OLIS_BASE_URL: olis.baseUrl,
-        DATABASE_PATH: database.path,
-        [variable]: value,
-      };
+      const env = { ...workerEnvironment(olis, database.path), [variable]: value };
 
       const finished = await run(script, env);
 
@@ -361,11 +434,22 @@ describe("the entry scripts", () => {
     },
   );
 
+  it("src/bin/ingest.ts fails at start-up when SNAPSHOT_PATH is not set, naming the variable", async () => {
+    const { olis, database } = await fakeOlisAndDatabase();
+    const withoutSnapshot: Record<string, string> = workerEnvironment(olis, database.path);
+    delete withoutSnapshot["SNAPSHOT_PATH"];
+
+    const finished = await run("src/bin/ingest.ts", withoutSnapshot);
+
+    expect(finished.code).not.toBe(0);
+    expect(finished.stderr).toContain("SNAPSHOT_PATH");
+  }, 20_000);
+
   it("src/bin/ingest.ts refuses a database that cannot run in WAL mode, instead of writing in another mode", async () => {
     // SQLite answers a request for WAL without an error and keeps the journal mode it had when it cannot
     // switch: an in-memory database is one such case, a filesystem without shared memory is another.
     const { olis } = await fakeOlisAndDatabase();
-    const env = { SESSION_KEY: "2025R1", OLIS_BASE_URL: olis.baseUrl, DATABASE_PATH: ":memory:" };
+    const env = workerEnvironment(olis, ":memory:");
 
     const finished = await run("src/bin/ingest.ts", env);
 

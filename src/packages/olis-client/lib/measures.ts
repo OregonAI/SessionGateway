@@ -11,6 +11,8 @@ const measureRow = z.looseObject({
   CatchLine: z.string().nullable(),
   CurrentLocation: z.string(),
   CurrentCommitteeCode: z.string().nullable(),
+  // Every row of the cache has it, but a row without the property has no digest, not a broken one.
+  MeasureSummary: z.string().nullish(),
   CreatedDate: feedTimestamp,
   ModifiedDate: feedTimestamp.nullable(),
 });
@@ -28,6 +30,7 @@ export async function readMeasureRows(
     number: row.MeasureNumber,
     catchline: row.CatchLine,
     location: { current: row.CurrentLocation, committeeCode: row.CurrentCommitteeCode },
+    digest: row.MeasureSummary ?? null,
     createdAt: row.CreatedDate,
     modifiedAt: row.ModifiedDate,
   }));

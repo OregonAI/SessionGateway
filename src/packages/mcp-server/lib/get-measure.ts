@@ -10,6 +10,7 @@ import {
 } from "#/packages/domain/index.ts";
 import type { AgendaItem } from "#/packages/domain/schedule.ts";
 import type { CommitteeVote, FloorVote, LegislatorVote } from "#/packages/domain/votes.ts";
+import { analysisDocumentsOf, analysisDocumentsOutput } from "./analysis.ts";
 import type { LiveLookup, LiveStatusReader } from "./live-status.ts";
 
 /** The notice every result carries (ADR-0002, spec #1 "What every result must carry"). */
@@ -114,6 +115,13 @@ export const getMeasureInput = z.object({
 export const getMeasureOutput = z.object({
   id: z.string().describe("The Measure's id in OregonAI's form."),
   catchline: z.string().nullable().describe("The Measure's catchline, as OLIS publishes it."),
+  digest: z
+    .string()
+    .nullable()
+    .describe(
+      "The Measure's digest and summary exactly as OLIS publishes it (the feed's MeasureSummary), with its tabs, newlines and markup: <b> marks new text and [<i>...</i>] marks text deleted from the prior Version. Null when OLIS publishes none.",
+    ),
+  analysis_documents: analysisDocumentsOutput,
   source_url: z.string().describe("The Measure's page on OLIS."),
   location: z
     .object({
@@ -275,6 +283,12 @@ export async function getMeasure(
     measure: {
       id: measureIdOf(measure),
       catchline: measure.catchline,
+      digest: measure.digest,
+      analysis_documents: analysisDocumentsOf(
+        measure,
+        reader.analysisDocuments(measure),
+        reader.analysisNotHeld(measure),
+      ),
       source_url: olisPageUrlOf(measure),
       location: { current: measure.location.current, committee_code: measure.location.committeeCode },
       created_at: measure.createdAt,

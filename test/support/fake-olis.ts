@@ -19,6 +19,12 @@
 //    `datetime'...'`). Anything else is refused with 400, and so is a property no row of the set has,
 //    as live OLIS refuses `Nope eq 1`.
 //
+// With `documents: true` it also serves the documents the feed links, as OLIS does: the bytes of each
+// file in the fixture's manifest, at the path of the manifest's `source_url` (/liz/2025R1/Downloads/...),
+// on the same port. It counts every document request, so a test can read how often the worker fetched
+// a file from the harness and never from the database, and it can fail a chosen document once (a hang
+// that outlasts the client's timeout, or an HTTP status) to show that a transient failure is retried.
+//
 // "As the feed stood at the clock's time" means the rows whose CreatedDate is not after it. The
 // fixture holds each row's final state, so a row's other fields may be newer than the clock.
 import { readdirSync, readFileSync } from "node:fs";
@@ -34,7 +40,8 @@ export type FakeOlisOptions = {
   pageSize?: number;
   /**
    * Rows served whatever `$filter` says, as if the feed ignored the Session filter (by entity
-   * set). They are counted too. A test adds them here, never to the committed fixture.
+   * set). They are counted too. A test adds them here, never to the committed fixture. They are read at
+   * every request, so a test may change a row between two pulls to show a row OLIS changed.
    */
   strayRows?: Record<string, Row[]>;
   /**
@@ -48,6 +55,25 @@ export type FakeOlisOptions = {
    * the pages are empty, and each still carries a `nextLink` to the next one.
    */
   pagingFault?: "repeats-the-first-page" | "never-ends";
+  /**
+   * Serve the documents themselves. Off by default: extracting the fixture's 278 PDFs takes seconds, so
+   * only a test that reads documents asks for them. The feed is the same either way, rows that link a
+   * document included; when this is off every request for a document is answered 404 (Not Found), as
+   * OLIS does for a file it does not have, and the worker lists the document as not fetched.
+   */
+  documents?: boolean;
+  /**
+   * Failures to give a document before it is served, by `source_url`: each request for the document
+   * takes the next one off its list, and once the list is empty the document is served. A list of one
+   * is a document that fails once.
+   */
+  documentFailures?: Record<string, DocumentFailure[]>;
+  /**
+   * Documents served although no fixture row links them, by their path on the fake
+   * (`/liz/2025R1/Downloads/...`), each as the bytes of a file under the fixture's `documents/`.
+   * A test adds the feed row that links one through `strayRows`.
+   */
+  strayDocuments?: Record<string, string>;
 };
 
 /** One request the fake OLIS received, as the feed's own URL words it. */
@@ -70,9 +96,19 @@ export type FakeOlisBehavior =
   /** Closes the connection without a response. */
   | { kind: "drop-connection" };
 
+/** How a document request fails once: no answer until the client gives up, or an HTTP status. */
+export type DocumentFailure = "hang" | number;
+
 export type FakeOlis = {
   /** The service root with a trailing slash, for the OLIS client's base URL. */
   baseUrl: string;
+  /** The origin that serves the documents (`http://127.0.0.1:<port>`), for the worker's OLIS_DOCUMENT_ORIGIN. */
+  origin: string;
+  /**
+   * Every document request received so far, as the path it asked for (`/liz/2025R1/Downloads/...`),
+   * in order. A test reads how often a file was fetched from here, never from the database.
+   */
+  documentRequests(): readonly string[];
   /** From now on, leave the last `count` rows of each set out of the pages (see `withholdLastRows`). */
   withholdLastRows(count: number): void;
   /** From now on, answer (or not) the way `behavior` says. Answering is the default. */
@@ -94,8 +130,21 @@ export type FakeOlis = {
   close(): Promise<void>;
 };
 
-const feedDirectory = new URL("../fixtures/olis-2025R1/feed/", import.meta.url);
+const fixtureDirectory = new URL("../fixtures/olis-2025R1/", import.meta.url);
+const feedDirectory = new URL("feed/", fixtureDirectory);
 const serviceRoot = ["odata", "odataservice.svc"];
+
+/** The fixture's documents by the path they are served at: the pathname of each manifest `source_url`. */
+function loadDocumentPaths(): Map<string, URL> {
+  const manifest = JSON.parse(readFileSync(new URL("manifest.json", fixtureDirectory), "utf8")) as {
+    documents: { path: string; source_url: string }[];
+  };
+  const paths = new Map<string, URL>();
+  for (const document of manifest.documents) {
+    paths.set(new URL(document.source_url).pathname, new URL(document.path, fixtureDirectory));
+  }
+  return paths;
+}
 
 function loadFeed(): Map<string, Row[]> {
   const sets = new Map<string, Row[]>();
@@ -189,6 +238,15 @@ function matches(row: Row, term: FilterTerm): boolean {
 
 export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis> {
   const feed = loadFeed();
+  const documentPaths = loadDocumentPaths();
+  for (const [path, file] of Object.entries(options.strayDocuments ?? {})) {
+    documentPaths.set(path, new URL(`documents/${file}`, fixtureDirectory));
+  }
+  const documentRequests: string[] = [];
+  const failures = new Map<string, DocumentFailure[]>(
+    Object.entries(options.documentFailures ?? {}).map(([sourceUrl, list]) => [new URL(sourceUrl).pathname, [...list]]),
+  );
+  const servesDocuments = options.documents === true;
   const pageSize = options.pageSize ?? 5000;
   let withheldRows = options.withholdLastRows ?? 0;
   let behavior: FakeOlisBehavior = { kind: "answer" };
@@ -214,8 +272,32 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
     return [...rows, ...(options.strayRows?.[entitySet] ?? [])];
   }
 
+  /** A document, as OLIS serves one: the bytes of a PDF at the path of its `source_url`. */
+  function handleDocument(url: URL, response: ServerResponse): void {
+    // The pathname as the manifest writes it: percent-encoded, as the worker must have sent it.
+    const path = url.pathname;
+    documentRequests.push(path);
+    const failure = failures.get(path)?.shift();
+    if (failure !== undefined) {
+      if (failure === "hang") return; // no answer: the client's timeout ends the request
+      sendText(response, failure, "text/plain", `The fake OLIS fails this document with ${failure}.`);
+      return;
+    }
+    const file = documentPaths.get(path);
+    if (!servesDocuments || file === undefined) {
+      sendText(response, 404, "text/plain", "Not Found");
+      return;
+    }
+    response.writeHead(200, { "content-type": "application/pdf", "cache-control": "private" });
+    response.end(readFileSync(file));
+  }
+
   function handle(request: IncomingMessage, response: ServerResponse): void {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    if (request.method === "GET" && url.pathname.toLowerCase().startsWith("/liz/")) {
+      handleDocument(url, response);
+      return;
+    }
     const segments = url.pathname.split("/").filter((segment) => segment !== "");
     const isServiceRoot = serviceRoot.every((name, index) => segments[index]?.toLowerCase() === name);
     const entitySet = segments[2];
@@ -308,6 +390,8 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
   const { port } = server.address() as AddressInfo;
   return {
     baseUrl: `http://127.0.0.1:${port}/odata/odataservice.svc/`,
+    origin: `http://127.0.0.1:${port}`,
+    documentRequests: () => [...documentRequests],
     withholdLastRows: (count) => {
       withheldRows = count;
     },

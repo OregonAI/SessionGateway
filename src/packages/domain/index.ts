@@ -34,6 +34,12 @@ export type MeasureLocation = {
 export type Measure = MeasureKey & {
   catchline: string | null;
   location: MeasureLocation;
+  /**
+   * The digest and summary of what the Measure does, as the feed's `MeasureSummary` gives it: the
+   * Legislature's own text, unchanged, with its tabs, newlines and markup (`<b>` for new text,
+   * `[<i>...</i>]` for text deleted from the prior Version; olis-odata.md gotcha 8).
+   */
+  digest: string | null;
   /** When OLIS created the Measure's row, in Pacific time with its offset. */
   createdAt: Timestamp;
   /** When OLIS last changed it, if it ever did. */

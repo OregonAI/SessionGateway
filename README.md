@@ -32,7 +32,7 @@ their configuration from the environment and fail at start-up, naming the variab
 
 ```
 export SESSION_KEY=2025R1 DATABASE_PATH=data/index.db OLIS_BASE_URL=https://api.oregonlegislature.gov/odata/odataservice.svc
-node src/bin/ingest.ts   # one full pull, then exit
+SNAPSHOT_PATH=data/snapshot.json node src/bin/ingest.ts   # one full pull, then exit
 node src/bin/server.ts   # serves it at http://127.0.0.1:3000/mcp
 ```
 
@@ -40,8 +40,10 @@ node src/bin/server.ts   # serves it at http://127.0.0.1:3000/mcp
 |---|---|---|---|
 | `SESSION_KEY` | both | none | The one Session this deployment serves (ADR-0003), such as `2025R1`. |
 | `DATABASE_PATH` | both | none | The SQLite file. The worker writes it and the server reads it. |
+| `SNAPSHOT_PATH` | worker | none | The OregonAI snapshot file the build uses (see "Building the OregonAI snapshot"). The worker reads it before it reads OLIS and stores its version with the full pull; the server never reads it. |
 | `OLIS_BASE_URL` | both | none | The OLIS OData service root, such as `https://api.oregonlegislature.gov/odata/odataservice.svc` (a trailing slash is added if it is missing). The worker pulls from it, and the server reads one Measure from it when `get_measure` is called. |
 | `OLIS_LIVE_TIMEOUT_MS` | server | `5000` | How long one live lookup may take, its five requests together, before `get_measure` answers from the cache and says the lookup failed. A whole number of milliseconds from 1 to 30000 (half what an MCP client waits for a tool by default); another value stops the start-up. |
+| `OLIS_DOCUMENT_ORIGIN` | worker | `https://olis.oregonlegislature.gov` | Where the worker fetches the documents the feed links. They are not on the feed's host. Only a test sets it. |
 | `MCP_PATH` | server | `/mcp` | Where the endpoint is mounted. |
 | `MCP_HOST`, `MCP_PORT` | server | `127.0.0.1`, `3000` | Where it listens. |
 | `MCP_ALLOWED_HOSTS` | server | `localhost,127.0.0.1,[::1]` | Host names a request may be addressed to; any other `Host` is refused with 403. |
@@ -56,6 +58,10 @@ calls straddles two windows (the window opens with its first call, so 119 calls 
 and 120 at the start of the next are all answered). If OLIS cannot be read the block holds the index's
 values and says the lookup failed.
 
+A full pull also fetches every document the feed links that the database does not hold yet, once each,
+and writes `build-report.json` beside the database: the documents that are scans with no text layer, and
+the ones it could not get or read (ADR-0011).
+
 A full pull against the live feed is allowed only between 5 pm and 6 am Pacific (ADR-0005). Nothing
 schedules it yet, so run it by hand inside that window.
 
@@ -64,6 +70,21 @@ Legislator Codes it could not resolve through the Legislators rows or the alias 
 (`src/packages/legislators/data/legislator-aliases.json`), with how many rows used each. An empty list
 means every code resolved. An entry in the alias file needs evidence from the feed itself (see the
 file's `about` entry).
+
+## Building the OregonAI snapshot
+
+The agency registry, the list of ORS section ids and the table of which Agencies' rules implement each
+ORS chapter come from OregonAI's published data, copied once when a database is built and never looked
+up while serving (ADR-0004, ADR-0012). The build step reads a local checkout of OregonAI's
+`executive-regulatory-frameworks` repository, whose path is an argument, and writes the snapshot as one
+JSON file named by the checkout's commit:
+
+```
+node scripts/snapshot/build.ts --erf <checkout of executive-regulatory-frameworks> --out data/snapshot.json
+```
+
+The checkout is only read, and the build stops if the path is not the root of a git checkout or a file it reads has uncommitted changes. Needs no network.
+`session_overview` reports the commit and its date.
 
 ## How the code is written
 

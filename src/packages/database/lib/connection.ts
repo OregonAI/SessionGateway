@@ -11,6 +11,7 @@ const schema = `
     catchline TEXT,
     location TEXT NOT NULL,
     committee_code TEXT,
+    digest TEXT,
     created_at TEXT NOT NULL,
     modified_at TEXT,
     PRIMARY KEY (session_key, prefix, number)
@@ -85,6 +86,89 @@ const schema = `
     presession_message TEXT,
     PRIMARY KEY (session_key, sponsor_id)
   ) STRICT;
+  CREATE TABLE IF NOT EXISTS snapshot_state (
+    session_key TEXT NOT NULL PRIMARY KEY,
+    source TEXT NOT NULL,
+    commit_sha TEXT NOT NULL,
+    commit_date TEXT NOT NULL
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS committee (
+    session_key TEXT NOT NULL,
+    code TEXT NOT NULL,
+    id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    PRIMARY KEY (session_key, code)
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS meeting (
+    id TEXT NOT NULL PRIMARY KEY,
+    session_key TEXT NOT NULL,
+    committee_code TEXT NOT NULL,
+    committee_id TEXT NOT NULL,
+    at TEXT NOT NULL,
+    status TEXT NOT NULL
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS agenda_item (
+    id INTEGER NOT NULL PRIMARY KEY,
+    meeting_id TEXT NOT NULL,
+    session_key TEXT NOT NULL,
+    measure_prefix TEXT,
+    measure_number INTEGER,
+    meeting_type TEXT,
+    action TEXT,
+    print_order TEXT,
+    comments TEXT,
+    board_name TEXT,
+    executive_appointee TEXT
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS agenda_item_meeting ON agenda_item (meeting_id);
+  -- What the feed lists for a meeting (its agenda, Exhibits, Recording Logs and the postings of Proposed
+  -- Amendments), written for every link before any file is fetched. A row here has a row in "document" only
+  -- once its file is in: a fetch can fail, or not have been reached yet (ADR-0011, "Order of a pull").
+  CREATE TABLE IF NOT EXISTS meeting_document (
+    document_id TEXT NOT NULL PRIMARY KEY,
+    meeting_id TEXT NOT NULL,
+    session_key TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    node_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    source_url TEXT NOT NULL,
+    title TEXT,
+    measure_id TEXT,
+    meaning TEXT
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS meeting_document_meeting ON meeting_document (meeting_id);
+  CREATE TABLE IF NOT EXISTS document (
+    id TEXT NOT NULL PRIMARY KEY,
+    node_id TEXT NOT NULL,
+    session_key TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    label TEXT NOT NULL,
+    source_url TEXT NOT NULL,
+    retrieved_at TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    page_count INTEGER NOT NULL,
+    has_text_layer INTEGER NOT NULL,
+    posted_at TEXT,
+    analysis_version_label TEXT,
+    analysis_is_minority INTEGER,
+    text TEXT NOT NULL
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS document_node ON document (node_id);
+  CREATE TABLE IF NOT EXISTS document_relation (
+    document_id TEXT NOT NULL,
+    relation TEXT NOT NULL,
+    to_id TEXT NOT NULL,
+    meaning TEXT,
+    provenance TEXT NOT NULL,
+    PRIMARY KEY (document_id, relation, to_id)
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS document_relation_to ON document_relation (to_id, relation);
+  CREATE TABLE IF NOT EXISTS analysis_listing (
+    document_id TEXT NOT NULL PRIMARY KEY,
+    session_key TEXT NOT NULL,
+    measure_id TEXT NOT NULL
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS analysis_listing_measure ON analysis_listing (measure_id);
 `;
 
 /** The default timeout of 0 fails at once on a busy database, so both sides wait up to 5 seconds. */
