@@ -120,13 +120,28 @@ const meetingOutput = z.object({
     .describe("The Proposed Amendments posted to this meeting, by Measure and number."),
 });
 
+/**
+ * The most meetings one call returns. A meeting with its agenda items and documents runs to a few thousand
+ * characters, and one meeting of the 2025R1 feed has 70 agenda items and another 99 documents, so an
+ * unbounded range would overflow an agent's context (the reason `get_document` serves parts).
+ */
+export const MAX_MEETINGS = 25;
+
 export const meetingsOutput = z.object({
   now: z.string().describe("The time that `upcoming` is measured from, in Pacific time with its UTC offset."),
-  meetings: z.array(meetingOutput).describe("The meetings that match, earliest first."),
+  meetings: z
+    .array(meetingOutput)
+    .describe("The meetings that match, earliest first: the first 25 when more match (see `truncated`)."),
+  matching_meetings: z.number().describe("How many meetings match, including any past the first 25."),
+  truncated: z
+    .boolean()
+    .describe("True when more meetings match than `meetings` holds. Narrow the question with from and to."),
   next_meeting_id: z
     .string()
     .nullable()
-    .describe('The first meeting that is upcoming and whose status is "Scheduled", or null when there is none.'),
+    .describe(
+      'The first meeting among all that match that is upcoming and whose status is "Scheduled", or null when there is none. When `truncated` is true it may not be in `meetings`: ask again with from set to its date.',
+    ),
   as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
   notice: z.string().describe("A reminder that this is not the official record."),
 });
@@ -185,7 +200,7 @@ export function meetings(
     kind: "found",
     meetings: {
       now: formatPacific(now),
-      meetings: found.map((meeting) => {
+      meetings: found.slice(0, MAX_MEETINGS).map((meeting) => {
         const contents = reader.meetingContents(meeting.id);
         return {
           id: meeting.id,
@@ -228,6 +243,8 @@ export function meetings(
           })),
         };
       }),
+      matching_meetings: found.length,
+      truncated: found.length > MAX_MEETINGS,
       next_meeting_id: found.find((meeting) => meeting.upcoming && meeting.status === "Scheduled")?.id ?? null,
       as_of: asOf,
       notice: NON_OFFICIAL_NOTICE,

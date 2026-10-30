@@ -45,6 +45,7 @@ describe.for(eras)("meetings over the Session after the fact, for a %s client", 
       ["meeting-2025r1-halnrw-2025-01-27-0800", false],
       ["meeting-2025r1-slb-2025-01-28-0800", false],
     ]);
+    expect(outcome.structured).toMatchObject({ matching_meetings: 5, truncated: false });
     // Nothing is ahead of the clock, so there is no next meeting.
     expect(outcome.structured?.["next_meeting_id"]).toBeNull();
     expect(outcome.structured?.["now"]).toBe("2025-07-15T10:00:00-07:00");
@@ -135,5 +136,20 @@ describe.for(eras)("meetings over the Session after the fact, for a %s client", 
     expect(meetings[1]?.agenda_items.map((item) => [item.measure_id, item.action])).toEqual([
       ["measure-2025r1-hb3027", null],
     ]);
+  });
+
+  // A call returns at most 25 meetings, because a meeting with its agenda items and documents runs to a few
+  // thousand characters and in the full 2025R1 feed cache (.cache/olis-2025R1/feed/) one meeting has 70 agenda items and another 99 documents. The
+  // whole year holds all of the fixture's 36 meetings: the first 25 come back, earliest first, ending with
+  // SHS's of 2025-04-29 (the 25th by start time and then committee code), and the result says that more match.
+  it("returns the first 25 meetings of a wider question and says how many match", async () => {
+    const outcome = await callTool(connected, "meetings", { from: "2025-01-01", to: "2025-12-31" });
+
+    expect(outcome.isError).toBe(false);
+    const meetings = outcome.structured?.["meetings"] as MeetingOutput[];
+    expect(meetings).toHaveLength(25);
+    expect(meetings[0]?.id).toBe("meeting-2025r1-slb-2025-01-21-0800");
+    expect(meetings[24]?.id).toBe("meeting-2025r1-shs-2025-04-29-0845");
+    expect(outcome.structured).toMatchObject({ matching_meetings: 36, truncated: true });
   });
 });
