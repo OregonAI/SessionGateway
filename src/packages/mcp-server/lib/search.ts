@@ -75,7 +75,7 @@ export const searchInput = z.object({
     .boolean()
     .optional()
     .describe(
-      "Whether Testimony may be returned. It is left out of a general search, so that thousands of letters do not crowd out Versions, and included when this is true or when the search is scoped to one Measure.",
+      'Whether Testimony may be returned. It is left out of a general search, so that thousands of letters do not crowd out Versions, and included when this is true, when the search is scoped to one Measure with measure, when the query says "testimony", or when the query cites exactly one Measure ("HB 3131"; the search is not filtered to it).',
     ),
   limit: z
     .number()
@@ -161,11 +161,32 @@ type Candidate = {
   foundBy: Set<FoundBy>;
 };
 
+/**
+ * Whether Testimony may be returned (ADR-0006: "General searches leave Testimony out unless the question asks for it
+ * or is about one Measure"; spec #1 story 11). The call asks for it with `include_testimony`, or with `kind:
+ * "testimony"`, or scopes the search to one Measure with `measure`. The question asks for it when it holds the word
+ * "testimony", in any case (or "testimonies"), and is about one Measure when it cites exactly one that the index
+ * holds ("HB 3131" once): such a question is scoped to that Measure for this rule only, and is not filtered to it.
+ */
+function allowsTestimony(
+  deps: SearchDeps,
+  input: z.infer<typeof searchInput>,
+  measureGiven: boolean,
+  citations: readonly Citation[],
+): boolean {
+  if (input.include_testimony === true || input.kind === "testimony" || measureGiven) return true;
+  if (/\btestimon(?:y|ies)\b/i.test(input.query)) return true;
+  const measures = citations.flatMap((citation) => (citation.kind === "measure" ? [citation.measure] : []));
+  const [only] = measures;
+  return measures.length === 1 && only !== undefined && deps.reader.findMeasure(only) !== undefined;
+}
+
 /** What the call's arguments mean for the index: or the reason they can't be met. */
 function filterOf(
   deps: SearchDeps,
   session: SessionKey,
   input: z.infer<typeof searchInput>,
+  citations: readonly Citation[],
 ): { kind: "filter"; filter: SearchFilter } | Exclude<SearchResult, { kind: "found" }> {
   const measure = input.measure === undefined ? undefined : parseMeasureReference(input.measure, session);
   if (input.measure !== undefined && (measure === undefined || deps.reader.findMeasure(measure) === undefined)) {
@@ -182,9 +203,7 @@ function filterOf(
     kind: "filter",
     filter: {
       session,
-      // Testimony is left out unless the call asks for it, or for it by kind, or the search is scoped to one
-      // Measure (spec #1 story 11).
-      withTestimony: input.include_testimony === true || input.kind === "testimony" || measure !== undefined,
+      withTestimony: allowsTestimony(deps, input, measure !== undefined, citations),
       ...(input.kind === undefined ? {} : { kind: input.kind }),
       ...(measure === undefined ? {} : { measure: measureIdOf(measure) }),
       ...(committee === undefined ? {} : { committee: committee.id }),
@@ -330,11 +349,11 @@ export async function search(
 ): Promise<SearchResult> {
   const asOf = deps.reader.asOf(session);
   if (asOf === undefined) throw new Error(`The index holds no completed full pull of ${session} to date it by`);
-  const resolved = filterOf(deps, session, input);
+  const citations = findCitations(input.query, session);
+  const resolved = filterOf(deps, session, input, citations);
   if (resolved.kind !== "filter") return resolved;
   const filter = resolved.filter;
 
-  const citations = findCitations(input.query, session);
   // A citation's own words and numbers are the citation's, not keywords: "3" of "SB 69-3" matches the margin
   // numbers of a PDF's lines. The citation is looked for as a whole (exact hits, and its words in order).
   const withoutCitations = citations.reduce((text, citation) => text.replaceAll(citation.text, " "), input.query);

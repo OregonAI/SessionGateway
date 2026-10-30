@@ -152,6 +152,47 @@ describe.for(eras)("search for a %s client", (era) => {
       expect(idsOf(outcome), measure).toEqual(expect.arrayContaining(letters));
     }
   });
+  // ADR-0006: Testimony is left out "unless the question asks for it or is about one Measure". A question asks for it
+  // when it holds the word "testimony"; it is about one Measure when it cites exactly one (a citation of a Measure the
+  // index holds). Such a question is scoped to the Measure for this rule only: it is not filtered to that Measure.
+  describe("a question that asks for Testimony or is about one Measure", () => {
+    const among = (outcome: { structured: Record<string, unknown> | undefined }, count: number): string[] =>
+      idsOf(outcome).slice(0, count);
+
+    it("includes Testimony when it holds the word testimony, in any case", async () => {
+      for (const query of ["testimony on HB 3131", "TESTIMONY about the Oregon Agricultural Heritage Fund"]) {
+        const outcome = await callTool(connected, "search", { query });
+
+        expect(among(outcome, 8), query).toEqual(expect.arrayContaining(letters));
+      }
+    });
+
+    it("includes Testimony when it cites exactly one Measure, though it does not say testimony", async () => {
+      const outcome = await callTool(connected, "search", { query: "Oregon Agricultural Heritage HB 3131" });
+
+      expect(among(outcome, 8)).toEqual(expect.arrayContaining(letters));
+    });
+
+    it("is not filtered to that Measure: the other Measures' documents are still found", async () => {
+      const outcome = await callTool(connected, "search", { query: "Oregon Agricultural Heritage HB 3131" });
+
+      const measures = (outcome.structured?.["results"] as { measure: string | null }[]).map((hit) => hit.measure);
+      expect(new Set(measures).size).toBeGreaterThan(2);
+    });
+
+    it("leaves Testimony out when it cites two Measures, which is a question about neither", async () => {
+      const outcome = await callTool(connected, "search", { query: "Oregon Agricultural Heritage HB 3131 SB 64" });
+
+      expect(kindsOf(outcome)).not.toContain("testimony");
+    });
+
+    it("leaves Testimony out when the Measure it cites is not in the index", async () => {
+      const outcome = await callTool(connected, "search", { query: "Oregon Agricultural Heritage HB 9999" });
+
+      expect(kindsOf(outcome)).not.toContain("testimony");
+    });
+  });
+
   // Filters. The corpus (see the top of the file) has these committee-bound documents, from the feed's
   // CommitteeMeetings, CommitteeProposedAmendments, CommitteeMeetingDocuments and CommitteePublicTestimonies
   // rows created by then: SLB's agenda for 2025-01-21, SB 69's Exhibit 287879 and Proposed Amendment -1
