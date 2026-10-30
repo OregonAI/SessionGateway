@@ -31,8 +31,9 @@ Two entry scripts, run by Node 26 straight from the `.ts` source, share one SQLi
 their configuration from the environment and fail at start-up, naming the variable, if it is wrong.
 
 ```
-SESSION_KEY=2025R1 DATABASE_PATH=data/index.db node src/bin/ingest.ts   # one full pull, then exit
-SESSION_KEY=2025R1 DATABASE_PATH=data/index.db node src/bin/server.ts   # serves it at http://127.0.0.1:3000/mcp
+export SESSION_KEY=2025R1 DATABASE_PATH=data/index.db OLIS_BASE_URL=https://api.oregonlegislature.gov/odata/odataservice.svc
+node src/bin/ingest.ts   # one full pull, then exit
+node src/bin/server.ts   # serves it at http://127.0.0.1:3000/mcp
 ```
 
 | Variable | Used by | Default | What it is |
