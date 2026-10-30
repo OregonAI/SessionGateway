@@ -137,3 +137,20 @@ export function phraseOf(citation: Citation): string {
       return citation satisfies never;
   }
 }
+
+/**
+ * How a citation is written in a document, in lower case, for finding it in a passage: "hb 3131", "sb 69-2",
+ * "ors 468.130". A snippet of a hit that a citation named is cut round it.
+ */
+export function citationTermOf(citation: Citation): string {
+  switch (citation.kind) {
+    case "measure":
+      return `${citation.measure.prefix.toLowerCase()} ${citation.measure.number}`;
+    case "amendment":
+      return `${citation.measure.prefix.toLowerCase()} ${citation.measure.number}-${citation.number.toLowerCase()}`;
+    case "ors":
+      return `ors ${orsSectionCitationOf(citation.id).toLowerCase()}`;
+    default:
+      return citation satisfies never;
+  }
+}

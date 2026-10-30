@@ -63,12 +63,20 @@ export type PassageMatch = {
   nodeId: DocumentId | AmendmentId;
 };
 
-/** A document that a citation names exactly, and its first passage (null for a file with no text to show). */
+/**
+ * A document that a citation names exactly, and the passage that shows it (null for a file with no text to show).
+ * For an ORS section that is the passage the first mention starts in, and `citedAt` is where the mention starts
+ * in the document's text; for a Measure or an amendment it is the document's first passage.
+ */
 export type CitedDocument = {
   passageId: number | null;
   documentId: DocumentId;
   nodeId: DocumentId | AmendmentId;
+  citedAt?: number;
 };
+
+/** How much text after the start of a mention is shown, so that a mention a passage ends in the middle of is whole. */
+const CITATION_TAIL = 100;
 
 /** What a hit shows of a document and of the passage that matched. */
 export type HitDetails = {
@@ -79,7 +87,10 @@ export type HitDetails = {
   measureId: MeasureId | null;
   date: Timestamp | null;
   sourceUrl: string;
-  /** The text of the passage that matched, exactly as the document has it. */
+  /**
+   * The text of the passage that matched, exactly as the document has it. When the hit was found by a mention of a
+   * citation that starts in the passage, the text runs on past the passage's end far enough to hold the mention.
+   */
   passageText: string;
 };
 
@@ -110,11 +121,16 @@ export type SearchIndexReader = {
    */
   vectors(session: SessionKey, modelId: string): Iterable<VectorRow>;
   /** What a hit shows. A document with no passage shows no text. */
-  details(match: { passageId: number | null; documentId: DocumentId }): HitDetails;
+  details(match: { passageId: number | null; documentId: DocumentId; citedAt?: number }): HitDetails;
   close(): void;
 };
 
-const citedRow = z.object({ document_id: z.string(), node_id: z.string(), passage_id: z.number().nullable() });
+const citedRow = z.object({
+  document_id: z.string(),
+  node_id: z.string(),
+  passage_id: z.number().nullable(),
+  cited_at: z.number().nullable().optional(),
+});
 const countRow = z.object({ n: z.number() });
 const vectorRow = z.object({
   passage_id: z.number(),
@@ -168,6 +184,14 @@ function filterTerms(filter: SearchFilter): { sql: string; values: string[] } {
   return { sql: terms.join(" AND "), values };
 }
 
+/** The passage's text, run on to hold a mention of a citation that starts in it (`HitDetails.passageText`). */
+function passageTextOf(stored: z.infer<typeof detailsRow>, citedAt: number | undefined): string {
+  if (stored.start_offset === null || stored.end_offset === null) return "";
+  const startsHere = citedAt !== undefined && citedAt >= stored.start_offset && citedAt < stored.end_offset;
+  const end = startsHere ? Math.max(stored.end_offset, citedAt + CITATION_TAIL) : stored.end_offset;
+  return stored.text.slice(stored.start_offset, end);
+}
+
 export function openSearchReader(path: string): SearchIndexReader {
   const database = openReadConnection(path);
   const selectDetails = database.prepare(
@@ -195,6 +219,7 @@ export function openSearchReader(path: string): SearchIndexReader {
       passageId: stored.passage_id,
       documentId: stored.document_id as DocumentId,
       nodeId: stored.node_id as DocumentId | AmendmentId,
+      ...(stored.cited_at === null || stored.cited_at === undefined ? {} : { citedAt: stored.cited_at }),
     };
   };
   return {
@@ -253,7 +278,8 @@ export function openSearchReader(path: string): SearchIndexReader {
                      WHERE p.document_id = sd.document_id AND p.start_offset <= dc.first_offset
                        AND dc.first_offset < p.end_offset
                      ORDER BY p.ordinal LIMIT 1),
-                    ${firstPassage}) AS passage_id
+                    ${firstPassage}) AS passage_id,
+                  dc.first_offset AS cited_at
            FROM document_citation dc
              JOIN search_document sd ON sd.document_id = dc.document_id
            WHERE dc.citation_id = ? AND ${terms.sql}
@@ -300,10 +326,7 @@ export function openSearchReader(path: string): SearchIndexReader {
         measureId: stored.measure_id as MeasureId | null,
         date: stored.dated_at as Timestamp | null,
         sourceUrl: stored.source_url,
-        passageText:
-          stored.start_offset === null || stored.end_offset === null
-            ? ""
-            : stored.text.slice(stored.start_offset, stored.end_offset),
+        passageText: passageTextOf(stored, match.citedAt),
       };
     },
     close() {
