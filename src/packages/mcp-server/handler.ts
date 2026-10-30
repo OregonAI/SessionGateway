@@ -209,7 +209,7 @@ function buildServer(
         case "no_such_page":
           return {
             isError: true,
-            content: [{ type: "text", text: noSuchPageMessage(result.measureId, result.page, result.pageCount) }],
+            content: [{ type: "text", text: noSuchPageMessage(result.measureId, result.page, result.lastPage) }],
           };
         default:
           return result satisfies never;

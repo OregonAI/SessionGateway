@@ -332,7 +332,7 @@ describe.for(eras)("testimony on rows the fixture lacks, for a %s client", (era)
         identical_letters: [],
         positions: [],
         page: 1,
-        page_count: 1,
+        last_page: 1,
         position_counts: [
           { position_id: 3983, position: "support", count: 0 },
           { position_id: 3982, position: "oppose", count: 0 },

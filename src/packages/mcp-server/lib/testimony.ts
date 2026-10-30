@@ -178,7 +178,11 @@ export const testimonyOutput = z.object({
       "Each text that two or more of the Measure's rows share, listed once, on every page. The rows stay one item each, so who testified is not lost and the counts add up to total. Texts are compared as stored, exactly. A file with no text layer is never the same as another.",
     ),
   page: z.number().describe("Which page this is, from 1."),
-  page_count: z.number().describe("How many pages the Measure's Testimony has: page N of page_count."),
+  last_page: z
+    .number()
+    .describe(
+      "The number of the last page of the Measure's Testimony: this is page N of last_page. It counts pages of this tool's results, not the pages of a PDF, which get_document counts as page_count.",
+    ),
   page_size: z.number().describe("How many rows a page lists at the most."),
   positions: z
     .array(positionOutput)
@@ -195,7 +199,7 @@ export type TestimonyOutput = z.infer<typeof testimonyOutput>;
 export type TestimonyResult =
   | { kind: "found"; testimony: TestimonyOutput }
   | { kind: "unknown_measure"; reference: string; session: SessionKey }
-  | { kind: "no_such_page"; measureId: MeasureId; page: number; pageCount: number };
+  | { kind: "no_such_page"; measureId: MeasureId; page: number; lastPage: number };
 
 /**
  * What makes two Organization values one group: trimmed, every run of white space one space, capitals
@@ -349,10 +353,10 @@ export function testimony(
     throw new Error(`The index holds Testimony of ${session} but no completed full pull to date it by`);
   }
   const entries = reader.findTestimony(key);
-  const pageCount = Math.max(1, Math.ceil(entries.length / PAGE_SIZE));
+  const lastPage = Math.max(1, Math.ceil(entries.length / PAGE_SIZE));
   const page = input.page ?? 1;
   const measureId = measureIdOf(key);
-  if (page > pageCount) return { kind: "no_such_page", measureId, page, pageCount };
+  if (page > lastPage) return { kind: "no_such_page", measureId, page, lastPage };
   const identical = identicalLettersOf(entries);
   const { ordered, groups } = placeEntries(entries);
   const countByPosition = new Map<number, number>();
@@ -368,7 +372,7 @@ export function testimony(
       organization_groups: groups.size,
       identical_letters: identical.letters,
       page,
-      page_count: pageCount,
+      last_page: lastPage,
       page_size: PAGE_SIZE,
       positions: positionsOf(
         ordered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
@@ -383,7 +387,7 @@ export function testimony(
 }
 
 /** What an agent is told when it asks for a page past the last one. */
-export function noSuchPageMessage(measureId: MeasureId, page: number, pageCount: number): string {
-  const pages = pageCount === 1 ? "1 page" : `${pageCount} pages`;
-  return `The Testimony on ${measureId} has ${pages}, so there is no page ${page}. Ask for a page from 1 to ${pageCount}.`;
+export function noSuchPageMessage(measureId: MeasureId, page: number, lastPage: number): string {
+  const pages = lastPage === 1 ? "1 page" : `${lastPage} pages`;
+  return `The Testimony on ${measureId} has ${pages}, so there is no page ${page}. Ask for a page from 1 to ${lastPage}.`;
 }

@@ -81,7 +81,7 @@ describe.for(eras)("testimony on a Measure with 251 rows, for a %s client", (era
       measure_id: "measure-2025r1-sb983",
       total: 251,
       page: 1,
-      page_count: 3,
+      last_page: 3,
     });
     expect(shapeOf(outcome.structured?.["positions"] as Position[])).toEqual([
       [3983, "Town 02", 25, 25],
@@ -91,12 +91,21 @@ describe.for(eras)("testimony on a Measure with 251 rows, for a %s client", (era
     ]);
   });
 
+  // get_document's `page_count` is the number of pages of a PDF. The same name here would mean the number of pages of
+  // results, so an agent that read both from one server would read one field two ways: the last page is `last_page`.
+  it("names the number of the last page last_page, as page_count is a PDF's pages in get_document", async () => {
+    const outcome = await callTool(connected, "testimony", { measure: "SB 983" });
+
+    expect(outcome.structured).toHaveProperty("last_page", 3);
+    expect(outcome.structured).not.toHaveProperty("page_count");
+  });
+
   // Page 2 is the last 50 of support (Town 08 and 09), then the first 50 of oppose's 51: "Newberg" (the real row),
   // Town 00 (25) and 24 of Town 05's 25. Oppose has 50 made-up rows and the real one.
   it("continues in the same order on page 2, a group split across the page break keeping its whole count", async () => {
     const outcome = await callTool(connected, "testimony", { measure: "SB 983", page: 2 });
 
-    expect(outcome.structured).toMatchObject({ total: 251, page: 2, page_count: 3 });
+    expect(outcome.structured).toMatchObject({ total: 251, page: 2, last_page: 3 });
     expect(shapeOf(outcome.structured?.["positions"] as Position[])).toEqual([
       [3983, "Town 08", 25, 25],
       [3983, "Town 09", 25, 25],
@@ -109,7 +118,7 @@ describe.for(eras)("testimony on a Measure with 251 rows, for a %s client", (era
   it("ends on page 3 with the last row of oppose and all of neutral", async () => {
     const outcome = await callTool(connected, "testimony", { measure: "SB 983", page: 3 });
 
-    expect(outcome.structured).toMatchObject({ total: 251, page: 3, page_count: 3 });
+    expect(outcome.structured).toMatchObject({ total: 251, page: 3, last_page: 3 });
     expect(shapeOf(outcome.structured?.["positions"] as Position[])).toEqual([
       [3982, "Town 05", 25, 1],
       [3981, "Town 01", 25, 25],
