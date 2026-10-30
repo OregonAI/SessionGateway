@@ -17,6 +17,29 @@ const schema = `
     session_key TEXT NOT NULL PRIMARY KEY,
     full_pull_as_of TEXT NOT NULL
   ) STRICT;
+  CREATE TABLE IF NOT EXISTS document (
+    id TEXT NOT NULL PRIMARY KEY,
+    node_id TEXT NOT NULL,
+    session_key TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    label TEXT NOT NULL,
+    source_url TEXT NOT NULL UNIQUE,
+    retrieved_at TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    page_count INTEGER NOT NULL,
+    has_text_layer INTEGER NOT NULL,
+    posted_at TEXT,
+    text TEXT NOT NULL
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS document_node ON document (node_id);
+  CREATE TABLE IF NOT EXISTS document_relation (
+    document_id TEXT NOT NULL,
+    relation TEXT NOT NULL,
+    to_id TEXT NOT NULL,
+    meaning TEXT,
+    provenance TEXT NOT NULL,
+    PRIMARY KEY (document_id, relation, to_id)
+  ) STRICT;
 `;
 
 /** The default timeout of 0 fails at once on a busy database, so both sides wait up to 5 seconds. */

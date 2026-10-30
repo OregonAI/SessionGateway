@@ -1,5 +1,7 @@
 // The ingest worker's side of the database. The server has no way to reach this file's functions:
 // it imports reader.ts only.
+import { z } from "zod";
+import type { DocumentId, StoredDocument } from "#/packages/domain/documents.ts";
 import type { Measure, SessionKey } from "#/packages/domain/index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openWriteConnection } from "./lib/connection.ts";
@@ -7,8 +9,14 @@ import { openWriteConnection } from "./lib/connection.ts";
 export type IndexWriter = {
   /** Stores what a full pull read, and when, in one transaction. A full pull never deletes (ADR-0005). */
   recordFullPull(session: SessionKey, measures: readonly Measure[], asOf: Timestamp): void;
+  /** The ids of the documents already stored for the Session: a stored document is never fetched again. */
+  storedDocumentIds(session: SessionKey): Set<DocumentId>;
+  /** Keeps one fetched document, its text and the nodes it points at, in one transaction. */
+  storeDocument(session: SessionKey, document: StoredDocument): void;
   close(): void;
 };
+
+const idRow = z.object({ id: z.string() });
 
 export function openIndexWriter(path: string): IndexWriter {
   const database = openWriteConnection(path);
@@ -36,6 +44,44 @@ export function openIndexWriter(path: string): IndexWriter {
           );
         }
         recordAsOf.run(session, asOf);
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    storedDocumentIds(session) {
+      const rows = database.prepare("SELECT id FROM document WHERE session_key = ?").all(session);
+      return new Set(rows.map((row) => idRow.parse(row).id as DocumentId));
+    },
+    storeDocument(session, document) {
+      const insertDocument = database.prepare(
+        `INSERT INTO document (id, node_id, session_key, kind, label, source_url, retrieved_at, content_hash,
+                               page_count, has_text_layer, posted_at, text)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      const insertRelation = database.prepare(
+        `INSERT INTO document_relation (document_id, relation, to_id, meaning, provenance) VALUES (?, ?, ?, ?, ?)`,
+      );
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        insertDocument.run(
+          document.id,
+          document.nodeId,
+          session,
+          document.kind,
+          document.label,
+          document.sourceUrl,
+          document.retrievedAt,
+          document.contentHash,
+          document.pageCount,
+          document.hasTextLayer ? 1 : 0,
+          document.postedAt,
+          document.text,
+        );
+        for (const relation of document.relations) {
+          insertRelation.run(document.id, relation.relation, relation.to, relation.meaning, relation.provenance);
+        }
         database.exec("COMMIT");
       } catch (error) {
         database.exec("ROLLBACK");

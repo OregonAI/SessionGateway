@@ -38,6 +38,7 @@
     "@modelcontextprotocol/node": "2.1.1",
     "@modelcontextprotocol/server": "2.3.1",
     "pino": "10.4.0",
+    "unpdf": "1.9.0",
     "zod": "4.6.7"
   },
   "allowScripts": {

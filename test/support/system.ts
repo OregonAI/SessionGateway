@@ -23,7 +23,12 @@ export type SystemOptions = {
   clockAt: string;
   /** The deployment's Session (the SESSION_KEY variable). */
   sessionKey?: string;
-  olis?: Omit<FakeOlisOptions, "clock">;
+  /**
+   * Whether the fake OLIS serves the rows that link documents, and the documents. Off by default:
+   * pulling the fixture's 278 documents takes seconds, and a test of `get_measure` reads none.
+   */
+  documents?: boolean;
+  olis?: Omit<FakeOlisOptions, "clock" | "documents">;
   /**
    * Rewrites the fake OLIS's service root, ending in a slash, into the OLIS_BASE_URL the worker is
    * given. For writing the root the way docs/research/olis-odata.md does, without the slash.
@@ -50,12 +55,13 @@ export type System = {
 export async function startSystem(options: SystemOptions): Promise<System> {
   assertNotPacific();
   const clock = createSimulatedClock(options.clockAt);
-  const olis = await startFakeOlis({ clock, ...options.olis });
+  const olis = await startFakeOlis({ clock, documents: options.documents ?? false, ...options.olis });
   const database = createTempDatabase();
   const env = {
     SESSION_KEY: options.sessionKey ?? "2025R1",
     OLIS_BASE_URL: options.olisBaseUrl === undefined ? olis.baseUrl : options.olisBaseUrl(olis.baseUrl),
     DATABASE_PATH: database.path,
+    OLIS_DOCUMENT_ORIGIN: olis.origin,
   };
   const pull = (): Promise<FullPullResult> =>
     runFullPull(loadIngestConfig(env), { fetch, clock, signal: AbortSignal.timeout(30_000) });

@@ -4,6 +4,7 @@ import { createMcpHandler, McpServer, type McpHttpHandler } from "@modelcontextp
 import type { ServerConfig } from "#/packages/config/index.ts";
 import { openIndexReader, type IndexReader } from "#/packages/database/reader.ts";
 import type { Clock } from "#/packages/time/clock.ts";
+import { getDocument, getDocumentInput, getDocumentOutput, unknownDocumentMessage } from "./lib/get-document.ts";
 import { getMeasure, getMeasureInput, getMeasureOutput, unknownMeasureMessage } from "./lib/get-measure.ts";
 import { createRateLimiter, rateLimitMessage, type RateLimiter } from "./lib/rate-limit.ts";
 
@@ -55,6 +56,46 @@ function buildServer(reader: IndexReader, config: ServerConfig, limiter: RateLim
           return {
             isError: true,
             content: [{ type: "text", text: unknownMeasureMessage(result.reference, result.session) }],
+          };
+        default:
+          return result satisfies never;
+      }
+    },
+  );
+  server.registerTool(
+    "get_document",
+    {
+      title: "Get a document",
+      description:
+        "Returns the text of one document of the Session exactly as the Legislature published it, in parts, with where and when it was fetched, the ids of the Measure, meeting and committee it belongs to, and whether it has a text layer at all. It is not the official record.",
+      inputSchema: getDocumentInput,
+      outputSchema: getDocumentOutput,
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    (input) => {
+      const turn = limiter.take();
+      if (!turn.allowed) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: rateLimitMessage(config.rateLimit, config.rateWindowSeconds, turn.retryAfterSeconds),
+            },
+          ],
+        };
+      }
+      const result = getDocument(reader, config.session, input);
+      switch (result.kind) {
+        case "found":
+          return {
+            content: [{ type: "text", text: JSON.stringify(result.document) }],
+            structuredContent: result.document,
+          };
+        case "unknown":
+          return {
+            isError: true,
+            content: [{ type: "text", text: unknownDocumentMessage(result.id, result.session) }],
           };
         default:
           return result satisfies never;

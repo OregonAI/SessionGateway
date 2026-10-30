@@ -10,6 +10,8 @@ export type IngestConfig = {
   /** The one Session this deployment serves (ADR-0003). */
   session: SessionKey;
   olisBaseUrl: string;
+  /** The origin documents are fetched from: OLIS's own, unless a test points the worker elsewhere. */
+  olisDocumentOrigin: string;
   databasePath: string;
 };
 
@@ -53,6 +55,11 @@ const serviceRoot = z.url().transform((text) => {
 const ingestSchema = z.object({
   SESSION_KEY: sessionKey,
   OLIS_BASE_URL: serviceRoot,
+  // Documents are on olis.oregonlegislature.gov, not on the feed's host. Only a test sets this.
+  OLIS_DOCUMENT_ORIGIN: z
+    .url()
+    .default("https://olis.oregonlegislature.gov")
+    .transform((text) => new URL(text).origin),
   DATABASE_PATH: z.string().min(1),
 });
 
@@ -99,7 +106,12 @@ function parseEnvironment<Schema extends z.ZodType>(schema: Schema, env: Environ
 
 export function loadIngestConfig(env: Environment): IngestConfig {
   const parsed = parseEnvironment(ingestSchema, env);
-  return { session: parsed.SESSION_KEY, olisBaseUrl: parsed.OLIS_BASE_URL, databasePath: parsed.DATABASE_PATH };
+  return {
+    session: parsed.SESSION_KEY,
+    olisBaseUrl: parsed.OLIS_BASE_URL,
+    olisDocumentOrigin: parsed.OLIS_DOCUMENT_ORIGIN,
+    databasePath: parsed.DATABASE_PATH,
+  };
 }
 
 export function loadServerConfig(env: Environment): ServerConfig {
