@@ -83,6 +83,11 @@ export type FakeOlis = {
    * the row it makes is made up for its case.
    */
   amendRows(entitySet: string, matches: (row: Row) => boolean, changes: Row): void;
+  /**
+   * Adds rows to one entity set, from now on. Unlike `strayRows`, which the pull sees too, these appear
+   * after it, and the fake still hides one whose CreatedDate is after its clock.
+   */
+  addRows(entitySet: string, rows: readonly Row[]): void;
   /** Every feed request received since the fake started or `forgetRequests` was last called. */
   requests(): readonly FakeOlisRequest[];
   forgetRequests(): void;
@@ -309,6 +314,11 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
     },
     behave: (next) => {
       behavior = next;
+    },
+    addRows: (entitySet, rows) => {
+      const known = feed.get(entitySet) ?? [];
+      known.push(...rows);
+      feed.set(entitySet, known);
     },
     amendRows: (entitySet, matchesRow, changes) => {
       for (const row of feed.get(entitySet) ?? []) {

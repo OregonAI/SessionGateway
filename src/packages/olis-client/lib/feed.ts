@@ -98,9 +98,11 @@ export async function readEntitySet<Row>(
 
   if (inlineCounted === undefined) throw new Error(`OLIS did not report an $inlinecount for ${entitySet}`);
   if (rows.length !== (counted ?? inlineCounted) || rows.length !== inlineCounted) {
-    throw new Error(
-      `Short read of ${entitySet}: OLIS counted ${counted ?? "no"} rows (/$count) and ${inlineCounted} ($inlinecount); read ${rows.length}`,
-    );
+    const counts =
+      counted === undefined
+        ? `${inlineCounted} rows ($inlinecount)`
+        : `${counted} rows (/$count) and ${inlineCounted} ($inlinecount)`;
+    throw new Error(`Short read of ${entitySet}: OLIS counted ${counts}; read ${rows.length}`);
   }
   return rows;
 }

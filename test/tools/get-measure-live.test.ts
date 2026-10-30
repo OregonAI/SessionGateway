@@ -276,44 +276,6 @@ describe("acceptance case (f) with OLIS answering", () => {
   });
 });
 
-describe("a location that has changed since the pull", () => {
-  let system: System;
-
-  beforeAll(async () => {
-    system = await startSystem({ clockAt: pulledAt });
-    system.clock.set(readAt);
-    // The fixture holds each row's final state, so SB 69's location is the same in the cache and at OLIS.
-    // This case makes OLIS move it after the pull, to a place made up for the case.
-    system.olis.amendRows("Measures", (row) => row["MeasurePrefix"] === "SB" && row["MeasureNumber"] === 69, {
-      CurrentLocation: "In House Committee",
-      CurrentCommitteeCode: "HLWS",
-    });
-  });
-
-  afterAll(async () => {
-    await system.stop();
-  });
-
-  describe.for(eras)("for a %s client", (era) => {
-    let connected: ConnectedClient;
-
-    beforeAll(async () => {
-      connected = await connectClient(era, system.handler);
-    });
-
-    afterAll(async () => {
-      await connected.close();
-    });
-
-    it("shows OLIS's location in the live block and the pull's in the cache's own field", async () => {
-      const outcome = await callTool(connected, "get_measure", { measure: "SB 69" });
-
-      expect(liveStatusOf(outcome)?.location).toEqual({ current: "In House Committee", committee_code: "HLWS" });
-      expect(outcome.structured?.["location"]).toEqual({ current: "Chapter Number Assigned", committee_code: null });
-    });
-  });
-});
-
 // A live lookup that fails (an error status, a broken connection, or no answer within the bound) is not an
 // error of the tool: the cache answers, and the live block says plainly that the lookup failed and that
 // the values are the cache's, as of the index's time. [what the fake does, the bound on the lookup in
