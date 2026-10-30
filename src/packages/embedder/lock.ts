@@ -3,7 +3,8 @@
 // the file is data/model-lock.json). This entry point has no
 // dependency but node: built-ins, because `scripts/model/fetch.ts` and `scripts/model/verify.ts` run
 // without `npm ci` and read the lock through it.
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 export type ModelFile = {
@@ -92,4 +93,29 @@ export function defaultModelPath(lock: ModelLock, repositoryRoot: string): strin
 /** The URL one pinned file is fetched from: Hugging Face's `resolve` address at the pinned revision. */
 export function modelFileUrl(lock: ModelLock, file: ModelFile): URL {
   return new URL(`https://huggingface.co/${lock.repo}/resolve/${lock.revision}/${file.path}`);
+}
+
+/** What is wrong with a file of the model directory, against the lock: it is not there, or has another size or sha256. */
+export type ModelFileProblem =
+  { kind: "missing" } | { kind: "size"; actual: number } | { kind: "sha256"; actual: string };
+
+/** The sha256 of a file, read as a stream so that a 34 MB model is not held in memory. */
+async function sha256Of(path: string): Promise<string> {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
+  return hash.digest("hex");
+}
+
+/**
+ * What is wrong with one pinned file in `directory`, or undefined when it is the pinned file. The size is
+ * compared before the hash is read. `npm run model:verify` and `npm run model:fetch` use this, and so does the
+ * embedder before it loads anything.
+ */
+export async function modelFileProblem(directory: string, file: ModelFile): Promise<ModelFileProblem | undefined> {
+  const path = join(directory, file.path);
+  if (!existsSync(path)) return { kind: "missing" };
+  const size = statSync(path).size;
+  if (size !== file.bytes) return { kind: "size", actual: size };
+  const actual = await sha256Of(path);
+  return actual === file.sha256 ? undefined : { kind: "sha256", actual };
 }
