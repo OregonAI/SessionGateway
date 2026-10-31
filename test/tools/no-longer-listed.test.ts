@@ -334,4 +334,55 @@ describe("a Proposed Amendment whose postings the feed stops listing", () => {
       expect(await hitFor(system, era)).toBeUndefined();
     });
   });
+
+  // The amendment's state is its postings' feed rows, whether or not a posting's file is held. Here the file of 26288
+  // (the posting listed, adopted by SLB on 2025-01-30) never came, 26286's is held and the feed stops listing 26286.
+  // The amendment is listed because the feed lists 26288, so `get_document` and `meetings` say the same of it.
+  it("is listed while the feed lists a posting whose file was never fetched, for get_document and meetings alike", async () => {
+    const unfetched = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/ProposedAmendment/26288";
+    const system = await startSystem({
+      clockAt: days[0] ?? "",
+      documents: true,
+      olis: { documentFailures: { [unfetched]: [404, 404, 404] } },
+    });
+    started.push(system);
+    stopListing(system.olis, "CommitteeProposedAmendments", isPosting(26286));
+    await pullAt(system, days[1] ?? "");
+    await pullAt(system, days[2] ?? "");
+
+    await everyClient(async (era) => {
+      expect((await getDocument(system, era, node)).structured).toMatchObject({
+        id: node,
+        document_id: "posting-2025r1-26286",
+        no_longer_listed: false,
+        last_listed_at: "2025-02-03T10:00:00-08:00",
+      });
+      expect((await getDocument(system, era, "posting-2025r1-26286")).structured).toMatchObject({
+        no_longer_listed: true,
+        last_listed_at: "2025-02-01T10:00:00-08:00",
+      });
+
+      const connected = await connectClient(era, system.handler);
+      try {
+        const outcome = await callTool(connected, "meetings", {
+          committee: "SLB",
+          from: "2025-01-28",
+          to: "2025-01-30",
+        });
+        const postings = (
+          outcome.structured?.["meetings"] as {
+            proposed_amendments: { id: string; document_id: string; fetched: boolean; no_longer_listed?: boolean }[];
+          }[]
+        )
+          .flatMap((meeting) => meeting.proposed_amendments)
+          .filter((posting) => posting.id === node);
+        expect(postings.map((posting) => [posting.document_id, posting.fetched, posting.no_longer_listed])).toEqual([
+          ["posting-2025r1-26286", true, true],
+          ["posting-2025r1-26288", false, undefined],
+        ]);
+      } finally {
+        await connected.close();
+      }
+    });
+  });
 });

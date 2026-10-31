@@ -400,10 +400,17 @@ export function openIndexReader(path: string): IndexReader {
   const selectDocumentListing = database.prepare(
     "SELECT listed, last_listed_at FROM feed_row_state WHERE document_id = ?",
   );
+  // An amendment is listed while the feed lists any of its postings (ADR-0030), so the postings are the ones the feed
+  // lists for it (meeting_document, written for every link before any file is fetched) and the ones the store holds,
+  // whether or not a posting's file is stored. The posting listed most recently says: a listed one comes first.
   const selectPostingsListing = database.prepare(
-    `SELECT listed, last_listed_at FROM feed_row_state
-     WHERE document_id IN (SELECT id FROM document WHERE node_id = ? AND node_id <> id)
-     ORDER BY last_listed_pull DESC LIMIT 1`,
+    `SELECT ${listedOrUnchecked} AS listed, fr.last_listed_at
+     FROM (SELECT document_id FROM meeting_document WHERE node_id = ?1 AND kind = 'proposed_amendment'
+           UNION
+           SELECT id FROM document WHERE node_id = ?1 AND node_id <> id) p
+       LEFT JOIN feed_row_state fr ON fr.document_id = p.document_id
+     ORDER BY ${listedOrUnchecked} DESC, fr.last_listed_pull DESC
+     LIMIT 1`,
   );
   const selectPostings = database.prepare(
     "SELECT * FROM document WHERE node_id = ? AND node_id <> id ORDER BY posted_at DESC, id DESC",
