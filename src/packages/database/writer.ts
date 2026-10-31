@@ -279,6 +279,8 @@ export type IndexWriter = {
    * embeddable (`refreshDocuments`).
    */
   storeVectors(vectors: SearchRecord["vectors"]): void;
+  /** Every stored document of the Session with where it came from and the hash of its file, by id (the hash sample, ticket #20). */
+  documentsToSample(session: SessionKey): { id: DocumentId; sourceUrl: string; contentHash: string }[];
   /** Every stored document of the Session whose file has no text layer, by id. */
   documentsWithoutTextLayer(session: SessionKey): { id: DocumentId; sourceUrl: string }[];
   /**
@@ -339,6 +341,7 @@ const countRow = z.object({ n: z.number() });
 const memberRow = z.object({ committee_code: z.string(), legislator_code: z.string() });
 const listingCountRow = z.object({ entity_set: z.string(), listed: z.number(), no_longer_listed: z.number() });
 const scanRow = z.object({ id: z.string(), source_url: z.string() });
+const sampleRow = z.object({ id: z.string(), source_url: z.string(), content_hash: z.string() });
 const unreadFileRow = z.object({
   id: z.string(),
   kind: z.enum(["version", "proposed_amendment"]),
@@ -830,6 +833,15 @@ export function openIndexWriter(path: string): IndexWriter {
     storedVectorHashes(modelId, hashes) {
       const select = database.prepare("SELECT 1 AS present FROM passage_vector WHERE text_hash = ? AND model_id = ?");
       return new Set(hashes.filter((hash) => select.get(hash, modelId) !== undefined));
+    },
+    documentsToSample(session) {
+      const rows = database
+        .prepare("SELECT id, source_url, content_hash FROM document WHERE session_key = ? ORDER BY id")
+        .all(session);
+      return rows.map((row) => {
+        const stored = sampleRow.parse(row);
+        return { id: stored.id as DocumentId, sourceUrl: stored.source_url, contentHash: stored.content_hash };
+      });
     },
     documentsWithoutTextLayer(session) {
       const rows = database

@@ -420,6 +420,17 @@ export async function downloadDocument(
   return downloadFrom(options, documents, downloadUrlOf(link.sourceUrl, documents.origin), "OLIS", signal);
 }
 
+/** Fetches a document the store holds again, by the `source_url` it was stored with. */
+export async function downloadStoredDocument(
+  options: OlisClientOptions,
+  sourceUrl: string,
+  signal: AbortSignal,
+): Promise<Download> {
+  const documents = options.documents;
+  if (documents === undefined) throw new Error(`This OLIS client was made without document options: ${sourceUrl}`);
+  return downloadFrom(options, documents, downloadUrlOf(sourceUrl, documents.origin), "OLIS", signal);
+}
+
 /**
  * Fetches a file that is not an OLIS document, from the address the deployment names (the Statutes Affected Table,
  * which Legislative Counsel publishes on its own site), with the retries a document gets.

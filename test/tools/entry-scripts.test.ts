@@ -152,6 +152,8 @@ describe("the entry scripts", () => {
   describe.for([
     { script: "src/bin/ingest.ts", variable: "INGEST_INCREMENTS", bad: "hourly" },
     { script: "src/bin/ingest.ts", variable: "INGEST_FULL_PULL", bad: "fortnightly" },
+    // Ticket #20, ADR-0040: the hash sample's size is the worker's alone.
+    { script: "src/bin/ingest.ts", variable: "INGEST_HASH_SAMPLE_SIZE", bad: "lots" },
     { script: "src/bin/server.ts", variable: "INGEST_INCREMENTS", bad: "hourly" },
     { script: "src/bin/server.ts", variable: "INGEST_FULL_PULL", bad: "fortnightly" },
   ])("$script with $variable=$bad", ({ script, variable, bad }) => {

@@ -36,6 +36,15 @@ function assertNotPacific(): void {
   }
 }
 
+/** A JSON report the worker wrote beside the database. */
+function readReport(databasePath: string, name: string): Record<string, unknown> {
+  const report: unknown = JSON.parse(readFileSync(join(dirname(databasePath), name), "utf8"));
+  if (typeof report !== "object" || report === null || Array.isArray(report)) {
+    throw new Error(`${name} is not a JSON object`);
+  }
+  return report as Record<string, unknown>;
+}
+
 export type SystemOptions = {
   /** An ISO-8601 instant with an offset: the simulated time of the fake OLIS, the worker and the server. */
   clockAt: string;
@@ -74,7 +83,12 @@ export type SystemOptions = {
   /** Further environment variables for the server's configuration (MCP_PATH, MCP_PORT, ...). */
   serverEnv?: Record<string, string>;
   /** The worker's rhythms (the INGEST_INCREMENTS and INGEST_FULL_PULL variables): unset, as a deployment leaves them. */
-  ingest?: { increments?: string; fullPull?: string };
+  ingest?: { increments?: string; fullPull?: string; hashSampleSize?: string };
+  /**
+   * The randomness the worker draws the hash sample's documents with (a number in [0, 1)), as the entry script would
+   * pass `Math.random`. `() => 0` by default: the sample is the first documents by id, so a test can name them.
+   */
+  random?: () => number;
   /** The alias file the worker reads, as the entry script would pass it. The committed one by default. */
   legislatorAliasesPath?: string;
 };
@@ -92,6 +106,11 @@ export type System = {
    * (`build-report.json`): what an operator reads to chase scans and failed fetches.
    */
   buildReport(): Record<string, unknown>;
+  /**
+   * The report the worker wrote beside the database at the end of its last nightly hash sample
+   * (`hash-sample-report.json`, ticket #20): the mismatches an operator reads.
+   */
+  hashSampleReport(): Record<string, unknown>;
   /**
    * Runs the worker's full pull again, at the clock's time now, into the same database. `embedder` stands in for the
    * system's own for this pull, to make a pull fail part-way.
@@ -265,6 +284,7 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
     MODEL_PATH: modelPath(),
     ...(options.ingest?.increments === undefined ? {} : { INGEST_INCREMENTS: options.ingest.increments }),
     ...(options.ingest?.fullPull === undefined ? {} : { INGEST_FULL_PULL: options.ingest.fullPull }),
+    ...(options.ingest?.hashSampleSize === undefined ? {} : { INGEST_HASH_SAMPLE_SIZE: options.ingest.hashSampleSize }),
     ...(options.statutesAffectedTableUrl === undefined
       ? {}
       : { STATUTES_AFFECTED_TABLE_URL: options.statutesAffectedTableUrl(olis.origin) }),
@@ -288,6 +308,7 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
     await runIngestLoop(loadIngestConfig(env), {
       ...workerDeps(embedder),
       signal: stop.signal,
+      random: options.random ?? (() => 0),
       sleep: (milliseconds) => {
         clock.advance(milliseconds);
         if (clock.now().getTime() >= end) stop.abort();
@@ -316,13 +337,8 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
       database,
       serverConfig,
       handler,
-      buildReport: () => {
-        const report: unknown = JSON.parse(readFileSync(join(dirname(database.path), "build-report.json"), "utf8"));
-        if (typeof report !== "object" || report === null || Array.isArray(report)) {
-          throw new Error("The build report is not a JSON object");
-        }
-        return report as Record<string, unknown>;
-      },
+      buildReport: () => readReport(database.path, "build-report.json"),
+      hashSampleReport: () => readReport(database.path, "hash-sample-report.json"),
       pullAgain: pull,
       incrementAgain: increment,
       runSchedule: schedule,

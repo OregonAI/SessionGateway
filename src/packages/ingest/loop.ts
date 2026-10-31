@@ -4,16 +4,36 @@
 import type { IngestConfig } from "#/packages/config/index.ts";
 import { openIndexWriter } from "#/packages/database/writer.ts";
 import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
-import { runFullPull, runIncrement, type FullPullResult, type IngestDeps } from "./index.ts";
-import { fullPullDeadline, sessionScheduleOf, whatRunsAt, type Due, type SessionSchedule } from "./schedule.ts";
+import {
+  lastHashSampleAt,
+  runFullPull,
+  runHashSample,
+  runIncrement,
+  type FullPullResult,
+  type HashSampleReport,
+  type IngestDeps,
+} from "./index.ts";
+import {
+  fullPullDeadline,
+  hashSampleAt,
+  hashSampleDeadline,
+  sessionScheduleOf,
+  whatRunsAt,
+  type Due,
+  type SessionSchedule,
+} from "./schedule.ts";
 
 export type LoopDeps = IngestDeps & {
+  /** The randomness the hash sample draws its documents with: a number in [0, 1). Created in the entry script. */
+  random: () => number;
   /** Waits this long, or until the signal aborts. Created in the entry script, like the clock. */
   sleep: (milliseconds: number, signal: AbortSignal) => Promise<void>;
   /** Told of a run that failed. The loop goes on: the next slot tries again, and the last good run still answers. */
-  onRunFailed: (run: "increment" | "full_pull", error: unknown) => void;
+  onRunFailed: (run: "increment" | "full_pull" | "hash_sample", error: unknown) => void;
   /** Told of each full pull that finished, so the entry script can write its reports. */
   afterFullPull?: (result: FullPullResult) => Promise<void>;
+  /** Told of each hash sample that finished, so the entry script can log its mismatches. */
+  afterHashSample?: (report: HashSampleReport) => void;
 };
 
 /** The loop wakes on the quarter hours, the grain of the 15-minute increments. Pacific offsets are whole hours. */
@@ -56,6 +76,12 @@ export async function runIngestLoop(config: IngestConfig, deps: LoopDeps): Promi
   // The slot each kind of run last ran in. A worker that restarts finds it from the database, so it does not run the
   // night's full pull a second time on the same date (the Acceptable Use Agreement allows one a day).
   const ran: Record<RunKind, string | undefined> = { increment: undefined, full_pull: undefined };
+  let hashSampleRan: string | undefined;
+  const lastSample = lastHashSampleAt(config.databasePath);
+  if (lastSample !== undefined) {
+    const then = hashSampleAt(lastSample, settings);
+    if (then.kind === "hash_sample") hashSampleRan = then.slot;
+  }
   const start = readState(config);
   // A full pull counts from when it was begun, so one that was refused for a short read still holds its night.
   const startedAt: Record<RunKind, Timestamp | undefined> = {
@@ -95,6 +121,17 @@ export async function runIngestLoop(config: IngestConfig, deps: LoopDeps): Promi
         }
       } catch (error) {
         deps.onRunFailed(due.kind, error);
+      }
+    }
+    // The hash sample runs every night, after the night's increment, once; it needs documents to fetch again.
+    const sample = hashSampleAt(formatPacific(now), settings);
+    if (sample.kind === "hash_sample" && state.lastRun.full_pull !== undefined && hashSampleRan !== sample.slot) {
+      hashSampleRan = sample.slot;
+      try {
+        const report = await runHashSample(config, deps, hashSampleDeadline(formatPacific(now), settings));
+        deps.afterHashSample?.(report);
+      } catch (error) {
+        deps.onRunFailed("hash_sample", error);
       }
     }
     await deps.sleep(TICK_MILLISECONDS - (deps.clock.now().getTime() % TICK_MILLISECONDS), deps.signal);
