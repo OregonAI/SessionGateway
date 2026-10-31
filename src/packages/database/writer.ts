@@ -86,10 +86,6 @@ export type FullPullRecord = {
   sponsors: readonly SponsorRecord[];
   floorVotes: readonly FloorVoteRecord[];
   committeeVotes: readonly CommitteeVoteRecord[];
-  /** The version of the OregonAI snapshot the build used. */
-  snapshot: SnapshotVersion;
-  /** The parent of each Agency the snapshot gives one: stored with its version, so the two always agree (ADR-0029). */
-  agencyParents: readonly { agency: AgencyId; parent: AgencyId }[];
   committees: readonly Committee[];
   /** The committee meetings. A meeting's status is the feed's latest. */
   meetings: readonly Meeting[];
@@ -141,6 +137,8 @@ export type StatutesAffectedTableRecord = {
   /** The extracted text, as the pdf-text package gives it. */
   text: string;
   entries: readonly StatutesAffectedEntry[];
+  /** The commit of the snapshot whose ORS section list the table's series were expanded against (ADR-0035). */
+  snapshotCommit: string;
 };
 
 /** What an Agency Link is read from: a Fiscal Impact Statement's text, or a Version's or a posting's. */
@@ -210,6 +208,17 @@ export type IndexWriter = {
    */
   recordFullPull(session: SessionKey, asOf: Timestamp, pulled: FullPullRecord): void;
   /**
+   * Records which snapshot the index's links were all read with, and the parent of each Agency it gives one, in one
+   * transaction so that the two always agree (ADR-0029). It is the last step of a pull, after the Statute Links and the
+   * Agency Links have been read with this snapshot (ADR-0035): until then `session_overview` reports the snapshot of
+   * the last pull that finished, and a pull that stops part-way leaves it so.
+   */
+  recordSnapshotRead(
+    session: SessionKey,
+    snapshot: SnapshotVersion,
+    agencyParents: readonly { agency: AgencyId; parent: AgencyId }[],
+  ): void;
+  /**
    * For each entity set the index keeps rows of, how many are listed (fewer than two complete pulls in a row have
    * missed them) and how many are no longer listed (ADR-0030). For the build report.
    */
@@ -256,15 +265,25 @@ export type IndexWriter = {
   storeDocument(session: SessionKey, document: StoredDocument, search: SearchRecord): void;
   /**
    * The files of the Session's stored Versions and postings of Proposed Amendments that have not been read
-   * for Statute Links, each once however many documents share it. Read from the stored text; nothing is fetched.
+   * for Statute Links with this snapshot, each once however many documents share it: a file never read, and every
+   * file read with another commit, because a range is expanded against the snapshot's section list (ADR-0035).
+   * Read from the stored text; nothing is fetched.
    */
-  unreadStatuteFiles(session: SessionKey): UnreadStatuteFile[];
+  unreadStatuteFiles(session: SessionKey, snapshot: SnapshotVersion): UnreadStatuteFile[];
   /** The stored text of one document, and whether the file had a text layer. */
   storedText(id: DocumentId): { text: string; hasTextLayer: boolean };
-  /** Keeps what reading one file came to, its links with it, in one transaction. */
-  storeStatuteParse(record: StatuteParseRecord): void;
+  /**
+   * Keeps what reading one file came to with this snapshot, its links with it, in one transaction. The links an
+   * earlier reading of the file made are replaced.
+   */
+  storeStatuteParse(record: StatuteParseRecord, snapshot: SnapshotVersion): void;
   /** The content hash of the Statutes Affected Table the Session's index holds, or undefined while it holds none. */
   statutesAffectedTableHash(session: SessionKey): string | undefined;
+  /**
+   * The commit of the snapshot the table the Session's index holds was read with, or undefined while it holds none or
+   * holds one read before the index kept this (ADR-0035: a series is expanded against the snapshot's section list).
+   */
+  statutesAffectedTableSnapshot(session: SessionKey): string | undefined;
   /**
    * The Measures for which the feed lists a Version with this description ("E-Engrossed"), as the last full pull read
    * the feed and whether or not the worker fetched the Version's file.
@@ -309,6 +328,7 @@ const unreadFileRow = z.object({
 });
 const storedTextRow = z.object({ text: z.string(), has_text_layer: z.number() });
 const tableHashRow = z.object({ content_hash: z.string() });
+const tableSnapshotRow = z.object({ snapshot_commit: z.string() });
 const measureIdRow = z.object({ measure_id: z.string() });
 const refusalRow = z.object({ content_hash: z.string(), reason: z.string() });
 const unreadAgencyRow = z.object({ id: z.string(), kind: z.enum(["version", "proposed_amendment", "analysis"]) });
@@ -403,13 +423,6 @@ export function openIndexWriter(path: string): IndexWriter {
         `INSERT INTO index_state (session_key, full_pull_as_of) VALUES (?, ?)
          ON CONFLICT (session_key) DO UPDATE SET full_pull_as_of = excluded.full_pull_as_of`,
       );
-      const recordSnapshot = database.prepare(
-        `INSERT INTO snapshot_state (session_key, source, commit_sha, commit_date) VALUES (?, ?, ?, ?)
-         ON CONFLICT (session_key) DO UPDATE SET
-           source = excluded.source, commit_sha = excluded.commit_sha, commit_date = excluded.commit_date`,
-      );
-      const clearAgencyParents = database.prepare("DELETE FROM agency_parent");
-      const insertAgencyParent = database.prepare("INSERT INTO agency_parent (agency_id, parent_id) VALUES (?, ?)");
       const upsertCommittee = database.prepare(
         `INSERT INTO committee (session_key, code, id, name) VALUES (?, ?, ?, ?)
          ON CONFLICT (session_key, code) DO UPDATE SET id = excluded.id, name = excluded.name`,
@@ -656,7 +669,6 @@ export function openIndexWriter(path: string): IndexWriter {
           insertVersionListing.run(link.id, session, measure.to, link.label);
         }
         recordAsOf.run(session, asOf);
-        recordSnapshot.run(session, pulled.snapshot.source, pulled.snapshot.commit, pulled.snapshot.commitDate);
         // The pull is a complete one: it lists every row it read. A document that was no longer listed and is
         // listed again, or that this pull makes no longer listed, changes what search holds in memory.
         const previous = pullNumberRow.parse(selectLatestPull.get(session)).number;
@@ -672,8 +684,25 @@ export function openIndexWriter(path: string): IndexWriter {
         }
         const agedOut = countRow.parse(countDocumentsLastListedIn.get(session, number - 2)).n > 0;
         if (relisted || agedOut) bumpSearchGeneration();
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    recordSnapshotRead(session, snapshot, agencyParents) {
+      const recordSnapshot = database.prepare(
+        `INSERT INTO snapshot_state (session_key, source, commit_sha, commit_date) VALUES (?, ?, ?, ?)
+         ON CONFLICT (session_key) DO UPDATE SET
+           source = excluded.source, commit_sha = excluded.commit_sha, commit_date = excluded.commit_date`,
+      );
+      const clearAgencyParents = database.prepare("DELETE FROM agency_parent");
+      const insertAgencyParent = database.prepare("INSERT INTO agency_parent (agency_id, parent_id) VALUES (?, ?)");
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        recordSnapshot.run(session, snapshot.source, snapshot.commit, snapshot.commitDate);
         clearAgencyParents.run();
-        for (const { agency, parent } of pulled.agencyParents) insertAgencyParent.run(agency, parent);
+        for (const { agency, parent } of agencyParents) insertAgencyParent.run(agency, parent);
         database.exec("COMMIT");
       } catch (error) {
         database.exec("ROLLBACK");
@@ -884,15 +913,16 @@ export function openIndexWriter(path: string): IndexWriter {
         throw error;
       }
     },
-    unreadStatuteFiles(session) {
+    unreadStatuteFiles(session, snapshot) {
       const rows = database
         .prepare(
           `SELECT MIN(d.id) AS id, d.kind, d.content_hash FROM document d
            WHERE d.session_key = ? AND d.kind IN ('version', 'proposed_amendment')
-             AND NOT EXISTS (SELECT 1 FROM statute_parse p WHERE p.content_hash = d.content_hash AND p.parsed_as = d.kind)
+             AND NOT EXISTS (SELECT 1 FROM statute_read r WHERE r.content_hash = d.content_hash AND r.parsed_as = d.kind
+                               AND r.snapshot_commit = ?)
            GROUP BY d.content_hash, d.kind ORDER BY MIN(d.id)`,
         )
-        .all(session);
+        .all(session, snapshot.commit);
       return rows.map((row) => {
         const unread = unreadFileRow.parse(row);
         return { documentId: unread.id as DocumentId, readAs: unread.kind, contentHash: unread.content_hash };
@@ -904,7 +934,13 @@ export function openIndexWriter(path: string): IndexWriter {
       const stored = storedTextRow.parse(row);
       return { text: stored.text, hasTextLayer: stored.has_text_layer === 1 };
     },
-    storeStatuteParse(record) {
+    storeStatuteParse(record, snapshot) {
+      const deleteParse = database.prepare("DELETE FROM statute_parse WHERE content_hash = ? AND parsed_as = ?");
+      const deleteLinks = database.prepare("DELETE FROM statute_link WHERE content_hash = ? AND parsed_as = ?");
+      const insertRead = database.prepare(
+        `INSERT INTO statute_read (content_hash, parsed_as, snapshot_commit) VALUES (?, ?, ?)
+         ON CONFLICT (content_hash, parsed_as) DO UPDATE SET snapshot_commit = excluded.snapshot_commit`,
+      );
       const insertParse = database.prepare(
         `INSERT INTO statute_parse (content_hash, parsed_as, text_read, amended_version_header,
                                     header_measure_prefix, header_measure_number, relating_clause_edits)
@@ -914,8 +950,16 @@ export function openIndexWriter(path: string): IndexWriter {
         `INSERT INTO statute_link (content_hash, parsed_as, ordinal, kind, target_type, target_id, measure_section)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       );
+      // The Agency Links are made from these links, so every document that shares the file is unread for them again.
+      const unreadAgency = database.prepare(
+        "DELETE FROM agency_read WHERE document_id IN (SELECT id FROM document WHERE content_hash = ? AND kind = ?)",
+      );
       database.exec("BEGIN IMMEDIATE");
       try {
+        unreadAgency.run(record.contentHash, record.readAs);
+        deleteParse.run(record.contentHash, record.readAs);
+        deleteLinks.run(record.contentHash, record.readAs);
+        insertRead.run(record.contentHash, record.readAs, snapshot.commit);
         insertParse.run(
           record.contentHash,
           record.readAs,
@@ -948,6 +992,12 @@ export function openIndexWriter(path: string): IndexWriter {
         .get(session);
       return row === undefined ? undefined : tableHashRow.parse(row).content_hash;
     },
+    statutesAffectedTableSnapshot(session) {
+      const row = database
+        .prepare("SELECT snapshot_commit FROM statutes_affected_read WHERE session_key = ?")
+        .get(session);
+      return row === undefined ? undefined : tableSnapshotRow.parse(row).snapshot_commit;
+    },
     measuresListingVersion(session, description) {
       const rows = database
         .prepare("SELECT DISTINCT measure_id FROM version_listing WHERE session_key = ? AND label = ?")
@@ -971,6 +1021,12 @@ export function openIndexWriter(path: string): IndexWriter {
                content_hash = excluded.content_hash, page_count = excluded.page_count, text = excluded.text`,
           )
           .run(session, record.sourceUrl, record.retrievedAt, record.contentHash, record.pageCount, record.text);
+        database
+          .prepare(
+            `INSERT INTO statutes_affected_read (session_key, snapshot_commit) VALUES (?, ?)
+             ON CONFLICT (session_key) DO UPDATE SET snapshot_commit = excluded.snapshot_commit`,
+          )
+          .run(session, record.snapshotCommit);
         database.prepare("DELETE FROM statutes_affected_entry WHERE session_key = ?").run(session);
         database.prepare("DELETE FROM statutes_affected_refusal WHERE session_key = ?").run(session);
         record.entries.forEach((entry, ordinal) => {

@@ -16,3 +16,17 @@ export function forgetListing(databasePath: string): void {
     database.close();
   }
 }
+
+/**
+ * Makes a database look as one that the code before ticket #51 pulled once with another commit of the snapshot: the
+ * Agency Links are stamped as read with `commit`, while the Statute Links keep the expansion of the older section list
+ * and no file has a Statute Link stamp (that table did not exist). It only arranges, like `forgetListing`.
+ */
+export function readAgencyLinksWithOnlyTheStamp(databasePath: string, commit: string): void {
+  const database = new DatabaseSync(databasePath, { timeout: 5000 });
+  try {
+    database.exec(`DELETE FROM statute_read; UPDATE agency_read SET snapshot_commit = '${commit}'`);
+  } finally {
+    database.close();
+  }
+}

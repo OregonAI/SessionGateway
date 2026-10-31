@@ -79,8 +79,11 @@ export type System = {
    * (`build-report.json`): what an operator reads to chase scans and failed fetches.
    */
   buildReport(): Record<string, unknown>;
-  /** Runs the worker's full pull again, at the clock's time now, into the same database. */
-  pullAgain(): Promise<FullPullResult>;
+  /**
+   * Runs the worker's full pull again, at the clock's time now, into the same database. `embedder` stands in for the
+   * system's own for this pull, to make a pull fail part-way.
+   */
+  pullAgain(options?: { embedder?: Embedder }): Promise<FullPullResult>;
   stop(): Promise<void>;
 };
 
@@ -104,7 +107,7 @@ export async function startSystem(options: SystemOptions): Promise<System> {
       ? {}
       : { STATUTES_AFFECTED_TABLE_URL: options.statutesAffectedTableUrl(olis.origin) }),
   };
-  const pull = (): Promise<FullPullResult> =>
+  const pull = (pullOptions: { embedder?: Embedder } = {}): Promise<FullPullResult> =>
     runFullPull(loadIngestConfig(env), {
       fetch,
       clock,
@@ -113,7 +116,7 @@ export async function startSystem(options: SystemOptions): Promise<System> {
       pause: () => Promise.resolve(),
       ...(options.documentTimeoutMs === undefined ? {} : { documentTimeoutMs: options.documentTimeoutMs }),
       legislatorAliases: readLegislatorAliases(options.legislatorAliasesPath ?? committedAliasFilePath),
-      embedder,
+      embedder: pullOptions.embedder ?? embedder,
     });
   try {
     await pull();
