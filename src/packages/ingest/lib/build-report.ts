@@ -33,6 +33,19 @@ export type BuildReport = {
   as_of: Timestamp;
   /** Every set the pull read, with its counts. The pull is complete, since a pull that is not is refused and has a `RefusedPullReport`. */
   pull: { complete: true; entity_sets: ListedSetReport[] };
+  /**
+   * The CommitteeMembers rows the index holds, for each committee that has any (ADR-0030). It is read from the table,
+   * not from the pull: rows that share the set's declared key are all kept, so each appears here by its code.
+   */
+  committee_members: {
+    committee_code: string;
+    /** How many rows the table holds for the committee. */
+    rows_stored: number;
+    /** The Legislator Code of each row as the feed wrote it, in the order of the codes. */
+    legislator_codes: string[];
+    /** Of those, the codes that name no Legislators row: a task force's members are not all Legislators, and it is no error. */
+    unresolved_legislator_codes: string[];
+  }[];
   documents_without_text_layer: { id: DocumentId; source_url: string }[];
   /** Documents the feed links that this pull did not store: the next pull tries them again. */
   documents_not_fetched: { id: DocumentId; source_url: string; reason: string }[];

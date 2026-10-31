@@ -58,8 +58,42 @@ function committeeMembersOf(system: System): SetReport | undefined {
   return pull.entity_sets.find((set) => set.entity_set === "CommitteeMembers");
 }
 
+type StoredReport = {
+  committee_code: string;
+  rows_stored: number;
+  legislator_codes: string[];
+  unresolved_legislator_codes: string[];
+};
+function storedMembersOf(system: System): StoredReport[] {
+  return system.buildReport()["committee_members"] as StoredReport[];
+}
+
 describe("CommitteeMembers rows that share a declared key", () => {
-  it("are all kept: the build report counts three rows read and three listed", async () => {
+  // The box is about what the index keeps, so it is read from what the table holds: for each committee, the rows it
+  // stored (build-report.json), each by the Legislator Code the feed wrote. A table keyed by the declared key stores
+  // one of the two HALNRW rows and this fails.
+  it("are all stored: the build report shows both rows of the shared key by their Legislator Codes", async () => {
+    const system = await startWithMembers();
+
+    await system.pullAgain();
+
+    expect(storedMembersOf(system)).toEqual([
+      {
+        committee_code: "HALNRW",
+        rows_stored: 2,
+        legislator_codes: ["Rep Helm", "Rep Owens"],
+        unresolved_legislator_codes: [],
+      },
+      {
+        committee_code: "JOCSS",
+        rows_stored: 1,
+        legislator_codes: ["Made Up Person"],
+        unresolved_legislator_codes: ["Made Up Person"],
+      },
+    ]);
+  });
+
+  it("are all read and listed: the build report counts three rows read and three listed", async () => {
     const system = await startWithMembers();
 
     await system.pullAgain();

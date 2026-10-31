@@ -176,6 +176,12 @@ export type IndexWriter = {
    * missed them) and how many are no longer listed (ADR-0030). For the build report.
    */
   listingCounts(session: SessionKey): { entitySet: string; listed: number; noLongerListed: number }[];
+  /**
+   * The CommitteeMembers rows the table holds, each as its committee and the Legislator Code the feed wrote, ordered
+   * by committee, then code. For the build report, which is how an operator sees that rows sharing a declared key
+   * were all kept (ADR-0030): no tool shows the set.
+   */
+  committeeMembers(session: SessionKey): { committeeCode: string; legislatorCode: string }[];
   /** The ids of the documents already stored for the Session: a stored document is never fetched again. */
   storedDocumentIds(session: SessionKey): Set<DocumentId>;
   /**
@@ -225,6 +231,7 @@ export type IndexWriter = {
 const idRow = z.object({ id: z.string() });
 const pullNumberRow = z.object({ number: z.number() });
 const countRow = z.object({ n: z.number() });
+const memberRow = z.object({ committee_code: z.string(), legislator_code: z.string() });
 const listingCountRow = z.object({ entity_set: z.string(), listed: z.number(), no_longer_listed: z.number() });
 const scanRow = z.object({ id: z.string(), source_url: z.string() });
 const unreadFileRow = z.object({
@@ -577,6 +584,18 @@ export function openIndexWriter(path: string): IndexWriter {
       return rows.map((row) => {
         const stored = listingCountRow.parse(row);
         return { entitySet: stored.entity_set, listed: stored.listed, noLongerListed: stored.no_longer_listed };
+      });
+    },
+    committeeMembers(session) {
+      const rows = database
+        .prepare(
+          `SELECT committee_code, legislator_code FROM committee_member WHERE session_key = ?
+           ORDER BY committee_code, legislator_code, row_key`,
+        )
+        .all(session);
+      return rows.map((row) => {
+        const stored = memberRow.parse(row);
+        return { committeeCode: stored.committee_code, legislatorCode: stored.legislator_code };
       });
     },
     storedDocumentIds(session) {

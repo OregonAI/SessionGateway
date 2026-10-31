@@ -272,6 +272,22 @@ function setReportOf(count: SetCount): { entity_set: string; counted: number; re
   };
 }
 
+/** The CommitteeMembers rows the table holds, for each committee, as the build report shows them. */
+function committeeMembersReportOf(
+  stored: readonly { committeeCode: string; legislatorCode: string }[],
+  unresolvedCodes: ReadonlySet<string>,
+): BuildReport["committee_members"] {
+  const byCommittee = new Map<string, string[]>();
+  for (const row of stored)
+    byCommittee.set(row.committeeCode, [...(byCommittee.get(row.committeeCode) ?? []), row.legislatorCode]);
+  return [...byCommittee].map(([committeeCode, codes]) => ({
+    committee_code: committeeCode,
+    rows_stored: codes.length,
+    legislator_codes: codes,
+    unresolved_legislator_codes: [...new Set(codes.filter((code) => unresolvedCodes.has(code)))],
+  }));
+}
+
 export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promise<FullPullResult> {
   // The snapshot is read before OLIS is: a build with no usable snapshot fails at once, naming the file.
   const snapshot = await loadSnapshot(config.snapshotPath);
@@ -410,9 +426,16 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       writer.storeStatuteParse(statuteParseOf(file, writer.storedText(file.documentId), snapshot.orsSections));
     }
     const listingCounts = new Map(writer.listingCounts(config.session).map((count) => [count.entitySet, count]));
+    const unresolvedMemberCodes = new Set(
+      resolver
+        .unresolved()
+        .filter((entry) => entry.references.some((reference) => reference.source === "CommitteeMembers"))
+        .map((entry) => entry.code),
+    );
     writeBuildReport(buildReportPath(config.databasePath), {
       session: config.session,
       as_of: asOf,
+      committee_members: committeeMembersReportOf(writer.committeeMembers(config.session), unresolvedMemberCodes),
       pull: {
         complete: true,
         entity_sets: setCounts.map((count) => ({
