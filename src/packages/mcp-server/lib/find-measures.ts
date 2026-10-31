@@ -2,12 +2,7 @@
 // Amendments that an Agency Link or a Statute Link ties to an Agency, optionally only the ones posted since a time.
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
-import {
-  agencyEvidenceKinds,
-  type AgencyEvidenceKind,
-  type LinkedNode,
-  type StoredAgencyLink,
-} from "#/packages/domain/agency-links.ts";
+import { agencyEvidenceKinds, type LinkedNode, type StoredAgencyLink } from "#/packages/domain/agency-links.ts";
 import { parseAmendmentNumber, type AmendmentId, type DocumentId } from "#/packages/domain/documents.ts";
 import {
   citationOfMeasureId,
@@ -15,7 +10,7 @@ import {
   type MeasureId,
   type SessionKey,
 } from "#/packages/domain/index.ts";
-import { parseAgencyId, type AgencyId } from "#/packages/domain/oregonai.ts";
+import { parseAgencyId } from "#/packages/domain/oregonai.ts";
 import { atPacificLocalTime, type Timestamp } from "#/packages/time/pacific.ts";
 import { compareLinks, evidenceOutput, evidenceShown, withoutRepeats } from "./agency-links.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
