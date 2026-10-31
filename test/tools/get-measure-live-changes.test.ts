@@ -1,0 +1,260 @@
+// Seam 1 (test/CLAUDE.md): what get_measure's `live_status` block says compared with the top level of
+// the same result (ticket #48; ADR-0038). The block says only what the top level does not: a value OLIS
+// gives as the top level shows it is `unchanged`, a list that OLIS gives as the top level's entries plus
+// new ones at the end shows `new_entries`, and any other difference shows the value `full`.
+//
+// The pull and the read are at one clock (2026-08-01, after every row of the fixture exists), so with
+// the fake OLIS as the pull left it, OLIS gives exactly what the Index holds. A case then changes what
+// the fake says, with rows MADE UP for the case. Each case builds its own system, and is read with both
+// kinds of client.
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { liveStatusOf, type ToolLiveStatus } from "../support/live-status.ts";
+import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
+import { startSystem, type System } from "../support/system.ts";
+import { floorVoteRow, tuplesOf } from "../support/votes.ts";
+
+const clockAt = "2026-08-01T17:00:00Z";
+// 2026-08-01 10:00 in Oregon.
+const asOf = "2026-08-01T10:00:00-07:00";
+
+const unchanged = { status: "unchanged" } as const;
+
+/** One get_measure call, with a client of the given era. */
+async function getMeasure(system: System, era: Era, measure: string) {
+  const connected = await connectClient(era, system.handler);
+  try {
+    return await callTool(connected, "get_measure", { measure });
+  } finally {
+    await connected.close();
+  }
+}
+
+/** A MeasureHistoryActions row in the feed's shape, MADE UP: SB 69's, Senate, with an id above every real one. */
+function madeUpHistoryRow(id: number, actionDate: string, text: string): Record<string, unknown> {
+  return {
+    MeasureHistoryId: id,
+    SessionKey: "2025R1",
+    MeasurePrefix: "SB",
+    MeasureNumber: 69,
+    Chamber: "S",
+    ActionDate: actionDate,
+    ActionText: text,
+    VoteText: null,
+    CreatedDate: "2025-06-10T10:00:05",
+    ModifiedDate: null,
+    PublicNotification: false,
+  };
+}
+
+describe("OLIS answering exactly as the Index", () => {
+  let system: System;
+
+  beforeAll(async () => {
+    system = await startSystem({ clockAt });
+  });
+
+  afterAll(async () => {
+    await system.stop();
+  });
+
+  // SB 69 has 20 history actions, 2 floor votes and 2 committee votes in the fixture; HB 3795 has history,
+  // 3 floor votes and 2 committee votes. Nothing is ahead on 2026-08-01.
+  describe.for(eras)("for a %s client", (era) => {
+    it.for(["SB 69", "HB 3795"])(
+      "says %s's location, history and votes are unchanged, and shows only the schedule and the read",
+      async (measure) => {
+        const outcome = await getMeasure(system, era, measure);
+
+        expect(outcome.isError).toBe(false);
+        expect(liveStatusOf(outcome)).toMatchObject({
+          source: "olis",
+          lookup_failed: false,
+          as_of: asOf,
+          location: unchanged,
+          history: unchanged,
+          floor_votes: unchanged,
+          committee_votes: unchanged,
+          schedule: [],
+        });
+        // The top level still has them in full.
+        expect((outcome.structured?.["history"] as unknown[]).length).toBeGreaterThan(10);
+      },
+    );
+
+    it("keeps the block small: SB 69's is well under a tenth of the 14,608 characters it was", async () => {
+      const outcome = await getMeasure(system, era, "SB 69");
+
+      expect(JSON.stringify(liveStatusOf(outcome)).length).toBeLessThan(1_500);
+    });
+  });
+});
+
+describe("OLIS giving one more History action and one more floor vote than the Index", () => {
+  let system: System;
+
+  // MADE UP: SB 69, Senate, one action after its last real one (2025-05-20), and a roll at it with
+  // "Sen Bonham", whom the Index's Legislators name, and "Sen Newcomer", a code no row of the Index has.
+  const newAction = { chamber: "senate", date: "2025-06-10T10:00:00-07:00", text: "MADE UP: Reconsidered. Passed." };
+  const roll = [
+    floorVoteRow(9000001, "Sen Bonham", "Nay", {
+      historyId: 900002,
+      actionDate: "2025-06-10T10:00:00",
+      actionText: "MADE UP: Reconsidered. Passed.",
+    }),
+    floorVoteRow(9000002, "Sen Newcomer", "Aye", {
+      historyId: 900002,
+      actionDate: "2025-06-10T10:00:00",
+      actionText: "MADE UP: Reconsidered. Passed.",
+    }),
+  ];
+
+  beforeAll(async () => {
+    system = await startSystem({ clockAt });
+    system.olis.addRows("MeasureHistoryActions", [
+      madeUpHistoryRow(900002, "2025-06-10T10:00:00", "MADE UP: Reconsidered. Passed."),
+    ]);
+    system.olis.addRows("MeasureVotes", roll);
+  });
+
+  afterAll(async () => {
+    await system.stop();
+  });
+
+  describe.for(eras)("for a %s client", (era) => {
+    it("shows exactly that action and that vote, and says the rest is unchanged", async () => {
+      const outcome = await getMeasure(system, era, "SB 69");
+
+      const live = liveStatusOf(outcome);
+      expect(live?.source).toBe("olis");
+      expect(live?.location).toEqual(unchanged);
+      expect(live?.committee_votes).toEqual(unchanged);
+      expect(live?.history).toEqual({ status: "new_entries", entries: [newAction] });
+      expect(live?.floor_votes.status).toBe("new_entries");
+      const entries = live?.floor_votes.status === "unchanged" ? [] : live?.floor_votes.entries;
+      expect(entries).toHaveLength(1);
+      expect(entries?.[0]).toMatchObject({
+        chamber: "senate",
+        date: "2025-06-10T10:00:00-07:00",
+        action: "MADE UP: Reconsidered. Passed.",
+      });
+      expect(tuplesOf(entries?.[0]?.votes ?? [])).toEqual([
+        ["Sen Bonham", "Nay", "legislator-2025r1-bonham", "Daniel Bonham"],
+        ["Sen Newcomer", "Aye", undefined, undefined],
+      ]);
+      // The top level is the Index's: 20 actions, the last the fixture's.
+      const top = outcome.structured?.["history"] as { text: string }[];
+      expect(top).toHaveLength(20);
+      expect(top.at(-1)?.text).toBe("Effective on the 91st day following adjournment sine die.");
+    });
+  });
+});
+
+describe("OLIS giving a History that differs before its end", () => {
+  let system: System;
+
+  beforeAll(async () => {
+    system = await startSystem({ clockAt });
+    // An earlier action changes: SB 69's "Referred to Labor and Workplace Standards." (2025-02-12) is
+    // reworded at OLIS. The wording is MADE UP.
+    system.olis.amendRows(
+      "MeasureHistoryActions",
+      (row) =>
+        row["MeasurePrefix"] === "SB" &&
+        row["MeasureNumber"] === 69 &&
+        row["ActionText"] === "Referred to Labor and Workplace Standards.",
+      { ActionText: "MADE UP: Referred to Rules." },
+    );
+  });
+
+  afterAll(async () => {
+    await system.stop();
+  });
+
+  describe.for(eras)("for a %s client", (era) => {
+    it("shows that History in full, and the rest unchanged", async () => {
+      const outcome = await getMeasure(system, era, "SB 69");
+
+      const live = liveStatusOf(outcome);
+      expect(live?.history.status).toBe("full");
+      const entries = live?.history.status === "unchanged" ? [] : live?.history.entries;
+      expect(entries).toHaveLength(20);
+      expect(entries?.[0]).toEqual({
+        chamber: "senate",
+        date: "2025-01-13T09:07:30-08:00",
+        text: "Introduction and first reading. Referred to President's desk.",
+      });
+      expect(entries?.map((entry) => entry.text)).toContain("MADE UP: Referred to Rules.");
+      expect(entries?.map((entry) => entry.text)).not.toContain("Referred to Labor and Workplace Standards.");
+      expect(live?.floor_votes).toEqual(unchanged);
+      expect(live?.committee_votes).toEqual(unchanged);
+      expect(live?.location).toEqual(unchanged);
+    });
+  });
+});
+
+describe("OLIS giving a location the Index does not hold", () => {
+  let system: System;
+
+  beforeAll(async () => {
+    system = await startSystem({ clockAt });
+    // MADE UP: SB 69's location, which the Index holds as "Chapter Number Assigned", moves at OLIS.
+    system.olis.amendRows("Measures", (row) => row["MeasurePrefix"] === "SB" && row["MeasureNumber"] === 69, {
+      CurrentLocation: "In House Committee",
+      CurrentCommitteeCode: "HLWS",
+    });
+  });
+
+  afterAll(async () => {
+    await system.stop();
+  });
+
+  describe.for(eras)("for a %s client", (era) => {
+    it("shows the location in full", async () => {
+      const outcome = await getMeasure(system, era, "SB 69");
+
+      expect(liveStatusOf(outcome)?.location).toEqual({
+        status: "full",
+        current: "In House Committee",
+        committee_code: "HLWS",
+      });
+      expect(outcome.structured?.["location"]).toEqual({ current: "Chapter Number Assigned", committee_code: null });
+    });
+  });
+});
+
+describe("a lookup that fails", () => {
+  let system: System;
+
+  beforeAll(async () => {
+    system = await startSystem({ clockAt });
+    system.olis.behave({ kind: "fail", status: 503 });
+  });
+
+  afterAll(async () => {
+    await system.stop();
+  });
+
+  describe.for(eras)("for a %s client", (era) => {
+    it("says so and why, and repeats none of the top level's values", async () => {
+      const outcome = await getMeasure(system, era, "SB 69");
+
+      expect(outcome.isError).toBe(false);
+      const live = liveStatusOf(outcome) as ToolLiveStatus;
+      expect(live).toMatchObject({
+        source: "cache",
+        lookup_failed: true,
+        as_of: asOf,
+        schedule: null,
+        location: unchanged,
+        history: unchanged,
+        floor_votes: unchanged,
+        committee_votes: unchanged,
+      });
+      expect(live.notice).toMatch(/live lookup of OLIS failed/i);
+      expect(live.notice).toMatch(/503/);
+      // None of the top level's history text is in the block.
+      expect(JSON.stringify(live)).not.toContain("Introduction and first reading");
+      expect(JSON.stringify(live)).not.toContain("Chapter Number Assigned");
+    });
+  });
+});

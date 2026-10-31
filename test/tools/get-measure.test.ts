@@ -147,4 +147,25 @@ describe.for(eras)("get_measure for a %s client", (era) => {
     expect(describedAs(schema, ["live_status", "schedule"])).toContain('Null when source is "cache"');
     expect(describedAs(tools[0], [])).toMatch(/live/i);
   });
+
+  // Ticket #48, ADR-0038: the live block says only what the top level does not, so its schema has to say how to read it.
+  it.for(["history", "floor_votes", "committee_votes"])(
+    "tells an agent how to read live_status.%s: unchanged, new_entries after the top level's last, and full",
+    async (list) => {
+      const { tools } = await connected.client.listTools();
+      const description = describedAs(tools[0]?.outputSchema, ["live_status", list]);
+
+      expect(description).toContain('"unchanged" (nothing to add)');
+      expect(description).toContain('"new_entries" (the top level\'s entries, then these)');
+      expect(description).toContain('"full" (these entries replace the top level\'s)');
+    },
+  );
+
+  it("tells an agent that an unchanged live_status location is the top level's, and that a full one replaces it", async () => {
+    const { tools } = await connected.client.listTools();
+    const description = describedAs(tools[0]?.outputSchema, ["live_status", "location"]);
+
+    expect(description).toContain('"unchanged": read the top level\'s');
+    expect(description).toContain('"full": this is where OLIS says the Measure is now');
+  });
 });
