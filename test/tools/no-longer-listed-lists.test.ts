@@ -5,7 +5,7 @@
 // listed, so a list that nothing has left is the list it was.
 //
 // One system for each kind of MCP client is built and changed once (the feed stops listing seven rows and two
-// complete pulls go by), and the cases read it, so the fixture's 278 files are pulled twice and not twelve times.
+// complete pulls go by), and the cases read it, so the early Session's files are pulled twice and not twelve times.
 // The rows are real ones of the fixture, named by their feed ids in the comments; `stopListing` is the fake's way
 // of making OLIS stop listing one (test/support/unlisted-rows.ts).
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -13,14 +13,16 @@ import { callTool, connectClient, eras, type ConnectedClient } from "../support/
 import { startSystem, type System } from "../support/system.ts";
 import { stopListing } from "../support/unlisted-rows.ts";
 
-// The analysis document is listed only once its file is fetched, so the system serves the documents: the fixture's
-// 278 files are pulled once, which takes seconds and more with the other files' workers running beside it.
+// The analysis document is listed only once its file is fetched, so the system serves the documents: the files that
+// exist on the first day are pulled once, which takes seconds and more with the other files' workers running beside it.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
-// 10:00 on 2026-08-01 in Oregon, when every row of the fixture exists, then the next two days: three nightly pulls.
-const firstPull = "2026-08-01T17:00:00Z";
-const secondPull = "2026-08-02T17:00:00Z";
-const thirdPull = "2026-08-03T17:00:00Z";
+// 10:00 on 2025-02-12 in Oregon, which was on UTC-8, then the next two days: three nightly pulls. By then HB 3131 has
+// all its 42 Testimony rows (the last was created on 2025-01-28), SB 983 exists (created 02-03) and so does the Fiscal
+// Impact Statement 85869 (created 02-11), and the fixture's later rows, and the most of its 278 files, do not.
+const firstPull = "2025-02-12T18:00:00Z";
+const secondPull = "2025-02-13T18:00:00Z";
+const thirdPull = "2025-02-14T18:00:00Z";
 
 /** Two complete pulls in a row go by after `stop` has made the feed stop listing some rows. */
 async function twoPullsWithout(system: System, stop: () => void): Promise<void> {
@@ -136,8 +138,8 @@ describe.for(eras)("a list tool, for a %s client", (era) => {
     expect(result).toMatchObject({
       id: "measure-2025r1-sb983",
       no_longer_listed: true,
-      last_listed_at: "2026-08-01T10:00:00-07:00",
-      as_of: "2026-08-03T10:00:00-07:00",
+      last_listed_at: "2025-02-12T10:00:00-08:00",
+      as_of: "2025-02-14T10:00:00-08:00",
     });
     const other = await call("get_measure", { measure: "SB 69" });
     expect(other["no_longer_listed"]).toBeUndefined();
