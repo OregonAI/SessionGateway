@@ -134,6 +134,52 @@ describe("a deployment that does not name the table", () => {
     expect(tableReport(unset.system)).toBeUndefined();
     expect(tableRequests(unset.system)).toBe(0);
   });
+
+  // tools/list says the same in every deployment, whether or not it names the table, so what an agent reads there is
+  // checked here, where the variable is unset: the field keeps the description it has on main (statute-links.ts of
+  // 523eafa), and the one sentence about the table reads as a condition.
+  describe.for(eras)("what a %s client reads in tools/list", (era) => {
+    type Schema = { description?: string; properties?: Record<string, Schema>; items?: Schema };
+    let connected: ConnectedClient;
+    let get: { description?: string | undefined; outputSchema?: unknown };
+
+    beforeAll(async () => {
+      connected = await connectClient(era, unset.system.handler);
+      const found = (await connected.client.listTools()).tools.find((tool) => tool.name === "get_measure");
+      if (found === undefined) throw new Error("tools/list has no get_measure");
+      get = found;
+    });
+
+    afterAll(async () => {
+      await connected.close();
+    });
+
+    it("keeps main's description of the versions field of statute_links_by_source", () => {
+      const links = (get.outputSchema as Schema).properties?.["statute_links_by_source"];
+
+      expect(links?.properties?.["versions"]?.description).toBe(
+        "The Measure's Versions that this index holds, in the order they were printed (a Version with no place in that order, such as a minority report's, comes last), each with the Statute Links read from its text. A Printed Amendment is not a Version and is not read.",
+      );
+    });
+
+    it("describes the table's block on a Version, beside the Version's own fields", () => {
+      const links = (get.outputSchema as Schema).properties?.["statute_links_by_source"];
+      const version = links?.properties?.["versions"]?.items?.properties;
+
+      expect(Object.keys(version ?? {})).toEqual(
+        expect.arrayContaining(["id", "label", "source_url", "statute_links", "statutes_affected_table"]),
+      );
+      expect(version?.["statutes_affected_table"]?.description).toContain("Statutes Affected Table");
+    });
+
+    it("mentions the table in one sentence of the tool's description, which says it is about an index that holds the table", () => {
+      const sentences = (get.description ?? "").split(/(?<=\.)\s+(?=[A-Z])/);
+      const aboutTable = sentences.filter((sentence) => sentence.includes("Statutes Affected Table"));
+
+      expect(aboutTable).toHaveLength(1);
+      expect(aboutTable[0]).toMatch(/^When this index holds Legislative Counsel's Statutes Affected Table\b/);
+    });
+  });
 });
 
 describe("a table that cannot be had", () => {
