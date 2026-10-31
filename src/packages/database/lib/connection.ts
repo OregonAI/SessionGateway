@@ -235,13 +235,6 @@ const schema = `
     page_count INTEGER NOT NULL,
     text TEXT NOT NULL
   ) STRICT;
-  -- With which commit of the OregonAI snapshot the table was read (ADR-0035): its series are expanded against the snapshot's
-  -- ORS section list, so the worker reads the held table again when the commit changes. A database with no row here
-  -- (made before this table) reads the table once more.
-  CREATE TABLE IF NOT EXISTS statutes_affected_read (
-    session_key TEXT NOT NULL PRIMARY KEY,
-    snapshot_commit TEXT NOT NULL
-  ) STRICT;
   CREATE TABLE IF NOT EXISTS statutes_affected_entry (
     session_key TEXT NOT NULL,
     ordinal INTEGER NOT NULL,

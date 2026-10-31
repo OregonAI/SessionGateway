@@ -18,7 +18,7 @@ import {
   sb69Hlws,
   sb69Slb,
 } from "../support/expected-votes.ts";
-import { liveStatusOf } from "../support/live-status.ts";
+import { liveCommitteeVotesOf, liveFloorVotesOf, liveHistoryOf, liveStatusOf } from "../support/live-status.ts";
 import type { FakeOlis, FakeOlisBehavior } from "../support/fake-olis.ts";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";
@@ -69,15 +69,17 @@ describe("the live status with OLIS answering", () => {
         source: "olis",
         lookup_failed: false,
         as_of: "2025-12-15T09:00:00-08:00",
-        location: { current: "Chapter Number Assigned", committee_code: null },
+        // OLIS's location is the Index's, so the block says so.
+        location: { status: "unchanged" },
       });
-      expect(live?.history).toHaveLength(20);
-      expect(live?.history[0]).toEqual({
+      const history = liveHistoryOf(outcome);
+      expect(history).toHaveLength(20);
+      expect(history[0]).toEqual({
         chamber: "senate",
         date: "2025-01-13T09:07:30-08:00",
         text: "Introduction and first reading. Referred to President's desk.",
       });
-      expect(live?.history.at(-1)).toEqual({
+      expect(history.at(-1)).toEqual({
         chamber: "senate",
         date: "2025-05-20T10:38:02-07:00",
         text: "Effective on the 91st day following adjournment sine die.",
@@ -107,11 +109,14 @@ describe("the live status with OLIS answering", () => {
       async ([measure, committeeRolls, floorVotes, cachedCommitteeVotes, cachedFloorVotes]) => {
         const outcome = await callTool(connected, "get_measure", { measure });
 
-        const live = liveStatusOf(outcome);
-        expect(live?.source).toBe("olis");
-        expect(live?.committee_votes.map((vote) => tuplesOf(vote.votes))).toEqual(committeeRolls);
+        expect(liveStatusOf(outcome)?.source).toBe("olis");
+        expect(liveCommitteeVotesOf(outcome).map((vote) => tuplesOf(vote.votes))).toEqual(committeeRolls);
         expect(
-          live?.floor_votes.map((vote) => ({ chamber: vote.chamber, date: vote.date, roll: rollOf(vote.votes) })),
+          liveFloorVotesOf(outcome).map((vote) => ({
+            chamber: vote.chamber,
+            date: vote.date,
+            roll: rollOf(vote.votes),
+          })),
         ).toEqual(floorVotes.map(({ chamber, date, roll }) => ({ chamber, date, roll })));
         // The cache, from before those rows existed, has fewer.
         expect(committeeVotesOf(outcome)).toHaveLength(cachedCommitteeVotes);
@@ -135,6 +140,62 @@ describe("the live status with OLIS answering", () => {
 //            211740  SHS    2025-05-20T08:00:00  Public Hearing and Work Session   created 2025-05-15
 // (The property that names the committee is spelled `CommitteCode` in the feed.) The fake OLIS serves only
 // the rows created by its clock's time.
+// 2026-08-01 10:00 in Oregon, after every row of the fixture exists: the pull and the read are at one clock,
+// so OLIS gives exactly what the Index holds (ticket #48, ADR-0038). Nothing is ahead on that day.
+const sameClock = "2026-08-01T17:00:00Z";
+
+describe("the live status with OLIS answering exactly as the Index", () => {
+  let system: System;
+
+  beforeAll(async () => {
+    system = await startSystem({ clockAt: sameClock });
+  });
+
+  afterAll(async () => {
+    await system.stop();
+  });
+
+  describe.for(eras)("for a %s client", (era) => {
+    let connected: ConnectedClient;
+
+    beforeAll(async () => {
+      connected = await connectClient(era, system.handler);
+    });
+
+    afterAll(async () => {
+      await connected.close();
+    });
+
+    // The fixture's MeasureHistoryActions rows: 20 for SB 69, 30 for HB 3795. The block is 478 characters
+    // for both, measured on this fixture and clock (14,608 and 23,289 before the ticket): the read's source
+    // and time, the notice, four "unchanged" and an empty schedule.
+    it.for([
+      ["SB 69", 20],
+      ["HB 3795", 30],
+    ] as const)(
+      "says %s's location, history and votes are unchanged and shows the schedule",
+      async ([measure, actions]) => {
+        const outcome = await callTool(connected, "get_measure", { measure });
+
+        expect(outcome.isError).toBe(false);
+        expect(liveStatusOf(outcome)).toMatchObject({
+          source: "olis",
+          lookup_failed: false,
+          as_of: "2026-08-01T10:00:00-07:00",
+          location: { status: "unchanged" },
+          history: { status: "unchanged" },
+          floor_votes: { status: "unchanged" },
+          committee_votes: { status: "unchanged" },
+          schedule: [],
+        });
+        expect(JSON.stringify(liveStatusOf(outcome))).toHaveLength(478);
+        // The top level still holds them in full.
+        expect(outcome.structured?.["history"]).toHaveLength(actions);
+      },
+    );
+  });
+});
+
 describe("the schedule with OLIS answering", () => {
   let system: System;
 
@@ -292,8 +353,12 @@ describe("acceptance case (f) with OLIS answering", () => {
         expect(outcome.isError).toBe(false);
         expect(sponsorLineOf(outcome)).toEqual(expected.sponsorLine);
         const live = liveStatusOf(outcome);
-        expect(live).toMatchObject({ source: "olis", lookup_failed: false, location: expected.olisMovesTo });
-        expect(live?.committee_votes.map((vote) => tuplesOf(vote.votes))).toEqual(expected.liveRolls);
+        expect(live).toMatchObject({
+          source: "olis",
+          lookup_failed: false,
+          location: { status: "full", ...expected.olisMovesTo },
+        });
+        expect(liveCommitteeVotesOf(outcome).map((vote) => tuplesOf(vote.votes))).toEqual(expected.liveRolls);
         // The cache's own location, from the pull, is the fixture's.
         expect(outcome.structured?.["location"]).toEqual(expected.location);
       },
@@ -356,20 +421,23 @@ describe.for(failures)("the live status when OLIS %s", ([, behavior, timeoutMs, 
       expect(live?.notice).toContain("come from the cache, as of 2025-04-10T10:00:00-07:00");
       // Case (f): the values are the cache's, which differ from what OLIS would say (the fake has moved the
       // Measure since the pull, as `moveLocationsAtOlis` says, and the votes it would send are `liveRolls`).
+      // The block repeats none of them: each is the top level's, which is the cache's.
       expect(sponsorLineOf(outcome)).toEqual(expected.sponsorLine);
-      expect(live?.location).toEqual(expected.location);
-      expect(live?.location).not.toEqual(expected.olisMovesTo);
-      expect(live?.committee_votes.map((vote) => tuplesOf(vote.votes))).toEqual(expected.cachedRolls);
+      expect(outcome.structured?.["location"]).toEqual(expected.location);
+      expect(live?.location).toEqual({ status: "unchanged" });
+      expect(live?.committee_votes).toEqual({ status: "unchanged" });
+      expect(committeeVotesOf(outcome)?.map((vote) => tuplesOf(vote.votes))).toEqual(expected.cachedRolls);
     });
 
-    it("gives the cache's history and floor votes in the block, the same as the cache's own fields", async () => {
+    it("leaves the cache's history and floor votes to the top level, and says the block repeats none", async () => {
       const outcome = await callTool(connected, "get_measure", { measure: "SB 69" });
 
       const live = liveStatusOf(outcome);
-      expect(live?.history).toHaveLength(10);
-      expect(live?.history).toEqual(outcome.structured?.["history"]);
-      expect(live?.floor_votes).toEqual(floorVotesOf(outcome));
-      expect(live?.committee_votes).toEqual(committeeVotesOf(outcome));
+      expect(outcome.structured?.["history"]).toHaveLength(10);
+      expect(live?.history).toEqual({ status: "unchanged" });
+      expect(live?.floor_votes).toEqual({ status: "unchanged" });
+      expect(live?.committee_votes).toEqual({ status: "unchanged" });
+      expect(floorVotesOf(outcome)).toHaveLength(1);
       expect(outcome.structured).toMatchObject({ as_of: "2025-04-10T10:00:00-07:00" });
     });
   });
