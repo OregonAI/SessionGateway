@@ -171,3 +171,100 @@ describe.for(eras)("find_measures after the clock moves and the worker pulls aga
     expect(after.text).toBe(before.text);
   });
 });
+
+// A Proposed Amendment is posted to more than one meeting, and a posting can hold a different text (spec #1 module 8:
+// "if the text differs between postings, each document is kept"). `since` asks what was posted since a time that
+// touches an Agency's statutes or names it, so an amendment is dated by the latest posting whose own file carries that
+// evidence: the same file, or a file that reads the same. A posting of a different file does not date what it does
+// not hold (#16 F2). Both rows below are MADE UP, shaped like feed/CommitteeProposedAmendments.json's SB 69 rows, filed
+// to SLB's real meeting of 2025-01-30 (agenda item 202165), and created on 2025-01-24, a day after the real postings.
+//   990101: SB 69-1 again, created 2025-01-24 at 08:00, served with the file of SB 921-2 (proposed-amendments/26923.pdf),
+//     whose text names no Bureau of Labor and Industries and no section of ORS 653 (pdftotext).
+//   990102: SB 69-2 again, created 2025-01-24 at 09:00, served with the file of SB 69-2's own posting 26286.
+// The clock is Friday 2025-01-24 at noon Pacific.
+describe.for(eras)(
+  "find_measures dates a Proposed Amendment by the postings that hold the evidence, for a %s client",
+  (era) => {
+    const boli = "bureau-of-labor-and-industries";
+    const root = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/ProposedAmendment";
+    const repostingRow = (id: number, number: string, createdDate: string): Record<string, unknown> => ({
+      ProposedAmendmentId: id,
+      CommitteeAgendaItemId: 202165,
+      SessionKey: "2025R1",
+      CommitteeCode: "SLB",
+      MeetingDate: "2025-01-30T08:00:00",
+      MeasurePrefix: "SB",
+      MeasureNumber: 69,
+      AmendmentNumber: number,
+      Meaning: "Proposed",
+      ProposedAmendmentUrl: `${root}/${id}`,
+      CreatedDate: createdDate,
+      ModifiedDate: null,
+    });
+
+    async function start(): Promise<System> {
+      const system = await startSystem({
+        clockAt: "2025-01-24T20:00:00Z",
+        documents: true,
+        serverEnv: { MCP_RATE_LIMIT: "1000" },
+        olis: {
+          strayRows: {
+            CommitteeProposedAmendments: [
+              repostingRow(990101, "-1", "2025-01-24T08:00:00"),
+              repostingRow(990102, "-2", "2025-01-24T09:00:00"),
+            ],
+          },
+          strayDocuments: {
+            "/liz/2025R1/Downloads/ProposedAmendment/990101": "proposed-amendments/26923.pdf",
+            "/liz/2025R1/Downloads/ProposedAmendment/990102": "proposed-amendments/26286.pdf",
+          },
+        },
+      });
+      started.push(system);
+      return system;
+    }
+
+    type Dated = { id: string; posted_at: string | null; last_posted_at: string | null };
+    const datedOf = (found: Found, kind: string): [string, string | null][] =>
+      (found.groups.find((group) => group.evidence_kind === kind)?.items as Dated[] | undefined)?.map((item) => [
+        item.id,
+        item.last_posted_at,
+      ]) ?? [];
+
+    it("lists SB 69-2, whose reposted file reads the same, and not SB 69-1, whose reposted file holds none of the evidence", async () => {
+      const system = await start();
+
+      const outcome = await find(system, era, { agency: boli, since: "2025-01-24" });
+
+      expect(outcome.isError, outcome.text).toBe(false);
+      const found = outcome.structured as unknown as Found;
+      expect(datedOf(found, "derived")).toEqual([["amendment-2025r1-sb69-2", "2025-01-24T09:00:00-08:00"]]);
+      expect(datedOf(found, "named-in-text")).toEqual([["amendment-2025r1-sb69-2", "2025-01-24T09:00:00-08:00"]]);
+    });
+
+    it("dates SB 69-1 by its last posting that holds the evidence, though a later posting of another file exists", async () => {
+      const system = await start();
+
+      const outcome = await find(system, era, { agency: boli, since: "2025-01-23" });
+
+      const found = outcome.structured as unknown as Found;
+      expect(datedOf(found, "derived")).toEqual([
+        ["amendment-2025r1-sb69-2", "2025-01-24T09:00:00-08:00"],
+        ["amendment-2025r1-sb69-1", "2025-01-23T16:27:37.06-08:00"],
+      ]);
+      expect(datedOf(found, "named-in-text")).toEqual([
+        ["amendment-2025r1-sb69-2", "2025-01-24T09:00:00-08:00"],
+        ["amendment-2025r1-sb69-1", "2025-01-23T16:27:37.06-08:00"],
+      ]);
+    });
+
+    it("dates a Statute Link of an ORS section the same way", async () => {
+      const system = await start();
+
+      const outcome = await find(system, era, { ors_section: "ORS 653.616", since: "2025-01-24" });
+
+      const found = outcome.structured as unknown as Found;
+      expect(datedOf(found, "statute-link")).toEqual([["amendment-2025r1-sb69-2", "2025-01-24T09:00:00-08:00"]]);
+    });
+  },
+);

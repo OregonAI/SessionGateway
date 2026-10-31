@@ -9,6 +9,7 @@ import {
   type StoredUnresolvedUnit,
 } from "#/packages/domain/agency-links.ts";
 import { statuteLinkKinds } from "#/packages/domain/statute-links.ts";
+import type { Timestamp } from "#/packages/time/pacific.ts";
 
 const numbersInOrder = new Intl.Collator("en", { numeric: true });
 
@@ -166,15 +167,19 @@ function nodeOutput(node: LinkedNode): { node_id: string; node_type: LinkedNode[
   return { node_id: node.id, node_type: node.type };
 }
 
+/** An Agency Link, with when OLIS created each posting whose own file gives the same link. */
+export type GatheredLink = { link: StoredAgencyLink; createdAt: Timestamp[] };
+
 /**
- * The links with a repeated one left out. A Proposed Amendment posted to several meetings has a posting for each, and
- * postings that say the same name an Agency in the same way once; the link kept is the one from the first posting, in
- * the order of the feed's numbers, so which posting an agent is given does not depend on the order of the rows. Any other
- * document is its own evidence: two Testimony from one Agency on a Measure, or two statements that list it, are two links.
+ * The links with a repeated one gathered into the first. A Proposed Amendment posted to several meetings has a posting for
+ * each, and postings that say the same name an Agency in the same way once; the link kept is the one from the first
+ * posting, in the order of the feed's numbers, so which posting an agent is given does not depend on the order of the
+ * rows. `createdAt` is the creation time of every posting the link was read from, so that the link is dated by the
+ * postings that hold it and by no other (#16 F2). Any other document is its own evidence: two Testimony from one Agency
+ * on a Measure, or two statements that list it, are two links.
  */
-export function withoutRepeats(links: readonly StoredAgencyLink[]): StoredAgencyLink[] {
-  const seen = new Set<string>();
-  const kept: StoredAgencyLink[] = [];
+export function gatherRepeats(links: readonly StoredAgencyLink[]): GatheredLink[] {
+  const gathered = new Map<string, GatheredLink>();
   for (const link of links.toSorted((a, b) => numbersInOrder.compare(a.document.id, b.document.id))) {
     const key = JSON.stringify([
       link.agency,
@@ -182,11 +187,16 @@ export function withoutRepeats(links: readonly StoredAgencyLink[]): StoredAgency
       link.evidence,
       link.node.type === "proposed_amendment" ? null : link.document.id,
     ]);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    kept.push(link);
+    const own = gathered.get(key) ?? { link, createdAt: [] };
+    if (link.document.createdAt !== null) own.createdAt.push(link.document.createdAt);
+    gathered.set(key, own);
   }
-  return kept;
+  return [...gathered.values()];
+}
+
+/** The links with a repeated one left out (`gatherRepeats`, without the times). */
+export function withoutRepeats(links: readonly StoredAgencyLink[]): StoredAgencyLink[] {
+  return gatherRepeats(links).map(({ link }) => link);
 }
 
 /** A Measure's Agency Links: by Agency, with each link's evidence and node, and the units that are not Agencies. */
