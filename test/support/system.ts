@@ -1,7 +1,8 @@
 // The whole system for one seam-1 test: a fake OLIS at a simulated time, the ingest worker's full
 // pull into a database in a disposable directory, and the MCP handler reading that database. It
 // wires the production packages through their entry points, the way src/bin/ does.
-import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { cpSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -101,17 +102,51 @@ export type SystemTemplate = {
    * a copy of the snapshot the template was built with that the case then changes (the database holds no path).
    */
   start(extra?: { serverEnv?: Record<string, string>; snapshot?: string }): Promise<System>;
-  /** Removes the template's files. Call it once, after the last case. */
-  remove(): Promise<void>;
 };
 
+/** Where the templates of one test run are kept for every file to share: made by the global setup, removed at its end. */
+const cacheVariable = "SESSION_GATEWAY_TEMPLATE_CACHE";
+
 /**
- * Runs `startSystem(options)` once, checkpoints the WAL into the database file, and keeps the files. The template is the
- * state the full pull leaves, so use it only for cases whose subject is not the pull itself (test/CLAUDE.md, "Database").
+ * The name of the database a system's options build, or undefined when they build one that is not worth keeping. It
+ * hashes everything that decides what the full pull writes (the clock, the Session, the documents, the rows the fake
+ * adds, the snapshot's bytes, the table's address, the alias file) and leaves out what only the server reads
+ * (`serverEnv`). A test that gives its own embedder gets no key: an embedder is code, not data.
  */
-export async function buildSystemTemplate(options: SystemOptions): Promise<SystemTemplate> {
+function templateKey(options: SystemOptions): string | undefined {
+  if (options.embedder !== undefined) return undefined;
+  const origin = "http://olis.invalid:1";
+  const description = {
+    clockAt: options.clockAt,
+    sessionKey: options.sessionKey,
+    snapshot: createHash("sha256")
+      .update(readFileSync(options.snapshot ?? snapshotFixturePath))
+      .digest("hex"),
+    documents: options.documents,
+    olis: options.olis,
+    statutesAffectedTableUrl: options.statutesAffectedTableUrl?.(origin),
+    documentTimeoutMs: options.documentTimeoutMs,
+    olisBaseUrl: options.olisBaseUrl?.(`${origin}/`),
+    legislatorAliasesPath:
+      options.legislatorAliasesPath === undefined
+        ? undefined
+        : createHash("sha256").update(readFileSync(options.legislatorAliasesPath)).digest("hex"),
+  };
+  return createHash("sha256").update(JSON.stringify(description)).digest("hex").slice(0, 32);
+}
+
+/**
+ * Runs `startSystem(options)` once, checkpoints the WAL into the database file, and keeps the files in a directory
+ * of their own (the test run's cache when there is one, so that every file asking for the same options shares it).
+ * The template is the state the full pull leaves, so use it only for cases whose subject is not the pull itself
+ * (test/CLAUDE.md, "Database").
+ */
+async function buildDirectory(options: SystemOptions, key: string | undefined): Promise<string> {
+  const cache = process.env[cacheVariable];
+  const target = cache === undefined || key === undefined ? undefined : join(cache, key);
+  if (target !== undefined && existsSync(target)) return target;
   const first = await startSystem(options);
-  const directory = mkdtempSync(join(tmpdir(), "session-gateway-template-"));
+  const directory = mkdtempSync(join(cache ?? tmpdir(), "session-gateway-template-"));
   try {
     const source = new DatabaseSync(first.database.path, { timeout: 5000 });
     try {
@@ -129,66 +164,58 @@ export async function buildSystemTemplate(options: SystemOptions): Promise<Syste
     rmSync(directory, { recursive: true, force: true });
     throw error;
   }
-  // A file that never calls `remove` (a case that starts its system in `beforeAll`) still leaves nothing behind.
-  process.once("exit", () => {
+  if (target === undefined) {
+    // A directory of this process alone: nothing else removes it.
+    process.once("exit", () => {
+      rmSync(directory, { recursive: true, force: true });
+    });
+    return directory;
+  }
+  try {
+    renameSync(directory, target);
+  } catch {
+    // Another file's worker built the same database first and its rename won: use that one.
     rmSync(directory, { recursive: true, force: true });
-  });
+  }
+  return target;
+}
+
+const built = new Map<string, Promise<string>>();
+
+/**
+ * A template that is built when the first case asks for a system, and only then: a file whose cases all pull for
+ * themselves never pays for it. The database is built once for every file of the run that gives the same options.
+ */
+export function systemTemplate(options: SystemOptions): SystemTemplate {
+  const key = templateKey(options);
+  const directory = (): Promise<string> => {
+    if (key === undefined) return buildDirectory(options, key);
+    const known = built.get(key);
+    if (known !== undefined) return known;
+    const made = buildDirectory(options, key);
+    built.set(key, made);
+    return made;
+  };
   return {
-    start: (extra = {}) =>
+    start: async (extra = {}) =>
       startSystem(
         {
           ...options,
           serverEnv: { ...options.serverEnv, ...extra.serverEnv },
           ...(extra.snapshot === undefined ? {} : { snapshot: extra.snapshot }),
         },
-        directory,
+        await directory(),
       ),
-    remove: () => {
-      rmSync(directory, { recursive: true, force: true });
-      return Promise.resolve();
-    },
   };
-}
-
-/**
- * A template that is built when the first case asks for a system, and only then: a file whose cases all pull for
- * themselves never pays for it. Concurrent first asks share one build, and so do describes that give the same `key`
- * (the same options, as the two clients of `describe.for(eras)` have). The test file calls `remove` in `afterAll`.
- */
-export function lazySystemTemplate(options: SystemOptions, key?: string): SystemTemplate {
-  const known = key === undefined ? undefined : shared.get(key);
-  if (known !== undefined) {
-    known.holders += 1;
-    return known.template;
-  }
-  let built: Promise<SystemTemplate> | undefined;
-  const template: SystemTemplate = {
-    start: async (extra) => {
-      built ??= buildSystemTemplate(options);
-      return (await built).start(extra);
-    },
-    remove: async () => {
-      // A template with a key goes when the last describe that asked for it is done.
-      const entry = key === undefined ? undefined : shared.get(key);
-      if (entry !== undefined && (entry.holders -= 1) > 0) return;
-      await (await built)?.remove();
-    },
-  };
-  if (key !== undefined) shared.set(key, { template, holders: 1 });
-  return template;
 }
 
 /**
  * `startSystem` for a case that only reads, or that changes state after the pull: the system is a copy of the template
- * that `key` names, built the first time the key is asked for and kept until the test process ends. Cases (and the two
- * clients of `describe.for(eras)`) that give the same key must give the same options.
+ * for these options, built the first time any file of the run asks for them.
  */
-export function startCopiedSystem(key: string, options: SystemOptions): Promise<System> {
-  return lazySystemTemplate(options, key).start();
+export function startCopiedSystem(options: SystemOptions): Promise<System> {
+  return systemTemplate(options).start();
 }
-
-/** The templates a file shares between its describes, by the key the file gives (a file's module is its own). */
-const shared = new Map<string, { template: SystemTemplate; holders: number }>();
 
 /** Starts the fake OLIS, runs the ingest worker's full pull and starts the server's handler. */
 export async function startSystem(options: SystemOptions, copyOf?: string): Promise<System> {

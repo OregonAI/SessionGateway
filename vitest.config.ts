@@ -9,5 +9,6 @@ process.env["TZ"] = "Asia/Kolkata";
 export default defineConfig({
   test: {
     include: ["src/**/*.test.ts", "test/**/*.test.ts"],
+    globalSetup: ["test/support/template-cache.ts"],
   },
 });

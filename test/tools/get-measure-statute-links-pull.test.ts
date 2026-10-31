@@ -75,7 +75,7 @@ describe("the feed as it stood on 2025-02-01", () => {
   let system: System;
 
   beforeAll(async () => {
-    system = await startCopiedSystem("feb-01", {
+    system = await startCopiedSystem({
       clockAt: "2025-02-01T20:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "1000" },
@@ -237,7 +237,7 @@ describe("rows the fixture lacks", () => {
   let system: System;
 
   beforeAll(async () => {
-    system = await startCopiedSystem("rows-lacking", {
+    system = await startCopiedSystem({
       clockAt: "2026-08-01T17:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "1000" },
@@ -320,7 +320,7 @@ describe.for(eras)("a Version with no place in the order of printing is the only
   let connected: ConnectedClient;
 
   beforeAll(async () => {
-    system = await startCopiedSystem("minority-only-later", {
+    system = await startCopiedSystem({
       clockAt: "2025-02-01T20:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "1000" },
@@ -384,7 +384,7 @@ describe.for(eras)("an amendment whose earliest posting writes its number with n
   });
 
   beforeAll(async () => {
-    system = await startCopiedSystem("no-hyphen", {
+    system = await startCopiedSystem({
       clockAt: "2026-08-01T17:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "1000" },

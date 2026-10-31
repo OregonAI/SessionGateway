@@ -11,12 +11,12 @@
 // and with the made-up section 23. Each link that adds to a section of chapter 345 is one of "links_in_chapter" of the
 // derived Agency Links (ADR-0027), so the Agency Links follow by their count: 22 before, 23 after. The made-up section is
 // not any true ORS section.
-import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { createFakeEmbedder } from "../support/fake-embedder.ts";
 import { readAgencyLinksWithOnlyTheStamp } from "../support/old-database.ts";
 import { createFixtureCopy, type FixtureCopy } from "../support/made-up-snapshot.ts";
-import { lazySystemTemplate, type System, type SystemTemplate } from "../support/system.ts";
+import { systemTemplate, type System, type SystemTemplate } from "../support/system.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -53,17 +53,8 @@ function snapshotCopy(): FixtureCopy {
 
 // Every case begins with the pull of the committed snapshot at a clock of its own, so the cases copy one database for each
 // clock; the pull each case runs after `changeIt()` is the subject and is a real one (test/CLAUDE.md, "Database").
-const templates = new Map<string, SystemTemplate>();
-function templateAt(clockAt: string): SystemTemplate {
-  const known = templates.get(clockAt);
-  if (known !== undefined) return known;
-  const made = lazySystemTemplate({ clockAt, documents: true, serverEnv: { MCP_RATE_LIMIT: "1000" } }, clockAt);
-  templates.set(clockAt, made);
-  return made;
-}
-afterAll(async () => {
-  for (const template of templates.values()) await template.remove();
-});
+const templateAt = (clockAt: string): SystemTemplate =>
+  systemTemplate({ clockAt, documents: true, serverEnv: { MCP_RATE_LIMIT: "1000" } });
 
 async function startAt(snapshot: string, clockAt = "2026-08-01T17:00:00Z"): Promise<System> {
   const system = await templateAt(clockAt).start({ snapshot });
