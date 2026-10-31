@@ -435,12 +435,15 @@ export type RelatedNode = {
  * longer listed once two complete full pulls in a row have not listed it. It leaves search and stays fetchable
  * by id; nothing is deleted.
  */
-export type Listing = {
-  /** False once two complete full pulls in a row have not listed the row. */
-  listed: boolean;
-  /** The as-of time of the latest complete full pull that listed the row. */
-  lastListedAt: Timestamp;
-};
+export type Listing =
+  /**
+   * `lastListedAt` is the as-of time of the latest complete full pull that listed the row, or null for a row no
+   * complete pull has checked yet: the index was built before the listing was kept, or an increment stored it. Such
+   * a row is read as listed (ADR-0030).
+   */
+  | { listed: true; lastListedAt: Timestamp | null }
+  /** Two complete full pulls in a row have not listed the row. `lastListedAt` is the latest pull that did. */
+  | { listed: false; lastListedAt: Timestamp };
 
 /** What `get_document` resolves an id to: a document, and the nodes it (or the amendment's postings) point at. */
 export type DocumentView = {

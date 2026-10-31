@@ -293,7 +293,6 @@ export async function getMeasure(
   // The Measure is in the index, so OLIS is asked about it; a reference the index does not know never reaches OLIS.
   const live = await liveStatus.lookup(measure);
   const listing = reader.measureListing(measure);
-  if (listing === undefined) throw new Error(`The index has no feed row for the Measure ${measureIdOf(measure)}`);
   return {
     kind: "found",
     measure: {
