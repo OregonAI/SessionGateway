@@ -247,9 +247,13 @@ export type IndexWriter = {
   statutesAffectedTableHash(session: SessionKey): string | undefined;
   /**
    * Replaces the table the Session's index holds, its entries with it, in one transaction: a server that reads
-   * during the pull sees the old table or the new one, never half of either.
+   * during the pull sees the old table or the new one, never half of either. It also forgets the bytes last refused.
    */
   storeStatutesAffectedTable(session: SessionKey, record: StatutesAffectedTableRecord): void;
+  /** The bytes the worker last refused as no table, by their sha256, and why; undefined if it refused none since it last stored a table. */
+  refusedStatutesAffectedTable(session: SessionKey): { contentHash: string; reason: string } | undefined;
+  /** Remembers the sha256 of bytes refused as no table, so that the next pull that is given them does not read them again. */
+  refuseStatutesAffectedTable(session: SessionKey, refusal: { contentHash: string; reason: string }): void;
   close(): void;
 };
 
@@ -266,6 +270,7 @@ const unreadFileRow = z.object({
 });
 const storedTextRow = z.object({ text: z.string(), has_text_layer: z.number() });
 const tableHashRow = z.object({ content_hash: z.string() });
+const refusalRow = z.object({ content_hash: z.string(), reason: z.string() });
 const passageRow = z.object({
   start_offset: z.number(),
   end_offset: z.number(),
@@ -896,6 +901,7 @@ export function openIndexWriter(path: string): IndexWriter {
           )
           .run(session, record.sourceUrl, record.retrievedAt, record.contentHash, record.pageCount, record.text);
         database.prepare("DELETE FROM statutes_affected_entry WHERE session_key = ?").run(session);
+        database.prepare("DELETE FROM statutes_affected_refusal WHERE session_key = ?").run(session);
         record.entries.forEach((entry, ordinal) => {
           insertEntry.run(
             session,
@@ -916,6 +922,22 @@ export function openIndexWriter(path: string): IndexWriter {
         database.exec("ROLLBACK");
         throw error;
       }
+    },
+    refusedStatutesAffectedTable(session) {
+      const row = database
+        .prepare("SELECT content_hash, reason FROM statutes_affected_refusal WHERE session_key = ?")
+        .get(session);
+      if (row === undefined) return undefined;
+      const stored = refusalRow.parse(row);
+      return { contentHash: stored.content_hash, reason: stored.reason };
+    },
+    refuseStatutesAffectedTable(session, refusal) {
+      database
+        .prepare(
+          `INSERT INTO statutes_affected_refusal (session_key, content_hash, reason) VALUES (?, ?, ?)
+           ON CONFLICT (session_key) DO UPDATE SET content_hash = excluded.content_hash, reason = excluded.reason`,
+        )
+        .run(session, refusal.contentHash, refusal.reason);
     },
     close() {
       database.close();

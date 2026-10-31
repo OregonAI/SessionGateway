@@ -19,7 +19,8 @@ export type StatutesAffectedTableReport = {
     | "unchanged" // the bytes are the ones the index holds, so nothing was read again
     | "not_published" // the server answered 404: the table does not exist yet, or no longer
     | "not_fetched" // any other failure to get the bytes
-    | "not_read"; // got bytes that are not a table the parser reads
+    | "not_read" // got bytes that are not a table the parser reads
+    | "refused_unchanged"; // the bytes are the ones an earlier pull refused as no table, so nothing was read again
   held: boolean;
   /**
    * For "loaded": the entries read, the rows of a previous Session's Measures (repassed over the Governor's veto, “OVP”)
@@ -28,7 +29,7 @@ export type StatutesAffectedTableReport = {
   entries?: number;
   previous_session_entries?: number;
   unread_lines?: number;
-  /** For "not_fetched" and "not_read": why. */
+  /** For "not_fetched", "not_read" and "refused_unchanged": why. */
   reason?: string;
 };
 
@@ -65,15 +66,21 @@ export async function loadStatutesAffectedTable(load: LoadArguments): Promise<St
   if (contentHash === load.writer.statutesAffectedTableHash(load.session)) {
     return { ...report, outcome: "unchanged", held: true };
   }
+  const refused = load.writer.refusedStatutesAffectedTable(load.session);
+  if (contentHash === refused?.contentHash) {
+    return { ...report, outcome: "refused_unchanged", held, reason: refused.reason };
+  }
+  // Bytes that are no table are remembered by their hash, so that a server that keeps giving the same placeholder or scan
+  // does not have it extracted again at every pull.
+  const refuse = (reason: string): StatutesAffectedTableReport => {
+    load.writer.refuseStatutesAffectedTable(load.session, { contentHash, reason });
+    return { ...report, outcome: "not_read", held, reason };
+  };
   const extraction = await extractTableText(load.url, download.bytes);
-  if (extraction.kind === "unreadable") return { ...report, outcome: "not_read", held, reason: extraction.reason };
-  if (!extraction.pdf.hasTextLayer) {
-    return { ...report, outcome: "not_read", held, reason: "The file has no text layer (a scan or a photograph)" };
-  }
+  if (extraction.kind === "unreadable") return refuse(extraction.reason);
+  if (!extraction.pdf.hasTextLayer) return refuse("The file has no text layer (a scan or a photograph)");
   const parsed = parseStatutesAffectedTable({ text: extraction.pdf.text, orsSections: load.orsSections });
-  if (parsed.entries.length === 0) {
-    return { ...report, outcome: "not_read", held, reason: "The text holds no row of an ORS table" };
-  }
+  if (parsed.entries.length === 0) return refuse("The text holds no row of an ORS table");
   load.writer.storeStatutesAffectedTable(load.session, {
     sourceUrl: load.url,
     retrievedAt,
