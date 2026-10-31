@@ -20,6 +20,8 @@ export type SearchFilter = {
   from?: string;
   /** Only documents dated on this Pacific date or earlier. */
   to?: string;
+  /** Only documents of these Measures: the ones that have an Agency Link to the Agency asked for (ADR-0028). */
+  agencyMeasures?: ReadonlySet<MeasureId>;
 };
 
 /** What a filter looks at in a document. */
@@ -39,6 +41,12 @@ export function acceptsDocument(filter: SearchFilter, facts: DocumentFacts): boo
   if (!filter.withTestimony && facts.kind === "testimony") return false;
   if (filter.measure !== undefined && facts.measureId !== filter.measure) return false;
   if (filter.committee !== undefined && facts.committeeId !== filter.committee) return false;
+  if (
+    filter.agencyMeasures !== undefined &&
+    (facts.measureId === null || !filter.agencyMeasures.has(facts.measureId))
+  ) {
+    return false;
+  }
   const day = facts.date?.slice(0, 10);
   if (filter.from !== undefined && (day === undefined || day < filter.from)) return false;
   if (filter.to !== undefined && (day === undefined || day > filter.to)) return false;
@@ -217,6 +225,10 @@ function filterTerms(filter: SearchFilter): { sql: string; values: string[] } {
   if (filter.committee !== undefined) {
     terms.push("sd.committee_id = ?");
     values.push(filter.committee);
+  }
+  if (filter.agencyMeasures !== undefined) {
+    terms.push("sd.measure_id IN (SELECT value FROM json_each(?))");
+    values.push(JSON.stringify([...filter.agencyMeasures]));
   }
   if (filter.from !== undefined) {
     terms.push("substr(sd.dated_at, 1, 10) >= ?");

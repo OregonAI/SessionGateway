@@ -11,6 +11,7 @@ import {
 import { findCitations, type Citation } from "#/packages/domain/citations.ts";
 import { documentKinds, type AmendmentId, type DocumentId } from "#/packages/domain/documents.ts";
 import { measureIdOf, type SessionKey } from "#/packages/domain/index.ts";
+import type { AgencyId } from "#/packages/domain/oregonai.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
 import { reciprocalRankFusion } from "#/packages/search/ranking.ts";
 import {
@@ -72,6 +73,12 @@ export const searchInput = z.object({
     .optional()
     .describe(
       "Only documents dated on this date or earlier, as a Pacific date such as 2025-01-28. The whole day counts.",
+    ),
+  agency: z
+    .string()
+    .optional()
+    .describe(
+      'Only documents of Measures that have an Agency Link, of any evidence, to this Agency: its slug in the OregonAI agency registry, such as "bureau-of-labor-and-industries". A document that belongs to no Measure (an agenda, a Recording Log) is left out.',
     ),
   include_testimony: z
     .boolean()
@@ -342,7 +349,11 @@ export async function search(
   const citations = findCitations(input.query, session);
   const resolved = filterOf(deps, session, input, citations);
   if (resolved.kind !== "filter") return resolved;
-  const filter = resolved.filter;
+  const agencyMeasures =
+    input.agency === undefined
+      ? undefined
+      : new Set(deps.reader.measuresWithAgencyLink(session, input.agency.trim() as AgencyId));
+  const filter: SearchFilter = agencyMeasures === undefined ? resolved.filter : { ...resolved.filter, agencyMeasures };
 
   // A citation's own words and numbers are the citation's, not keywords: "3" of "SB 69-3" matches the margin
   // numbers of a PDF's lines. The citation is looked for as a whole (exact hits, and its words in order).
@@ -371,6 +382,7 @@ export async function search(
       };
     });
   const notes = citations.flatMap((citation) => notesAbout(holdingOf(deps, session, citation), citation));
+  if (agencyMeasures?.size === 0) notes.push(noAgencyLinkNote(input.agency?.trim() ?? ""));
   return { kind: "found", search: { query: input.query, results, notes, as_of: asOf, notice: NON_OFFICIAL_NOTICE } };
 }
 
@@ -416,6 +428,11 @@ function notesAbout(holding: Holding, citation: Citation): string[] {
     default:
       return holding satisfies never;
   }
+}
+
+/** What the result says when the Agency filter names a slug no Agency Link in the index has. */
+function noAgencyLinkNote(agency: string): string {
+  return `The index holds no Agency Link to ${agency}, so no hit has a Measure with one. Check the slug against the OregonAI agency registry.`;
 }
 
 /** What the result says of a citation the index holds nothing for: which one, and that no hit is an exact match. */
