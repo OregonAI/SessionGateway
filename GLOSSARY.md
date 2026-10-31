@@ -21,6 +21,15 @@ Everything a deployment holds of its Session, pulled from OLIS.
 **Full pull**:
 A pass that reads every row of the Session from the OLIS feed. It counts as complete only when every set's rows match the feed's own count (ADR-0005). A pull that is short of any count is refused whole: it stores nothing, the Index stays as the last complete pull left it, and the Build report says which sets were short (ADR-0030).
 
+**Increment**:
+A pass that reads only the rows OLIS created or modified since the last run (`CreatedDate gt X or ModifiedDate gt X`, with X two hours before the last run began), stores them, and fetches the documents they link that the Index does not hold. It is not a complete pull: it lists nothing and never marks a row no longer listed. It moves the Index's as-of time, and `session_overview` reports when the last one ran. A change to an existing row of MeasureDocuments or MeasureAnalysisDocuments, whose `ModifiedDate` is always null, waits for the next Full pull (ADR-0039).
+
+**Meeting day**:
+A day the Session meets: a day with a committee meeting or a floor convening (ConveneTimes) scheduled, or any weekday while the Session is in progress. The `15min` increments run on meeting days only (ADR-0039).
+
+**Staleness warning**:
+The block of text added to every tool result when the Index's latest update is too old for the configured rhythm: over two hours old during working hours (`15min`), older than the last night window (`daily`), or a full pull older than the last scheduled one (`off`) (ADR-0039).
+
 **No longer listed**:
 Said of a row the Index keeps when two complete Full pulls in a row did not list it. The row leaves search results, stays served by id (`get_document` says `no_longer_listed` and when the feed last listed it), and stays in the lists of the other tools, flagged `no_longer_listed`. A row that one complete pull misses is still listed, a pull that was refused counts for nothing, and a row that a later complete pull lists is listed again. A row no complete pull has listed (an old file's, or one an increment stored) is read as listed, not yet checked: `get_document` gives it `last_listed_at: null`. An Agency Link whose every evidence Document is no longer listed is flagged the same way, and search's Agency filter no longer counts it (ADR-0037). Nothing is deleted (ADR-0005, ADR-0030).
 _Avoid_: deleted, withdrawn, removed (OLIS says none of these: a row stops being listed)

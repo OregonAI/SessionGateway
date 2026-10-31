@@ -34,7 +34,8 @@ their configuration from the environment and fail at start-up, naming the variab
 npm run model:fetch   # once: the embedding model (about 34 MB) into .cache/models/
 export SESSION_KEY=2025R1 DATABASE_PATH=data/index.db OLIS_BASE_URL=https://api.oregonlegislature.gov/odata/odataservice.svc
 export MODEL_PATH=.cache/models/Xenova--bge-small-en-v1.5/ea104dacec62c0de699686887e3f920caeb4f3e3
-SNAPSHOT_PATH=data/snapshot.json node src/bin/ingest.ts   # one full pull, then exit
+SNAPSHOT_PATH=data/snapshot.json node src/bin/ingest.ts --once   # one full pull, then exit: the first pull
+SNAPSHOT_PATH=data/snapshot.json node src/bin/ingest.ts          # then the schedule below, until stopped
 node src/bin/server.ts   # serves it at http://127.0.0.1:3000/mcp
 ```
 
@@ -49,6 +50,8 @@ node src/bin/server.ts   # serves it at http://127.0.0.1:3000/mcp
 | `OLIS_LIVE_TIMEOUT_MS` | server | `5000` | How long one live lookup may take, its five requests together, before `get_measure` answers from the cache and says the lookup failed. A whole number of milliseconds from 1 to 30000 (half what an MCP client waits for a tool by default); another value stops the start-up. |
 | `OLIS_DOCUMENT_ORIGIN` | worker | `https://olis.oregonlegislature.gov` | Where the worker fetches the documents the feed links. They are not on the feed's host. Only a test sets it. |
 | `STATUTES_AFFECTED_TABLE_URL` | worker | none | Where Legislative Counsel publishes the Session's Statutes Affected Table, such as `https://www.oregonlegislature.gov/AutoPubs/artables2025R1.pdf` (an `http` or `https` URL; another value stops the start-up). It is not on OLIS, and it appears only after the Session ends (2025R1's is dated 8/19/2025). With it set, each full pull fetches the table, reads it again only when its bytes change, and `get_measure` sets its entries beside each Version's parsed Statute Links (ADR-0033, ADR-0034). Unset, or while the address answers 404, nothing changes. |
+| `INGEST_INCREMENTS` | both | `daily` | How often the worker reads what OLIS changed between full pulls: `off`, `daily` (one a night, 5 pm to 6 am Pacific, on nights the full pull does not run) or `15min` (every 15 minutes, 6 am to 10 pm Pacific, on days the Session meets). Another value stops the start-up (ADR-0039). The server reads it to know when the index is too old. |
+| `INGEST_FULL_PULL` | both | `weekly` | How often the worker reads the whole Session: `nightly`, `weekly` (Sunday) or `monthly` (the 1st). It runs from midnight to 6 am Pacific, once a day at most, whatever the value. Another value stops the start-up (ADR-0039). |
 | `MCP_PATH` | server | `/mcp` | Where the endpoint is mounted. |
 | `MCP_HOST`, `MCP_PORT` | server | `127.0.0.1`, `3000` | Where it listens. |
 | `MCP_ALLOWED_HOSTS` | server | `localhost,127.0.0.1,[::1]` | Host names a request may be addressed to; any other `Host` is refused with 403. |
@@ -75,8 +78,28 @@ complete pulls in a row did not list stays in the database and is served by id, 
 (ADR-0005, ADR-0030). The report also has `committee_members`: for each committee, the rows the database holds of
 the feed's CommitteeMembers, by Legislator Code.
 
-A full pull against the live feed is allowed only between 5 pm and 6 am Pacific (ADR-0005). Nothing
-schedules it yet, so run it by hand inside that window.
+A full pull against the live feed is allowed only between 5 pm and 6 am Pacific (ADR-0005). `ingest.ts` with no
+argument runs the schedule (ADR-0039): it wakes every quarter hour and runs what the two settings say is due, an
+increment or the full pull, once for each night or quarter hour. A full pull runs from midnight to 6 am of its day
+(every day, Sunday or the 1st), so it falls once on a date however often the worker restarts. `ingest.ts --once`
+makes one full pull at once, ignoring the window, and exits: make the first pull with it (an increment needs a full
+pull before it), inside the window.
+
+An increment reads only the rows OLIS created or modified since the last run, less two hours (`CreatedDate gt X or
+ModifiedDate gt X`), and fetches the documents they link; the index's `as_of` is the start of the latest full pull or
+increment, and `session_overview` reports `last_increment`. Two delays follow, and neither is a bug:
+
+- A row OLIS stops listing leaves search only after two complete full pulls, because an increment is not one
+  (ADR-0030): about two weeks under the default `weekly`.
+- MeasureDocuments and MeasureAnalysisDocuments rows have a null `ModifiedDate`, so an increment picks up their new
+  rows by `CreatedDate`, and a change to an existing row of those sets waits for the next full pull.
+
+Every tool result carries a warning, as one more block of text, when the index is too old for the configured
+rhythm: with `15min`, the latest update is over two hours old during working hours; with `daily`, it is older than the
+last night window (a night was missed); with `off`, the last full pull is older than its last scheduled run. A day the
+Session meets is, for now, a day with a committee meeting in the index (ConveneTimes and the Session's dates are not
+read yet). The ingest worker logs nothing; a run that fails writes its error to stderr and the loop tries again in the
+next slot.
 
 After a pull, `ingest.ts` writes `unresolved-legislator-codes.json` beside the database file: the
 Legislator Codes it could not resolve through the Legislators rows or the alias file

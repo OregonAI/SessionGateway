@@ -10,6 +10,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";
+import { listAgain, stopListing } from "../support/unlisted-rows.ts";
 
 const started: System[] = [];
 
@@ -175,6 +176,54 @@ describe("an increment", () => {
         expect(await isHeld(system, era, 900103)).toBe(true);
         expect(await isHeld(system, era, 900104)).toBe(false);
       });
+    });
+  });
+});
+
+describe("an increment and the two-pull rule (ADR-0030)", () => {
+  // HB 3131's Testimony 117165, as in no-longer-listed.test.ts. Complete pulls at 17:00, 18:00 and 19:00 Pacific on
+  // 2025-01-17, an increment at 18:30. The feed lists the letter at the first pull, not at the second, lists it again
+  // (with a ModifiedDate of 18:20, so that the increment reads it) and then not at the third.
+  const isLetter = (row: Record<string, unknown>): boolean => row["CommTestId"] === 117165;
+
+  it("is not a complete pull: a row it saw between two complete pulls that missed it is still no longer listed", async () => {
+    const system = await start("2025-01-18T01:00:00Z");
+
+    stopListing(system.olis, "CommitteePublicTestimonies", isLetter);
+    system.clock.set("2025-01-18T02:00:00Z");
+    await system.pullAgain();
+    listAgain(system.olis, "CommitteePublicTestimonies", isLetter);
+    system.olis.amendRows("CommitteePublicTestimonies", isLetter, { ModifiedDate: "2025-01-17T18:20:00" });
+    system.clock.set("2025-01-18T02:30:00Z");
+    await system.incrementAgain();
+    stopListing(system.olis, "CommitteePublicTestimonies", isLetter);
+    system.clock.set("2025-01-18T03:00:00Z");
+    await system.pullAgain();
+
+    await everyClient(async (era) => {
+      expect(await idsFound(system, era)).not.toContain(letter);
+      const connected = await connectClient(era, system.handler);
+      const document = await callTool(connected, "get_document", { id: letter });
+      await connected.close();
+      expect(document.structured).toMatchObject({
+        no_longer_listed: true,
+        // The first complete pull's time: the increment did not list the row.
+        last_listed_at: "2025-01-17T17:00:00-08:00",
+      });
+    });
+  });
+
+  it("stores a document it saw first as listed, not yet checked: searchable, unflagged, with no time it was listed", async () => {
+    const system = await start();
+    system.clock.set(afterTheLetters);
+    await system.incrementAgain();
+
+    await everyClient(async (era) => {
+      expect(await idsFound(system, era)).toContain(letter);
+      const connected = await connectClient(era, system.handler);
+      const document = await callTool(connected, "get_document", { id: letter });
+      await connected.close();
+      expect(document.structured).toMatchObject({ no_longer_listed: false, last_listed_at: null });
     });
   });
 });
