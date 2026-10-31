@@ -1,6 +1,6 @@
 import { renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { DocumentId } from "#/packages/domain/documents.ts";
+import type { DocumentId, PulledEntitySet } from "#/packages/domain/documents.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 
@@ -8,9 +8,9 @@ import type { Timestamp } from "#/packages/time/pacific.ts";
  * What a full pull made of one entity set it read: the rows the feed counted for it and the rows that came. A set is
  * complete when they are the same. A pull is complete when every set it read is (ADR-0005).
  */
-type SetReport = {
+export type SetReport = {
   /** The feed's own name for the set: "Measures", "CommitteeMembers"... */
-  entity_set: string;
+  entity_set: PulledEntitySet;
   /** The feed's count of the set's rows for the Session (`/$count`). */
   counted: number;
   /** The rows the pages held. */

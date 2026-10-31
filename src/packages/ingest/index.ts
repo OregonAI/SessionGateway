@@ -49,7 +49,7 @@ import { splitPassages } from "#/packages/search/passages.ts";
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
-import { buildReportPath, writeBuildReport, type BuildReport } from "./lib/build-report.ts";
+import { buildReportPath, writeBuildReport, type BuildReport, type SetReport } from "./lib/build-report.ts";
 
 export type IngestDeps = {
   fetch: typeof fetch;
@@ -263,7 +263,7 @@ async function vectorsForNewPassages(
 }
 
 /** What the build report says of one set the pull read. */
-function setReportOf(count: SetCount): { entity_set: string; counted: number; read: number; complete: boolean } {
+function setReportOf(count: SetCount): SetReport {
   return {
     entity_set: count.entitySet,
     counted: count.counted,

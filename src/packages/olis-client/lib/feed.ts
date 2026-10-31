@@ -1,6 +1,7 @@
 // How to read one entity set of the OLIS OData v3 feed, quirks included (docs/research/olis-odata.md
 // section 1 and section 8; spec #1, "OLIS client").
 import { z } from "zod";
+import type { PulledEntitySet } from "#/packages/domain/documents.ts";
 import type { MeasureKey, SessionKey } from "#/packages/domain/index.ts";
 import type { OlisClientOptions } from "./options.ts";
 
@@ -66,7 +67,7 @@ export type CountCheck =
  */
 export async function readEntitySet<Row>(
   options: OlisClientOptions,
-  entitySet: string,
+  entitySet: PulledEntitySet,
   filter: string,
   rowSchema: z.ZodType<Row>,
   signal: AbortSignal,
@@ -165,7 +166,7 @@ export async function readSessionRows<
   Row extends { SessionKey: string; MeasurePrefix?: string | null; MeasureNumber?: number | null },
 >(
   options: OlisClientOptions,
-  entitySet: string,
+  entitySet: PulledEntitySet,
   session: SessionKey,
   rowSchema: z.ZodType<Row>,
   signal: AbortSignal,

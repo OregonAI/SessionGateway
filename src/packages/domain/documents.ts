@@ -431,6 +431,37 @@ export type RelatedNode = {
 };
 
 /**
+ * The OData entity sets a full pull reads, by the feed's own names (docs/research/olis-odata.md): the one list that
+ * the OLIS client reads them by, the build report names them by and the listing of rows keys them by, so that a
+ * misspelling is a compile error and not a join that finds nothing.
+ */
+export const pulledEntitySets = [
+  "Measures",
+  "Legislators",
+  "MeasureSponsors",
+  "MeasureHistoryActions",
+  "MeasureVotes",
+  "CommitteeVotes",
+  "Committees",
+  "CommitteeMeetings",
+  "CommitteeAgendaItems",
+  "MeasureDocuments",
+  "MeasureAnalysisDocuments",
+  "CommitteeMeetingDocuments",
+  "CommitteeProposedAmendments",
+  "CommitteePublicTestimonies",
+  "CommitteeMembers",
+] as const;
+export type PulledEntitySet = (typeof pulledEntitySets)[number];
+
+/**
+ * What the listing of rows keys a row by: an entity set, or a column of one row that the index keeps as a row of its
+ * own. A meeting's agenda is the `AgendaUrl` column of its CommitteeMeetings row, so it stays listed or not apart from
+ * the meeting (ADR-0030).
+ */
+export type ListedSet = PulledEntitySet | "CommitteeMeetings.AgendaUrl";
+
+/**
  * Whether the feed still lists a row the index keeps, and when it last did (ADR-0005, ADR-0030). A row is no
  * longer listed once two complete full pulls in a row have not listed it. It leaves search and stays fetchable
  * by id; nothing is deleted.

@@ -21,6 +21,7 @@ import {
   type MeetingId,
   type NodeId,
   type PostedAmendment,
+  type PulledEntitySet,
   type Relation,
   type RelatedNode,
   type TestimonyEntry,
@@ -451,11 +452,15 @@ export function openIndexReader(path: string): IndexReader {
   const selectCommittee = database.prepare(
     "SELECT code, id, name FROM committee WHERE session_key = ? AND (upper(code) = upper(?) OR id = lower(?))",
   );
+  // The entity sets the listing of rows keys these by (ADR-0030): bound as parameters, from the one list of names.
+  const measuresSet: PulledEntitySet = "Measures";
+  const meetingsSet: PulledEntitySet = "CommitteeMeetings";
+  const agendaItemsSet: PulledEntitySet = "CommitteeAgendaItems";
   const selectMeetings = database.prepare(
     `SELECT m.id, m.committee_id, m.committee_code, c.name AS committee_name, m.at, m.status, ${listedOrUnchecked} AS listed
      FROM meeting m
        JOIN committee c ON c.session_key = m.session_key AND c.code = m.committee_code
-       LEFT JOIN feed_row_state fr ON fr.session_key = m.session_key AND fr.entity_set = 'CommitteeMeetings'
+       LEFT JOIN feed_row_state fr ON fr.session_key = m.session_key AND fr.entity_set = ?
                                   AND fr.row_key = m.id
      WHERE m.session_key = ?
        AND (? IS NULL OR EXISTS (SELECT 1 FROM agenda_item a
@@ -468,7 +473,7 @@ export function openIndexReader(path: string): IndexReader {
   const selectAgendaItems = database.prepare(
     `SELECT a.*, ${listedOrUnchecked} AS listed
      FROM agenda_item a
-       LEFT JOIN feed_row_state fr ON fr.session_key = a.session_key AND fr.entity_set = 'CommitteeAgendaItems'
+       LEFT JOIN feed_row_state fr ON fr.session_key = a.session_key AND fr.entity_set = ?
                                   AND fr.row_key = CAST(a.id AS TEXT)
      WHERE a.meeting_id = ? ORDER BY a.print_order IS NULL, CAST(a.print_order AS INTEGER), a.id`,
   );
@@ -496,7 +501,7 @@ export function openIndexReader(path: string): IndexReader {
       WHERE t.document_id = ?`,
   );
   const selectMeasureListing = database.prepare(
-    "SELECT listed, last_listed_at FROM feed_row_state WHERE session_key = ? AND entity_set = 'Measures' AND row_key = ?",
+    "SELECT listed, last_listed_at FROM feed_row_state WHERE session_key = ? AND entity_set = ? AND row_key = ?",
   );
   // The postings the feed lists for one Proposed Amendment, with the meeting each was posted to.
   const selectPostingsOfAmendment = database.prepare(
@@ -775,6 +780,7 @@ export function openIndexReader(path: string): IndexReader {
       const to = filter.to ?? null;
       return selectMeetings
         .all(
+          meetingsSet,
           session,
           measure?.prefix ?? null,
           measure?.prefix ?? null,
@@ -802,7 +808,7 @@ export function openIndexReader(path: string): IndexReader {
         });
     },
     meetingContents(meeting) {
-      const agendaItems = selectAgendaItems.all(meeting).map((row): ListedAgendaItem => {
+      const agendaItems = selectAgendaItems.all(agendaItemsSet, meeting).map((row): ListedAgendaItem => {
         const stored = agendaItemRow.parse(row);
         return {
           listed: stored.listed === 1,
@@ -876,7 +882,7 @@ export function openIndexReader(path: string): IndexReader {
       return listing.listed ? undefined : listing;
     },
     measureListing(key) {
-      return listingOf(selectMeasureListing.get(key.session, measureIdOf(key)));
+      return listingOf(selectMeasureListing.get(key.session, measuresSet, measureIdOf(key)));
     },
     findTestimony(key) {
       return selectTestimony.all(measureIdOf(key)).map((row): TestimonyEntry => {
