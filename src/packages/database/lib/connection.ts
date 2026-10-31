@@ -233,8 +233,9 @@ const schema = `
   -- every row the index keeps from the feed, by its entity set and its key, with the number of the latest
   -- complete pull that listed it. A row is listed while fewer than two complete pulls have missed it (see the
   -- view), so a pull that lists a row is the only thing that writes to it and an absent row needs no write.
-  -- document_id is the document the row links, for the sets that link one. Increments add rows here with the
-  -- latest pull's number and never age one.
+  -- document_id is the document the row links, for the sets that link one. Only a complete full pull writes
+  -- last_listed_pull. A row with no row here (an old file's, or one an increment first saw) reads as listed, not
+  -- yet checked by a complete pull, and an increment never changes a row that exists here (ADR-0030).
   CREATE TABLE IF NOT EXISTS feed_pull (
     session_key TEXT NOT NULL,
     number INTEGER NOT NULL,

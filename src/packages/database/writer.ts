@@ -263,6 +263,17 @@ function meetingListingOf(link: DocumentLink): { meetingId: string; meaning: str
 
 export function openIndexWriter(path: string): IndexWriter {
   const database = openWriteConnection(path);
+  const raiseSearchGeneration = database.prepare("UPDATE search_generation SET generation = generation + 1");
+  /**
+   * Raises the search generation (ADR-0025): the number the server compares to know that what it holds in memory for
+   * the meaning side is out of date, and to load it again. Every write that changes what search shows calls this
+   * inside its own transaction: storing the passages of a document, refiling one, and a full pull's listing or
+   * unlisting of a document. A write that is added later (the increments of ticket #17, ADR-0030) calls it for the
+   * same reasons and does not copy the statement.
+   */
+  function bumpSearchGeneration(): void {
+    raiseSearchGeneration.run();
+  }
   return {
     recordFullPull(session, asOf, pulled) {
       const upsertMeasure = database.prepare(
@@ -382,7 +393,6 @@ export function openIndexWriter(path: string): IndexWriter {
       const countDocumentsLastListedIn = database.prepare(
         "SELECT COUNT(*) AS n FROM feed_row WHERE session_key = ? AND document_id IS NOT NULL AND last_listed_pull = ?",
       );
-      const bumpGeneration = database.prepare("UPDATE search_generation SET generation = generation + 1");
       const upsertCommitteeMember = database.prepare(
         `INSERT INTO committee_member (session_key, row_key, committee_code, legislator_code, title, created_at,
                                        modified_at)
@@ -567,7 +577,7 @@ export function openIndexWriter(path: string): IndexWriter {
           if (row.documentId !== null && unlistedBefore.has(row.documentId)) relisted = true;
         }
         const agedOut = countRow.parse(countDocumentsLastListedIn.get(session, number - 2)).n > 0;
-        if (relisted || agedOut) bumpGeneration.run();
+        if (relisted || agedOut) bumpSearchGeneration();
         database.exec("COMMIT");
       } catch (error) {
         database.exec("ROLLBACK");
@@ -664,7 +674,6 @@ export function openIndexWriter(path: string): IndexWriter {
            AND (node_id IS NOT ?1 OR kind IS NOT ?2 OR title IS NOT ?3 OR measure_id IS NOT ?4
                 OR committee_id IS NOT ?5 OR dated_at IS NOT ?6 OR keyword_only IS NOT ?7)`,
       );
-      const bumpGeneration = database.prepare("UPDATE search_generation SET generation = generation + 1");
       const deleteRelations = database.prepare("DELETE FROM document_relation WHERE document_id = ?");
       const insertRelation = database.prepare(
         `INSERT INTO document_relation (document_id, relation, to_id, meaning, provenance) VALUES (?, ?, ?, ?, ?)`,
@@ -695,7 +704,7 @@ export function openIndexWriter(path: string): IndexWriter {
             link.id,
             session,
           );
-          if (filed.changes > 0) bumpGeneration.run();
+          if (filed.changes > 0) bumpSearchGeneration();
           deleteRelations.run(link.id);
           for (const relation of link.relations) {
             insertRelation.run(link.id, relation.relation, relation.to, relation.meaning, relation.provenance);
@@ -732,7 +741,6 @@ export function openIndexWriter(path: string): IndexWriter {
       const insertVector = database.prepare(
         "INSERT OR IGNORE INTO passage_vector (text_hash, model_id, vector) VALUES (?, ?, ?)",
       );
-      const bumpGeneration = database.prepare("UPDATE search_generation SET generation = generation + 1");
       database.exec("BEGIN IMMEDIATE");
       try {
         insertDocument.run(
@@ -773,7 +781,7 @@ export function openIndexWriter(path: string): IndexWriter {
         for (const citation of search.citations) insertCitation.run(citation.id, document.id, citation.index);
         for (const row of search.vectors.rows) insertVector.run(row.hash, search.vectors.modelId, row.vector);
         // The vectors of a keyword-only document are not loaded, so storing one changes nothing the server holds.
-        if (!search.entry.keywordOnly && search.passages.length > 0) bumpGeneration.run();
+        if (!search.entry.keywordOnly && search.passages.length > 0) bumpSearchGeneration();
         database.exec("COMMIT");
       } catch (error) {
         database.exec("ROLLBACK");
