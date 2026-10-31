@@ -98,7 +98,7 @@ Every tool result carries a warning, as one more block of text, when the index i
 rhythm: with `15min`, the latest update is over two hours old during working hours; with `daily`, it is older than the
 last night window (a night was missed); with `off`, the last full pull is older than its last scheduled run. A day the
 Session meets is, for now, a day with a committee meeting in the index (ConveneTimes and the Session's dates are not
-read yet). The ingest worker logs nothing; a run that fails writes its error to stderr and the loop tries again in the
+read yet). The ingest worker logs each run that fails as a JSON line on stdout (pino), and the loop tries again in the
 next slot.
 
 After a pull, `ingest.ts` writes `unresolved-legislator-codes.json` beside the database file: the

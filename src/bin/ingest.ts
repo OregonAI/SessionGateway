@@ -8,6 +8,7 @@
 import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { pino } from "pino";
 import { loadIngestConfig } from "#/packages/config/index.ts";
 import { modelLockPath } from "#/packages/embedder/lock.ts";
 import { loadOnnxEmbedder } from "#/packages/embedder/onnx.ts";
@@ -15,6 +16,9 @@ import { runFullPull, type FullPullResult, type IngestDeps } from "#/packages/in
 import { runIngestLoop } from "#/packages/ingest/loop.ts";
 import { committedAliasFilePath, readLegislatorAliases } from "#/packages/legislators/aliases.ts";
 import { systemClock } from "#/packages/time/clock.ts";
+
+// Logs are JSON lines on stdout (src/CLAUDE.md, "Configuration and portability"); `err` writes an Error as fields.
+const logger = pino();
 
 const shutdown = new AbortController();
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
@@ -57,8 +61,7 @@ if (process.argv.includes("--once")) {
     // The sleep ends early on shutdown, and the loop then ends: a signal is not an error.
     sleep: (milliseconds, signal) => sleep(milliseconds, undefined, { signal }).catch(() => undefined),
     onRunFailed: (run, error) => {
-      const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
-      process.stderr.write(`The ${run} failed; the index goes on answering from the last good run.\n${message}\n`);
+      logger.error({ run, err: error }, `The ${run} failed; the index goes on answering from the last good run`);
     },
     afterFullPull: writeUnresolvedCodesReport,
   });
