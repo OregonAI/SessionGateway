@@ -12,7 +12,7 @@
 import { describe, expect, test } from "vitest";
 import type { FullPullSetting, IncrementsSetting } from "#/packages/config/index.ts";
 import { readTimestamp } from "#/packages/time/pacific.ts";
-import { whatRunsAt, type Due, type SessionSchedule } from "../schedule.ts";
+import { fullPullDeadline, whatRunsAt, type Due, type SessionSchedule } from "../schedule.ts";
 
 const noMeetings: SessionSchedule = { meetingDays: new Set(), inProgress: false };
 const meets = (...days: string[]): SessionSchedule => ({ meetingDays: new Set(days), inProgress: false });
@@ -559,4 +559,35 @@ describe("what runs at a Pacific time", () => {
 
     expect(whatRunsAt(timestamp, { increments, fullPull: fullPullSetting }, schedule ?? noMeetings)).toEqual(expected);
   });
+});
+
+// The moment a full pull must be over: 6 am of the date its night ends on, on the clock. Written out from the rule.
+test.for([
+  { name: "just after midnight", at: "2025-01-19T00:00:00-08:00", expected: "2025-01-19T06:00:00-08:00" },
+  {
+    name: "5:59 am, a minute before the window closes",
+    at: "2025-01-19T05:59:00-08:00",
+    expected: "2025-01-19T06:00:00-08:00",
+  },
+  { name: "6:00 am, the window has closed", at: "2025-01-19T06:00:00-08:00", expected: undefined },
+  { name: "4:59 pm, before the window opens", at: "2025-01-18T16:59:00-08:00", expected: undefined },
+  {
+    name: "5:00 pm, the night ends on the next date",
+    at: "2025-01-18T17:00:00-08:00",
+    expected: "2025-01-19T06:00:00-08:00",
+  },
+  {
+    name: "the night daylight time begins (UTC-7 by 6 am)",
+    at: "2025-03-09T00:30:00-08:00",
+    expected: "2025-03-09T06:00:00-07:00",
+  },
+  {
+    name: "the night daylight time ends (UTC-8 by 6 am)",
+    at: "2025-11-02T00:30:00-07:00",
+    expected: "2025-11-02T06:00:00-08:00",
+  },
+])("a full pull's deadline: $name", ({ at, expected }) => {
+  const timestamp = readTimestamp(at);
+  if (timestamp === undefined) throw new Error(`The row's time ${at} is not a time`);
+  expect(fullPullDeadline(timestamp)).toBe(expected === undefined ? undefined : readTimestamp(expected));
 });

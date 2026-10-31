@@ -45,6 +45,15 @@ export function wallClockOf(at: Timestamp): Temporal.PlainDateTime {
   return Temporal.Instant.from(at).toZonedDateTimeISO("America/Los_Angeles").toPlainDateTime();
 }
 
+/**
+ * The moment a full pull begun at this time must be over: 6 am of the date its night ends on (the Acceptable Use
+ * Agreement allows a full refresh only until then). A pull begun before 5 pm, outside any night, has no deadline.
+ */
+export function fullPullDeadline(at: Timestamp): Timestamp | undefined {
+  const night = nightEndingOn(wallClockOf(at));
+  return night === undefined ? undefined : atPacificLocalTime(night.toPlainDateTime({ hour: NIGHT_ENDS_HOUR }));
+}
+
 /** The date a night ends on, or undefined when the time is in working hours (6 am to 5 pm). */
 export function nightEndingOn(wallClock: Temporal.PlainDateTime): Temporal.PlainDate | undefined {
   if (wallClock.hour >= NIGHT_STARTS_HOUR) return wallClock.toPlainDate().add({ days: 1 });

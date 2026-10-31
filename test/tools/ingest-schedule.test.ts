@@ -120,6 +120,22 @@ describe("a full pull that OLIS gave short", () => {
   });
 });
 
+describe("a full pull that is still running at 6 am", () => {
+  it("is stopped there: the Acceptable Use Agreement allows a full pull only until 6 am", async () => {
+    // Sunday 2025-01-19 at 5:59:59.9 am Pacific, a worker starting in the last tenth of a second of the night. OLIS
+    // never answers, so the pull would run on into business hours; the 6 am deadline is 100 ms away.
+    const system = await start({ clockAt: "2025-01-18T22:00:00Z" });
+    system.olis.behave({ kind: "hang" });
+    system.clock.set("2025-01-19T13:59:59.900Z");
+    const began = Date.now();
+
+    await expect(system.runSchedule("2025-01-19T14:10:00Z")).rejects.toThrow("A run of the worker's loop failed");
+
+    // The harness's own limit on a run is 30 seconds: the pull ended long before it.
+    expect(Date.now() - began).toBeLessThan(10_000);
+  });
+});
+
 describe("a meeting day", () => {
   // Wednesday 2025-01-22: HALNRW met at 8 am (feed/CommitteeMeetings.json), so the Session meets that day. The span
   // runs from 5 am that Wednesday to 5:30 am on Thursday.

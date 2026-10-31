@@ -5,7 +5,7 @@ import type { IngestConfig } from "#/packages/config/index.ts";
 import { openIndexWriter } from "#/packages/database/writer.ts";
 import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
 import { runFullPull, runIncrement, type FullPullResult, type IngestDeps } from "./index.ts";
-import { sessionScheduleOf, whatRunsAt, type Due, type SessionSchedule } from "./schedule.ts";
+import { fullPullDeadline, sessionScheduleOf, whatRunsAt, type Due, type SessionSchedule } from "./schedule.ts";
 
 export type LoopDeps = IngestDeps & {
   /** Waits this long, or until the signal aborts. Created in the entry script, like the clock. */
@@ -80,7 +80,15 @@ export async function runIngestLoop(config: IngestConfig, deps: LoopDeps): Promi
       try {
         if (due.kind === "full_pull") {
           recordFullPullBegun(config, formatPacific(now));
-          const result = await runFullPull(config, deps);
+          // A pull still running at 6 am is stopped there and stores nothing more: it ran only in the window.
+          const deadline = fullPullDeadline(formatPacific(now));
+          const untilDeadline =
+            deadline === undefined ? undefined : Temporal.Instant.from(deadline).epochMilliseconds - now.getTime();
+          const signal =
+            untilDeadline === undefined
+              ? deps.signal
+              : AbortSignal.any([deps.signal, AbortSignal.timeout(Math.max(untilDeadline, 1))]);
+          const result = await runFullPull(config, { ...deps, signal });
           await deps.afterFullPull?.(result);
         } else {
           await runIncrement(config, deps);
