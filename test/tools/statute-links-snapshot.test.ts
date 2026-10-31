@@ -14,6 +14,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { createFakeEmbedder } from "../support/fake-embedder.ts";
+import { readAgencyLinksWithOnlyTheStamp } from "../support/old-database.ts";
 import { createFixtureCopy, type FixtureCopy } from "../support/made-up-snapshot.ts";
 import { startSystem, type System } from "../support/system.ts";
 
@@ -164,5 +165,20 @@ describe.for(eras)("the Statute Links after the snapshot changes, for a %s clien
 
     const overview = await asked(system, era, "session_overview", {});
     expect(overview["snapshot"]).toMatchObject({ commit: oldCommit });
+  });
+
+  it("derives the Agency Links again for a database that an older worker stamped with the new commit: the Statute Links it rewrites are the ones they are made from", async () => {
+    const snapshot = snapshotCopy();
+    const system = await startAt(snapshot.path);
+    expect(linksInChapter(await hb3027(system, era))).toBe(22);
+
+    // The older worker pulled the new snapshot: it stamped the Agency Links with its commit and kept the old expansion.
+    snapshot.changeIt();
+    readAgencyLinksWithOnlyTheStamp(system.database.path, newCommit);
+    await system.pullAgain();
+
+    const after = await hb3027(system, era);
+    expect(addsTo(after)).toContain(madeUpSection);
+    expect(linksInChapter(after)).toBe(23);
   });
 });

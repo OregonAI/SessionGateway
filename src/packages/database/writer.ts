@@ -942,8 +942,13 @@ export function openIndexWriter(path: string): IndexWriter {
         `INSERT INTO statute_link (content_hash, parsed_as, ordinal, kind, target_type, target_id, measure_section)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       );
+      // The Agency Links are made from these links, so every document that shares the file is unread for them again.
+      const unreadAgency = database.prepare(
+        "DELETE FROM agency_read WHERE document_id IN (SELECT id FROM document WHERE content_hash = ? AND kind = ?)",
+      );
       database.exec("BEGIN IMMEDIATE");
       try {
+        unreadAgency.run(record.contentHash, record.readAs);
         deleteParse.run(record.contentHash, record.readAs);
         deleteLinks.run(record.contentHash, record.readAs);
         insertRead.run(record.contentHash, record.readAs, snapshot.commit);
