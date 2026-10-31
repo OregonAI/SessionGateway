@@ -96,6 +96,53 @@ describe.for(eras)("get_measure's Agency Links for a %s client", (era) => {
     });
   });
 
+  // HB 3795 is a Department of Human Services measure. pdftotext of its documents (test/fixtures/olis-2025R1/documents/)
+  // shows "Department of Human Services" in Introduced ("SECTION 1. The Department of Human Services shall study"),
+  // A-Engrossed, B-Engrossed and Enrolled; in proposed-amendments/27966.pdf, HB 3795-1 ("(1) The Department of Human
+  // Services shall adopt by rule a grant program"); and in -A3's postings 28997, 29108 and 29109 across a line break
+  // ("the Department of Human" / "Services reasonably believes"). The Printed Amendments (House Amendments to
+  // Introduced, Senate Amendments to A-Engrossed) name it too, but a Printed Amendment is not a Version and is not
+  // read (ADR-0015). -A3's three postings are one Proposed Amendment: its link is listed once, with the first posting.
+  describe("named in the text", () => {
+    it("links HB 3795 to the Department of Human Services on each Version and Proposed Amendment whose text names it", async () => {
+      const links = await agencyLinksOf("HB 3795");
+
+      const named = evidenceOf(links, "named-in-text").filter(([agency]) => agency === "department-of-human-services");
+      expect(named).toEqual([
+        ["department-of-human-services", "posting-2025r1-27966", "amendment-2025r1-hb3795-1", "proposed_amendment"],
+        ["department-of-human-services", "posting-2025r1-28997", "amendment-2025r1-hb3795-a3", "proposed_amendment"],
+        [
+          "department-of-human-services",
+          "version-2025r1-hb3795-a-engrossed",
+          "version-2025r1-hb3795-a-engrossed",
+          "version",
+        ],
+        [
+          "department-of-human-services",
+          "version-2025r1-hb3795-b-engrossed",
+          "version-2025r1-hb3795-b-engrossed",
+          "version",
+        ],
+        ["department-of-human-services", "version-2025r1-hb3795-enrolled", "version-2025r1-hb3795-enrolled", "version"],
+        [
+          "department-of-human-services",
+          "version-2025r1-hb3795-introduced",
+          "version-2025r1-hb3795-introduced",
+          "version",
+        ],
+      ]);
+    });
+
+    it("names the registry term that was found", async () => {
+      const links = await agencyLinksOf("HB 3795");
+
+      const dhs = links.agencies.find((agency) => agency.agency_id === "department-of-human-services");
+      const text = dhs?.evidence.filter((evidence) => evidence.kind === "named-in-text") ?? [];
+      expect(text).toHaveLength(6);
+      for (const evidence of text) expect(evidence.terms).toEqual(["Department of Human Services"]);
+    });
+  });
+
   // SB 983's Introduced Fiscal Impact Statement is analysis 88044 and its A-Engrossed one 91466 (feed/
   // MeasureAnalysisDocuments.json, Version "INTRO" and "A"); both read "Government Unit(s) Affected: Cities, Counties,
   // School Districts, Special Districts, Metro, TriMet" (pdftotext of measure-analysis-documents/88044.pdf and
@@ -107,7 +154,9 @@ describe.for(eras)("get_measure's Agency Links for a %s client", (era) => {
     it("keeps SB 983's units as each statement writes them, with the statement and the Version it sits on, in the statement's order", async () => {
       const links = await agencyLinksOf("SB 983");
 
-      expect(links.unresolved_units.map((unit) => [unit.statement_id, unit.node_id, unit.node_type, unit.unit])).toEqual([
+      expect(
+        links.unresolved_units.map((unit) => [unit.statement_id, unit.node_id, unit.node_type, unit.unit]),
+      ).toEqual([
         ...units.map((unit) => ["analysis-2025r1-88044", "version-2025r1-sb983-introduced", "version", unit]),
         ...units.map((unit) => ["analysis-2025r1-91466", "version-2025r1-sb983-a-engrossed", "version", unit]),
       ]);
