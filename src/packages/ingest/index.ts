@@ -1,6 +1,9 @@
 // The ingest worker. A full pull reads the deployment's Session from OLIS (its Measures, Legislators,
-// sponsors, history and votes, its committees, meetings and their agenda items, its Testimony rows, and
-// the documents they link) and stores the feed, with which documents each meeting lists, the Agency each
+// sponsors, history and votes, its committees and their members, meetings and their agenda items, its Testimony
+// rows, and the documents they link). It counts as complete only when every set came with as many rows as the feed
+// counted; one that did not stores nothing and says which sets were short in the build report
+// (docs/adr/0030-a-row-is-no-longer-listed-after-two-complete-pulls-miss-it-and-the-tools-flag-it.md). A complete
+// pull stores the feed, with which documents each meeting lists, the Agency each
 // Testimony's Organization names, the version of the OregonAI snapshot and the time the pull started as
 // the index's "as of" time. It resolves the Legislator Code of
 // each sponsor and each vote to a Legislator on the way and reports the codes it could not. It refreshes

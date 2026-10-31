@@ -1,7 +1,8 @@
 // Seam 1 (test/CLAUDE.md): the two-pull rule of ADR-0005, as an agent sees it through `search` and `get_document`.
 // A row that two complete full pulls in a row did not list is no longer listed: it leaves search results and
 // stays fetchable by id (spec #1, story 47). Each case builds its own system, because the pulls and what the fake
-// OLIS lists at each are the thing under test.
+// OLIS lists at each are the thing under test, and reads it with both kinds of MCP client (test/CLAUDE.md,
+// "MCP client"): the pulls are the cost of a case, and a call is not.
 //
 // The row is a real one: HB 3131's Testimony 117165 (Oregon Climate and Agriculture Network, a letter created
 // 2025-01-17 15:16 Pacific; feed/CommitteePublicTestimonies.json). The fake OLIS stops listing it with
@@ -61,32 +62,41 @@ async function getDocument(system: System, era: Era, id: string) {
   }
 }
 
+/** Runs `check` once for each kind of MCP client, against the one system. */
+async function everyClient(check: (era: Era) => Promise<void>): Promise<void> {
+  for (const era of eras) await check(era);
+}
+
 /** Runs a complete full pull at `at`, as the worker does on a night. */
 async function pullAt(system: System, at: string): Promise<void> {
   system.clock.set(at);
   await system.pullAgain();
 }
 
-describe.for(eras)("a row two complete pulls in a row do not list, for a %s client", (era) => {
+describe("a row two complete pulls in a row do not list", () => {
   it("leaves search but is still fetched by id, flagged and dated by the last pull that listed it", async () => {
     const system = await start();
-    expect(await idsFound(system, era)).toContain(letter);
+    await everyClient(async (era) => {
+      expect(await idsFound(system, era)).toContain(letter);
+    });
 
     stopListing(system.olis, "CommitteePublicTestimonies", isLetter);
     await pullAt(system, secondPull);
     await pullAt(system, thirdPull);
 
-    expect(await idsFound(system, era)).not.toContain(letter);
-    const document = await getDocument(system, era, letter);
-    expect(document.isError).toBe(false);
-    expect(document.structured).toMatchObject({
-      id: letter,
-      has_text_layer: true,
-      no_longer_listed: true,
-      last_listed_at: "2025-01-17T17:00:00-08:00",
-      as_of: "2025-01-17T19:00:00-08:00",
+    await everyClient(async (era) => {
+      expect(await idsFound(system, era)).not.toContain(letter);
+      const document = await getDocument(system, era, letter);
+      expect(document.isError).toBe(false);
+      expect(document.structured).toMatchObject({
+        id: letter,
+        has_text_layer: true,
+        no_longer_listed: true,
+        last_listed_at: "2025-01-17T17:00:00-08:00",
+        as_of: "2025-01-17T19:00:00-08:00",
+      });
+      expect(document.structured?.["text"]).toContain("riparian planting and cover cropping");
     });
-    expect(document.structured?.["text"]).toContain("riparian planting and cover cropping");
   });
 
   // One missing pull is not a withdrawal (ADR-0005): the row is searchable, get_document does not flag it, and the
@@ -97,13 +107,15 @@ describe.for(eras)("a row two complete pulls in a row do not list, for a %s clie
     stopListing(system.olis, "CommitteePublicTestimonies", isLetter);
     await pullAt(system, secondPull);
 
-    expect(await idsFound(system, era)).toContain(letter);
-    const document = await getDocument(system, era, letter);
-    expect(document.structured).toMatchObject({
-      id: letter,
-      no_longer_listed: false,
-      last_listed_at: "2025-01-17T17:00:00-08:00",
-      as_of: "2025-01-17T18:00:00-08:00",
+    await everyClient(async (era) => {
+      expect(await idsFound(system, era)).toContain(letter);
+      const document = await getDocument(system, era, letter);
+      expect(document.structured).toMatchObject({
+        id: letter,
+        no_longer_listed: false,
+        last_listed_at: "2025-01-17T17:00:00-08:00",
+        as_of: "2025-01-17T18:00:00-08:00",
+      });
     });
   });
 
@@ -118,12 +130,14 @@ describe.for(eras)("a row two complete pulls in a row do not list, for a %s clie
     stopListing(system.olis, "CommitteePublicTestimonies", isLetter);
     await pullAt(system, fourthPull);
 
-    expect(await idsFound(system, era)).toContain(letter);
-    const document = await getDocument(system, era, letter);
-    expect(document.structured).toMatchObject({
-      no_longer_listed: false,
-      last_listed_at: "2025-01-17T19:00:00-08:00",
-      as_of: "2025-01-17T20:00:00-08:00",
+    await everyClient(async (era) => {
+      expect(await idsFound(system, era)).toContain(letter);
+      const document = await getDocument(system, era, letter);
+      expect(document.structured).toMatchObject({
+        no_longer_listed: false,
+        last_listed_at: "2025-01-17T19:00:00-08:00",
+        as_of: "2025-01-17T20:00:00-08:00",
+      });
     });
   });
 
@@ -132,17 +146,21 @@ describe.for(eras)("a row two complete pulls in a row do not list, for a %s clie
     stopListing(system.olis, "CommitteePublicTestimonies", isLetter);
     await pullAt(system, secondPull);
     await pullAt(system, thirdPull);
-    expect(await idsFound(system, era)).not.toContain(letter);
+    await everyClient(async (era) => {
+      expect(await idsFound(system, era)).not.toContain(letter);
+    });
 
     listAgain(system.olis, "CommitteePublicTestimonies", isLetter);
     await pullAt(system, fourthPull);
 
-    expect(await idsFound(system, era)).toContain(letter);
-    const document = await getDocument(system, era, letter);
-    expect(document.structured).toMatchObject({
-      no_longer_listed: false,
-      last_listed_at: "2025-01-17T20:00:00-08:00",
-      as_of: "2025-01-17T20:00:00-08:00",
+    await everyClient(async (era) => {
+      expect(await idsFound(system, era)).toContain(letter);
+      const document = await getDocument(system, era, letter);
+      expect(document.structured).toMatchObject({
+        no_longer_listed: false,
+        last_listed_at: "2025-01-17T20:00:00-08:00",
+        as_of: "2025-01-17T20:00:00-08:00",
+      });
     });
   });
 
@@ -152,7 +170,7 @@ describe.for(eras)("a row two complete pulls in a row do not list, for a %s clie
   // meaning side of this query, so a hit that is found by "embedding" is a vector the server still holds.
   it("leaves the meaning side, and returns to it, though the pulls share an as-of time", async () => {
     const system = await start();
-    const foundBy = async (): Promise<string[] | undefined> => {
+    const foundBy = async (era: Era): Promise<string[] | undefined> => {
       const connected = await connectClient(era, system.handler);
       try {
         const outcome = await callTool(connected, "search", {
@@ -165,16 +183,22 @@ describe.for(eras)("a row two complete pulls in a row do not list, for a %s clie
         await connected.close();
       }
     };
-    expect(await foundBy()).toEqual(["keyword", "embedding"]);
+    await everyClient(async (era) => {
+      expect(await foundBy(era)).toEqual(["keyword", "embedding"]);
+    });
 
     stopListing(system.olis, "CommitteePublicTestimonies", isLetter);
     await system.pullAgain();
     await system.pullAgain();
-    expect(await foundBy()).toBeUndefined();
+    await everyClient(async (era) => {
+      expect(await foundBy(era)).toBeUndefined();
+    });
 
     listAgain(system.olis, "CommitteePublicTestimonies", isLetter);
     await system.pullAgain();
-    expect(await foundBy()).toEqual(["keyword", "embedding"]);
+    await everyClient(async (era) => {
+      expect(await foundBy(era)).toEqual(["keyword", "embedding"]);
+    });
   });
 });
 
@@ -182,11 +206,11 @@ describe.for(eras)("a row two complete pulls in a row do not list, for a %s clie
 // the row, and it is not one that listed it. `withholdLastRows(1)` is a feed that counted its rows and paged one
 // fewer of each set, so the last Testimony row of the early Session, 117166 (American Farmland Trust's letter,
 // created 16:17), is the one it leaves out.
-describe.for(eras)("a pull that is short of the feed's counts, for a %s client", (era) => {
+describe("a pull that is short of the feed's counts", () => {
   const otherLetter = "testimony-2025r1-117166";
   const incomplete = /counted \d+.*read \d+/;
 
-  async function otherLetterFound(system: System): Promise<boolean> {
+  async function otherLetterFound(system: System, era: Era): Promise<boolean> {
     const connected = await connectClient(era, system.handler);
     try {
       const outcome = await callTool(connected, "search", {
@@ -201,7 +225,9 @@ describe.for(eras)("a pull that is short of the feed's counts, for a %s client",
 
   it("removes nothing, however many of them there are in a row", async () => {
     const system = await start();
-    expect(await otherLetterFound(system)).toBe(true);
+    await everyClient(async (era) => {
+      expect(await otherLetterFound(system, era)).toBe(true);
+    });
 
     system.olis.withholdLastRows(1);
     system.clock.set(secondPull);
@@ -210,12 +236,14 @@ describe.for(eras)("a pull that is short of the feed's counts, for a %s client",
     await expect(system.pullAgain()).rejects.toThrow(incomplete);
     system.olis.withholdLastRows(0);
 
-    expect(await otherLetterFound(system)).toBe(true);
-    const document = await getDocument(system, era, otherLetter);
-    expect(document.structured).toMatchObject({
-      no_longer_listed: false,
-      last_listed_at: "2025-01-17T17:00:00-08:00",
-      as_of: "2025-01-17T17:00:00-08:00",
+    await everyClient(async (era) => {
+      expect(await otherLetterFound(system, era)).toBe(true);
+      const document = await getDocument(system, era, otherLetter);
+      expect(document.structured).toMatchObject({
+        no_longer_listed: false,
+        last_listed_at: "2025-01-17T17:00:00-08:00",
+        as_of: "2025-01-17T17:00:00-08:00",
+      });
     });
   });
 
@@ -230,16 +258,20 @@ describe.for(eras)("a pull that is short of the feed's counts, for a %s client",
     system.clock.set(thirdPull);
     await expect(system.pullAgain()).rejects.toThrow(incomplete);
     system.olis.withholdLastRows(0);
-    expect(await idsFound(system, era)).toContain(letter);
+    await everyClient(async (era) => {
+      expect(await idsFound(system, era)).toContain(letter);
+    });
 
     await pullAt(system, fourthPull);
 
-    expect(await idsFound(system, era)).not.toContain(letter);
-    const document = await getDocument(system, era, letter);
-    expect(document.structured).toMatchObject({
-      no_longer_listed: true,
-      last_listed_at: "2025-01-17T17:00:00-08:00",
-      as_of: "2025-01-17T20:00:00-08:00",
+    await everyClient(async (era) => {
+      expect(await idsFound(system, era)).not.toContain(letter);
+      const document = await getDocument(system, era, letter);
+      expect(document.structured).toMatchObject({
+        no_longer_listed: true,
+        last_listed_at: "2025-01-17T17:00:00-08:00",
+        as_of: "2025-01-17T20:00:00-08:00",
+      });
     });
   });
 });
