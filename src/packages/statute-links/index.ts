@@ -3,10 +3,12 @@ import type { StatuteLink } from "#/packages/domain/statute-links.ts";
 import type { StatuteLinkDocumentKind } from "./lib/read-links.ts";
 import { readDocument } from "./lib/read-links.ts";
 import type { RelatingClauseEdit } from "./lib/relating-clause.ts";
+import { readStatutesAffectedTable, type StatutesAffectedTableParse } from "./lib/statutes-affected-table.ts";
 
 export { readAmendedVersionHeader } from "./lib/amended-version.ts";
 export type { StatuteLinkDocumentKind } from "./lib/read-links.ts";
 export type { RelatingClauseEdit } from "./lib/relating-clause.ts";
+export type { StatutesAffectedTableParse } from "./lib/statutes-affected-table.ts";
 
 export type ParseStatuteLinksInput = {
   documentKind: StatuteLinkDocumentKind;
@@ -28,4 +30,22 @@ export type StatuteLinkParse = {
 /** Reads Legislative Counsel's fixed wording into Statute Links. Pure: text in, links out. */
 export function parseStatuteLinks(input: ParseStatuteLinksInput): StatuteLinkParse {
   return readDocument(input.documentKind, input.text, input.orsSections);
+}
+
+export type ParseStatutesAffectedTableInput = {
+  /**
+   * The table's extracted text: as the pdf-text package extracts it with PDF.js, which is the text the store holds, or as
+   * `pdftotext` prints it (a row is read wherever white space separates its parts, however wide).
+   */
+  text: string;
+  /** The ORS sections that exist, from the OregonAI snapshot. A series is expanded against it, as a range in a Version is. */
+  orsSections: readonly OrsSectionId[];
+};
+
+/**
+ * Reads Legislative Counsel's Statutes Affected Table into entries (ADR-0033). Pure: text in, entries out. Each entry
+ * names the Measure and the engrossing level of its row, the ORS target, the table's action and the measure section.
+ */
+export function parseStatutesAffectedTable(input: ParseStatutesAffectedTableInput): StatutesAffectedTableParse {
+  return readStatutesAffectedTable(input.text, input.orsSections);
 }
