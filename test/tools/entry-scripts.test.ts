@@ -408,6 +408,8 @@ describe("the entry scripts", () => {
     ["src/bin/ingest.ts", "SESSION_KEY", "not-a-session-key"],
     ["src/bin/ingest.ts", "OLIS_BASE_URL", "not a url at all"],
     ["src/bin/ingest.ts", "OLIS_DOCUMENT_ORIGIN", "not a url at all"],
+    ["src/bin/ingest.ts", "STATUTES_AFFECTED_TABLE_URL", "not a url at all"],
+    ["src/bin/ingest.ts", "STATUTES_AFFECTED_TABLE_URL", "ftp://example.test/artables2025R1.pdf"],
     ["src/bin/server.ts", "SESSION_KEY", "not-a-session-key"],
     ["src/bin/server.ts", "OLIS_BASE_URL", "not a url at all"],
     ["src/bin/server.ts", "OLIS_LIVE_TIMEOUT_MS", "soon"],
