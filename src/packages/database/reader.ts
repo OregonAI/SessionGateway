@@ -150,11 +150,11 @@ export type IndexReader = {
    */
   statutesAffectedTableOf(key: MeasureKey): StatutesAffectedTableOfMeasure | undefined;
   /**
-   * The Agency Links the store holds, of one Agency, of one Measure's nodes, or both: those read at ingest from
+   * The Agency Links the store holds, of one Agency or of one Measure's nodes: those read at ingest from
    * Fiscal Impact Statements, Versions and Proposed Amendments, and Testimony's. Each says the document its evidence was
    * read from and the node it sits on (ADR-0027). In no particular order.
    */
-  findAgencyLinks(session: SessionKey, filter: { agency?: AgencyId; measure?: MeasureKey }): StoredAgencyLink[];
+  findAgencyLinks(session: SessionKey, of: { agency: AgencyId } | { measure: MeasureKey }): StoredAgencyLink[];
   /**
    * The Versions and Proposed Amendments the store has read a Statute Link to an ORS section from, or to an ORS chapter or
    * any section in it, with each link (a Proposed Amendment posted again is a link for each posting). A Proposed
@@ -624,9 +624,10 @@ export function openIndexReader(path: string): IndexReader {
     `SELECT level, action, target_type, target_id, measure_section, emergency, lone_e FROM statutes_affected_entry
      WHERE session_key = ? AND prefix = ? AND number = ? ORDER BY ordinal`,
   );
-  // The stored Agency Links of one Agency and/or one Measure, with the document each was read from and the Measure
+  // The stored Agency Links of one Agency or of one Measure, with the document each was read from and the Measure
   // that document belongs to. An analysis document also gives the Version the feed places it on (ADR-0013), if any.
-  const selectAgencyLinks = database.prepare(
+  // One statement for each, so that SQLite uses the index of the one asked about.
+  const agencyLinksWhere = (condition: string): string =>
     `SELECT a.agency_id, a.kind AS link_kind, a.evidence, d.id AS document_id, d.source_url AS document_source_url,
             d.label AS document_label, d.kind AS document_kind, d.node_id, dc.created_at AS document_created_at,
             mr.to_id AS measure_id, vr.to_id AS version_id
@@ -635,9 +636,10 @@ export function openIndexReader(path: string): IndexReader {
        JOIN document_relation mr ON mr.document_id = d.id AND mr.relation = 'measure'
        LEFT JOIN document_relation vr ON vr.document_id = d.id AND vr.relation = 'version'
        LEFT JOIN document_created dc ON dc.document_id = d.id
-     WHERE d.session_key = ?1 AND (?2 IS NULL OR a.agency_id = ?2) AND (?3 IS NULL OR mr.to_id = ?3)
-     ORDER BY a.agency_id, d.id, a.ordinal`,
-  );
+     WHERE d.session_key = ?1 AND ${condition}
+     ORDER BY a.agency_id, d.id, a.ordinal`;
+  const selectAgencyLinksOfAgency = database.prepare(agencyLinksWhere("a.agency_id = ?2"));
+  const selectAgencyLinksOfMeasure = database.prepare(agencyLinksWhere("mr.to_id = ?2"));
   const selectMeasuresOfAgency = database.prepare(
     `SELECT mr.to_id AS measure_id
      FROM agency_link a
@@ -648,26 +650,27 @@ export function openIndexReader(path: string): IndexReader {
      SELECT t.measure_id FROM testimony t
      WHERE t.session_key = ?1 AND t.agency_id = ?2 AND t.measure_id IS NOT NULL`,
   );
-  // The files with a Statute Link to a section, or to a chapter or any section in it: `?3` and `?4` bound the ids of the
-  // chapter's sections ("ors-657b." up to "ors-657b/", the character after the dot), so chapter 657 does not take 657B.
-  const selectStatuteLinked = database.prepare(
+  // The files with a Statute Link to a section or a chapter (`target_id = ?2`), or to a section of a chapter: its ids
+  // from "ors-657b." up to "ors-657b/", the character after the dot, so chapter 657 does not take 657B's sections.
+  const statuteLinkedWhere = (condition: string): string =>
     `SELECT d.id AS document_id, d.kind AS document_kind, d.label AS document_label, d.source_url AS document_source_url,
             d.node_id, mr.to_id AS measure_id, l.kind, l.target_type, l.target_id, l.measure_section
-     FROM statute_link l
+     FROM statute_link l INDEXED BY statute_link_target
        JOIN document d ON d.content_hash = l.content_hash AND d.kind = l.parsed_as
        JOIN document_relation mr ON mr.document_id = d.id AND mr.relation = 'measure'
-     WHERE d.session_key = ?1 AND (l.target_id = ?2 OR (l.target_id >= ?3 AND l.target_id < ?4))
-     ORDER BY d.id, l.ordinal`,
-  );
+     WHERE d.session_key = ?1 AND ${condition}
+     ORDER BY d.id, l.ordinal`;
+  const selectStatuteLinkedTo = database.prepare(statuteLinkedWhere("l.target_id = ?2"));
+  const selectStatuteLinkedWithin = database.prepare(statuteLinkedWhere("l.target_id >= ?2 AND l.target_id < ?3"));
   // Testimony whose Organization names an Agency: the worker matched it when it stored the row (ADR-0016, ADR-0027).
-  const selectTestimonyLinks = database.prepare(
+  const testimonyLinksWhere = (condition: string): string =>
     `SELECT t.agency_id, t.organization, t.document_id, t.source_url AS document_source_url,
             dc.created_at AS document_created_at, t.measure_id
      FROM testimony t LEFT JOIN document_created dc ON dc.document_id = t.document_id
-     WHERE t.session_key = ?1 AND t.agency_id IS NOT NULL AND t.measure_id IS NOT NULL
-       AND (?2 IS NULL OR t.agency_id = ?2) AND (?3 IS NULL OR t.measure_id = ?3)
-     ORDER BY t.agency_id, t.comm_test_id`,
-  );
+     WHERE t.session_key = ?1 AND t.agency_id IS NOT NULL AND t.measure_id IS NOT NULL AND ${condition}
+     ORDER BY t.agency_id, t.comm_test_id`;
+  const selectTestimonyLinksOfAgency = database.prepare(testimonyLinksWhere("t.agency_id = ?2"));
+  const selectTestimonyLinksOfMeasure = database.prepare(testimonyLinksWhere("t.measure_id = ?2"));
   const selectUnresolvedUnits = database.prepare(
     `SELECT u.unit, d.id AS document_id, d.source_url AS document_source_url, mr.to_id AS measure_id,
             vr.to_id AS version_id
@@ -915,10 +918,12 @@ export function openIndexReader(path: string): IndexReader {
     analysisNotHeld(key) {
       return countRow.parse(countNotHeld.get(measureIdOf(key))).n;
     },
-    findAgencyLinks(session, filter) {
-      const stored = selectAgencyLinks
-        .all(session, filter.agency ?? null, filter.measure === undefined ? null : measureIdOf(filter.measure))
-        .map((row) => agencyLinkRow.parse(row));
+    findAgencyLinks(session, of) {
+      const [links, testimonyLinks, asked] =
+        "agency" in of
+          ? [selectAgencyLinksOfAgency, selectTestimonyLinksOfAgency, of.agency]
+          : [selectAgencyLinksOfMeasure, selectTestimonyLinksOfMeasure, measureIdOf(of.measure)];
+      const stored = links.all(session, asked).map((row) => agencyLinkRow.parse(row));
       const known = new Map<string, LinkedNode>();
       const read = stored.map((found): StoredAgencyLink => {
         const key = measureKeyOf(found.measure_id, session);
@@ -934,8 +939,8 @@ export function openIndexReader(path: string): IndexReader {
           node: nodeOfDocument(found, key, known),
         };
       });
-      const testimony = selectTestimonyLinks
-        .all(session, filter.agency ?? null, filter.measure === undefined ? null : measureIdOf(filter.measure))
+      const testimony = testimonyLinks
+        .all(session, asked)
         .map((row) => testimonyLinkRow.parse(row))
         .map((found): StoredAgencyLink => {
           const key = measureKeyOf(found.measure_id, session);
@@ -955,11 +960,12 @@ export function openIndexReader(path: string): IndexReader {
     },
     findStatuteLinked(session, target) {
       const chapter = target.startsWith("ors-chapter-") ? target.slice("ors-chapter-".length) : undefined;
-      const from = chapter === undefined ? null : `ors-${chapter}.`;
-      const to = chapter === undefined ? null : `ors-${chapter}/`;
       const known = new Map<string, LinkedNode>();
-      return selectStatuteLinked
-        .all(session, target, from, to)
+      const rows = [
+        ...selectStatuteLinkedTo.all(session, target),
+        ...(chapter === undefined ? [] : selectStatuteLinkedWithin.all(session, `ors-${chapter}.`, `ors-${chapter}/`)),
+      ];
+      return rows
         .map((row) => statuteLinkedRow.parse(row))
         .map((found): StoredStatuteLinked => {
           const key = measureKeyOf(found.measure_id, session);
