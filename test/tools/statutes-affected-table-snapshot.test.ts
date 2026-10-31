@@ -8,7 +8,7 @@
 // series gives 22 entries, and with the made-up section 23. The entries the Version's text does not have are listed in
 // `only_in_table`, which cuts a list at a count and says how many it left out.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createFixtureCopy, type FixtureCopy, type MadeUpSnapshotVersion } from "../support/made-up-snapshot.ts";
+import { createFixtureCopy, type FixtureCopy } from "../support/made-up-snapshot.ts";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { madeUpTable, tablePath, tableUrlOn } from "../support/statutes-affected-table.ts";
 import { startSystem, type System } from "../support/system.ts";
@@ -51,11 +51,9 @@ async function entriesOnlyInTable(system: System, era: Era): Promise<{ count: nu
 
 describe.for(eras)("the Statutes Affected Table after the snapshot changes, for a %s client", (era) => {
   it("reads the table again with the new section list, though its bytes are the same: the series gains the new section", async () => {
-    const snapshot: FixtureCopy = createFixtureCopy<{ version: MadeUpSnapshotVersion; orsSections: string[] }>(
-      (copy) => {
-        copy.orsSections = [...copy.orsSections, madeUpSection].sort();
-      },
-    );
+    const snapshot: FixtureCopy = createFixtureCopy((copy) => {
+      copy.orsSections = [...copy.orsSections, madeUpSection].sort();
+    });
     cleanups.push(snapshot.remove);
     const system = await startSystem({
       clockAt: "2026-08-01T17:00:00Z",

@@ -60,11 +60,18 @@ export function createMadeUpSnapshot(version: Partial<MadeUpSnapshotVersion> = {
   };
 }
 
+/** The parts of the snapshot file a test changes. */
+export type FixtureSnapshot = {
+  version: MadeUpSnapshotVersion;
+  orsSections: string[];
+  agencies: { slug: string; aliases: string[] }[];
+};
+
 export type FixtureCopy = {
   path: string;
   /** Rewrites the copy: the made-up version in place of the fixture's, and whatever `change` does to the rest. */
-  changeIt(): void;
-  remove(): void;
+  changeIt: () => void;
+  remove: () => void;
 };
 
 /**
@@ -72,9 +79,7 @@ export type FixtureCopy = {
  * reads it as it is, and `changeIt()` rewrites it with a version of its own (`madeUpSnapshotVersion`'s commit, dated
  * 2026-10-01) and whatever `change` does to the parsed file. Nothing in the rewritten file is true.
  */
-export function createFixtureCopy<T extends { version: MadeUpSnapshotVersion }>(
-  change: (snapshot: T) => void,
-): FixtureCopy {
+export function createFixtureCopy(change: (snapshot: FixtureSnapshot) => void): FixtureCopy {
   const directory = mkdtempSync(join(tmpdir(), "made-up-snapshot-copy-"));
   const path = join(directory, "snapshot.json");
   const original = readFileSync(snapshotFixturePath, "utf8");
@@ -82,7 +87,7 @@ export function createFixtureCopy<T extends { version: MadeUpSnapshotVersion }>(
   return {
     path,
     changeIt: () => {
-      const snapshot = JSON.parse(original) as T;
+      const snapshot = JSON.parse(original) as FixtureSnapshot;
       snapshot.version = {
         ...snapshot.version,
         commit: madeUpSnapshotVersion.commit,

@@ -24,10 +24,6 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-type Snapshot = {
-  version: { source: string; commit: string; commitDate: string };
-  agencies: { slug: string; aliases: string[] }[];
-};
 type Example = { document_id: string; node_id: string; terms?: string[] };
 type AgencyLinks = {
   agencies: { agency_id: string; evidence: { kind: string; count: number; examples: Example[] }[] }[];
@@ -39,7 +35,7 @@ const newCommit = "0123456789abcdef0123456789abcdef01234567";
 
 /** A made-up copy of the committed snapshot (test/support/made-up-snapshot.ts) that gains the made-up alias and a version. */
 function snapshotCopy(): FixtureCopy {
-  const copy = createFixtureCopy<Snapshot>((snapshot) => {
+  const copy = createFixtureCopy((snapshot) => {
     const row = snapshot.agencies.find((agency) => agency.slug === dhs);
     if (row === undefined) throw new Error("The snapshot fixture has no row for the Department of Human Services");
     row.aliases = [...row.aliases, "ODHS"];

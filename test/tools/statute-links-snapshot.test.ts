@@ -26,10 +26,6 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-type Snapshot = {
-  version: { source: string; commit: string; commitDate: string };
-  orsSections: string[];
-};
 type Targets = { sections: { target_id: string; measure_sections: string[] }[] };
 type Measure = {
   statute_links_by_source: { versions: { id: string; statute_links?: { "adds-to": Targets } }[] };
@@ -48,7 +44,7 @@ const hecc = "higher-education-coordinating-commission";
 
 /** A made-up copy of the committed snapshot (test/support/made-up-snapshot.ts) that gains the made-up section and a version. */
 function snapshotCopy(): FixtureCopy {
-  const copy = createFixtureCopy<Snapshot>((snapshot) => {
+  const copy = createFixtureCopy((snapshot) => {
     snapshot.orsSections = [...snapshot.orsSections, madeUpSection].sort();
   });
   cleanups.push(copy.remove);
