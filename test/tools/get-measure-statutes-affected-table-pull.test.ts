@@ -579,3 +579,72 @@ describe("Versions this index could not read, and one made up to repeal", () => 
     });
   });
 });
+
+// MADE UP TABLES, in shapes the 2025R1 table never shows (its ORS table has no line the parser cannot read, no page dated
+// in November, no overturned veto and no engrossing level past C). Each case serves a table of its own to one system, as the
+// rows say, and asks of the Measures of the fixture the rows name. The pull that follows reads the new bytes; the build
+// report says how many lines the parser left unread. The first pull finds the table not published (404), so nothing of the
+// real table is loaded.
+describe("a made-up table in shapes the 2025R1 table never shows", () => {
+  let rig: Rig;
+  let day = 10;
+
+  beforeAll(async () => {
+    rig = await openRig({
+      statutesAffectedTableUrl: tableUrlOn,
+      olis: { documentFailures: { [publishedTableUrl]: [404] } },
+    });
+  }, 60_000);
+
+  afterAll(async () => {
+    await rig.close();
+  });
+
+  /** Serves a table, pulls it on a later day, and returns what a client reads of each Measure asked for. */
+  async function serve(bytes: Uint8Array, measures: readonly string[]): Promise<Record<string, LinksBySource>> {
+    rig.system.olis.serveDocument(tablePath, bytes);
+    day += 1;
+    rig.system.clock.set(`2026-08-${String(day)}T17:00:00Z`);
+    await rig.system.pullAgain();
+    const read: Record<string, LinksBySource> = {};
+    for (const measure of measures) read[measure] = linksOf(await rig.ask(measure));
+    return read;
+  }
+
+  const lists = (links: LinksBySource | undefined): boolean | undefined =>
+    links?.statutes_affected_table?.lists_measure;
+
+  // An ORS row the parser cannot read (two levels after the Measure, which the legend has no form for; four tokens, which
+  // no row has), and a series that is begun and never closed. The rows after each, which omit their ORS number, belong to
+  // the number the unread row printed, which is not known: they are left unread, not filed under the row before.
+  it("leaves the continuation rows of an unread row unread, and files none of them under the row before it", async () => {
+    const read = await serve(
+      madeUpTable([
+        "653.601 A §3 HB 3795 B",
+        "653.616 A §8 SB 69 B C",
+        "A §1 SB 121 A",
+        "A §2 HB 3027",
+        "653.626 A §9 SB 69 A",
+        "A §4 SB 983 A",
+        "653.646 A §7 SB 69 A B C D",
+        "A §3 SB 64",
+        "659A.150 to)",
+        "A §5 SB 983 A",
+      ]),
+      ["SB 69", "SB 121", "HB 3027", "SB 983", "SB 64"],
+    );
+
+    // Not filed under 653.601, 653.626 or any other number: a Measure whose only rows came after an unread row has none.
+    expect(lists(read["SB 121"])).toBe(false);
+    expect(lists(read["HB 3027"])).toBe(false);
+    expect(lists(read["SB 64"])).toBe(false);
+    // The row that follows an unread row and has its own number is read, and so is its continuation row.
+    const sb983 = aEngrossed(read["SB 983"] as LinksBySource).statutes_affected_table;
+    expect(sb983?.only_in_table?.amends.sections).toEqual([sectionTarget("ors-653.626", "4")]);
+    expect(
+      aEngrossed(read["SB 69"] as LinksBySource).statutes_affected_table?.parsed_changes?.amends.sections,
+    ).toContainEqual(confirmed(sectionTarget("ors-653.626", "9")));
+    // Three entries were read (653.601 HB 3795, 653.626 SB 69, 653.626 SB 983), and seven lines left unread.
+    expect(tableReport(rig.system)).toMatchObject({ outcome: "loaded", entries: 3, unread_lines: 7 });
+  });
+});
