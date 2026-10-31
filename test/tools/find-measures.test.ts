@@ -228,4 +228,142 @@ describe.for(eras)("find_measures for a %s client", (era) => {
       }
     });
   });
+
+  // The Agency across the whole Session. SB 69's Fiscal Impact Statement 85414 lists the Bureau of Labor and Industries;
+  // its Label "A" places it on the A-Engrossed Version (created 2025-02-03), once the feed lists that Version, and the
+  // statement was created 2025-01-30 at 10:43:53.29. Testimony 196915 (Organization "Bureau of Labor and Industries") was
+  // created 2025-04-21 at 08:40:21.78, in daylight time. The Bureau's rules implement chapters 25, 279C, 345, 652, 653,
+  // 654, 657B, 658 and 659A (snapshot fixture), of which SB 69's changes reach 653, 657B and 659A, HB 3027's
+  // Introduced and Enrolled Versions add to ORS 345.010 to 345.340, and the fixture's other Versions and amendments reach none.
+  describe("by Agency", () => {
+    const boli = "bureau-of-labor-and-industries";
+
+    it("keeps the four ways an item is tied to the Agency in four groups, in a fixed order", async () => {
+      const found = await find({ agency: boli });
+
+      expect(found.query).toEqual({ agency: boli, ors_section: null, ors_chapter: null, since: null });
+      expect(found.groups.map((group) => [group.evidence_kind, group.total])).toEqual([
+        ["derived", 6],
+        ["fiscal-impact-statement", 1],
+        ["named-in-text", 4],
+        ["testimony", 1],
+      ]);
+      expect(found.total).toBe(12);
+      expect(found.notes).toEqual([]);
+    });
+
+    it("lists the items that touch the Agency's statutes, with the chapter and the Statute Link of each", async () => {
+      const found = await find({ agency: boli });
+
+      const { items } = groupOf(found, "derived");
+      expect(items.map((item) => item.id)).toEqual([
+        "version-2025r1-hb3027-enrolled",
+        "version-2025r1-sb69-enrolled",
+        "version-2025r1-sb69-a-engrossed",
+        "amendment-2025r1-sb69-2",
+        "amendment-2025r1-sb69-1",
+        "version-2025r1-hb3027-introduced",
+      ]);
+      expect(items[1]?.evidence.map((evidence) => evidence.chapter_id)).toEqual([
+        "ors-chapter-657b",
+        "ors-chapter-659a",
+        "ors-chapter-653",
+      ]);
+      expect(items[0]?.evidence.map((evidence) => evidence.chapter_id)).toEqual(["ors-chapter-345"]);
+      expect(items[5]?.evidence.map((evidence) => evidence.chapter_id)).toEqual(["ors-chapter-345"]);
+    });
+
+    it("lists the Fiscal Impact Statement's item on the Version it is of, with the statement's own time", async () => {
+      const found = await find({ agency: boli });
+
+      const { items } = groupOf(found, "fiscal-impact-statement");
+      expect(items.map((item) => [item.id, item.type, item.posted_at])).toEqual([
+        ["version-2025r1-sb69-a-engrossed", "version", "2025-01-30T10:43:53.29-08:00"],
+      ]);
+      expect(items[0]?.source_url).toBe(
+        "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/A-Engrossed",
+      );
+      expect(items[0]?.evidence[0]?.source_url).toBe(
+        "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureAnalysisDocument/85414",
+      );
+    });
+
+    it("lists the Measure whose Testimony names the Agency, with the Testimony", async () => {
+      const found = await find({ agency: boli });
+
+      const { items } = groupOf(found, "testimony");
+      expect(items.map((item) => [item.id, item.type, item.title, item.posted_at, item.last_posted_at])).toEqual([
+        ["measure-2025r1-sb69", "measure", "SB 69", "2025-04-21T08:40:21.78-07:00", "2025-04-21T08:40:21.78-07:00"],
+      ]);
+      expect(items[0]?.source_url).toBe("https://olis.oregonlegislature.gov/liz/2025R1/Measures/Overview/SB69");
+      expect(items[0]?.evidence.map((evidence) => evidence.document_id)).toEqual(["testimony-2025r1-196915"]);
+    });
+
+    it("puts an Agency slug and nothing else in the answer's Agency ids", async () => {
+      const found = await find({ agency: "department-of-human-services" });
+
+      expect(found.query.agency).toBe("department-of-human-services");
+      expect(groupOf(found, "derived").items.length).toBeGreaterThan(0);
+    });
+
+    it("says so when the index holds no Agency Link to the slug", async () => {
+      const found = await find({ agency: "no-such-agency" });
+
+      expect(found.total).toBe(0);
+      expect(found.notes).toEqual([
+        "The index holds no Agency Link to no-such-agency. Check the slug against the OregonAI agency registry.",
+      ]);
+    });
+  });
+
+  // The ticket's second box: non-agency units stay unresolved. SB 983's statements list "Cities, Counties, School
+  // Districts, Special Districts, Metro, TriMet", and no Agency's items hold SB 983 on the strength of them.
+  describe("units that are not Agencies", () => {
+    it("tie no Agency's Fiscal Impact Statement group to SB 983", async () => {
+      for (const agency of ["department-of-revenue", "judicial-department", "department-of-justice"]) {
+        const found = await find({ agency });
+        const items = groupOf(found, "fiscal-impact-statement").items;
+        expect(items.filter((item) => item.measure_id === "measure-2025r1-sb983")).toEqual([]);
+      }
+    });
+  });
+
+  describe("a call that cannot be met", () => {
+    it.for([
+      ["no target", {}, "Give exactly one of agency, ors_section and ors_chapter."],
+      [
+        "two targets",
+        { agency: "department-of-revenue", ors_section: "ORS 653.616" },
+        "Give exactly one of agency, ors_section and ors_chapter.",
+      ],
+      ["a name where a slug is wanted", { agency: "Bureau of Labor and Industries" }, "is not an Agency id"],
+      ["a section that is a chapter", { ors_section: "ORS chapter 657B" }, "is not an ORS section"],
+      ["a section with no number", { ors_section: "ORS 653" }, "is not an ORS section"],
+      ["a chapter that is a section", { ors_chapter: "ORS 653.616" }, "is not an ORS chapter"],
+      ["a time that is a word", { agency: "department-of-revenue", since: "yesterday" }, "is not a time"],
+    ] as const)("is a tool error for %s", async ([, args, message]) => {
+      const outcome = await callTool(connected, "find_measures", args);
+
+      expect(outcome.isError).toBe(true);
+      expect(outcome.text).toContain(message);
+    });
+
+    it("is a tool error for a page past the last", async () => {
+      const outcome = await callTool(connected, "find_measures", { agency: "bureau-of-labor-and-industries", page: 2 });
+
+      expect(outcome.isError).toBe(true);
+      expect(outcome.text).toBe("The answer has 1 page, so there is no page 2. Ask for a page from 1 to 1.");
+    });
+  });
+
+  describe("what every result carries", () => {
+    it("carries the index's as-of time, the non-official notice and the size of a page", async () => {
+      const found = await find({ ors_section: "ORS 653.616" });
+
+      // The clock was 2026-08-01 17:00 UTC when the pull ran: 10:00 in Oregon, in daylight time.
+      expect(found.as_of).toBe("2026-08-01T10:00:00-07:00");
+      expect(found.notice).toContain("Not the official record");
+      expect([found.page, found.last_page, found.page_size]).toEqual([1, 1, 50]);
+    });
+  });
 });
