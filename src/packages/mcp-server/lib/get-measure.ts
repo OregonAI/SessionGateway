@@ -12,7 +12,7 @@ import type { AgendaItem } from "#/packages/domain/schedule.ts";
 import type { CommitteeVote, FloorVote, LegislatorVote } from "#/packages/domain/votes.ts";
 import { agencyLinksOf, agencyLinksOutput } from "./agency-links.ts";
 import { analysisDocumentsOf, analysisDocumentsOutput } from "./analysis.ts";
-import { measureListingOutput, measureListingShown } from "./listing.ts";
+import { measureListingOutput, listingShown } from "./listing.ts";
 import { statuteLinksBySourceOf, versionsWithSameLinksAs } from "./statute-links.ts";
 import { statuteLinksBySourceWithTable, statuteLinksBySourceWithTableOutput } from "./statutes-affected-table.ts";
 import type { LiveLookup, LiveStatusReader } from "./live-status.ts";
@@ -368,7 +368,7 @@ export async function getMeasure(
     kind: "found",
     measure: {
       id: measureIdOf(measure),
-      ...measureListingShown(listing),
+      ...listingShown(listing),
       catchline: measure.catchline,
       digest: measure.digest,
       analysis_documents: analysisDocumentsOf(
