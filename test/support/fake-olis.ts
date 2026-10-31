@@ -25,6 +25,12 @@
 // a file from the harness and never from the database, and it can fail a chosen document once (a hang
 // that outlasts the client's timeout, or an HTTP status) to show that a transient failure is retried.
 //
+// The Statutes Affected Table is not a feed document: no row links it, and Legislative Counsel publishes it on
+// www.oregonlegislature.gov, not on OLIS. The fixture's manifest holds it at its own path (/AutoPubs/artables2025R1.pdf),
+// and the fake serves that path like any other document, so a test points the worker's STATUTES_AFFECTED_TABLE_URL at
+// the fake's origin. `serveDocument` serves other bytes at a path from then on (a made-up table, as a PDF the test
+// builds), and `failDocuments` makes a path fail again after it was served (a table withdrawn).
+//
 // "As the feed stood at the clock's time" means the rows whose CreatedDate is not after it. The
 // fixture holds each row's final state, so a row's other fields may be newer than the clock.
 import { readdirSync, readFileSync } from "node:fs";
@@ -109,6 +115,16 @@ export type FakeOlis = {
    * in order. A test reads how often a file was fetched from here, never from the database.
    */
   documentRequests(): readonly string[];
+  /**
+   * From now on, serves these bytes at this path (`/AutoPubs/artables2025R1.pdf`) in place of the fixture's file, or
+   * where the fixture has none: a made-up document that a test builds. Served only when `documents` is on.
+   */
+  serveDocument(path: string, bytes: Uint8Array): void;
+  /**
+   * From now on, adds these failures to the ones the document at this `source_url` has still to give before it is
+   * served (see `documentFailures`): `[404]` makes the next request answer Not Found, as a document withdrawn does.
+   */
+  failDocuments(sourceUrl: string, failures: readonly DocumentFailure[]): void;
   /**
    * From now on, leave the last `count` rows of each set out of the pages (see `withholdLastRows`), or of the one set
    * named, so that a feed is short in a set other than the first the worker reads.
@@ -279,6 +295,7 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
   const failures = new Map<string, DocumentFailure[]>(
     Object.entries(options.documentFailures ?? {}).map(([sourceUrl, list]) => [new URL(sourceUrl).pathname, [...list]]),
   );
+  const servedBytes = new Map<string, Uint8Array>();
   const servesDocuments = options.documents === true;
   const pageSize = options.pageSize ?? 5000;
   let withheldRows = options.withholdLastRows ?? 0;
@@ -321,17 +338,19 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
       return;
     }
     const file = documentPaths.get(path);
-    if (!servesDocuments || file === undefined) {
+    const made = servedBytes.get(path);
+    if (!servesDocuments || (file === undefined && made === undefined)) {
       sendText(response, 404, "text/plain", "Not Found");
       return;
     }
     response.writeHead(200, { "content-type": "application/pdf", "cache-control": "private" });
-    response.end(readFileSync(file));
+    response.end(made ?? (file === undefined ? undefined : readFileSync(file)));
   }
 
   function handle(request: IncomingMessage, response: ServerResponse): void {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
-    if (request.method === "GET" && url.pathname.toLowerCase().startsWith("/liz/")) {
+    const documentPath = url.pathname.toLowerCase();
+    if (request.method === "GET" && (documentPath.startsWith("/liz/") || documentPath.startsWith("/autopubs/"))) {
       handleDocument(url, response);
       return;
     }
@@ -430,6 +449,13 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
     baseUrl: `http://127.0.0.1:${port}/odata/odataservice.svc/`,
     origin: `http://127.0.0.1:${port}`,
     documentRequests: () => [...documentRequests],
+    serveDocument: (path, bytes) => {
+      servedBytes.set(path, bytes);
+    },
+    failDocuments: (sourceUrl, more) => {
+      const path = new URL(sourceUrl).pathname;
+      failures.set(path, [...(failures.get(path) ?? []), ...more]);
+    },
     withholdLastRows: (count, entitySet) => {
       withheldRows = count;
       withheldSet = entitySet;

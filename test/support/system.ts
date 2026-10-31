@@ -41,6 +41,12 @@ export type SystemOptions = {
    */
   documents?: boolean;
   olis?: Omit<FakeOlisOptions, "clock" | "documents">;
+  /**
+   * The Statutes Affected Table's URL for the worker (the STATUTES_AFFECTED_TABLE_URL variable), made from the fake
+   * OLIS's origin: `tableUrlOn` (test/support/statutes-affected-table.ts) points it at the fixture's table. Unset by
+   * default, as a deployment that does not load the table leaves it.
+   */
+  statutesAffectedTableUrl?: (olisOrigin: string) => string;
   /** How long the worker waits for one attempt to fetch a document; a test that makes one hang sets it short. */
   documentTimeoutMs?: number;
   /**
@@ -94,6 +100,9 @@ export async function startSystem(options: SystemOptions): Promise<System> {
     SNAPSHOT_PATH: options.snapshot ?? snapshotFixturePath,
     // The entry scripts load the model from here. The harness is given its embedder, so nothing reads it.
     MODEL_PATH: modelPath(),
+    ...(options.statutesAffectedTableUrl === undefined
+      ? {}
+      : { STATUTES_AFFECTED_TABLE_URL: options.statutesAffectedTableUrl(olis.origin) }),
   };
   const pull = (): Promise<FullPullResult> =>
     runFullPull(loadIngestConfig(env), {

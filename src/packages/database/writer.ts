@@ -19,7 +19,12 @@ import type { Legislator, LegislatorId, LegislatorRow, SponsorLevel } from "#/pa
 import type { AgencyId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
 import type { Citation } from "#/packages/domain/citations.ts";
 import type { Passage, SearchEntry } from "#/packages/domain/search.ts";
-import type { RelatingClauseEdit, StatuteLink, StatuteLinkSource } from "#/packages/domain/statute-links.ts";
+import type {
+  RelatingClauseEdit,
+  StatuteLink,
+  StatuteLinkSource,
+  StatutesAffectedEntry,
+} from "#/packages/domain/statute-links.ts";
 import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openWriteConnection } from "./lib/connection.ts";
@@ -118,6 +123,19 @@ export type StatuteParseRecord = {
   amendedVersionHeader: AmendmentHeader | null;
   links: readonly StatuteLink[];
   relatingClauseEdits: readonly RelatingClauseEdit[];
+};
+
+/** The Statutes Affected Table as the worker read it, ready to store: the copy, kept like a document, and its entries. */
+export type StatutesAffectedTableRecord = {
+  sourceUrl: string;
+  /** When the bytes were retrieved. */
+  retrievedAt: Timestamp;
+  /** The sha256 of the bytes, which the next pull compares with the bytes it fetches. */
+  contentHash: string;
+  pageCount: number;
+  /** The extracted text, as the pdf-text package gives it. */
+  text: string;
+  entries: readonly StatutesAffectedEntry[];
 };
 
 /** The columns of the sponsor table that only some kinds of row fill; the others stay NULL. */
@@ -225,6 +243,13 @@ export type IndexWriter = {
   storedText(id: DocumentId): { text: string; hasTextLayer: boolean };
   /** Keeps what reading one file came to, its links with it, in one transaction. */
   storeStatuteParse(record: StatuteParseRecord): void;
+  /** The content hash of the Statutes Affected Table the Session's index holds, or undefined while it holds none. */
+  statutesAffectedTableHash(session: SessionKey): string | undefined;
+  /**
+   * Replaces the table the Session's index holds, its entries with it, in one transaction: a server that reads
+   * during the pull sees the old table or the new one, never half of either.
+   */
+  storeStatutesAffectedTable(session: SessionKey, record: StatutesAffectedTableRecord): void;
   close(): void;
 };
 
@@ -240,6 +265,7 @@ const unreadFileRow = z.object({
   content_hash: z.string(),
 });
 const storedTextRow = z.object({ text: z.string(), has_text_layer: z.number() });
+const tableHashRow = z.object({ content_hash: z.string() });
 const passageRow = z.object({
   start_offset: z.number(),
   end_offset: z.number(),
@@ -838,6 +864,50 @@ export function openIndexWriter(path: string): IndexWriter {
             link.target.type,
             link.target.id,
             link.measureSection,
+          );
+        });
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    statutesAffectedTableHash(session) {
+      const row = database
+        .prepare("SELECT content_hash FROM statutes_affected_table WHERE session_key = ?")
+        .get(session);
+      return row === undefined ? undefined : tableHashRow.parse(row).content_hash;
+    },
+    storeStatutesAffectedTable(session, record) {
+      const insertEntry = database.prepare(
+        `INSERT INTO statutes_affected_entry (session_key, ordinal, prefix, number, level, action, target_type,
+                                              target_id, measure_section, emergency)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database
+          .prepare(
+            `INSERT INTO statutes_affected_table (session_key, source_url, retrieved_at, content_hash, page_count, text)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT (session_key) DO UPDATE SET
+               source_url = excluded.source_url, retrieved_at = excluded.retrieved_at,
+               content_hash = excluded.content_hash, page_count = excluded.page_count, text = excluded.text`,
+          )
+          .run(session, record.sourceUrl, record.retrievedAt, record.contentHash, record.pageCount, record.text);
+        database.prepare("DELETE FROM statutes_affected_entry WHERE session_key = ?").run(session);
+        record.entries.forEach((entry, ordinal) => {
+          insertEntry.run(
+            session,
+            ordinal,
+            entry.measure.prefix,
+            entry.measure.number,
+            entry.level,
+            entry.action,
+            entry.target.type,
+            entry.target.id,
+            entry.measureSection,
+            entry.emergency ? 1 : 0,
           );
         });
         database.exec("COMMIT");

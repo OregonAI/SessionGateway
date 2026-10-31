@@ -19,6 +19,11 @@ export type IngestConfig = {
   modelPath: string;
   /** How many threads one run of the embedding model may use. */
   modelThreads: number;
+  /**
+   * Where Legislative Counsel publishes the Statutes Affected Table of the Session (`artables{session}.pdf`), or null
+   * when the deployment does not load it. The worker fetches it in each full pull (ADR-0034).
+   */
+  statutesAffectedTableUrl: string | null;
 };
 
 export type ServerConfig = {
@@ -75,6 +80,13 @@ const ingestSchema = z.object({
   DATABASE_PATH: z.string().min(1),
   SNAPSHOT_PATH: z.string().min(1),
   MODEL_PATH: z.string().min(1),
+  // The Statutes Affected Table is Legislative Counsel's, not OLIS's: a different host (www.oregonlegislature.gov), a path
+  // that holds the Session key, and a file that does not exist until the Session has ended. A deployment that does not name
+  // it loads nothing (ADR-0034).
+  STATUTES_AFFECTED_TABLE_URL: z
+    .url({ protocol: /^https?$/ })
+    .transform((text) => new URL(text).href)
+    .optional(),
   // One thread by default: the worker on the deploy box shares two cores with seven corpora (ADR-0007).
   // The backfill on the GPU desktop sets more.
   MODEL_THREADS: z
@@ -162,6 +174,7 @@ export function loadIngestConfig(env: Environment): IngestConfig {
     snapshotPath: parsed.SNAPSHOT_PATH,
     modelPath: parsed.MODEL_PATH,
     modelThreads: parsed.MODEL_THREADS,
+    statutesAffectedTableUrl: parsed.STATUTES_AFFECTED_TABLE_URL ?? null,
   };
 }
 

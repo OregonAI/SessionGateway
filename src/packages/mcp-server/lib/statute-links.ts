@@ -45,7 +45,7 @@ const chapterTargetOutput = z.object({
 });
 
 /** The targets one kind of link points at: each once, with every measure section it is linked in. */
-const targetsOutput = z.object({
+export const targetsOutput = z.object({
   sections: z.array(sectionTargetOutput).describe("The ORS sections, in the order of their first measure section."),
   chapters: z.array(chapterTargetOutput).describe("The ORS chapters, in the order of their first measure section."),
 });
@@ -273,7 +273,7 @@ export function fileShown(file: AmendmentFile): z.infer<typeof fileOutput> {
   return { posting_ids: file.postingIds, ...parseResultShown(file.parse) };
 }
 
-const versionEntryOutput = z.object({
+export const versionEntryOutput = z.object({
   id: z.string().describe("The Version's id, which get_document resolves."),
   label: z.string().describe('The Version as the Legislature describes it: "Introduced", "A-Engrossed", "Enrolled"...'),
   source_url: z.string().describe("Where the Legislature publishes the Version."),
