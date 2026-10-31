@@ -8,7 +8,7 @@ import { z } from "zod";
 import {
   statuteChangeKinds,
   statuteLinkKindOfTableAction,
-  versionDescriptionOfTableLevel,
+  versionDescriptionOfEntry,
   type StatuteLink,
   type StatutesAffectedEntry,
   type StatutesAffectedTableOfMeasure,
@@ -128,18 +128,20 @@ export const tableOfMeasureOutput = z.object({
           .string()
           .nullable()
           .describe(
-            'The engrossing level the table prints beside the Measure: "A", "B", "BCC". Null when it prints none.',
+            'What the table prints after the Measure number: an engrossing level ("A", "B", "BCC"), or "E" when it prints an E alone, which may be an emergency clause or the E-Engrossed level. Null when it prints nothing.',
           ),
         version: z
           .string()
           .nullable()
-          .describe('The Version that level names, such as "A-Engrossed". Null when the level names none.'),
+          .describe(
+            'The Version that level names, such as "A-Engrossed". Null when the level names none, or when it is an E alone.',
+          ),
         reason: z.string().describe("Why these entries are not set beside any Version's links."),
         entries: changeLinksOutput.describe("The entries at this level, as the table prints them."),
       }),
     )
     .describe(
-      "Entries of the table for this Measure that name a Version this index does not hold, or a level that names no Version. They are listed as the table has them, and compared with nothing.",
+      "Entries of the table for this Measure that name a Version this index does not hold, a level that names no Version, or an E alone that may or may not be a level. They are listed as the table has them (cut like the lists of a Version's block), and compared with nothing.",
     ),
   note: z.string().describe("What the table is and how its entries are set beside the parsed links."),
 });
@@ -289,11 +291,29 @@ function tableOfVersion(
   };
 }
 
-/** Entries grouped by the level they print, in the order the levels first appear. */
-function byLevel(entries: readonly StatutesAffectedEntry[]): Map<string | null, StatutesAffectedEntry[]> {
+/** What the table printed after the Measure number, as the entries are grouped by it: the level, or the "E" alone that may be one. */
+function printedLevelOf(entry: StatutesAffectedEntry): string | null {
+  return entry.loneE ? "E" : entry.level;
+}
+
+/** Entries grouped by what they print after the Measure number, in the order the groups first appear. */
+function byPrintedLevel(entries: readonly StatutesAffectedEntry[]): Map<string | null, StatutesAffectedEntry[]> {
   const groups = new Map<string | null, StatutesAffectedEntry[]>();
-  for (const entry of entries) groups.set(entry.level, [...(groups.get(entry.level) ?? []), entry]);
+  for (const entry of entries) {
+    const level = printedLevelOf(entry);
+    groups.set(level, [...(groups.get(level) ?? []), entry]);
+  }
   return groups;
+}
+
+/** Why entries are set beside no Version's links: the Version they name is not held, or the table does not name one. */
+function reasonOf(entry: StatutesAffectedEntry, version: string | undefined): string {
+  if (entry.loneE) {
+    return "The table printed an “E” alone after the Measure number. Its legend gives “E” as the mark that an emergency clause applies and gives engrossing levels as letters beside the number, so this E is either the emergency clause of a row at the Introduced Version or the E-Engrossed Version's level, and the table's text does not say which. Nothing is guessed: these entries are set beside no Version's links.";
+  }
+  return version === undefined
+    ? `The table's level "${entry.level ?? ""}" names no Version in the order Versions are printed in, so its entries are set beside no Version's links.`
+    : `This index does not hold the ${version} Version of the Measure, so there are no parsed links to set these entries beside.`;
 }
 
 /**
@@ -308,21 +328,20 @@ export function statuteLinksBySourceWithTable(
   table: StatutesAffectedTableOfMeasure | undefined,
 ): StatuteLinksBySourceWithTable {
   if (table === undefined) return shown;
-  const groups = byLevel(table.entries);
+  const groups = byPrintedLevel(table.entries);
   const heldLabels = new Set(versions.map((version) => version.label));
   const named = (version: StoredVersion): StatutesAffectedEntry[] =>
-    table.entries.filter((entry) => versionDescriptionOfTableLevel(entry.level) === version.label);
+    table.entries.filter((entry) => versionDescriptionOfEntry(entry) === version.label);
   const otherEntries: z.infer<typeof tableOfMeasureOutput>["other_entries"] = [];
   for (const [level, entries] of groups) {
-    const version = versionDescriptionOfTableLevel(level);
+    const [first] = entries;
+    if (first === undefined) continue;
+    const version = versionDescriptionOfEntry(first);
     if (version !== undefined && heldLabels.has(version)) continue;
     otherEntries.push({
       level,
       version: version ?? null,
-      reason:
-        version === undefined
-          ? `The table's level "${level ?? ""}" names no Version in the order Versions are printed in, so its entries are set beside no Version's links.`
-          : `This index does not hold the ${version} Version of the Measure, so there are no parsed links to set these entries beside.`,
+      reason: reasonOf(first, version),
       entries: changeLinksShown(distinctLinks(entries.map(linkOfEntry))),
     });
   }

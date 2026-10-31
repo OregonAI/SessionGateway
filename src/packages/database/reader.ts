@@ -362,6 +362,7 @@ const tableEntryRow = z.object({
   target_id: z.string(),
   measure_section: z.string(),
   emergency: z.number(),
+  lone_e: z.number(),
 });
 const countRow = z.object({ n: z.number() });
 const kindCountRow = z.object({ kind: z.string(), n: z.number() });
@@ -557,7 +558,7 @@ export function openIndexReader(path: string): IndexReader {
     "SELECT source_url, retrieved_at FROM statutes_affected_table WHERE session_key = ?",
   );
   const selectTableEntries = database.prepare(
-    `SELECT level, action, target_type, target_id, measure_section, emergency FROM statutes_affected_entry
+    `SELECT level, action, target_type, target_id, measure_section, emergency, lone_e FROM statutes_affected_entry
      WHERE session_key = ? AND prefix = ? AND number = ? ORDER BY ordinal`,
   );
   const numbersInOrder = new Intl.Collator("en", { numeric: true });
@@ -797,6 +798,7 @@ export function openIndexReader(path: string): IndexReader {
             action: stored.action,
             measureSection: stored.measure_section,
             emergency: stored.emergency === 1,
+            loneE: stored.lone_e === 1,
           };
           return {
             ...common,
