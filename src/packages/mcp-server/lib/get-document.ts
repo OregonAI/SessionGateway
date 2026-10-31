@@ -68,7 +68,7 @@ export type GetDocumentResult =
   | { kind: "found"; document: GetDocumentOutput }
   | { kind: "unknown"; id: string; session: SessionKey }
   /** A Testimony the feed lists and the store has not fetched: a fact about the index, not a wrong id. */
-  | { kind: "not_held"; id: string; session: SessionKey }
+  | { kind: "not_held"; id: string; session: SessionKey; noLongerListed: boolean }
   | { kind: "no_such_part"; id: string; part: number; partCount: number };
 
 export function getDocument(
@@ -80,7 +80,10 @@ export function getDocument(
   const found = id === undefined ? undefined : reader.findDocument(id);
   if (id === undefined) return { kind: "unknown", id: input.id, session };
   if (found === undefined) {
-    return reader.listsTestimony(id) ? { kind: "not_held", id, session } : { kind: "unknown", id: input.id, session };
+    const listing = reader.testimonyListing(id);
+    return listing === undefined
+      ? { kind: "unknown", id: input.id, session }
+      : { kind: "not_held", id, session, noLongerListed: !listing.listed };
   }
   const stored = found.document;
   const parts = splitIntoParts(stored.text);
@@ -130,6 +133,14 @@ export function unknownDocumentMessage(id: string, session: SessionKey): string 
  */
 export function testimonyNotHeldMessage(id: string, session: SessionKey): string {
   return `Testimony "${id}" is listed in the ${session} Session, but this index does not hold its file yet. The next pull fetches it again.`;
+}
+
+/**
+ * What an agent is told when the id is a Testimony the feed no longer lists (two complete full pulls in a row did
+ * not list it) and the store never fetched its file. The id is right, but no pull will fetch the file now.
+ */
+export function testimonyNoLongerListedMessage(id: string, session: SessionKey): string {
+  return `Testimony "${id}" was listed in the ${session} Session and is not any more, and this index never fetched its file, so it holds no text for it.`;
 }
 
 /** What an agent is told when it asks for a part past the last one. */

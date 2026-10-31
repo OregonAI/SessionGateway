@@ -11,6 +11,7 @@ import {
 import type { AgendaItem } from "#/packages/domain/schedule.ts";
 import type { CommitteeVote, FloorVote, LegislatorVote } from "#/packages/domain/votes.ts";
 import { analysisDocumentsOf, analysisDocumentsOutput } from "./analysis.ts";
+import { noLongerListedOutput } from "./listing.ts";
 import { statuteLinksBySourceOf, statuteLinksBySourceOutput } from "./statute-links.ts";
 import type { LiveLookup, LiveStatusReader } from "./live-status.ts";
 
@@ -115,6 +116,15 @@ export const getMeasureInput = z.object({
 
 export const getMeasureOutput = z.object({
   id: z.string().describe("The Measure's id in OregonAI's form."),
+  no_longer_listed: noLongerListedOutput.describe(
+    "Present, and true, only when the Legislature's feed has stopped listing the Measure: two complete full pulls in a row did not list it. The Measure is still served, as it was last read, with last_listed_at. Absent when the feed lists it.",
+  ),
+  last_listed_at: z
+    .string()
+    .optional()
+    .describe(
+      "Present only with no_longer_listed: when the feed last listed the Measure, the as-of time of the latest complete full pull that did, in Pacific time with its UTC offset.",
+    ),
   catchline: z.string().nullable().describe("The Measure's catchline, as OLIS publishes it."),
   digest: z
     .string()
@@ -282,10 +292,13 @@ export async function getMeasure(
   const committeeVotes = reader.findCommitteeVotes(measure);
   // The Measure is in the index, so OLIS is asked about it; a reference the index does not know never reaches OLIS.
   const live = await liveStatus.lookup(measure);
+  const listing = reader.measureListing(measure);
+  if (listing === undefined) throw new Error(`The index has no feed row for the Measure ${measureIdOf(measure)}`);
   return {
     kind: "found",
     measure: {
       id: measureIdOf(measure),
+      ...(listing.listed ? {} : { no_longer_listed: true as const, last_listed_at: listing.lastListedAt }),
       catchline: measure.catchline,
       digest: measure.digest,
       analysis_documents: analysisDocumentsOf(

@@ -4,7 +4,6 @@ import type { StoredAnalysis } from "#/packages/domain/analysis.ts";
 import {
   documentKinds,
   positionOf,
-  type AgendaItem,
   type AmendmentId,
   type AmendmentPosting,
   type Committee,
@@ -13,6 +12,7 @@ import {
   type DocumentView,
   type IndexCounts,
   type Listing,
+  type ListedAgendaItem,
   type AmendmentHeader,
   type CommitteeId,
   type MeetingContents,
@@ -141,10 +141,14 @@ export type IndexReader = {
    */
   findTestimony(key: MeasureKey): TestimonyEntry[];
   /**
-   * Whether the feed lists a Testimony with this id, whether or not its file is fetched. A Testimony that is
-   * listed and whose file the store lacks is one `findDocument` does not resolve yet: the next pull fetches it.
+   * Whether the feed lists a Testimony with this id, whether or not its file is fetched, and when it last did;
+   * undefined when the feed has never listed one. A Testimony that is listed and whose file the store lacks is one
+   * `findDocument` does not resolve yet: the next pull fetches it. One that is no longer listed is not fetched by
+   * any pull, and the store holds the file only if it fetched it while the feed listed it.
    */
-  listsTestimony(id: DocumentId | AmendmentId): boolean;
+  testimonyListing(id: DocumentId | AmendmentId): Listing | undefined;
+  /** Whether the feed still lists a Measure, and when it last did; undefined when the index has never listed it. */
+  measureListing(key: MeasureKey): Listing | undefined;
   close(): void;
 };
 
@@ -227,6 +231,7 @@ const analysisRow = z.object({
   source_url: z.string(),
   analysis_version_label: z.string(),
   analysis_is_minority: z.number(),
+  listed: z.number(),
 });
 const committeeRow = z.object({ code: z.string(), id: z.string(), name: z.string() });
 const meetingRow = z.object({
@@ -236,6 +241,7 @@ const meetingRow = z.object({
   committee_name: z.string(),
   at: z.string(),
   status: z.string(),
+  listed: z.number(),
 });
 const agendaItemRow = z.object({
   id: z.number(),
@@ -249,6 +255,7 @@ const agendaItemRow = z.object({
   comments: z.string().nullable(),
   board_name: z.string().nullable(),
   executive_appointee: z.string().nullable(),
+  listed: z.number(),
 });
 const meetingDocumentRow = z.object({
   id: z.string(),
@@ -260,6 +267,7 @@ const meetingDocumentRow = z.object({
   measure_id: z.string().nullable(),
   meaning: z.string().nullable(),
   fetched: z.number(),
+  listed: z.number(),
 });
 const testimonyRow = z.object({
   id: z.string(),
@@ -275,6 +283,7 @@ const testimonyRow = z.object({
   meeting_at: z.string(),
   agency_id: z.string().nullable(),
   fetched: z.number(),
+  listed: z.number(),
   has_text_layer: z.number().nullable(),
   text_hash: z.string().nullable(),
 });
@@ -402,8 +411,10 @@ export function openIndexReader(path: string): IndexReader {
     "SELECT relation, to_id, meaning FROM document_relation WHERE document_id = ? ORDER BY rowid",
   );
   const selectAnalyses = database.prepare(
-    `SELECT d.id, d.label, d.source_url, d.analysis_version_label, d.analysis_is_minority
-       FROM document d JOIN document_relation r ON r.document_id = d.id
+    `SELECT d.id, d.label, d.source_url, d.analysis_version_label, d.analysis_is_minority, fr.listed
+       FROM document d
+         JOIN document_relation r ON r.document_id = d.id
+         LEFT JOIN feed_row_state fr ON fr.document_id = d.id
       WHERE d.kind = 'analysis' AND r.relation = 'measure' AND r.to_id = ?
       ORDER BY d.id`,
   );
@@ -416,8 +427,11 @@ export function openIndexReader(path: string): IndexReader {
     "SELECT code, id, name FROM committee WHERE session_key = ? AND (upper(code) = upper(?) OR id = lower(?))",
   );
   const selectMeetings = database.prepare(
-    `SELECT m.id, m.committee_id, m.committee_code, c.name AS committee_name, m.at, m.status
-     FROM meeting m JOIN committee c ON c.session_key = m.session_key AND c.code = m.committee_code
+    `SELECT m.id, m.committee_id, m.committee_code, c.name AS committee_name, m.at, m.status, fr.listed
+     FROM meeting m
+       JOIN committee c ON c.session_key = m.session_key AND c.code = m.committee_code
+       LEFT JOIN feed_row_state fr ON fr.session_key = m.session_key AND fr.entity_set = 'CommitteeMeetings'
+                                  AND fr.row_key = m.id
      WHERE m.session_key = ?
        AND (? IS NULL OR EXISTS (SELECT 1 FROM agenda_item a
                                  WHERE a.meeting_id = m.id AND a.measure_prefix = ? AND a.measure_number = ?))
@@ -427,23 +441,38 @@ export function openIndexReader(path: string): IndexReader {
      ORDER BY m.at, m.committee_code`,
   );
   const selectAgendaItems = database.prepare(
-    "SELECT * FROM agenda_item WHERE meeting_id = ? ORDER BY print_order IS NULL, CAST(print_order AS INTEGER), id",
+    `SELECT a.*, fr.listed
+     FROM agenda_item a
+       LEFT JOIN feed_row_state fr ON fr.session_key = a.session_key AND fr.entity_set = 'CommitteeAgendaItems'
+                                  AND fr.row_key = CAST(a.id AS TEXT)
+     WHERE a.meeting_id = ? ORDER BY a.print_order IS NULL, CAST(a.print_order AS INTEGER), a.id`,
   );
   // What the feed lists for a meeting, and whether the document table holds each file yet.
   const selectMeetingDocuments = database.prepare(
     `SELECT l.document_id AS id, l.node_id, l.kind, l.label, l.source_url, l.title, l.measure_id, l.meaning,
-            EXISTS (SELECT 1 FROM document d WHERE d.id = l.document_id) AS fetched
-     FROM meeting_document l WHERE l.meeting_id = ?`,
+            EXISTS (SELECT 1 FROM document d WHERE d.id = l.document_id) AS fetched, fr.listed
+     FROM meeting_document l
+       LEFT JOIN feed_row_state fr ON fr.document_id = l.document_id
+     WHERE l.meeting_id = ?`,
   );
   // The Testimony the feed lists for a Measure, and whether the document table holds each file yet.
   const selectTestimony = database.prepare(
     `SELECT t.document_id AS id, t.comm_test_id, t.source_url, t.document_description, t.position_id, t.submitter,
             t.behalf_of, t.organization, t.committee_id, t.committee_code, t.meeting_at, t.agency_id,
-            d.id IS NOT NULL AS fetched, d.has_text_layer, d.text_hash
-     FROM testimony t LEFT JOIN document d ON d.id = t.document_id
+            d.id IS NOT NULL AS fetched, fr.listed, d.has_text_layer, d.text_hash
+     FROM testimony t
+       LEFT JOIN document d ON d.id = t.document_id
+       LEFT JOIN feed_row_state fr ON fr.document_id = t.document_id
      WHERE t.measure_id = ? ORDER BY t.comm_test_id`,
   );
-  const selectTestimonyListing = database.prepare("SELECT 1 AS listed FROM testimony WHERE document_id = ?");
+  const selectTestimonyListing = database.prepare(
+    `SELECT fr.listed, fr.last_listed_at FROM testimony t
+       JOIN feed_row_state fr ON fr.document_id = t.document_id
+      WHERE t.document_id = ?`,
+  );
+  const selectMeasureListing = database.prepare(
+    "SELECT listed, last_listed_at FROM feed_row_state WHERE session_key = ? AND entity_set = 'Measures' AND row_key = ?",
+  );
   // The postings the feed lists for one Proposed Amendment, with the meeting each was posted to.
   const selectPostingsOfAmendment = database.prepare(
     `SELECT l.document_id, l.label, l.source_url, l.measure_id, l.meaning, l.meeting_id, m.at AS meeting_at,
@@ -610,6 +639,7 @@ export function openIndexReader(path: string): IndexReader {
           sourceUrl: stored.source_url,
           committeeId: (related.find((node) => node.relation === "committee")?.to as CommitteeId | undefined) ?? null,
           placedVersionId: (related.find((node) => node.relation === "version")?.to as DocumentId | undefined) ?? null,
+          listed: stored.listed === 1,
         };
       });
     },
@@ -729,13 +759,15 @@ export function openIndexReader(path: string): IndexReader {
             },
             at: stored.at as Timestamp,
             status: stored.status,
+            listed: stored.listed === 1,
           };
         });
     },
     meetingContents(meeting) {
-      const agendaItems = selectAgendaItems.all(meeting).map((row): AgendaItem => {
+      const agendaItems = selectAgendaItems.all(meeting).map((row): ListedAgendaItem => {
         const stored = agendaItemRow.parse(row);
         return {
+          listed: stored.listed === 1,
           itemId: stored.id,
           meetingId: stored.meeting_id as MeetingId,
           measure:
@@ -765,6 +797,7 @@ export function openIndexReader(path: string): IndexReader {
             measureId: stored.measure_id as MeasureId | null,
             title: stored.title,
             fetched: stored.fetched === 1,
+            listed: stored.listed === 1,
           }))
           .sort((a, b) => numbersInOrder.compare(a.id, b.id));
       const amendments = listed
@@ -779,6 +812,7 @@ export function openIndexReader(path: string): IndexReader {
             documentId: stored.id as DocumentId,
             sourceUrl: stored.source_url,
             fetched: stored.fetched === 1,
+            listed: stored.listed === 1,
           };
         });
       amendments.sort(
@@ -795,8 +829,13 @@ export function openIndexReader(path: string): IndexReader {
         recordingLogs: documentsOfKind("recording_log"),
       };
     },
-    listsTestimony(id) {
-      return selectTestimonyListing.get(id) !== undefined;
+    testimonyListing(id) {
+      const row = selectTestimonyListing.get(id);
+      return row === undefined ? undefined : listingOf(row, `the Testimony ${id}`);
+    },
+    measureListing(key) {
+      const row = selectMeasureListing.get(key.session, measureIdOf(key));
+      return row === undefined ? undefined : listingOf(row, `the Measure ${measureIdOf(key)}`);
     },
     findTestimony(key) {
       return selectTestimony.all(measureIdOf(key)).map((row): TestimonyEntry => {
@@ -815,6 +854,7 @@ export function openIndexReader(path: string): IndexReader {
           meetingAt: stored.meeting_at as Timestamp,
           agencyId: stored.agency_id as AgencyId | null,
           fetched: stored.fetched === 1,
+          listed: stored.listed === 1,
           hasTextLayer: stored.has_text_layer === null ? null : stored.has_text_layer === 1,
           textHash: stored.text_hash,
         };

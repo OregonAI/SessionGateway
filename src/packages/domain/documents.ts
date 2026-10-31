@@ -487,6 +487,8 @@ export type TestimonyEntry = TestimonyDetails & {
   agencyId: AgencyId | null;
   /** Whether the store holds the file. The feed lists the Testimony either way. */
   fetched: boolean;
+  /** False once two complete full pulls in a row have not listed the row (ADR-0030). The row is kept and shown. */
+  listed: boolean;
   /** False when the file has no text layer; null while the store does not hold the file. */
   hasTextLayer: boolean | null;
   /** The sha256 of the file's extracted text (`StoredDocument.textHash`); null while the store does not hold the file. */
@@ -511,6 +513,8 @@ export type MeetingHeader = {
   committee: { id: CommitteeId; code: string; name: string };
   at: Timestamp;
   status: string;
+  /** False once two complete full pulls in a row have not listed the meeting (ADR-0030). */
+  listed: boolean;
 };
 
 /** A Proposed Amendment posted to a meeting: the node, and the posting with the text posted there. */
@@ -526,6 +530,8 @@ export type PostedAmendment = {
   sourceUrl: string;
   /** Whether the store holds the posting's file. The feed lists the posting either way. */
   fetched: boolean;
+  /** False once two complete full pulls in a row have not listed the posting (ADR-0030). */
+  listed: boolean;
 };
 
 /** One posting of a Proposed Amendment, as the amendment's own view lists it: where it was posted and what the committee did. */
@@ -555,6 +561,8 @@ export type MeetingDocument = {
   title: string | null;
   /** Whether the store holds the file. The feed lists the document either way. */
   fetched: boolean;
+  /** False once two complete full pulls in a row have not listed the document (ADR-0030). */
+  listed: boolean;
 };
 
 /**
@@ -567,7 +575,7 @@ export type MeetingDocument = {
 export type MeetingContents = {
   /** The agenda document, when the feed links one. */
   agenda: MeetingDocument | null;
-  agendaItems: AgendaItem[];
+  agendaItems: ListedAgendaItem[];
   amendments: PostedAmendment[];
   exhibits: MeetingDocument[];
   recordingLogs: MeetingDocument[];
@@ -594,6 +602,9 @@ export type AgendaItem = {
   boardName: string | null;
   executiveAppointee: string | null;
 };
+
+/** An agenda item as the server reads it, with whether the feed still lists it (ADR-0030). */
+export type ListedAgendaItem = AgendaItem & { listed: boolean };
 
 export type Committee = {
   session: SessionKey;

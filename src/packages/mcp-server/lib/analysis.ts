@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { placeAnalysis, type StoredAnalysis } from "#/packages/domain/analysis.ts";
 import type { MeasureKey } from "#/packages/domain/index.ts";
+import { noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 
 const analysisEntry = z.object({
   id: z.string().describe("The document's id, which get_document resolves."),
@@ -16,6 +17,7 @@ const analysisEntry = z.object({
     ),
   committee_id: z.string().nullable().describe("The committee that issued it, when the feed names one."),
   source_url: z.string().describe("Where the Legislature publishes the document."),
+  no_longer_listed: noLongerListedOutput,
 });
 
 export const analysisDocumentsOutput = z
@@ -82,6 +84,7 @@ function entryOf(analysis: StoredAnalysis): Entry {
     version_label: analysis.versionLabel,
     committee_id: analysis.committeeId,
     source_url: analysis.sourceUrl,
+    ...noLongerListedFlag(analysis.listed),
   };
 }
 

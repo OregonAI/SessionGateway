@@ -95,4 +95,6 @@ export type StoredAnalysis = AnalysisFeedMark & {
    * Measure, so this is not the Measure's list of Versions.
    */
   placedVersionId: DocumentId | null;
+  /** False once two complete full pulls in a row have not listed the document (ADR-0030). */
+  listed: boolean;
 };
