@@ -250,3 +250,32 @@ describe("a lookup that fails", () => {
     });
   });
 });
+
+describe("what the output schema tells an agent about the live block", () => {
+  let system: System;
+
+  beforeAll(async () => {
+    system = await startSystem({ clockAt });
+  });
+
+  afterAll(async () => {
+    await system.stop();
+  });
+
+  describe.for(eras)("for a %s client", (era) => {
+    it("says how to read unchanged, new entries and full, including when the lookup fell back to the cache", async () => {
+      const connected = await connectClient(era, system.handler);
+      try {
+        const { tools } = await connected.client.listTools();
+
+        const schema = JSON.stringify(tools.find((tool) => tool.name === "get_measure")?.outputSchema);
+        expect(schema).toContain("read the top-level field of the same name");
+        expect(schema).toContain('When source is \\"cache\\", nothing was read from OLIS');
+        expect(schema).toContain("the top level\'s entries, then these");
+        expect(schema).toContain("an entry changed, missing or reordered, or fewer entries");
+      } finally {
+        await connected.close();
+      }
+    });
+  });
+});

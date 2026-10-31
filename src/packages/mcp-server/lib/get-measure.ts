@@ -61,7 +61,7 @@ const committeeVoteOutput = z.object({
 });
 
 const UNCHANGED_DESCRIPTION =
-  '"unchanged" means OLIS gives exactly the top-level value, so nothing is repeated here: read the top-level field of the same name.';
+  '"unchanged" means read the top-level field of the same name: nothing is repeated here. When source is "olis", OLIS gives exactly the top-level value. When source is "cache", nothing was read from OLIS, and the top-level value is the cache\'s, which is all there is.';
 
 /** One value of the live block that is a single thing (the location): the top level's, or OLIS's in full. */
 const unchangedStatus = z.object({ status: z.literal("unchanged") });
@@ -73,7 +73,7 @@ const unchangedStatus = z.object({ status: z.literal("unchanged") });
 function liveListOutput<Entry extends z.ZodType>(entry: Entry, name: string) {
   return z
     .discriminatedUnion("status", [
-      unchangedStatus.describe(`OLIS gives exactly the top-level ${name}. ${UNCHANGED_DESCRIPTION}`),
+      unchangedStatus.describe(`The top-level ${name} is the one to read. ${UNCHANGED_DESCRIPTION}`),
       z
         .object({
           status: z.literal("new_entries"),
@@ -92,11 +92,11 @@ function liveListOutput<Entry extends z.ZodType>(entry: Entry, name: string) {
           entries: z
             .array(entry)
             .describe(
-              `OLIS's whole ${name}, in order. It replaces the top-level ${name}: an entry before the end differs, or OLIS gives fewer entries.`,
+              `OLIS's whole ${name}, in order. It replaces the top-level ${name}. OLIS's list differs from the top level's other than by new entries at the end: an entry changed, missing or reordered, or fewer entries.`,
             ),
         })
         .describe(
-          `OLIS's ${name} differs from the top level's in a way other than new entries at the end, so all of it is shown. Use it instead of the top-level ${name}.`,
+          `OLIS's ${name} differs from the top level's other than by new entries at the end (an entry changed, missing or reordered, or fewer entries), so all of it is shown. Use it instead of the top-level ${name}.`,
         ),
     ])
     .describe(
@@ -121,7 +121,7 @@ const liveStatusOutput = z
     notice: z.string().describe("Says in words where the values in this block come from, and why."),
     location: z
       .discriminatedUnion("status", [
-        unchangedStatus.describe(`OLIS gives the top-level location. ${UNCHANGED_DESCRIPTION}`),
+        unchangedStatus.describe(`The top-level location is the one to read. ${UNCHANGED_DESCRIPTION}`),
         z
           .object({
             status: z.literal("full"),
@@ -153,7 +153,7 @@ const liveStatusOutput = z
     committee_votes: liveListOutput(committeeVoteOutput, "committee_votes"),
   })
   .describe(
-    'The Measure\'s current status, read from OLIS when the call arrived, and only what the top level does not already show: a value OLIS gives as the top level does is "unchanged", a list that adds entries at its end shows only those, and any other difference is shown in full. If OLIS could not be read, source and notice say so and every value is "unchanged" (the top level\'s, which is the cache\'s).',
+    'The Measure\'s current status, read from OLIS when the call arrived, and only what the top level does not already show: a value OLIS gives as the top level does is "unchanged", a list that adds entries at its end shows only those, and any other difference is shown in full. If OLIS could not be read, source and notice say so and every value is "unchanged", which then means nothing was read: the top level\'s values are the cache\'s.',
   );
 
 export const getMeasureInput = z.object({
@@ -254,8 +254,7 @@ function sameShown(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-type LiveListShown<Entry> =
-  { status: "unchanged" } | { status: "new_entries"; entries: Entry[] } | { status: "full"; entries: Entry[] };
+type LiveListShown<Entry> = z.infer<ReturnType<typeof liveListOutput<z.ZodType<Entry>>>>;
 
 /** A list said against the top level's: unchanged, the entries after the top level's last one, or all of it. */
 function listAgainst<Entry>(top: readonly Entry[], live: readonly Entry[]): LiveListShown<Entry> {
