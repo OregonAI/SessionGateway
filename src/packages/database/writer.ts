@@ -228,6 +228,8 @@ export type IndexWriter = {
   recordFullPullAttempt(session: SessionKey, startedAt: Timestamp): void;
   /** The Pacific dates (YYYY-MM-DD) of the Session's committee meetings the index holds: days the Session meets. */
   meetingDays(session: SessionKey): string[];
+  /** The commit of the snapshot the index reports (the last full pull's), or undefined while it reports none. */
+  reportedSnapshotCommit(session: SessionKey): string | undefined;
   /**
    * Records which snapshot the index's links were all read with, and the parent of each Agency it gives one, in one
    * transaction so that the two always agree (ADR-0029). It is the last step of a pull, after the Statute Links and the
@@ -736,6 +738,10 @@ export function openIndexWriter(path: string): IndexWriter {
     },
     meetingDays(session) {
       return readMeetingDays(database, session);
+    },
+    reportedSnapshotCommit(session) {
+      const row = database.prepare("SELECT commit_sha FROM snapshot_state WHERE session_key = ?").get(session);
+      return row === undefined ? undefined : z.object({ commit_sha: z.string() }).parse(row).commit_sha;
     },
     recordSnapshotRead(session, snapshot, agencyParents) {
       const recordSnapshot = database.prepare(

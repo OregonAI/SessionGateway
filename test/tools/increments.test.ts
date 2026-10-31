@@ -9,6 +9,7 @@
 // and 17:00 the same day; feed/CommitteePublicTestimonies.json).
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
+import { createFixtureCopy } from "../support/made-up-snapshot.ts";
 import { startSystem, type System } from "../support/system.ts";
 import { listAgain, stopListing } from "../support/unlisted-rows.ts";
 
@@ -225,5 +226,43 @@ describe("an increment and the two-pull rule (ADR-0030)", () => {
       await connected.close();
       expect(document.structured).toMatchObject({ no_longer_listed: false, last_listed_at: null });
     });
+  });
+});
+
+// The snapshot is the full pull's (ADR-0035): it reads every stored document's links again when the snapshot changes and
+// only then reports the new version. An increment reads the links of the documents it stores, with the snapshot the
+// index reports, and never switches it. The second snapshot is MADE UP: a copy of the committed fixture with a commit
+// of its own.
+describe("an increment and the OregonAI snapshot (ADR-0035, ADR-0039)", () => {
+  async function snapshotCommit(system: System, era: Era): Promise<unknown> {
+    const connected = await connectClient(era, system.handler);
+    try {
+      const outcome = await callTool(connected, "session_overview", {});
+      return (outcome.structured?.["snapshot"] as { commit: string }).commit;
+    } finally {
+      await connected.close();
+    }
+  }
+
+  it("leaves the snapshot the index reports to the next full pull, though the snapshot file has changed", async () => {
+    const copy = createFixtureCopy(() => {});
+    try {
+      const system = await startSystem({ clockAt: beforeTheLetters, documents: true, snapshot: copy.path });
+      started.push(system);
+      const [first] = eras;
+      if (first === undefined) throw new Error("There are no client eras");
+      const before = await snapshotCommit(system, first);
+      copy.changeIt();
+      system.clock.set(afterTheLetters);
+
+      await system.incrementAgain();
+
+      for (const era of eras) expect(await snapshotCommit(system, era)).toBe(before);
+      // The next full pull reads every link again and reports the new snapshot.
+      await system.pullAgain();
+      expect(await snapshotCommit(system, first)).not.toBe(before);
+    } finally {
+      copy.remove();
+    }
   });
 });

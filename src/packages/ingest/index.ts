@@ -304,6 +304,12 @@ type DocumentsStep = {
   passageCounts: PassageCounts;
   /** Gets an entry for each document this run could not get or read. */
   notFetched: BuildReport["documents_not_fetched"];
+  /**
+   * Whether this run reads the links and reports the snapshot. A full pull does. An increment does only while the
+   * snapshot file is the one the index reports: a changed snapshot makes every stored document's links unread, which is
+   * the full pull's work (ADR-0035), and a new document's links wait for it.
+   */
+  readLinks: boolean;
 };
 
 /**
@@ -312,7 +318,7 @@ type DocumentsStep = {
  * and an increment do the same here with the links each read, and it returns how many documents it fetched.
  */
 async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
-  const { config, deps, writer, olis, snapshot, links, committeeNames, passageCounts, notFetched } = step;
+  const { config, deps, writer, olis, snapshot, links, committeeNames, passageCounts, notFetched, readLinks } = step;
   let documentsFetched = 0;
   const stored = writer.storedDocumentIds(config.session);
   // A fetched file is unchanging (ADR-0005) but its feed row is not: OLIS changes a posting's Meaning,
@@ -357,6 +363,7 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
     stored.add(link.id);
     documentsFetched += 1;
   }
+  if (!readLinks) return documentsFetched;
   // The Statute Links of every stored Version and posting not yet read with this snapshot, from the text the store
   // holds: the files are not fetched again. Postings that share a file are read once (ADR-0015). A snapshot that has
   // changed since a file was read makes it unread, because its ranges are expanded against the snapshot's section
@@ -538,6 +545,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       committeeNames,
       passageCounts,
       notFetched,
+      readLinks: true,
     });
     const listingCounts = new Map(writer.listingCounts(config.session).map((count) => [count.entitySet, count]));
     const unresolvedMemberCodes = new Set(
@@ -652,6 +660,7 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
       committeeNames,
       passageCounts,
       notFetched,
+      readLinks: writer.reportedSnapshotCommit(config.session) === snapshot.version.commit,
     });
     return { asOf, documentsFetched, documentsNotFetched: notFetched.length };
   } finally {
