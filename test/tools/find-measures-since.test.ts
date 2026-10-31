@@ -159,6 +159,15 @@ describe("find_measures for an Agency, with the clock on 2025-01-24", () => {
       expect(groupOf(utc, "derived").items.map((item) => item.id)).toEqual(["amendment-2025r1-sb69-2"]);
     });
 
+    // ISO 8601 writes an offset with or without the colon, and Temporal's PlainDateTime ignores an offset it is given:
+    // reading "+0000" as Pacific would move the time by eight hours without a word.
+    it("reads an offset written without a colon as that offset, not as Pacific time", async () => {
+      const found = await find(at.client(era), { agency: boli, since: "2025-01-24T00:27:37.073+0000" });
+
+      expect(found.query.since).toBe("2025-01-23T16:27:37.073-08:00");
+      expect(groupOf(found, "derived").items.map((item) => item.id)).toEqual(["amendment-2025r1-sb69-2"]);
+    });
+
     // With no time the answer also holds HB 3027's Introduced Version, created 2025-01-10 (feed/MeasureDocuments.json):
     // its SECTION 1 is "added to and made a part of ORS 345.010 to 345.340" (pdftotext of
     // measure-documents/HB3027/Introduced.pdf), and the snapshot gives chapter 345 to the Bureau among other Agencies.
