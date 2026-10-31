@@ -65,6 +65,31 @@ describe("an increment", () => {
     });
   });
 
+  it("is reported by session_overview as the last increment, and moves the index's as-of time", async () => {
+    const system = await start();
+    const overview = async (era: Era): Promise<Record<string, unknown> | undefined> => {
+      const connected = await connectClient(era, system.handler);
+      try {
+        return (await callTool(connected, "session_overview", {})).structured;
+      } finally {
+        await connected.close();
+      }
+    };
+    await everyClient(async (era) => {
+      expect(await overview(era)).toMatchObject({ as_of: "2025-01-17T14:00:00-08:00", last_increment: null });
+    });
+
+    system.clock.set(afterTheLetters);
+    await system.incrementAgain();
+
+    await everyClient(async (era) => {
+      expect(await overview(era)).toMatchObject({
+        as_of: "2025-01-17T18:00:00-08:00",
+        last_increment: "2025-01-17T18:00:00-08:00",
+      });
+    });
+  });
+
   describe("a row with one of the two dates, and the two-hour overlap", () => {
     // MADE UP: four Testimony rows for HB 3131's meeting of HALNRW on 2025-01-22, added to the fake after the pull
     // (14:00), and read at 18:00. Each is served the file of one of the real letters. The increment asks for rows
