@@ -432,10 +432,14 @@ export function openIndexReader(path: string): IndexReader {
       WHERE d.kind = 'analysis' AND r.relation = 'measure' AND r.to_id = ?
       ORDER BY d.id`,
   );
+  // The listed analysis documents the store does not hold. A row the feed has stopped listing (two complete pulls in
+  // a row missed it) is not one the feed lists, so it is not counted; one pull that misses it changes nothing.
   const countNotHeld = database.prepare(
     `SELECT COUNT(*) AS n
-       FROM analysis_listing l LEFT JOIN document d ON d.id = l.document_id
-      WHERE l.measure_id = ? AND d.id IS NULL`,
+       FROM analysis_listing l
+         LEFT JOIN document d ON d.id = l.document_id
+         LEFT JOIN feed_row_state fr ON fr.document_id = l.document_id
+      WHERE l.measure_id = ? AND d.id IS NULL AND ${listedOrUnchecked} = 1`,
   );
   const selectCommittee = database.prepare(
     "SELECT code, id, name FROM committee WHERE session_key = ? AND (upper(code) = upper(?) OR id = lower(?))",

@@ -356,10 +356,10 @@ export function openIndexWriter(path: string): IndexWriter {
            committee_id = excluded.committee_id, committee_code = excluded.committee_code,
            meeting_at = excluded.meeting_at, agency_id = excluded.agency_id`,
       );
-      const insertAnalysisListing = database.prepare(
-        "INSERT INTO analysis_listing (document_id, session_key, measure_id) VALUES (?, ?, ?)",
+      const upsertAnalysisListing = database.prepare(
+        `INSERT INTO analysis_listing (document_id, session_key, measure_id) VALUES (?, ?, ?)
+         ON CONFLICT (document_id) DO UPDATE SET measure_id = excluded.measure_id`,
       );
-      const clearAnalysisListing = database.prepare("DELETE FROM analysis_listing WHERE session_key = ?");
       const selectLatestPull = database.prepare(
         "SELECT COALESCE(MAX(number), 0) AS number FROM feed_pull WHERE session_key = ?",
       );
@@ -535,13 +535,14 @@ export function openIndexWriter(path: string): IndexWriter {
             agencyId,
           );
         }
-        // Which analysis documents the feed lists for each Measure, as this pull read it.
-        clearAnalysisListing.run(session);
+        // Which analysis documents the feed lists for each Measure, as this pull read it. The rows are kept, not
+        // replaced: a row this pull does not list is still counted until two complete pulls in a row have missed it,
+        // and the count reads that from the listing state (ADR-0030).
         for (const link of pulled.documentLinks) {
           if (link.kind !== "analysis") continue;
           const measure = link.relations.find((relation) => relation.relation === "measure");
           if (measure === undefined) throw new Error(`The analysis document ${link.id} names no Measure`);
-          insertAnalysisListing.run(link.id, session, measure.to);
+          upsertAnalysisListing.run(link.id, session, measure.to);
         }
         recordAsOf.run(session, asOf);
         recordSnapshot.run(session, pulled.snapshot.source, pulled.snapshot.commit, pulled.snapshot.commitDate);

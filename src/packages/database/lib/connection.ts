@@ -208,6 +208,8 @@ const schema = `
     measure_section TEXT,
     PRIMARY KEY (content_hash, parsed_as, ordinal)
   ) STRICT;
+  -- The analysis documents the feed has listed for each Measure (ADR-0013). Rows are kept, never replaced: the
+  -- count of the ones the store does not hold reads the listing state (feed_row_state) of each (ADR-0030).
   CREATE TABLE IF NOT EXISTS analysis_listing (
     document_id TEXT NOT NULL PRIMARY KEY,
     session_key TEXT NOT NULL,
