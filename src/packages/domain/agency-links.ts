@@ -89,7 +89,7 @@ export type StoredAgencyLink = {
 /** A unit a Fiscal Impact Statement lists that is not an Agency (GLOSSARY.md, "Unresolved unit"), with the statement. */
 export type StoredUnresolvedUnit = {
   unit: string;
-  statement: { id: DocumentId; sourceUrl: string };
+  statement: { id: DocumentId; sourceUrl: string; listing: Listing };
   /** Where the statement sits, as for an Agency Link. */
   node: LinkedNode;
 };

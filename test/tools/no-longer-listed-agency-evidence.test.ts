@@ -81,6 +81,13 @@ const itemOf = (read: Read, kind: string, node: string): Item | undefined =>
 const exampleOfItem = (item: Item | undefined, kind: string, document: string): FoundExample | undefined =>
   item?.evidence.find((group) => group.kind === kind)?.examples.find((example) => example.document_id === document);
 
+/** The item or example, which must exist: an absent flag on a thing that is missing proves nothing. */
+function present<T>(thing: T | undefined, what: string): T {
+  expect(thing, `${what} is there`).toBeDefined();
+  if (thing === undefined) throw new Error(`${what} is missing`);
+  return thing;
+}
+
 const measuresOf = (hits: Hit[]): string[] => [...new Set(hits.map((hit) => hit.measure ?? "none"))].toSorted();
 
 function clientAt(clients: ConnectedClient[], index: number): ConnectedClient {
@@ -168,6 +175,12 @@ describe("the Fiscal Impact Statement 85414 the feed no longer lists", () => {
       const was = readOf(before, era, "judicial-department");
       const now = readOf(after, era, "judicial-department");
 
+      // The precondition: before the change the statement is the Judicial Department's only evidence on SB 69.
+      expect(
+        was.found.groups.flatMap((group) =>
+          group.items.filter((item) => item.measure_id === sb69).map((item) => [group.evidence_kind, item.id]),
+        ),
+      ).toEqual([["fiscal-impact-statement", aEngrossed]]);
       expect(exampleOf(was, "judicial-department", "fiscal-impact-statement", statement)?.no_longer_listed).toBe(
         undefined,
       );
@@ -202,9 +215,18 @@ describe("the Fiscal Impact Statement 85414 the feed no longer lists", () => {
         const was = readOf(before, era, agency);
         const now = readOf(after, era, agency);
 
-        expect(exampleOf(now, agency, "fiscal-impact-statement", statement)?.no_longer_listed).toBeUndefined();
-        expect(itemOf(now, "fiscal-impact-statement", aEngrossed)?.no_longer_listed).toBeUndefined();
-        expect(itemOf(now, "named-in-text", aEngrossed)?.no_longer_listed).toBeUndefined();
+        // The precondition: before the change the Agency has the statement and its name in the Version's text on the node.
+        expect(present(itemOf(was, "named-in-text", aEngrossed), "the named-in-text item before").id).toBe(aEngrossed);
+        expect(
+          present(exampleOf(now, agency, "fiscal-impact-statement", statement), "the statement's example")
+            .no_longer_listed,
+        ).toBeUndefined();
+        expect(
+          present(itemOf(now, "fiscal-impact-statement", aEngrossed), "the statement's item").no_longer_listed,
+        ).toBeUndefined();
+        expect(
+          present(itemOf(now, "named-in-text", aEngrossed), "the named-in-text item").no_longer_listed,
+        ).toBeUndefined();
         expect(measuresOf(was.hits)).toContain(sb69);
         expect(measuresOf(now.hits)).toContain(sb69);
       },
@@ -283,8 +305,12 @@ describe("Testimony the feed no longer lists", () => {
       expect(exampleOf(now, boli, "testimony", real)?.no_longer_listed).toBe(true);
       expect(itemOf(now, "testimony", sb69)?.no_longer_listed).toBe(true);
       expect(exampleOfItem(itemOf(now, "testimony", sb69), "testimony", real)?.no_longer_listed).toBe(true);
-      expect(itemOf(now, "fiscal-impact-statement", aEngrossed)?.no_longer_listed).toBeUndefined();
-      expect(itemOf(now, "named-in-text", aEngrossed)?.no_longer_listed).toBeUndefined();
+      expect(
+        present(itemOf(now, "fiscal-impact-statement", aEngrossed), "the Bureau's statement item").no_longer_listed,
+      ).toBeUndefined();
+      expect(
+        present(itemOf(now, "named-in-text", aEngrossed), "the Bureau's named-in-text item").no_longer_listed,
+      ).toBeUndefined();
       // The Bureau has links on SB 69's other nodes, so search's filter still finds the Measure.
       expect(measuresOf(now.hits)).toContain(sb69);
     });
@@ -306,6 +332,122 @@ describe("Testimony the feed no longer lists", () => {
       expect(exampleOfItem(itemOf(now, "testimony", sb983), "testimony", madeUp)?.no_longer_listed).toBe(true);
       expect(measuresOf(now.hits)).not.toContain(sb983);
       expect(measuresOf(now.hits)).toContain(sb69);
+    });
+  });
+});
+
+// Testimony beside other listed evidence. MADE UP: CommTestId 900001 and 900002, both for SB 983 with the Organization
+// "Oregon State Treasury" (the registry's name), added with `addRows`. The fixture gives the Treasury no link on SB 983
+// (asserted before the change), so the two Testimony rows are its only evidence there, on the Measure node. The feed
+// stops listing 900001 only: 900002 is still listed, so the Treasury's link to SB 983 has a listed evidence document.
+describe("Testimony the feed no longer lists, beside Testimony it still lists", () => {
+  let system: System;
+  const clients: ConnectedClient[] = [];
+  const treasury = "oregon-state-treasury";
+  const sb983 = "measure-2025r1-sb983";
+  const before = new Map<string, Read>();
+  const after = new Map<string, Read>();
+
+  beforeAll(async () => {
+    system = await startSystem({
+      clockAt: "2026-08-01T17:00:00Z",
+      documents: true,
+      serverEnv: { MCP_RATE_LIMIT: "100000" },
+    });
+    for (const era of eras) clients.push(await connectClient(era, system.handler));
+    system.olis.addRows("CommitteePublicTestimonies", [
+      madeUpTestimonyRow({ commTestId: 900001, organization: "Oregon State Treasury" }),
+      madeUpTestimonyRow({ commTestId: 900002, organization: "Oregon State Treasury" }),
+    ]);
+    system.clock.set("2026-08-02T17:00:00Z");
+    await system.pullAgain();
+    for (const [index, era] of eras.entries())
+      before.set(era, await readAgency(clientAt(clients, index), treasury, "SB 983"));
+    stopListing(system.olis, "CommitteePublicTestimonies", (row) => row["CommTestId"] === 900001);
+    system.clock.set("2026-08-03T17:00:00Z");
+    await system.pullAgain();
+    system.clock.set("2026-08-04T17:00:00Z");
+    await system.pullAgain();
+    for (const [index, era] of eras.entries())
+      after.set(era, await readAgency(clientAt(clients, index), treasury, "SB 983"));
+  });
+
+  afterAll(async () => {
+    for (const client of clients) await client.close();
+    await system.stop();
+  });
+
+  describe.for(eras)("for a %s client", (era) => {
+    it("flags the Testimony document that is not listed, and leaves the Treasury's link unflagged everywhere, SB 983 in search's filter", () => {
+      const was = before.get(era);
+      const now = after.get(era);
+      if (was === undefined || now === undefined) throw new Error(`No read for ${era}`);
+
+      expect(
+        was.found.groups.flatMap((group) =>
+          group.items.filter((item) => item.measure_id === sb983).map((item) => [group.evidence_kind, item.id]),
+        ),
+      ).toEqual([["testimony", sb983]]);
+      expect(documentOf(now, "testimony-2025r1-900001")?.no_longer_listed).toBe(true);
+      expect(documentOf(now, "testimony-2025r1-900002")).toBeDefined();
+      expect(documentOf(now, "testimony-2025r1-900002")?.no_longer_listed).toBeUndefined();
+      // In get_measure an example's flag is its link's: the Treasury's link has a listed document, so neither example is flagged.
+      for (const id of ["testimony-2025r1-900001", "testimony-2025r1-900002"])
+        expect(
+          present(exampleOf(now, treasury, "testimony", id), `the example of ${id}`).no_longer_listed,
+        ).toBeUndefined();
+      const item = present(itemOf(now, "testimony", sb983), "the Treasury's testimony item");
+      expect(item.no_longer_listed).toBeUndefined();
+      expect(exampleOfItem(item, "testimony", "testimony-2025r1-900001")?.no_longer_listed).toBe(true);
+      expect(measuresOf(now.hits)).toContain(sb983);
+    });
+  });
+});
+
+// A statement named only by an unresolved unit is flagged in agency_links.documents like any document. SB 983's
+// A-Engrossed Fiscal Impact Statement is analysis 91466 (feed/MeasureAnalysisDocuments.json, Version "A"); it names no
+// Agency, only units that are not Agencies (agency-links.test.ts, "units that are not Agencies"), so no Agency Link names it.
+describe("a statement named only by an unresolved unit that the feed no longer lists", () => {
+  let system: System;
+  const clients: ConnectedClient[] = [];
+  const before = new Map<string, Measure>();
+  const after = new Map<string, Measure>();
+
+  beforeAll(async () => {
+    system = await startSystem({
+      clockAt: "2026-08-01T17:00:00Z",
+      documents: true,
+      serverEnv: { MCP_RATE_LIMIT: "100000" },
+    });
+    for (const era of eras) clients.push(await connectClient(era, system.handler));
+    for (const [index, era] of eras.entries())
+      before.set(era, (await call(clientAt(clients, index), "get_measure", { measure: "SB 983" })) as Measure);
+    stopListing(system.olis, "MeasureAnalysisDocuments", (row) => row["MeasureAnalysisId"] === "91466");
+    system.clock.set("2026-08-02T17:00:00Z");
+    await system.pullAgain();
+    system.clock.set("2026-08-03T17:00:00Z");
+    await system.pullAgain();
+    for (const [index, era] of eras.entries())
+      after.set(era, (await call(clientAt(clients, index), "get_measure", { measure: "SB 983" })) as Measure);
+  });
+
+  afterAll(async () => {
+    for (const client of clients) await client.close();
+    await system.stop();
+  });
+
+  describe.for(eras)("for a %s client", (era) => {
+    it("get_measure flags the statement in agency_links.documents with the time the feed last listed it, and not the other statement", () => {
+      const documents = (read: Map<string, Measure>): Measure["agency_links"]["documents"] =>
+        read.get(era)?.agency_links.documents ?? [];
+      const find = (read: Map<string, Measure>, id: string) => documents(read).find((document) => document.id === id);
+
+      expect(find(before, "analysis-2025r1-91466")).toBeDefined();
+      expect(find(before, "analysis-2025r1-91466")?.no_longer_listed).toBeUndefined();
+      expect(find(after, "analysis-2025r1-91466")?.no_longer_listed).toBe(true);
+      expect(find(after, "analysis-2025r1-91466")?.last_listed_at).toBe("2026-08-01T10:00:00-07:00");
+      expect(find(after, "analysis-2025r1-88044")).toBeDefined();
+      expect(find(after, "analysis-2025r1-88044")?.no_longer_listed).toBeUndefined();
     });
   });
 });
