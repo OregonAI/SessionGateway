@@ -273,11 +273,11 @@ export const versionEntryOutput = z.object({
   label: z.string().describe('The Version as the Legislature describes it: "Introduced", "A-Engrossed", "Enrolled"...'),
   source_url: z.string().describe("Where the Legislature publishes the Version."),
   no_longer_listed: noLongerListedOutput,
-  same_as: z
+  same_links_as: z
     .string()
     .optional()
     .describe(
-      "Present when this Version's entry is exactly the entry of the Version before it in print order, whose id this is: the same reading (text_read, not_read_reason and statute_links), the same Statutes Affected Table block beside it or none, and the same no_longer_listed. The reading and the table block are then left out, and are that Version's. A Version whose entry differs from the one before it only in its table block or its no_longer_listed is listed in full, and only a Version that was read can be the same as another.",
+      "Present when this Version's reading (text_read, not_read_reason and statute_links) is exactly that of the Version before it in print order, whose id this is. The reading is then left out, and is that Version's. The Version's own Statutes Affected Table block and no_longer_listed are shown either way, whatever the Version before it has. Only a Version that was read can have the links of another.",
     ),
   text_read: parseResultFields.text_read.optional(),
   not_read_reason: parseResultFields.not_read_reason.optional(),
@@ -316,7 +316,7 @@ export function versionsOutputOf<Entry extends z.ZodType>(entry: Entry): z.ZodAr
   return z
     .array(entry)
     .describe(
-      "The Measure's Versions that this index holds, in the order they were printed (a Version with no place in that order, such as a minority report's, comes last), each with the Statute Links read from its text, or with same_as when the text was read and the whole entry (the links, the Statutes Affected Table's block beside them and no_longer_listed) is exactly that of the Version before it (an Enrolled Version that repeats the last Engrossed one). A Printed Amendment is not a Version and is not read.",
+      "The Measure's Versions that this index holds, in the order they were printed (a Version with no place in that order, such as a minority report's, comes last), each with the Statute Links read from its text, or with same_links_as when the text was read and its Statute Links are exactly those of the Version before it (an Enrolled Version that repeats the last Engrossed one). Each Version shows its own Statutes Affected Table block and its own no_longer_listed either way. A Printed Amendment is not a Version and is not read.",
     );
 }
 
@@ -453,33 +453,34 @@ export function statuteLinksBySourceOf(
   };
 }
 
-/** A Version's entry with only what makes it that Version: what `same_as` keeps of it. */
-type SameAsEntry = Pick<VersionEntry, "id" | "label" | "source_url" | "no_longer_listed"> & { same_as: string };
+/** The fields of a Version's entry that say what was read of its text: what `same_links_as` compares and leaves out. */
+type Reading = Pick<VersionEntry, "text_read" | "not_read_reason" | "statute_links">;
 
-/** What an entry says beyond the Version it is (its id, label and source_url): everything `same_as` compares. */
-function saidBy(entry: VersionEntry): string {
-  return JSON.stringify({ ...entry, id: undefined, label: undefined, source_url: undefined });
+/** A Version's entry without its reading, which is the Version before it's: everything else is the Version's own. */
+type SameLinksAsEntry<Entry extends VersionEntry> = Omit<Entry, keyof Reading> & { same_links_as: string };
+
+const readingFields: ReadonlySet<string> = new Set<keyof Reading>(["text_read", "not_read_reason", "statute_links"]);
+
+/** What was read of a Version's text, as one string to compare. */
+function readingOf(entry: VersionEntry): string {
+  return JSON.stringify([entry.text_read, entry.not_read_reason, entry.statute_links]);
 }
 
 /**
- * The Versions in print order, each listed in full or as `same_as` the Version before it. A Version whose whole entry, as an
- * agent would otherwise see it, is exactly that of the Version before it says `same_as` that Version's id and leaves out
- * the rest, so that an Enrolled Version that repeats the last Engrossed one is not listed twice (L1 of the fix pass of #16:
- * 15,145 characters of SB 69's answer). The whole entry is compared: the reading, the Statutes Affected Table's block that
- * ticket #22 sets beside it, and the no_longer_listed flag of ticket #18, so a Version that differs only in its table block
- * or its flag is listed in full; the flag, which is the Version's own, is kept. It runs on the entries as get_measure shows
- * them, after the table's blocks are added. A Version that was not read is never the same as another: it has said nothing.
+ * The Versions in print order, each with its reading or as `same_links_as` the Version before it (ADR-0036). A Version
+ * whose reading is exactly that of the Version before it says `same_links_as` that Version's id and leaves its reading out,
+ * so that an Enrolled Version that repeats the last Engrossed one is not listed twice (15,145 characters of SB 69's answer).
+ * Only the reading is compared: the Statutes Affected Table's block that ticket #22 sets beside a Version, and the
+ * no_longer_listed flag of ticket #18, are the Version's own and are kept, whatever the Version before it has. A Version
+ * that was not read is never the same as another: it has said nothing.
  */
-export function versionsWithSameAs<Entry extends VersionEntry>(entries: readonly Entry[]): (Entry | SameAsEntry)[] {
+export function versionsWithSameLinksAs<Entry extends VersionEntry>(
+  entries: readonly Entry[],
+): (Entry | SameLinksAsEntry<Entry>)[] {
   return entries.map((entry, index) => {
     const before = entries[index - 1];
-    if (before === undefined || entry.text_read !== true || saidBy(entry) !== saidBy(before)) return entry;
-    return {
-      id: entry.id,
-      label: entry.label,
-      source_url: entry.source_url,
-      ...noLongerListedFlag(entry.no_longer_listed !== true),
-      same_as: before.id,
-    };
+    if (before === undefined || entry.text_read !== true || readingOf(entry) !== readingOf(before)) return entry;
+    const own = Object.fromEntries(Object.entries(entry).filter(([field]) => !readingFields.has(field)));
+    return { ...(own as Omit<Entry, keyof Reading>), same_links_as: before.id };
   });
 }

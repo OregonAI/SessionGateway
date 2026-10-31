@@ -166,7 +166,7 @@ describe("a deployment that does not name the table", () => {
       const links = (get.outputSchema as Schema).properties?.["statute_links_by_source"];
 
       expect(links?.properties?.["versions"]?.description).toBe(
-        "The Measure's Versions that this index holds, in the order they were printed (a Version with no place in that order, such as a minority report's, comes last), each with the Statute Links read from its text, or with same_as when the text was read and the whole entry (the links, the Statutes Affected Table's block beside them and no_longer_listed) is exactly that of the Version before it (an Enrolled Version that repeats the last Engrossed one). A Printed Amendment is not a Version and is not read.",
+        "The Measure's Versions that this index holds, in the order they were printed (a Version with no place in that order, such as a minority report's, comes last), each with the Statute Links read from its text, or with same_links_as when the text was read and its Statute Links are exactly those of the Version before it (an Enrolled Version that repeats the last Engrossed one). Each Version shows its own Statutes Affected Table block and its own no_longer_listed either way. A Printed Amendment is not a Version and is not read.",
       );
     });
 

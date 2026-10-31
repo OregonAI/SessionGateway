@@ -1,5 +1,5 @@
 // Seam 1 (test/CLAUDE.md): the two-pull rule of ticket #18 (ADR-0005, ADR-0030) seen through what ticket #16 added:
-// find_measures, search's Agency filter and get_measure's same_as. A row two complete pulls in a row have not listed
+// find_measures, search's Agency filter and get_measure's same_links_as. A row two complete pulls in a row have not listed
 // leaves search, whatever the filters, and stays in every list, flagged.
 //
 // One system, as the feed stood on 2026-08-01 with its documents, is changed once: the feed stops listing SB 69's Enrolled
@@ -28,7 +28,7 @@ type Hit = { id: string };
 type VersionEntry = {
   id: string;
   no_longer_listed?: boolean;
-  same_as?: string;
+  same_links_as?: string;
   text_read?: boolean;
   statute_links?: StatuteLinks;
 };
@@ -136,17 +136,20 @@ describe.for(eras)("a Version the feed no longer lists, for a %s client", (era) 
     expect(now).toContain(aEngrossedId);
   });
 
-  it("get_measure lists the Version in full with its flag: it differs from the A-Engrossed Version only in the flag, so it is not same_as", () => {
+  it("get_measure says the Version's links are the A-Engrossed Version's beside its own flag (ADR-0036)", () => {
     const was = readOf(before, clientOf()).versions.find((version) => version.id === enrolledId);
     const versions = readOf(after, clientOf()).versions;
     const enrolled = versions.find((version) => version.id === enrolledId);
     const aEngrossed = versions.find((version) => version.id === aEngrossedId);
 
-    expect(was?.same_as).toBe(aEngrossedId);
+    expect(was?.same_links_as).toBe(aEngrossedId);
+    expect(was?.no_longer_listed).toBeUndefined();
+    // Its links are still the A-Engrossed Version's, so they are not listed again; the flag is its own and is shown.
     expect(enrolled?.no_longer_listed).toBe(true);
-    expect(enrolled?.same_as).toBeUndefined();
-    expect(enrolled?.text_read).toBe(true);
-    expect(enrolled?.statute_links).toEqual(aEngrossed?.statute_links);
+    expect(enrolled?.same_links_as).toBe(aEngrossedId);
+    expect(enrolled?.text_read).toBeUndefined();
+    expect(enrolled?.statute_links).toBeUndefined();
     expect(aEngrossed?.no_longer_listed).toBeUndefined();
+    expect(aEngrossed?.text_read).toBe(true);
   });
 });

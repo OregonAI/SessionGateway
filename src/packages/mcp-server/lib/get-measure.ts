@@ -13,7 +13,7 @@ import type { CommitteeVote, FloorVote, LegislatorVote } from "#/packages/domain
 import { agencyLinksOf, agencyLinksOutput } from "./agency-links.ts";
 import { analysisDocumentsOf, analysisDocumentsOutput } from "./analysis.ts";
 import { measureListingOutput, measureListingShown } from "./listing.ts";
-import { statuteLinksBySourceOf, versionsWithSameAs } from "./statute-links.ts";
+import { statuteLinksBySourceOf, versionsWithSameLinksAs } from "./statute-links.ts";
 import { statuteLinksBySourceWithTable, statuteLinksBySourceWithTableOutput } from "./statutes-affected-table.ts";
 import type { LiveLookup, LiveStatusReader } from "./live-status.ts";
 
@@ -292,7 +292,7 @@ export async function getMeasure(
   const live = await liveStatus.lookup(measure);
   const listing = reader.measureListing(measure);
   const statuteLinksBySource = statuteLinksBySourceOf(measure, versions, reader.findMeasureAmendments(measure));
-  // The table's blocks are set beside the Versions first, so that same_as compares the whole entry an agent would see.
+  // The table's blocks are set beside the Versions first; same_links_as keeps each Version's own block (ADR-0036).
   const withTable = statuteLinksBySourceWithTable(
     statuteLinksBySource,
     versions,
@@ -310,7 +310,7 @@ export async function getMeasure(
         reader.analysisDocuments(measure),
         reader.analysisNotHeld(measure),
       ),
-      statute_links_by_source: { ...withTable, versions: versionsWithSameAs(withTable.versions) },
+      statute_links_by_source: { ...withTable, versions: versionsWithSameLinksAs(withTable.versions) },
       agency_links: agencyLinksOf(reader.findAgencyLinks(session, { measure }), reader.findUnresolvedUnits(measure), {
         parents: reader.agencyParents(),
         supersededAmendments: new Set(statuteLinksBySource.superseded_amendments.map((amendment) => amendment.id)),
