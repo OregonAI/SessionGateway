@@ -148,6 +148,26 @@ describe("the entry scripts", () => {
     expect(await exited).toBe(0);
   }, 20_000);
 
+  // Ticket #17, ADR-0039: the two rhythms are configuration, read through the config schema at start-up.
+  describe.for([
+    { script: "src/bin/ingest.ts", variable: "INGEST_INCREMENTS", bad: "hourly" },
+    { script: "src/bin/ingest.ts", variable: "INGEST_FULL_PULL", bad: "fortnightly" },
+    { script: "src/bin/server.ts", variable: "INGEST_INCREMENTS", bad: "hourly" },
+    { script: "src/bin/server.ts", variable: "INGEST_FULL_PULL", bad: "fortnightly" },
+  ])("$script with $variable=$bad", ({ script, variable, bad }) => {
+    it("fails at start-up, naming the variable and not its value", async () => {
+      const { olis, database } = await fakeOlisAndDatabase();
+      const env = { ...workerEnvironment(olis, database.path), [variable]: bad };
+
+      const finished = await run(script, env, 20_000);
+
+      expect(finished.code).not.toBe(0);
+      expect(finished.code).not.toBeNull();
+      expect(finished.stderr).toContain(variable);
+      expect(finished.stderr).not.toContain(bad);
+    }, 30_000);
+  });
+
   it("src/bin/ingest.ts writes the Legislator Codes it could not resolve to a report beside the database", async () => {
     // A sponsor row (SB 69) whose code has no Legislators row and no alias; the cache's real codes
     // all resolve, so the report would otherwise be empty.
