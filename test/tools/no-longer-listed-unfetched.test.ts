@@ -127,7 +127,8 @@ describe("the output schemas of testimony and meetings", () => {
   function fetchedDescriptions(schema: unknown): string[] {
     if (typeof schema !== "object" || schema === null) return [];
     const found: string[] = [];
-    for (const [name, value] of Object.entries(schema)) {
+    const entries: [string, unknown][] = Object.entries(schema);
+    for (const [name, value] of entries) {
       if (name === "fetched" && typeof value === "object" && value !== null && "description" in value) {
         found.push(String(value.description));
       } else {
