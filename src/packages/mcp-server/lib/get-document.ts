@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
 import { documentKinds, parseDocumentReference, relations } from "#/packages/domain/documents.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
+import { documentListingOutput, documentListingShown } from "./listing.ts";
 import { splitIntoParts } from "./parts.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
@@ -48,17 +49,7 @@ export const getDocumentOutput = z.object({
   part_count: z.number().describe("How many parts the text has."),
   text: z.string().describe("This part of the text, exactly as published, with a form feed between pages."),
   related: z.array(related).describe("The nodes this document points at."),
-  no_longer_listed: z
-    .boolean()
-    .describe(
-      "True when the Legislature's feed has stopped listing the document: two complete full pulls in a row did not list it. It is then left out of search results, and this call still serves it, as it was fetched. For a Proposed Amendment it is true when none of its postings is listed.",
-    ),
-  last_listed_at: z
-    .string()
-    .nullable()
-    .describe(
-      "When the feed last listed the document: the as-of time of the latest complete full pull that did, in Pacific time with its UTC offset. It is the index's as-of time while the latest pull lists the document. Null while no complete full pull has listed it: this index was built before it kept that, so the document counts as listed (no_longer_listed is false) and the time is not known.",
-    ),
+  ...documentListingOutput,
   as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
   notice: z.string().describe("A reminder that this is not the official record."),
 });
@@ -124,8 +115,7 @@ export function getDocument(
         meaning: node.meaning,
         document_id: node.relation === "posted_to" ? node.documentId : null,
       })),
-      no_longer_listed: !found.listing.listed,
-      last_listed_at: found.listing.lastListedAt,
+      ...documentListingShown(found.listing),
       as_of: asOf,
       notice: NON_OFFICIAL_NOTICE,
     },

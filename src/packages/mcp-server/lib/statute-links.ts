@@ -18,6 +18,7 @@ import {
   type StoredAmendment,
   type StoredVersion,
 } from "#/packages/domain/statute-links.ts";
+import { noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 
 /** The measure sections a target is linked in: null stands for text with no numbered sections. */
 const measureSectionsOutput = z
@@ -182,6 +183,7 @@ export const postingOutput = z.object({
     .describe(
       "True when this index holds the posted file, so that get_document can read it. The Legislature lists the posting either way.",
     ),
+  no_longer_listed: noLongerListedOutput,
 });
 
 export function postingShown(posting: AmendmentPosting): z.infer<typeof postingOutput> {
@@ -194,6 +196,7 @@ export function postingShown(posting: AmendmentPosting): z.infer<typeof postingO
     committee_name: posting.committeeName,
     meaning: posting.meaning,
     fetched: posting.fetched,
+    ...noLongerListedFlag(posting.listed),
   };
 }
 
@@ -274,6 +277,7 @@ const versionEntryOutput = z.object({
   id: z.string().describe("The Version's id, which get_document resolves."),
   label: z.string().describe('The Version as the Legislature describes it: "Introduced", "A-Engrossed", "Enrolled"...'),
   source_url: z.string().describe("Where the Legislature publishes the Version."),
+  no_longer_listed: noLongerListedOutput,
   ...parseResultFields,
 });
 
@@ -426,6 +430,7 @@ export function statuteLinksBySourceOf(
       id: version.id,
       label: version.label,
       source_url: version.sourceUrl,
+      ...noLongerListedFlag(version.listed),
       ...parseResultShown(version.parse),
     })),
     proposed_amendments: current,

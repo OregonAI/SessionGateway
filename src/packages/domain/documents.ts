@@ -550,6 +550,8 @@ export type AmendmentPosting = {
   meaning: string | null;
   /** Whether the store holds the posting's file. The feed lists the posting either way. */
   fetched: boolean;
+  /** False once two complete full pulls in a row have not listed the posting (ADR-0030). */
+  listed: boolean;
 };
 
 /** A document the feed lists for a meeting, by what the feed calls it. */
