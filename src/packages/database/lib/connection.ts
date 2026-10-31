@@ -248,7 +248,7 @@ const schema = `
     content_hash TEXT NOT NULL,
     reason TEXT NOT NULL
   ) STRICT;
-  -- When OLIS created the feed's row for each document it links (the row's CreatedDate): the document's posted time
+  -- When OLIS created the feed's row for each document it links (the row's CreatedDate): the document's created time
   -- (ADR-0028). Written for every link before any file is fetched, as the listing of analysis documents is, and
   -- refreshed at every pull, so a document whose file did not come still has its time.
   CREATE TABLE IF NOT EXISTS document_created (

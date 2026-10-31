@@ -22,8 +22,8 @@ type Item = {
   title: string;
   measure_id: string;
   source_url: string;
-  posted_at: string | null;
-  last_posted_at: string | null;
+  created_at: string | null;
+  last_created_at: string | null;
   evidence: KindEvidence[];
 };
 type Group = { evidence_kind: string; description: string; total: number; items: Item[] };
@@ -114,15 +114,15 @@ describe("find_measures for an Agency, with the clock on 2025-01-24", () => {
       ]);
     });
 
-    it("gives each item's posted time: the earliest posting, and the latest, as OLIS created them", async () => {
+    it("gives each item's created time: the earliest posting, and the latest, as OLIS created them", async () => {
       const found = await find(at.client(era), { agency: boli, since: "2025-01-23" });
 
       const [second, first] = groupOf(found, "derived").items;
-      expect([second?.posted_at, second?.last_posted_at]).toEqual([
+      expect([second?.created_at, second?.last_created_at]).toEqual([
         "2025-01-23T16:27:27.63-08:00",
         "2025-01-23T16:27:37.073-08:00",
       ]);
-      expect([first?.posted_at, first?.last_posted_at]).toEqual([
+      expect([first?.created_at, first?.last_created_at]).toEqual([
         "2025-01-17T16:39:33.207-08:00",
         "2025-01-23T16:27:37.06-08:00",
       ]);
@@ -140,13 +140,13 @@ describe("find_measures for an Agency, with the clock on 2025-01-24", () => {
       expect(found.total).toBe(4);
     });
 
-    it("returns an item posted at the time asked for and none posted before it", async () => {
+    it("returns an item created at the time asked for and none created before it", async () => {
       const found = await find(at.client(era), { agency: boli, since: "2025-01-23T16:27:37.073-08:00" });
 
       expect(groupOf(found, "derived").items.map((item) => item.id)).toEqual(["amendment-2025r1-sb69-2"]);
     });
 
-    it("returns nothing posted since the day after", async () => {
+    it("returns nothing created since the day after", async () => {
       const found = await find(at.client(era), { agency: boli, since: "2025-01-24" });
 
       expect(found.total).toBe(0);
@@ -247,7 +247,7 @@ describe("find_measures for an Agency, with the clock on 2025-01-31", () => {
       const found = await find(at.client(era), { agency: boli, since: "2025-01-30" });
 
       const naming = groupOf(found, "fiscal-impact-statement");
-      expect(naming.items.map((item) => [item.id, item.type, item.posted_at, item.last_posted_at])).toEqual([
+      expect(naming.items.map((item) => [item.id, item.type, item.created_at, item.last_created_at])).toEqual([
         ["measure-2025r1-sb69", "measure", "2025-01-30T10:43:53.29-08:00", "2025-01-30T10:43:53.29-08:00"],
       ]);
       expect(
@@ -267,15 +267,15 @@ describe("find_measures for an Agency, with the clock on 2025-02-04", () => {
   const at = useSystemAt("2025-02-04T20:00:00Z");
 
   describe.for(eras)("for a %s client", (era) => {
-    it("returns the A-Engrossed Version in both groups, each with its own posted time", async () => {
+    it("returns the A-Engrossed Version in both groups, each with its own created time", async () => {
       const found = await find(at.client(era), { agency: boli, since: "2025-01-30" });
 
       const touching = groupOf(found, "derived");
-      expect(touching.items.map((item) => [item.id, item.type, item.posted_at])).toEqual([
+      expect(touching.items.map((item) => [item.id, item.type, item.created_at])).toEqual([
         ["version-2025r1-sb69-a-engrossed", "version", "2025-02-03T16:42:28.117-08:00"],
       ]);
       const naming = groupOf(found, "fiscal-impact-statement");
-      expect(naming.items.map((item) => [item.id, item.type, item.posted_at])).toEqual([
+      expect(naming.items.map((item) => [item.id, item.type, item.created_at])).toEqual([
         ["version-2025r1-sb69-a-engrossed", "version", "2025-01-30T10:43:53.29-08:00"],
       ]);
       expect(
