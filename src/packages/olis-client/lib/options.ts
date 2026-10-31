@@ -1,7 +1,27 @@
+/**
+ * How many rows the feed counted for one whole entity set of a Session, and how many came. A set is complete when
+ * they are the same; the pull is complete when every set it reads is (ADR-0005).
+ */
+export type SetCount = {
+  /** The feed's own name for the set, such as "Measures". */
+  entitySet: string;
+  /** The feed's count: `/$count`, or `$inlinecount` when that is the one the rows miss. */
+  counted: number;
+  /** The rows the pages held. */
+  read: number;
+};
+
 export type OlisClientOptions = {
   /** The service root, ending in a slash: https://api.oregonlegislature.gov/odata/odataservice.svc/ */
   baseUrl: string;
   fetch: typeof fetch;
+  /**
+   * Told, for every whole entity set that is read (the pull's reads, not the live lookup's), how many rows the feed
+   * counted and how many came. When it is given, a set that is short of its count is not an error: it is handed on
+   * like any other, so that a pull can read every set and report each short one before it stops. When it is absent,
+   * as in the server's client, a short read throws.
+   */
+  onSetRead?: (count: SetCount) => void;
   /** How documents are fetched. Only the worker's client has them: the server's reads the feed alone. */
   documents?: {
     /** The origin the documents are fetched from: OLIS's own, https://olis.oregonlegislature.gov, except in a test. */

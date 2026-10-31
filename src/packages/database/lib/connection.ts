@@ -214,6 +214,18 @@ const schema = `
     measure_id TEXT NOT NULL
   ) STRICT;
   CREATE INDEX IF NOT EXISTS analysis_listing_measure ON analysis_listing (measure_id);
+  -- The CommitteeMembers rows (ADR-0030). The set's declared key is not unique, so a row is told apart by all of
+  -- its properties: row_key is the whole row. No tool reads the table yet.
+  CREATE TABLE IF NOT EXISTS committee_member (
+    session_key TEXT NOT NULL,
+    row_key TEXT NOT NULL,
+    committee_code TEXT NOT NULL,
+    legislator_code TEXT NOT NULL,
+    title TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    modified_at TEXT,
+    PRIMARY KEY (session_key, row_key)
+  ) STRICT;
   -- The two-pull rule (ADR-0005, ADR-0030). feed_pull has a row for each complete full pull of a Session,
   -- numbered from 1; a pull that was refused for being short of its counts has none. feed_row has a row for
   -- every row the index keeps from the feed, by its entity set and its key, with the number of the latest

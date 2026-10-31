@@ -37,7 +37,7 @@ import {
   type Resolution,
   type UnresolvedLegislatorCode,
 } from "#/packages/legislators/resolver.ts";
-import { createOlisClient, type OlisClient } from "#/packages/olis-client/index.ts";
+import { createOlisClient, type OlisClient, type SetCount } from "#/packages/olis-client/index.ts";
 import { loadSnapshot, type Snapshot } from "#/packages/oregonai-snapshot/index.ts";
 import { extractPdfText, type ExtractedPdf } from "#/packages/pdf-text/index.ts";
 import { parseStatuteLinks, readAmendedVersionHeader } from "#/packages/statute-links/index.ts";
@@ -259,13 +259,28 @@ async function vectorsForNewPassages(
   };
 }
 
+/** What the build report says of one set the pull read. */
+function setReportOf(count: SetCount): { entity_set: string; counted: number; read: number; complete: boolean } {
+  return {
+    entity_set: count.entitySet,
+    counted: count.counted,
+    read: count.read,
+    complete: count.read === count.counted,
+  };
+}
+
 export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promise<FullPullResult> {
   // The snapshot is read before OLIS is: a build with no usable snapshot fails at once, naming the file.
   const snapshot = await loadSnapshot(config.snapshotPath);
   const asOf = formatPacific(deps.clock.now());
+  // Every whole set the pull reads says how many rows the feed counted and how many came (ADR-0005).
+  const setCounts: SetCount[] = [];
   const olis = createOlisClient({
     baseUrl: config.olisBaseUrl,
     fetch: deps.fetch,
+    onSetRead: (count) => {
+      setCounts.push(count);
+    },
     documents: {
       origin: config.olisDocumentOrigin,
       timeoutMs: deps.documentTimeoutMs ?? DEFAULT_DOCUMENT_TIMEOUT_MS,
@@ -281,10 +296,26 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
   const committees = await olis.readCommittees(config.session, deps.signal);
   const meetings = await olis.readMeetings(config.session, deps.signal);
   const agendaItems = await olis.readAgendaItems(config.session, deps.signal);
+  const committeeMembers = await olis.readCommitteeMembers(config.session, deps.signal);
   const links = [
     ...(await olis.readDocumentLinks(config.session, deps.signal)),
     ...meetings.flatMap((meeting) => (meeting.agenda === null ? [] : [meeting.agenda])),
   ];
+
+  // The pull is complete only when every set it read came with as many rows as the feed counted. One that is not
+  // stores nothing: the index goes on answering from the last complete pull, and no row is marked as missed by it.
+  const shortSets = setCounts.filter((count) => count.read !== count.counted);
+  if (shortSets.length > 0) {
+    writeBuildReport(buildReportPath(config.databasePath), {
+      session: config.session,
+      attempted_at: asOf,
+      pull: { complete: false, entity_sets: setCounts.map(setReportOf) },
+    });
+    const which = shortSets.map(
+      (set) => `Short read of ${set.entitySet}: OLIS counted ${set.counted} rows; read ${set.read}`,
+    );
+    throw new Error(`The full pull is incomplete, so it stored nothing. ${which.join("; ")}`);
+  }
 
   // A Member sponsor and the voter of a vote entry each name a Legislator by a Legislator Code; the
   // resolver says who that is.
@@ -294,6 +325,10 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     aliases: deps.legislatorAliases,
   });
   const sponsors = sponsorships.map((sponsorship) => sponsorRecordOf(sponsorship, resolver));
+  // A CommitteeMembers row names a person by a Legislator Code, but a task force's members are not all Legislators
+  // ("Shanbo Zhang", olis-odata.md gotcha 5): the code is stored as the feed writes it, and one that names no
+  // Legislator is reported with the others, never an error.
+  for (const member of committeeMembers) resolver.resolve("CommitteeMembers", member.legislatorCode);
   const floorVoteRecords = floorVotes.map((entry) => floorVoteRecordOf(entry, resolver));
   const committeeVoteRecords = committeeVotes.map((entry) => committeeVoteRecordOf(entry, resolver));
 
@@ -321,7 +356,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       agendaItems,
       documentLinks: links,
       testimony: testimonyRecordsOf(links, snapshot),
-      committeeMembers: [],
+      committeeMembers,
     });
     const stored = writer.storedDocumentIds(config.session);
     // A fetched file is unchanging (ADR-0005) but its feed row is not: OLIS changes a posting's Meaning,
@@ -371,9 +406,18 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     for (const file of writer.unreadStatuteFiles(config.session)) {
       writer.storeStatuteParse(statuteParseOf(file, writer.storedText(file.documentId), snapshot.orsSections));
     }
+    const listingCounts = new Map(writer.listingCounts(config.session).map((count) => [count.entitySet, count]));
     writeBuildReport(buildReportPath(config.databasePath), {
       session: config.session,
       as_of: asOf,
+      pull: {
+        complete: true,
+        entity_sets: setCounts.map((count) => ({
+          ...setReportOf(count),
+          listed: listingCounts.get(count.entitySet)?.listed ?? 0,
+          no_longer_listed: listingCounts.get(count.entitySet)?.noLongerListed ?? 0,
+        })),
+      },
       documents_without_text_layer: writer.documentsWithoutTextLayer(config.session).map((document) => ({
         id: document.id,
         source_url: document.sourceUrl,
