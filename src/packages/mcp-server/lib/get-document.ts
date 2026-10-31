@@ -4,6 +4,7 @@ import { documentKinds, parseDocumentReference, relations } from "#/packages/dom
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 import { splitIntoParts } from "./parts.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
+import type { Timestamp } from "#/packages/time/pacific.ts";
 
 export const getDocumentInput = z.object({
   id: z.string().describe('A document\'s id, such as "version-2025r1-sb69-a-engrossed" or "testimony-2025r1-117165".'),
@@ -69,7 +70,12 @@ export type GetDocumentResult =
   | { kind: "found"; document: GetDocumentOutput }
   | { kind: "unknown"; id: string; session: SessionKey }
   /** A Testimony the feed lists and the store has not fetched: a fact about the index, not a wrong id. */
-  | { kind: "not_held"; id: string; session: SessionKey; noLongerListed: boolean }
+  | { kind: "not_held"; id: string; session: SessionKey }
+  /**
+   * A row the feed no longer lists and the store never fetched the file of: the id is right, and no pull will
+   * fetch the file now.
+   */
+  | { kind: "no_longer_listed_not_held"; id: string; session: SessionKey; lastListedAt: Timestamp }
   | { kind: "no_such_part"; id: string; part: number; partCount: number };
 
 export function getDocument(
@@ -81,10 +87,13 @@ export function getDocument(
   const found = id === undefined ? undefined : reader.findDocument(id);
   if (id === undefined) return { kind: "unknown", id: input.id, session };
   if (found === undefined) {
-    const listing = reader.testimonyListing(id);
-    return listing === undefined
+    const unlisted = reader.findNoLongerListed(id);
+    if (unlisted !== undefined) {
+      return { kind: "no_longer_listed_not_held", id, session, lastListedAt: unlisted.lastListedAt };
+    }
+    return reader.testimonyListing(id) === undefined
       ? { kind: "unknown", id: input.id, session }
-      : { kind: "not_held", id, session, noLongerListed: !listing.listed };
+      : { kind: "not_held", id, session };
   }
   const stored = found.document;
   const parts = splitIntoParts(stored.text);
@@ -137,11 +146,12 @@ export function testimonyNotHeldMessage(id: string, session: SessionKey): string
 }
 
 /**
- * What an agent is told when the id is a Testimony the feed no longer lists (two complete full pulls in a row did
- * not list it) and the store never fetched its file. The id is right, but no pull will fetch the file now.
+ * What an agent is told when the id is a row the feed no longer lists (two complete full pulls in a row did not list
+ * it) and the store never fetched its file. The id is right, but no pull will fetch the file now, because the feed
+ * does not list the row.
  */
-export function testimonyNoLongerListedMessage(id: string, session: SessionKey): string {
-  return `Testimony "${id}" was listed in the ${session} Session and is not any more, and this index never fetched its file, so it holds no text for it.`;
+export function noLongerListedNotHeldMessage(id: string, session: SessionKey, lastListedAt: string): string {
+  return `The document "${id}" was listed in the ${session} Session and is not any more (the feed last listed it ${lastListedAt}). This index never fetched its file, and no later pull will fetch it, because the Legislature's feed no longer lists it, so the index holds no text for it.`;
 }
 
 /** What an agent is told when it asks for a part past the last one. */

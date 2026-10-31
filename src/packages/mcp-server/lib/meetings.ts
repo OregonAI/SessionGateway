@@ -7,6 +7,10 @@ import { checkFilters, type FilterFault } from "./filters.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 import { noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 
+/** What `fetched` says on every document a meeting lists: it is not the same for a row the feed no longer lists. */
+const fetchedDescription =
+  "True when this index holds the file, so get_document serves the id. False when it does not: either OLIS lists the row but the file is not here yet (a failed or not yet reached fetch), and get_document does not know the id until a later pull fetches it; or the row is flagged no_longer_listed, and then no pull will fetch the file, since OLIS does not list the row, and get_document answers with an error that says so. source_url is where to read it.";
+
 export const meetingsInput = z.object({
   measure: z
     .string()
@@ -57,11 +61,7 @@ const meetingOutput = z.object({
       id: z.string().describe("The agenda's id, such as agenda-2025r1-slb-2025-01-30-0800. Give it to get_document."),
       label: z.string().describe("What OLIS calls it: Agenda."),
       source_url: z.string().describe("Where the Legislature publishes the file."),
-      fetched: z
-        .boolean()
-        .describe(
-          "True when this index holds the file, so get_document serves the id. False when OLIS lists it but the file is not here yet (a failed or not yet reached fetch): source_url is where to read it, and get_document does not know the id until a later pull fetches it.",
-        ),
+      fetched: z.boolean().describe(fetchedDescription),
       no_longer_listed: noLongerListedOutput,
     })
     .nullable()
@@ -106,11 +106,7 @@ const meetingOutput = z.object({
           ),
         measure_id: z.string().nullable().describe("The Measure OLIS files the Exhibit under, when it names one."),
         source_url: z.string().describe("Where the Legislature publishes the file."),
-        fetched: z
-          .boolean()
-          .describe(
-            "True when this index holds the file, so get_document serves the id. False when OLIS lists it but the file is not here yet (a failed or not yet reached fetch): source_url is where to read it, and get_document does not know the id until a later pull fetches it.",
-          ),
+        fetched: z.boolean().describe(fetchedDescription),
         no_longer_listed: noLongerListedOutput,
       }),
     )
@@ -125,11 +121,7 @@ const meetingOutput = z.object({
           .describe("The Recording Log's id, such as recording-log-2025r1-288741. Give it to get_document."),
         label: z.string().describe("What OLIS calls it: Recording Log."),
         source_url: z.string().describe("Where the Legislature publishes the file."),
-        fetched: z
-          .boolean()
-          .describe(
-            "True when this index holds the file, so get_document serves the id. False when OLIS lists it but the file is not here yet (a failed or not yet reached fetch): source_url is where to read it, and get_document does not know the id until a later pull fetches it.",
-          ),
+        fetched: z.boolean().describe(fetchedDescription),
         no_longer_listed: noLongerListedOutput,
       }),
     )
@@ -152,11 +144,7 @@ const meetingOutput = z.object({
           .string()
           .describe("The posting: the document with the text posted to this meeting. Give it to get_document."),
         source_url: z.string().describe("Where the Legislature publishes the posted file."),
-        fetched: z
-          .boolean()
-          .describe(
-            "True when this index holds the file, so get_document serves the id. False when OLIS lists it but the file is not here yet (a failed or not yet reached fetch): source_url is where to read it, and get_document does not know the id until a later pull fetches it.",
-          ),
+        fetched: z.boolean().describe(fetchedDescription),
         no_longer_listed: noLongerListedOutput,
       }),
     )

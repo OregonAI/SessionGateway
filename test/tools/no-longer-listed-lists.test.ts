@@ -164,6 +164,7 @@ describe.for(eras)("get_document on a Testimony no pull fetched, for a %s client
         expect(outcome.text).toContain("testimony-2025r1-117165");
         expect(outcome.text).toContain("is not any more");
         expect(outcome.text).toContain("never fetched its file");
+        expect(outcome.text).toContain("no later pull will fetch it");
         expect(outcome.text).not.toContain("next pull fetches");
       } finally {
         await connected.close();
