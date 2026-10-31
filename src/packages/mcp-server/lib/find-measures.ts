@@ -2,15 +2,23 @@
 // Amendments that an Agency Link or a Statute Link ties to an Agency, optionally only the ones posted since a time.
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
-import { agencyEvidenceKinds, type LinkedNode, type StoredAgencyLink } from "#/packages/domain/agency-links.ts";
-import { parseAmendmentNumber, type AmendmentId, type DocumentId } from "#/packages/domain/documents.ts";
 import {
-  citationOfMeasureId,
-  parseMeasureReference,
-  type MeasureId,
-  type SessionKey,
-} from "#/packages/domain/index.ts";
-import { parseAgencyId } from "#/packages/domain/oregonai.ts";
+  agencyEvidenceKinds,
+  type LinkedNode,
+  type StoredAgencyLink,
+  type StoredStatuteLinked,
+} from "#/packages/domain/agency-links.ts";
+import { parseAmendmentNumber, type AmendmentId, type DocumentId } from "#/packages/domain/documents.ts";
+import { citationOfMeasureId, measureIdOf, parseMeasureReference, type SessionKey } from "#/packages/domain/index.ts";
+import {
+  parseAgencyId,
+  parseOrsChapterReference,
+  parseOrsSectionReference,
+  type AgencyId,
+  type OrsChapterId,
+  type OrsSectionId,
+} from "#/packages/domain/oregonai.ts";
+import { compareMeasureSections, statuteLinkKinds } from "#/packages/domain/statute-links.ts";
 import { atPacificLocalTime, type Timestamp } from "#/packages/time/pacific.ts";
 import { compareLinks, evidenceOutput, evidenceShown, withoutRepeats } from "./agency-links.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
@@ -69,6 +77,34 @@ export const findMeasuresInput = z.object({
 const groupKinds = [...agencyEvidenceKinds, "statute-link"] as const;
 type GroupKind = (typeof groupKinds)[number];
 
+/**
+ * An item's evidence: an Agency Link's (agency-links.ts), or for an ORS section or chapter a Statute Link to it, with the
+ * kind of the link, the target it points at and the measure sections it is read in.
+ */
+const findEvidenceOutput = evidenceOutput.extend({
+  kind: z
+    .enum(groupKinds)
+    .describe(
+      'Why the item is here. For an Agency: "derived", "fiscal-impact-statement", "named-in-text" or "testimony" (see the groups). For an ORS section or chapter: "statute-link".',
+    ),
+  link_kind: z
+    .enum(statuteLinkKinds)
+    .optional()
+    .describe('For "statute-link": what the link does to its target: amends, repeals, adds-to or cites.'),
+  target_id: z
+    .string()
+    .optional()
+    .describe(
+      'For "statute-link": the ORS section (ors-653.616) or chapter (ors-chapter-657b) the link points at. OregonAI has no page for a chapter.',
+    ),
+  measure_sections: z
+    .array(z.string().nullable())
+    .optional()
+    .describe(
+      'For "statute-link": the measure sections the link is read in, as the text prints them, in order; null when the text has no numbered sections.',
+    ),
+});
+
 const itemOutput = z.object({
   id: z
     .string()
@@ -100,7 +136,7 @@ const itemOutput = z.object({
     .number()
     .int()
     .describe("How many pieces of evidence the item has, of which evidence lists the first ones."),
-  evidence: z.array(evidenceOutput).describe(`The item's evidence, at most ${MAX_EVIDENCE}.`),
+  evidence: z.array(findEvidenceOutput).describe(`The item's evidence, at most ${MAX_EVIDENCE}.`),
 });
 
 const groupOutput = z.object({
@@ -184,9 +220,11 @@ export function readSince(text: string): Timestamp | undefined {
 
 const numbersInOrder = new Intl.Collator("en", { numeric: true });
 
+type Evidence = z.infer<typeof findEvidenceOutput>;
+
 /** What to call a node: "SB 69", "SB 69 A-Engrossed", "SB 69-2". */
-function titleOf(node: LinkedNode, measureId: MeasureId): string {
-  const citation = citationOfMeasureId(measureId);
+function titleOf(node: LinkedNode): string {
+  const citation = citationOfMeasureId(measureIdOf(node.measure));
   if (node.label === null) return citation;
   if (node.type === "version") return `${citation} ${node.label}`;
   const number = parseAmendmentNumber(node.label);
@@ -195,7 +233,7 @@ function titleOf(node: LinkedNode, measureId: MeasureId): string {
     : `${citation}-${number.letter ?? ""}${number.digits}`;
 }
 
-/** The times, in milliseconds, at which what makes a link was posted: the node's rows, or the evidence's own document. */
+/** The times at which what makes an Agency Link was posted: the node's rows, or the evidence's own document. */
 function postedTimesOf(link: StoredAgencyLink): Timestamp[] {
   switch (link.evidence.kind) {
     case "derived":
@@ -209,35 +247,80 @@ function postedTimesOf(link: StoredAgencyLink): Timestamp[] {
   }
 }
 
-type Collected = { node: LinkedNode; links: StoredAgencyLink[]; times: Timestamp[] };
+/** What makes one node an item: the evidence, in its order, and the times at which it was posted. */
+type Candidate = { node: LinkedNode; evidence: Evidence[]; times: Timestamp[] };
 
-/** The links of one kind, gathered by node: the items of a group, before they are limited by `since`. */
-function collectItems(links: readonly StoredAgencyLink[]): Collected[] {
-  const byNode = new Map<string, Collected>();
+/** The Agency Links of one kind, gathered by the node they sit on. */
+function candidatesOfLinks(links: readonly StoredAgencyLink[]): Candidate[] {
+  const byNode = new Map<string, { node: LinkedNode; links: StoredAgencyLink[] }>();
   for (const link of links.toSorted(compareLinks)) {
-    const collected = byNode.get(link.node.id) ?? { node: link.node, links: [], times: [] };
-    collected.links.push(link);
-    collected.times.push(...postedTimesOf(link));
-    byNode.set(link.node.id, collected);
+    const gathered = byNode.get(link.node.id) ?? { node: link.node, links: [] };
+    gathered.links.push(link);
+    byNode.set(link.node.id, gathered);
   }
-  return [...byNode.values()];
+  return [...byNode.values()].map(({ node, links: own }) => ({
+    node,
+    evidence: own.map(evidenceShown),
+    times: own.flatMap(postedTimesOf),
+  }));
 }
 
-function itemOf(collected: Collected): Item {
-  const ordered = collected.times.toSorted((a, b) => msOf(a) - msOf(b));
-  const measureId = collected.node.id.startsWith("measure-")
-    ? (collected.node.id as MeasureId)
-    : (`measure-${collected.node.measure.session.toLowerCase()}-${collected.node.measure.prefix.toLowerCase()}${collected.node.measure.number}` as MeasureId);
+/**
+ * The Statute Links to a section or chapter, gathered by the Version or Proposed Amendment they were read from. Each
+ * target is one piece of evidence under its kind, with every measure section it is linked in (a Proposed Amendment posted
+ * to several meetings is one item, and postings that say the same add nothing). The document named is the first, in the
+ * order of the feed's numbers.
+ */
+function candidatesOfStatuteLinks(stored: readonly StoredStatuteLinked[]): Candidate[] {
+  type Entry = { evidence: Evidence; sections: (string | null)[] };
+  const byNode = new Map<string, { node: LinkedNode; entries: Map<string, Entry> }>();
+  for (const found of stored.toSorted((a, b) => numbersInOrder.compare(a.document.id, b.document.id))) {
+    const gathered = byNode.get(found.node.id) ?? { node: found.node, entries: new Map<string, Entry>() };
+    const key = `${found.link.kind} ${found.link.target.id}`;
+    const entry = gathered.entries.get(key) ?? {
+      evidence: {
+        kind: "statute-link",
+        document_id: found.document.id,
+        source_url: found.document.sourceUrl,
+        link_kind: found.link.kind,
+        target_id: found.link.target.id,
+        measure_sections: [],
+      },
+      sections: [],
+    };
+    if (!entry.sections.includes(found.link.measureSection)) entry.sections.push(found.link.measureSection);
+    gathered.entries.set(key, entry);
+    byNode.set(found.node.id, gathered);
+  }
+  return [...byNode.values()].map(({ node, entries }) => ({
+    node,
+    evidence: [...entries.values()]
+      .toSorted(
+        (a, b) =>
+          statuteLinkKinds.indexOf(a.evidence.link_kind ?? "cites") -
+            statuteLinkKinds.indexOf(b.evidence.link_kind ?? "cites") ||
+          numbersInOrder.compare(a.evidence.target_id ?? "", b.evidence.target_id ?? ""),
+      )
+      .map(({ evidence, sections }) => ({
+        ...evidence,
+        measure_sections: sections.toSorted(compareMeasureSections),
+      })),
+    times: node.createdAt,
+  }));
+}
+
+function itemOf(candidate: Candidate): Item {
+  const ordered = candidate.times.toSorted((a, b) => msOf(a) - msOf(b));
   return {
-    id: collected.node.id,
-    type: collected.node.type,
-    title: titleOf(collected.node, measureId),
-    measure_id: measureId,
-    source_url: collected.node.sourceUrl,
+    id: candidate.node.id,
+    type: candidate.node.type,
+    title: titleOf(candidate.node),
+    measure_id: measureIdOf(candidate.node.measure),
+    source_url: candidate.node.sourceUrl,
     posted_at: ordered[0] ?? null,
     last_posted_at: ordered.at(-1) ?? null,
-    evidence_total: collected.links.length,
-    evidence: collected.links.slice(0, MAX_EVIDENCE).map(evidenceShown),
+    evidence_total: candidate.evidence.length,
+    evidence: candidate.evidence.slice(0, MAX_EVIDENCE),
   };
 }
 
@@ -252,6 +335,19 @@ function compareItems(a: Item, b: Item): number {
 }
 
 type Group = { kind: GroupKind; items: Item[] };
+
+/** The items of a group that were posted at or after `since`, newest first. With no `since`, all of them. */
+function groupOfCandidates(kind: GroupKind, candidates: readonly Candidate[], since: Timestamp | undefined): Group {
+  return {
+    kind,
+    items: candidates
+      .map(itemOf)
+      .filter(
+        (item) => since === undefined || (item.last_posted_at !== null && msOf(item.last_posted_at) >= msOf(since)),
+      )
+      .toSorted(compareItems),
+  };
+}
 
 /**
  * Whether the feed still lists an item's own row (ADR-0030): the Measure's, the Version's, or any posting of the Proposed
@@ -301,6 +397,45 @@ function pageOf(
   };
 }
 
+/** What a call asks about: exactly one of an Agency, an ORS section and an ORS chapter, or why the call cannot be met. */
+type Target =
+  | { kind: "agency"; id: AgencyId }
+  | { kind: "section"; id: OrsSectionId }
+  | { kind: "chapter"; id: OrsChapterId }
+  | { kind: "bad_request"; message: string };
+
+function targetOf(input: z.infer<typeof findMeasuresInput>): Target {
+  const given = [input.agency, input.ors_section, input.ors_chapter].filter((value) => value !== undefined);
+  if (given.length !== 1) {
+    return { kind: "bad_request", message: "Give exactly one of agency, ors_section and ors_chapter." };
+  }
+  if (input.agency !== undefined) {
+    const id = parseAgencyId(input.agency.trim());
+    return id === undefined
+      ? {
+          kind: "bad_request",
+          message: `"${input.agency}" is not an Agency id. Give an OregonAI agency registry slug such as bureau-of-labor-and-industries.`,
+        }
+      : { kind: "agency", id };
+  }
+  if (input.ors_section !== undefined) {
+    const id = parseOrsSectionReference(input.ors_section);
+    return id === undefined
+      ? {
+          kind: "bad_request",
+          message: `"${input.ors_section}" is not an ORS section. Give a citation such as ORS 653.616 or an id such as ors-653.616.`,
+        }
+      : { kind: "section", id };
+  }
+  const id = input.ors_chapter === undefined ? undefined : parseOrsChapterReference(input.ors_chapter);
+  return id === undefined
+    ? {
+        kind: "bad_request",
+        message: `"${input.ors_chapter ?? ""}" is not an ORS chapter. Give a citation such as ORS chapter 657B or an id such as ors-chapter-657b.`,
+      }
+    : { kind: "chapter", id };
+}
+
 export function findMeasures(
   reader: IndexReader,
   session: SessionKey,
@@ -308,17 +443,8 @@ export function findMeasures(
 ): FindMeasuresResult {
   const asOf = reader.asOf(session);
   if (asOf === undefined) throw new Error(`The index holds no completed full pull of ${session} to date it by`);
-  const given = [input.agency, input.ors_section, input.ors_chapter].filter((value) => value !== undefined);
-  if (given.length !== 1 || input.agency === undefined) {
-    return { kind: "bad_request", message: "Give exactly one of agency, ors_section and ors_chapter." };
-  }
-  const agency = parseAgencyId(input.agency.trim());
-  if (agency === undefined) {
-    return {
-      kind: "bad_request",
-      message: `"${input.agency}" is not an Agency id. Give an OregonAI agency registry slug such as bureau-of-labor-and-industries.`,
-    };
-  }
+  const target = targetOf(input);
+  if (target.kind === "bad_request") return target;
   const since = input.since === undefined ? undefined : readSince(input.since);
   if (input.since !== undefined && since === undefined) {
     return {
@@ -326,28 +452,44 @@ export function findMeasures(
       message: `"${input.since}" is not a time. Give a date such as 2025-01-23 or a time such as 2025-01-23T16:00:00 (Pacific) or 2025-01-24T00:00:00Z.`,
     };
   }
-  const stored = withoutRepeats(reader.findAgencyLinks(session, { agency }));
-  const groups: Group[] = agencyEvidenceKinds.map((kind) => ({
-    kind,
-    items: collectItems(stored.filter((link) => link.evidence.kind === kind))
-      .map(itemOf)
-      .filter(
-        (item) => since === undefined || (item.last_posted_at !== null && msOf(item.last_posted_at) >= msOf(since)),
-      )
-      .toSorted(compareItems),
-  }));
-  const paged = pageOf(groups, input.page ?? 1, (item) => itemListed(reader, session, item));
-  const lastPage = Math.max(1, Math.ceil(paged.total / PAGE_SIZE));
+  let groups: Group[];
+  const notes: string[] = [];
+  switch (target.kind) {
+    case "agency": {
+      const stored = withoutRepeats(reader.findAgencyLinks(session, { agency: target.id }));
+      groups = agencyEvidenceKinds.map((kind) =>
+        groupOfCandidates(kind, candidatesOfLinks(stored.filter((link) => link.evidence.kind === kind)), since),
+      );
+      if (stored.length === 0) {
+        notes.push(
+          `The index holds no Agency Link to ${target.id}. Check the slug against the OregonAI agency registry.`,
+        );
+      }
+      break;
+    }
+    case "section":
+    case "chapter": {
+      const stored = reader.findStatuteLinked(session, target.id);
+      groups = [groupOfCandidates("statute-link", candidatesOfStatuteLinks(stored), since)];
+      if (stored.length === 0) notes.push(`The index holds no Statute Link to ${target.id}.`);
+      break;
+    }
+    default:
+      return target satisfies never;
+  }
   const page = input.page ?? 1;
+  const paged = pageOf(groups, page, (item) => itemListed(reader, session, item));
+  const lastPage = Math.max(1, Math.ceil(paged.total / PAGE_SIZE));
   if (page > lastPage) return { kind: "no_such_page", page, lastPage };
-  const notes =
-    stored.length === 0
-      ? [`The index holds no Agency Link to ${agency}. Check the slug against the OregonAI agency registry.`]
-      : [];
   return {
     kind: "found",
     found: {
-      query: { agency: input.agency.trim(), ors_section: null, ors_chapter: null, since: since ?? null },
+      query: {
+        agency: target.kind === "agency" ? target.id : null,
+        ors_section: target.kind === "section" ? target.id : null,
+        ors_chapter: target.kind === "chapter" ? target.id : null,
+        since: since ?? null,
+      },
       total: paged.total,
       page,
       last_page: lastPage,

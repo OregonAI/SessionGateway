@@ -57,6 +57,30 @@ export function parseOrsChapterId(text: string): OrsChapterId | undefined {
   return chapterIdPattern.test(text) && text === text.toLowerCase() ? (text as OrsChapterId) : undefined;
 }
 
+const sectionReferencePattern = new RegExp(String.raw`^ors\s+(${orsSectionCitationSource})$`, "i");
+const chapterReferencePattern = new RegExp(String.raw`^ors\s+chapter\s+(${orsChapterCitationSource})$`, "i");
+
+/**
+ * Reads what a caller wrote as an ORS section: its citation ("ORS 653.616", in any case, with any run of white space
+ * after "ORS") or OregonAI's id ("ors-653.616"). The id comes back as minted. A subsection, a range, a chapter or no
+ * citation at all is not one: undefined.
+ */
+export function parseOrsSectionReference(text: string): OrsSectionId | undefined {
+  const trimmed = text.trim();
+  const cited = sectionReferencePattern.exec(trimmed)?.[1];
+  return cited === undefined ? parseOrsSectionId(trimmed.toLowerCase()) : orsSectionIdOf(cited);
+}
+
+/**
+ * Reads what a caller wrote as an ORS chapter: its citation ("ORS chapter 657B", in any case) or the id this service
+ * mints ("ors-chapter-657b"). The id comes back as minted; anything else is undefined.
+ */
+export function parseOrsChapterReference(text: string): OrsChapterId | undefined {
+  const trimmed = text.trim();
+  const cited = chapterReferencePattern.exec(trimmed)?.[1];
+  return cited === undefined ? parseOrsChapterId(trimmed.toLowerCase()) : orsChapterIdOf(cited);
+}
+
 /** Where an ORS section sorts: the chapter's number, then its letter ("163" before "163A"), then the section. */
 export type OrsSectionParts = { chapter: number; letter: string; section: number };
 

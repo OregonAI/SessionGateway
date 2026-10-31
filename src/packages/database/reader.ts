@@ -4,6 +4,7 @@ import type {
   AgencyEvidence,
   LinkedNode,
   StoredAgencyLink,
+  StoredStatuteLinked,
   StoredUnresolvedUnit,
 } from "#/packages/domain/agency-links.ts";
 import type { StoredAnalysis } from "#/packages/domain/analysis.ts";
@@ -43,7 +44,13 @@ import {
   type SessionKey,
 } from "#/packages/domain/index.ts";
 import { comparePrintOrder, type Legislator, type LegislatorId, type Sponsor } from "#/packages/domain/legislators.ts";
-import { parseOrsSectionId, type AgencyId, type SnapshotVersion } from "#/packages/domain/oregonai.ts";
+import {
+  parseOrsSectionId,
+  type AgencyId,
+  type OrsChapterId,
+  type OrsSectionId,
+  type SnapshotVersion,
+} from "#/packages/domain/oregonai.ts";
 import {
   unreadStatuteParse,
   type AmendmentFile,
@@ -148,6 +155,12 @@ export type IndexReader = {
    * read from and the node it sits on (ADR-0027). In no particular order.
    */
   findAgencyLinks(session: SessionKey, filter: { agency?: AgencyId; measure?: MeasureKey }): StoredAgencyLink[];
+  /**
+   * The Versions and Proposed Amendments the store has read a Statute Link to an ORS section from, or to an ORS chapter or
+   * any section in it, with each link (a Proposed Amendment posted again is a link for each posting). A Proposed
+   * Amendment's links are all here, replaced by a later Version or not. In no particular order.
+   */
+  findStatuteLinked(session: SessionKey, target: OrsSectionId | OrsChapterId): StoredStatuteLinked[];
   /** The units a Measure's Fiscal Impact Statements list that are not Agencies, as each statement writes them. */
   findUnresolvedUnits(measure: MeasureKey): StoredUnresolvedUnit[];
   /** What the index holds of the Session. */
@@ -389,6 +402,14 @@ const testimonyLinkRow = z.object({
   document_created_at: z.string().nullable(),
   measure_id: z.string(),
 });
+const statuteLinkedRow = statuteLinkRow.extend({
+  document_id: z.string(),
+  document_kind: z.enum(["version", "proposed_amendment"]),
+  document_label: z.string(),
+  document_source_url: z.string(),
+  node_id: z.string(),
+  measure_id: z.string(),
+});
 const unresolvedUnitRow = z.object({
   unit: z.string(),
   document_id: z.string(),
@@ -613,6 +634,17 @@ export function openIndexReader(path: string): IndexReader {
        LEFT JOIN document_created dc ON dc.document_id = d.id
      WHERE d.session_key = ?1 AND (?2 IS NULL OR a.agency_id = ?2) AND (?3 IS NULL OR mr.to_id = ?3)
      ORDER BY a.agency_id, d.id, a.ordinal`,
+  );
+  // The files with a Statute Link to a section, or to a chapter or any section in it: `?3` and `?4` bound the ids of the
+  // chapter's sections ("ors-657b." up to "ors-657b/", the character after the dot), so chapter 657 does not take 657B.
+  const selectStatuteLinked = database.prepare(
+    `SELECT d.id AS document_id, d.kind AS document_kind, d.label AS document_label, d.source_url AS document_source_url,
+            d.node_id, mr.to_id AS measure_id, l.kind, l.target_type, l.target_id, l.measure_section
+     FROM statute_link l
+       JOIN document d ON d.content_hash = l.content_hash AND d.kind = l.parsed_as
+       JOIN document_relation mr ON mr.document_id = d.id AND mr.relation = 'measure'
+     WHERE d.session_key = ?1 AND (l.target_id = ?2 OR (l.target_id >= ?3 AND l.target_id < ?4))
+     ORDER BY d.id, l.ordinal`,
   );
   // Testimony whose Organization names an Agency: the worker matched it when it stored the row (ADR-0016, ADR-0027).
   const selectTestimonyLinks = database.prepare(
@@ -907,6 +939,29 @@ export function openIndexReader(path: string): IndexReader {
           };
         });
       return [...read, ...testimony];
+    },
+    findStatuteLinked(session, target) {
+      const chapter = target.startsWith("ors-chapter-") ? target.slice("ors-chapter-".length) : undefined;
+      const from = chapter === undefined ? null : `ors-${chapter}.`;
+      const to = chapter === undefined ? null : `ors-${chapter}/`;
+      const known = new Map<string, LinkedNode>();
+      return selectStatuteLinked
+        .all(session, target, from, to)
+        .map((row) => statuteLinkedRow.parse(row))
+        .map((found): StoredStatuteLinked => {
+          const key = measureKeyOf(found.measure_id, session);
+          const node =
+            found.document_kind === "version"
+              ? (known.get(found.document_id) ??
+                versionNodeOf(key, found.document_id, found.document_label, found.document_source_url))
+              : (known.get(found.node_id) ?? amendmentNodeOf(key, found.node_id));
+          known.set(node.id, node);
+          return {
+            document: { id: found.document_id as DocumentId, sourceUrl: found.document_source_url },
+            node,
+            link: statuteLinkOfRow(found),
+          };
+        });
     },
     findUnresolvedUnits(measure) {
       return selectUnresolvedUnits.all(measureIdOf(measure)).map((row): StoredUnresolvedUnit => {
