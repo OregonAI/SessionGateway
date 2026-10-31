@@ -6,6 +6,7 @@
 // number of targets with a count of what it left out.
 import { z } from "zod";
 import {
+  compareMeasureSections,
   statuteChangeKinds,
   statuteLinkKindOfTableAction,
   versionDescriptionOfEntry,
@@ -16,7 +17,6 @@ import {
 } from "#/packages/domain/statute-links.ts";
 import {
   chapterTargetOutput,
-  compareMeasureSections,
   sectionTargetOutput,
   statuteLinksBySourceOutput,
   statuteLinksShown,
