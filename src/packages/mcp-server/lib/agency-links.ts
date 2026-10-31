@@ -13,7 +13,7 @@ import {
 import type { AgencyId } from "#/packages/domain/oregonai.ts";
 import { statuteLinkKinds } from "#/packages/domain/statute-links.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
-import { noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
+import { documentListingFields, listingShown, noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 
 const numbersInOrder = new Intl.Collator("en", { numeric: true });
 
@@ -237,15 +237,7 @@ export const agencyLinksOutput = z.object({
       z.object({
         id: z.string().describe("The document's id: a document_id of the examples or a statement_id of the units."),
         source_url: z.string().describe("Where the Legislature publishes the document."),
-        no_longer_listed: noLongerListedOutput.describe(
-          "Present, and true, only when the Legislature's feed has stopped listing this document: two complete full pulls in a row did not list it. It is still named, as it was last read. Absent when the feed lists it.",
-        ),
-        last_listed_at: z
-          .string()
-          .optional()
-          .describe(
-            "Present only with no_longer_listed: when the feed last listed the document, the as-of time of the latest complete full pull that did, in Pacific time with its UTC offset.",
-          ),
+        ...documentListingFields,
       }),
     )
     .describe("Each document the examples and the units name, once, with where the Legislature publishes it."),
@@ -304,7 +296,7 @@ export function agencyLinksOf(
     byAgency.set(link.agency, [...(byAgency.get(link.agency) ?? []), link]);
   }
   const listedLinks = listedLinkKeys(links);
-  const named = new Map<string, { sourceUrl: string; listing?: StoredAgencyLink["document"]["listing"] }>();
+  const named = new Map<string, { sourceUrl: string; listing: StoredAgencyLink["document"]["listing"] }>();
   const entries = [...byAgency.entries()]
     .toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([agency, own]) => ({
@@ -329,7 +321,8 @@ export function agencyLinksOf(
     // By statement; the units of one statement stay in the order it lists them (the sort is stable).
     .toSorted((a, b) => numbersInOrder.compare(a.statement.id, b.statement.id));
   for (const unit of orderedUnits) {
-    if (!named.has(unit.statement.id)) named.set(unit.statement.id, { sourceUrl: unit.statement.sourceUrl });
+    if (!named.has(unit.statement.id))
+      named.set(unit.statement.id, { sourceUrl: unit.statement.sourceUrl, listing: unit.statement.listing });
   }
   return {
     agencies: entries,
@@ -338,9 +331,7 @@ export function agencyLinksOf(
       .map(([id, { sourceUrl, listing }]) => ({
         id,
         source_url: sourceUrl,
-        ...(listing === undefined || listing.listed
-          ? {}
-          : { ...noLongerListedFlag(false), last_listed_at: listing.lastListedAt }),
+        ...listingShown(listing),
       })),
     unresolved_units: orderedUnits.map((unit) => ({
       unit: unit.unit,

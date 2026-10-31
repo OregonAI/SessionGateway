@@ -32,8 +32,21 @@ export const measureListingOutput = {
     ),
 };
 
-/** The Measure's fields to spread into its result: nothing while the feed lists it. */
-export function measureListingShown(listing: Listing): { no_longer_listed?: true; last_listed_at?: string } {
+/** The fields of a document an Agency Link's evidence was read from, in a list of examples or documents (ADR-0037). */
+export const documentListingFields = {
+  no_longer_listed: noLongerListedOutput.describe(
+    "Present, and true, only when the Legislature's feed has stopped listing the document the evidence was read from: two complete full pulls in a row did not list it. The document is still named, as it was last read. Absent when the feed lists it.",
+  ),
+  last_listed_at: z
+    .string()
+    .optional()
+    .describe(
+      "Present only with no_longer_listed: when the feed last listed the document, the as-of time of the latest complete full pull that did, in Pacific time with its UTC offset.",
+    ),
+};
+
+/** The fields to spread into a Measure, a document or an example: nothing while the feed lists it. */
+export function listingShown(listing: Listing): { no_longer_listed?: true; last_listed_at?: string } {
   return listing.listed ? {} : { ...noLongerListedFlag(false), last_listed_at: listing.lastListedAt };
 }
 

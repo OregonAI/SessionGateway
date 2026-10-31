@@ -30,7 +30,7 @@ import {
 } from "./agency-links.ts";
 import { notAnAgencyIdMessage, parseAgencyArgument } from "./filters.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
-import { noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
+import { documentListingFields, listingShown, noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 
 /**
  * How many items one page lists, across the groups. A full page, with every item at its evidence cap, is to stay at or
@@ -101,15 +101,7 @@ const exampleOutput = z.object({
     .describe(
       "The document the evidence was read from: the Fiscal Impact Statement, the Version, the posting of the Proposed Amendment or the Testimony. Give it to get_document. Its source_url is in documents.",
     ),
-  no_longer_listed: noLongerListedOutput.describe(
-    "Present, and true, only for an Agency's evidence when the feed has stopped listing the document it was read from (two complete full pulls in a row did not list it). The example is still shown. Absent when the feed lists the document.",
-  ),
-  last_listed_at: z
-    .string()
-    .optional()
-    .describe(
-      "Present only with no_longer_listed: when the feed last listed the document, the as-of time of the latest complete full pull that did, in Pacific time with its UTC offset.",
-    ),
+  ...documentListingFields,
   ...evidenceFieldsOutput,
   target_id: z
     .string()
@@ -354,9 +346,7 @@ function exampleOf(piece: Piece): ExampleOutput {
   const latest = latestOf(piece.createdAt);
   return {
     document_id: piece.document.id,
-    ...(piece.listing === undefined || piece.listing.listed
-      ? {}
-      : { ...noLongerListedFlag(false), last_listed_at: piece.listing.lastListedAt }),
+    ...(piece.listing === undefined ? {} : listingShown(piece.listing)),
     ...piece.fields,
     ...(latest === undefined ? {} : { created_at: latest }),
   };
