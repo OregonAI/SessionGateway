@@ -1,8 +1,9 @@
 // Seam 1: the Statutes Affected Table's loading, and a disagreement between it and the parsed Statute Links (ticket #22,
 // ADR-0033 and ADR-0034). The cases change what the fake OLIS serves at the table's address, or the pull, so they build
 // systems of their own: a deployment that does not name the table; a table that cannot be had (404, a failing server, a
-// file that is not a table) until it can; a table that is loaded, fetched again, withdrawn and then changed; and a
-// Version whose text could not be read. A system pulls the fixture's 278 documents, about four seconds, so a system
+// file that is not a table, refused again without a second reading) until it can; a table that is loaded, fetched again,
+// withdrawn and then changed; a Version whose text could not be read; and made-up tables in shapes the real one never
+// shows (the last describe: a line the parser cannot read, a footer date in November, overturned vetoes, an E alone). A system pulls the fixture's 278 documents, about four seconds, so a system
 // serves several cases, which run in the order written and each take the table on from the one before. They are
 // read from the top: a case that comes later relies on what the earlier ones did.
 //
