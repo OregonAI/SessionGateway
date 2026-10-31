@@ -168,6 +168,55 @@ describe("find_measures for an Agency, with the clock on 2025-01-24", () => {
       expect(groupOf(found, "derived").items.map((item) => item.id)).toEqual(["amendment-2025r1-sb69-2"]);
     });
 
+    // ISO 8601 and RFC 9557 write a time in more forms than "T" and an offset. SB 69-2's latest posting, 26288, was
+    // created at 2025-01-23T16:27:37.073 Pacific (feed/CommitteeProposedAmendments.json), which is 2025-01-24T00:27:37.073
+    // UTC (Pacific standard time, UTC-8, in January), so a `since` naming that instant keeps -2 and drops -1 (latest
+    // posting 16:27:37.06). The first two rows are the inputs the review of #16 found read eight hours late or refused.
+    it.for([
+      [
+        "a space for the T and a numeric offset",
+        "2025-01-24 00:27:37.073+00:00",
+        "2025-01-23T16:27:37.073-08:00",
+        ["amendment-2025r1-sb69-2"],
+      ],
+      [
+        "a space for the T and Z",
+        "2025-01-24 00:27:37.073Z",
+        "2025-01-23T16:27:37.073-08:00",
+        ["amendment-2025r1-sb69-2"],
+      ],
+      ["a lower-case z", "2025-01-24T00:27:37.073z", "2025-01-23T16:27:37.073-08:00", ["amendment-2025r1-sb69-2"]],
+      [
+        "an offset and the zone it was written in (the review's input)",
+        "2025-01-23T13:27:37.073-05:00[America/New_York]",
+        "2025-01-23T10:27:37.073-08:00",
+        ["amendment-2025r1-sb69-2", "amendment-2025r1-sb69-1"],
+      ],
+      [
+        "an offset and a zone, at the posting's instant",
+        "2025-01-23T19:27:37.073-05:00[America/New_York]",
+        "2025-01-23T16:27:37.073-08:00",
+        ["amendment-2025r1-sb69-2"],
+      ],
+      [
+        "a zone and no offset: that zone's wall clock, not Pacific's",
+        "2025-01-23T19:27:37.073[America/New_York]",
+        "2025-01-23T16:27:37.073-08:00",
+        ["amendment-2025r1-sb69-2"],
+      ],
+      [
+        "a space for the T and no offset: Pacific",
+        "2025-01-23 16:27:37.073",
+        "2025-01-23T16:27:37.073-08:00",
+        ["amendment-2025r1-sb69-2"],
+      ],
+    ] as const)("reads %s as the instant it names", async ([, written, read, derived]) => {
+      const found = await find(at.client(era), { agency: boli, since: written });
+
+      expect(found.query.since).toBe(read);
+      expect(groupOf(found, "derived").items.map((item) => item.id)).toEqual(derived);
+    });
+
     // With no time the answer also holds HB 3027's Introduced Version, created 2025-01-10 (feed/MeasureDocuments.json):
     // its SECTION 1 is "added to and made a part of ORS 345.010 to 345.340" (pdftotext of
     // measure-documents/HB3027/Introduced.pdf), and the snapshot gives chapter 345 to the Bureau among other Agencies.

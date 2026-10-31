@@ -19,7 +19,7 @@ import {
   type OrsSectionId,
 } from "#/packages/domain/oregonai.ts";
 import { compareMeasureSections, statuteLinkKinds } from "#/packages/domain/statute-links.ts";
-import { atPacificLocalTime, type Timestamp } from "#/packages/time/pacific.ts";
+import { compareTimestamps, readTimestamp, type Timestamp } from "#/packages/time/pacific.ts";
 import { compareLinks, evidenceOutput, evidenceShown, withoutRepeats } from "./agency-links.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 import { noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
@@ -175,7 +175,11 @@ export const findMeasuresOutput = z.object({
 });
 
 export type FindMeasuresOutput = z.infer<typeof findMeasuresOutput>;
-type Item = z.infer<typeof itemOutput>;
+/** An item as the tool builds it: the times are Timestamps, which the answer carries as text. */
+type Item = Omit<z.infer<typeof itemOutput>, "posted_at" | "last_posted_at"> & {
+  posted_at: Timestamp | null;
+  last_posted_at: Timestamp | null;
+};
 
 /** Why a call cannot be met, or the answer. Expected outcomes are values; the MCP edge decides they are tool errors. */
 export type FindMeasuresResult =
@@ -192,32 +196,6 @@ const groupDescriptions: Record<GroupKind, string> = {
   testimony: "Have Testimony whose Organization is the Agency's name or alias.",
   "statute-link": "Have a Statute Link to the ORS section or chapter.",
 };
-
-/** The instant a Timestamp is, in milliseconds. A Timestamp always has its offset. */
-function msOf(at: string): number {
-  return Temporal.Instant.from(at).epochMilliseconds;
-}
-
-/**
- * Reads `since`: a date (midnight Pacific), a time with no offset (Pacific), or a time with an offset or "Z". Undefined
- * when it is none of these.
- */
-export function readSince(text: string): Timestamp | undefined {
-  const trimmed = text.trim();
-  try {
-    // A time with an offset names an instant; it is written back in Pacific time.
-    if (/T.*(?:Z|[+-]\d{2}(?::?\d{2})?)$/i.test(trimmed)) {
-      return Temporal.Instant.from(trimmed).toZonedDateTimeISO("America/Los_Angeles").toString({
-        timeZoneName: "never",
-      }) as Timestamp;
-    }
-    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed))
-      return atPacificLocalTime(Temporal.PlainDate.from(trimmed).toPlainDateTime());
-    return atPacificLocalTime(Temporal.PlainDateTime.from(trimmed));
-  } catch {
-    return undefined;
-  }
-}
 
 const numbersInOrder = new Intl.Collator("en", { numeric: true });
 
@@ -311,7 +289,7 @@ function candidatesOfStatuteLinks(stored: readonly StoredStatuteLinked[]): Candi
 }
 
 function itemOf(candidate: Candidate): Item {
-  const ordered = candidate.times.toSorted((a, b) => msOf(a) - msOf(b));
+  const ordered = candidate.times.toSorted(compareTimestamps);
   return {
     id: candidate.node.id,
     type: candidate.node.type,
@@ -329,10 +307,9 @@ function itemOf(candidate: Candidate): Item {
 function compareItems(a: Item, b: Item): number {
   if (a.last_posted_at === null || b.last_posted_at === null) {
     if (a.last_posted_at !== b.last_posted_at) return a.last_posted_at === null ? 1 : -1;
-  } else if (a.last_posted_at !== b.last_posted_at) {
-    return msOf(b.last_posted_at) - msOf(a.last_posted_at) || (a.last_posted_at < b.last_posted_at ? 1 : -1);
+    return numbersInOrder.compare(a.id, b.id);
   }
-  return numbersInOrder.compare(a.id, b.id);
+  return compareTimestamps(b.last_posted_at, a.last_posted_at) || numbersInOrder.compare(a.id, b.id);
 }
 
 type Group = { kind: GroupKind; items: Item[] };
@@ -344,7 +321,8 @@ function groupOfCandidates(kind: GroupKind, candidates: readonly Candidate[], si
     items: candidates
       .map(itemOf)
       .filter(
-        (item) => since === undefined || (item.last_posted_at !== null && msOf(item.last_posted_at) >= msOf(since)),
+        (item) =>
+          since === undefined || (item.last_posted_at !== null && compareTimestamps(item.last_posted_at, since) >= 0),
       )
       .toSorted(compareItems),
   };
@@ -446,7 +424,7 @@ export function findMeasures(
   if (asOf === undefined) throw new Error(`The index holds no completed full pull of ${session} to date it by`);
   const target = targetOf(input);
   if (target.kind === "bad_request") return target;
-  const since = input.since === undefined ? undefined : readSince(input.since);
+  const since = input.since === undefined ? undefined : readTimestamp(input.since);
   if (input.since !== undefined && since === undefined) {
     return {
       kind: "bad_request",
