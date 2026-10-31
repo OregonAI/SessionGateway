@@ -71,7 +71,8 @@ as complete only when every set's rows match the feed's count. One that does not
 leaves the database as the last complete pull left it, exits with an error that names each short set, and writes a
 `build-report.json` of its own (`attempted_at` and `pull`, with `complete: false` and the short sets). A row that two
 complete pulls in a row did not list stays in the database and is served by id, but search leaves it out
-(ADR-0005, ADR-0030).
+(ADR-0005, ADR-0030). The report also has `committee_members`: for each committee, the rows the database holds of
+the feed's CommitteeMembers, by Legislator Code.
 
 A full pull against the live feed is allowed only between 5 pm and 6 am Pacific (ADR-0005). Nothing
 schedules it yet, so run it by hand inside that window.
