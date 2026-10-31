@@ -2,8 +2,12 @@
 // because the feed it needs is the thing under test. A row that a case adds is MADE UP (a `strayRows` row of the fake
 // OLIS, shaped like feed/CommitteePublicTestimonies.json's) and is said so in the case's comment. The cases that read
 // the fixture as it stands are in find-measures.test.ts and find-measures-since.test.ts.
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
+import { snapshotFixturePath } from "../support/oregonai-snapshot.ts";
 import { startSystem, type System, type SystemOptions } from "../support/system.ts";
 import { madeUpTestimonyRow } from "../support/testimony.ts";
 
@@ -15,13 +19,19 @@ afterEach(async () => {
   for (const system of started.splice(0)) await system.stop();
 });
 
+type Example = {
+  document_id: string;
+  organization?: string;
+  through?: string[];
+  through_total?: number;
+  created_at?: string;
+};
+type KindEvidence = { kind: string; count: number; left_out: number; examples: Example[] };
 type Item = {
   id: string;
   posted_at: string | null;
   last_posted_at: string | null;
-  evidence_total: number;
-  evidence_left_out: number;
-  evidence: { document_id: string; organization?: string }[];
+  evidence: KindEvidence[];
 };
 type Group = { evidence_kind: string; total: number; items: Item[] };
 type Found = { total: number; page: number; last_page: number; page_size: number; groups: Group[] };
@@ -69,66 +79,63 @@ describe.for(eras)("find_measures past one page, for a %s client", (era) => {
     return system;
   }
 
-  it("lists 50 items on the first page, counted across the groups, and says how many pages there are", async () => {
+  it("lists 12 items on the first page and says how many pages there are", async () => {
     const system = await start();
 
     const outcome = await find(system, era, { agency: "bureau-of-labor-and-industries" });
 
     expect(outcome.isError, outcome.text).toBe(false);
     const found = outcome.structured as unknown as Found;
-    expect([found.total, found.page, found.last_page, found.page_size]).toEqual([62, 1, 2, 50]);
+    expect([found.total, found.page, found.last_page, found.page_size]).toEqual([62, 1, 6, 12]);
     const testimony = found.groups.find((group) => group.evidence_kind === "testimony");
     expect(testimony?.total).toBe(62);
-    expect(testimony?.items).toHaveLength(50);
+    expect(testimony?.items).toHaveLength(12);
     // Made-up rows share one creation time, so they come in the order of their ids.
     expect(testimony?.items.map((item) => item.id).slice(0, 3)).toEqual([
       "measure-2025r1-sb9001",
       "measure-2025r1-sb9002",
       "measure-2025r1-sb9003",
     ]);
-    expect(testimony?.items.at(-1)?.id).toBe("measure-2025r1-sb9050");
+    expect(testimony?.items.at(-1)?.id).toBe("measure-2025r1-sb9012");
   });
 
-  it("lists the rest on the next page: the later ids, then the older Testimony last", async () => {
+  it("lists the rest on the last page: the later ids, then the older Testimony last", async () => {
     const system = await start();
 
-    const outcome = await find(system, era, { agency: "bureau-of-labor-and-industries", page: 2 });
+    const outcome = await find(system, era, { agency: "bureau-of-labor-and-industries", page: 6 });
 
     const found = outcome.structured as unknown as Found;
-    expect(found.page).toBe(2);
+    expect(found.page).toBe(6);
     const testimony = found.groups.find((group) => group.evidence_kind === "testimony");
-    expect(testimony?.items.map((item) => item.id)).toEqual([
-      ...Array.from({ length: 10 }, (_, index) => `measure-2025r1-sb${9051 + index}`),
-      "measure-2025r1-sb9100",
-      "measure-2025r1-sb69",
-    ]);
+    expect(testimony?.items.map((item) => item.id)).toEqual(["measure-2025r1-sb9100", "measure-2025r1-sb69"]);
     expect(
       found.groups.filter((group) => group.evidence_kind !== "testimony").every((group) => group.total === 0),
     ).toBe(true);
   });
 
-  it("limits an item's evidence to ten pieces and says how many there are", async () => {
+  it("limits an item's evidence to three examples, the newest first, and counts the rest", async () => {
     const system = await start();
 
-    const outcome = await find(system, era, { agency: "bureau-of-labor-and-industries", page: 2 });
+    const outcome = await find(system, era, { agency: "bureau-of-labor-and-industries", page: 6 });
 
     const found = outcome.structured as unknown as Found;
     const item = found.groups
       .find((group) => group.evidence_kind === "testimony")
       ?.items.find((candidate) => candidate.id === "measure-2025r1-sb9100");
-    expect(item?.evidence_total).toBe(12);
-    expect(item?.evidence.map((evidence) => evidence.document_id)).toEqual(
-      Array.from({ length: 10 }, (_, index) => `testimony-2025r1-${900101 + index}`),
+    // Twelve rows made at one time: the cut keeps the first three by the feed's number.
+    expect(item?.evidence.map((group) => [group.kind, group.count, group.left_out])).toEqual([["testimony", 12, 9]]);
+    expect(item?.evidence[0]?.examples.map((example) => example.document_id)).toEqual(
+      Array.from({ length: 3 }, (_, index) => `testimony-2025r1-${900101 + index}`),
     );
   });
 
   it("refuses a page past the last, saying how many there are", async () => {
     const system = await start();
 
-    const outcome = await find(system, era, { agency: "bureau-of-labor-and-industries", page: 3 });
+    const outcome = await find(system, era, { agency: "bureau-of-labor-and-industries", page: 7 });
 
     expect(outcome.isError).toBe(true);
-    expect(outcome.text).toBe("The answer has 2 pages, so there is no page 3. Ask for a page from 1 to 2.");
+    expect(outcome.text).toBe("The answer has 6 pages, so there is no page 7. Ask for a page from 1 to 6.");
   });
 });
 
@@ -304,7 +311,12 @@ describe.for(eras)("find_measures lists the newest evidence, for a %s client", (
     const found = outcome.structured as unknown as Found;
     return found.groups.find((group) => group.evidence_kind === "testimony")?.items ?? [];
   }
-  const ids = (item: Item | undefined): string[] => item?.evidence.map((evidence) => evidence.document_id) ?? [];
+  const ids = (item: Item | undefined): string[] =>
+    item?.evidence.flatMap((group) => group.examples.map((example) => example.document_id)) ?? [];
+  const countOf = (item: Item | undefined): [number | undefined, number | undefined] => [
+    item?.evidence[0]?.count,
+    item?.evidence[0]?.left_out,
+  ];
   const testimonyIds = (first: number, last: number): string[] =>
     Array.from({ length: last - first + 1 }, (_, index) => `testimony-2025r1-${first + index}`);
 
@@ -313,7 +325,7 @@ describe.for(eras)("find_measures lists the newest evidence, for a %s client", (
 
     const item = items.find((candidate) => candidate.id === "measure-2025r1-sb9300");
     expect(ids(item)).toEqual(["testimony-2025r1-900311"]);
-    expect([item?.evidence_total, item?.evidence_left_out]).toEqual([1, 0]);
+    expect(countOf(item)).toEqual([1, 0]);
     expect([item?.posted_at, item?.last_posted_at]).toEqual(["2025-04-01T09:00:00-07:00", "2025-04-01T09:00:00-07:00"]);
   });
 
@@ -321,11 +333,11 @@ describe.for(eras)("find_measures lists the newest evidence, for a %s client", (
     const items = await itemsAfter({});
 
     const item = items.find((candidate) => candidate.id === "measure-2025r1-sb9300");
-    expect(ids(item)).toEqual(["testimony-2025r1-900311", ...testimonyIds(900301, 900309)]);
-    expect([item?.evidence_total, item?.evidence_left_out]).toEqual([11, 1]);
+    expect(ids(item)).toEqual(["testimony-2025r1-900311", "testimony-2025r1-900301", "testimony-2025r1-900302"]);
+    expect(countOf(item)).toEqual([11, 8]);
     const later = items.find((candidate) => candidate.id === "measure-2025r1-sb9400");
-    expect(ids(later)).toEqual(testimonyIds(900403, 900412).toReversed());
-    expect([later?.evidence_total, later?.evidence_left_out]).toEqual([12, 2]);
+    expect(ids(later)).toEqual(testimonyIds(900410, 900412).toReversed());
+    expect(countOf(later)).toEqual([12, 9]);
   });
 
   it("cuts only what was posted since the time asked for, newest first", async () => {
@@ -333,8 +345,168 @@ describe.for(eras)("find_measures lists the newest evidence, for a %s client", (
 
     const item = items.find((candidate) => candidate.id === "measure-2025r1-sb9400");
     expect(ids(item)).toEqual(testimonyIds(900410, 900412).toReversed());
-    expect([item?.evidence_total, item?.evidence_left_out]).toEqual([3, 0]);
+    expect(countOf(item)).toEqual([3, 0]);
     expect([item?.posted_at, item?.last_posted_at]).toEqual(["2025-03-02T18:00:00-08:00", "2025-03-02T20:00:00-08:00"]);
     expect(items.some((candidate) => candidate.id === "measure-2025r1-sb9300")).toBe(true);
+  });
+});
+
+// A page is bounded (#16 F6): a full page, with every item at its evidence cap, stays at or under about 25,000 characters,
+// which is what a page of `testimony` is (src/packages/mcp-server/lib/testimony.ts) and a little over one part of
+// get_document (20,000). Three full pages of MADE UP rows, each the largest kind of item the fixture can be made to give:
+//   Testimony: 80 Measures (SB 9601 to SB 9680) with 12 Testimony rows each (900601 and up), from the Organization with the
+//     longest name in the snapshot fixture (96 characters), so that every item is cut at its evidence cap;
+//   derived, the Bureau: 60 Proposed Amendments of SB 69 (SB 69-3 to -62: rows 990201 to 990260, created 2026-01-01 at 08:00,
+//     each served with the file of SB 69-2, 26286.pdf), each reaching chapters 657B, 659A and 653, which the Bureau's rules implement;
+//   derived, the Department of Human Services: the same 60 amendments, each reaching chapter 659A through its sub-unit
+//     (department-of-human-services-aging-and-people-with-disabilities-and-developmental-disabilities, 94 characters), so
+//     that the link says `through` it.
+// The clock is 2026-08-01.
+describe.for(eras)("find_measures stays inside a page's size, for a %s client", (era) => {
+  const longest = "Higher Education Coordinating Commission, Office of Community Colleges and Workforce Development";
+  const longestSlug = "higher-education-coordinating-commission-office-of-community-colleges-and-workforce-development";
+  const testimony = Array.from({ length: 80 }, (_, measure) =>
+    Array.from({ length: 12 }, (_, row) =>
+      madeUpTestimonyRow({
+        commTestId: 900601 + measure * 12 + row,
+        organization: longest,
+        measure: { prefix: "SB", number: 9601 + measure },
+      }),
+    ),
+  ).flat();
+  const amendments = Array.from({ length: 60 }, (_, index) => ({
+    ProposedAmendmentId: 990201 + index,
+    CommitteeAgendaItemId: 202165,
+    SessionKey: "2025R1",
+    CommitteeCode: "SLB",
+    MeetingDate: "2025-01-30T08:00:00",
+    MeasurePrefix: "SB",
+    MeasureNumber: 69,
+    AmendmentNumber: `-${3 + index}`,
+    Meaning: "Proposed",
+    ProposedAmendmentUrl: `https://olis.oregonlegislature.gov/liz/2025R1/Downloads/ProposedAmendment/${990201 + index}`,
+    CreatedDate: "2026-01-01T08:00:00",
+    ModifiedDate: null,
+  }));
+
+  async function start(): Promise<System> {
+    const system = await startSystem({
+      clockAt: "2026-08-01T17:00:00Z",
+      documents: true,
+      serverEnv: { MCP_RATE_LIMIT: "1000" },
+      olis: {
+        strayRows: { CommitteePublicTestimonies: testimony, CommitteeProposedAmendments: amendments },
+        strayDocuments: Object.fromEntries(
+          amendments.map((row) => [
+            `/liz/2025R1/Downloads/ProposedAmendment/${String(row["ProposedAmendmentId"])}`,
+            "proposed-amendments/26286.pdf",
+          ]),
+        ),
+      },
+    });
+    started.push(system);
+    return system;
+  }
+
+  it.for([
+    ["Testimony cut at the cap", longestSlug, "testimony"],
+    ["three derived links, each dated", "bureau-of-labor-and-industries", "derived"],
+    ["a derived link through a sub-unit", "department-of-human-services", "derived"],
+  ] as const)("keeps a full page of %s to about 25,000 characters", async ([, agency, kind]) => {
+    const system = await start();
+
+    const outcome = await find(system, era, { agency });
+
+    expect(outcome.isError, outcome.text).toBe(false);
+    const found = outcome.structured as unknown as Found;
+    const items = found.groups.find((group) => group.evidence_kind === kind)?.items ?? [];
+    expect(found.total).toBeGreaterThan(found.page_size);
+    expect(items).toHaveLength(found.page_size);
+    expect(outcome.text.length).toBeLessThanOrEqual(25_000);
+  });
+
+  // The largest derived evidence a registry can give: a Department whose sub-units implement every chapter a Version
+  // changes. MADE UP: a snapshot (the fixture's ORS sections) whose Chapter table gives chapters 653, 657B and 659A to five
+  // sub-units of one Department, each with a 94-character slug (the longest in the registry is 95), so every derived link of
+  // the Department says `through` three of them, and every item has three of those at its cap.
+  const subUnits = Array.from({ length: 5 }, (_, index) =>
+    `made-up-department-sub-unit-${index + 1}-with-a-slug-as-long-as-the-registry-has-b`.padEnd(94, "x"),
+  );
+  function madeUpDepartmentSnapshot(): { path: string; remove: () => void } {
+    const fixture = JSON.parse(readFileSync(snapshotFixturePath, "utf8")) as { orsSections: string[] };
+    const directory = mkdtempSync(join(tmpdir(), "made-up-department-snapshot-"));
+    const path = join(directory, "snapshot.json");
+    const row = (slug: string, name: string, parent: string | null): Record<string, unknown> => ({
+      slug,
+      name,
+      aliases: [],
+      oarChapter: null,
+      dasAgencyNumber: null,
+      parent,
+    });
+    writeFileSync(
+      path,
+      JSON.stringify({
+        formatVersion: 1,
+        version: {
+          source: "executive-regulatory-frameworks",
+          commit: "0123456789abcdef0123456789abcdef01234567",
+          commitDate: "2026-02-03T04:05:06-08:00",
+        },
+        agencies: [
+          row("made-up-department", "Made-Up Department", null),
+          ...subUnits.map((slug, index) => row(slug, `Made-Up Sub-Unit ${index + 1}`, "made-up-department")),
+        ],
+        orsSections: fixture.orsSections,
+        chapterAgencies: Object.fromEntries(
+          ["ors-chapter-653", "ors-chapter-657b", "ors-chapter-659a"].map((chapter) => [chapter, subUnits]),
+        ),
+      }),
+    );
+    return {
+      path,
+      remove: () => {
+        rmSync(directory, { recursive: true, force: true });
+      },
+    };
+  }
+
+  it("keeps a full page of a Department's derived links through five long-named sub-units to about 25,000 characters", async () => {
+    const snapshot = madeUpDepartmentSnapshot();
+    try {
+      const system = await startSystem({
+        clockAt: "2026-08-01T17:00:00Z",
+        documents: true,
+        snapshot: snapshot.path,
+        serverEnv: { MCP_RATE_LIMIT: "1000" },
+        olis: {
+          strayRows: { CommitteeProposedAmendments: amendments },
+          strayDocuments: Object.fromEntries(
+            amendments.map((row) => [
+              `/liz/2025R1/Downloads/ProposedAmendment/${String(row["ProposedAmendmentId"])}`,
+              "proposed-amendments/26286.pdf",
+            ]),
+          ),
+        },
+      });
+      started.push(system);
+
+      const outcome = await find(system, era, { agency: "made-up-department" });
+
+      expect(outcome.isError, outcome.text).toBe(false);
+      const found = outcome.structured as unknown as Found;
+      const derived = found.groups.find((group) => group.evidence_kind === "derived")?.items ?? [];
+      expect(derived).toHaveLength(found.page_size);
+      const examples = derived[0]?.evidence[0]?.examples;
+      expect(examples).toHaveLength(3);
+      expect(examples?.map((example) => [example.through?.length, example.through_total])).toEqual([
+        [2, 5],
+        [2, 5],
+        [2, 5],
+      ]);
+      expect(outcome.text.length).toBeLessThanOrEqual(25_000);
+    } finally {
+      snapshot.remove();
+    }
   });
 });
