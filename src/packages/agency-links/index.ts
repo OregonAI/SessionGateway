@@ -37,11 +37,13 @@ export function testimonyAgencyLinks(organization: string, registry: readonly Re
 
 /**
  * Derives Agency Links from a Version's or Proposed Amendment's Statute Links through the snapshot's Chapter table:
- * only Statute Links that amend, repeal or add to derive one, never a citation (ADR-0027).
+ * only Statute Links that amend, repeal or add to derive one, never a citation (ADR-0027). An Agency the table lists for a
+ * chapter also gives its parent (`parentOf`, from the snapshot's registry) a link through it (ADR-0029).
  */
 export function derivedAgencyLinks(
   links: readonly StatuteLink[],
   chapterAgencies: ReadonlyMap<OrsChapterId, readonly AgencyId[]>,
+  parentOf: ReadonlyMap<AgencyId, AgencyId>,
 ): AgencyLink[] {
-  return deriveAgencyLinks(links, chapterAgencies);
+  return deriveAgencyLinks(links, chapterAgencies, parentOf);
 }

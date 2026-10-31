@@ -50,12 +50,15 @@ const agencySchema = z.strictObject({
   aliases: z.array(z.string().min(1)),
   oarChapter: z.string().regex(/^\d+$/).nullable(),
   dasAgencyNumber: z.string().regex(/^\d+$/).nullable(),
+  /** The registry slug of the body the registry places this one under (a sub-unit's Department), or null: ticket #16 F3. */
+  parent: agencySlug.nullable(),
 });
 
 /**
  * The snapshot file (`formatVersion` 1), parsed. Besides the shape of each part it checks that the
  * parts agree: no Agency or ORS section twice, every Agency a chapter's row names is in the registry,
- * and every chapter with a row has a section in the list.
+ * every parent an Agency names is in the registry (and is not the Agency itself), and every chapter
+ * with a row has a section in the list.
  */
 export const snapshotSchema = z
   .strictObject({
@@ -72,6 +75,22 @@ export const snapshotSchema = z
         context.addIssue({ code: "custom", path: ["agencies"], message: `the agency ${agency.slug} is listed twice` });
       }
       slugs.add(agency.slug);
+    }
+    for (const agency of file.agencies) {
+      if (agency.parent === null) continue;
+      if (agency.parent === agency.slug) {
+        context.addIssue({
+          code: "custom",
+          path: ["agencies"],
+          message: `the agency ${agency.slug} is its own parent`,
+        });
+      } else if (!slugs.has(agency.parent)) {
+        context.addIssue({
+          code: "custom",
+          path: ["agencies"],
+          message: `the parent ${agency.parent} of the agency ${agency.slug} is not in the registry`,
+        });
+      }
     }
     const sections = new Set<OrsSectionId>();
     for (const section of file.orsSections) {
@@ -110,12 +129,15 @@ export const snapshotSchema = z
       }
       chapterAgencies.set(id, agencies);
     }
+    const agencyParents = new Map<AgencyId, AgencyId>();
+    for (const agency of file.agencies) if (agency.parent !== null) agencyParents.set(agency.slug, agency.parent);
     return {
       formatVersion: file.formatVersion,
       version: file.version satisfies SnapshotVersion,
       agencies: file.agencies,
       orsSections: file.orsSections,
       chapterAgencies,
+      agencyParents,
     };
   });
 

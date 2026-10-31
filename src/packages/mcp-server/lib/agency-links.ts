@@ -70,6 +70,12 @@ export const evidenceOutput = z.object({
     .describe(
       'For "derived": how many of the document\'s Statute Links that amend, repeal or add to reach the chapter, the one above included.',
     ),
+  through: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "For \"derived\", when the Agency has sub-units: the slugs of the sub-units whose rules implement the chapter, through which the Agency has this link. Absent when the chapter's rules are the Agency's own, or the Agency is itself the sub-unit.",
+    ),
 });
 
 export type EvidenceOutput = z.infer<typeof evidenceOutput>;
@@ -92,6 +98,7 @@ function kindFields(evidence: AgencyEvidence): Partial<EvidenceOutput> {
           measure_section: evidence.link.measureSection,
         },
         links_in_chapter: evidence.linksInChapter,
+        ...(evidence.through === undefined ? {} : { through: evidence.through }),
       };
     default:
       return evidence satisfies never;

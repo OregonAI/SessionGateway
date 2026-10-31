@@ -45,7 +45,8 @@ if (values.erf === undefined || values.out === undefined || (fixture === undefin
 }
 
 try {
-  const full = readErfSnapshot(values.erf);
+  const { file: full, warnings } = readErfSnapshot(values.erf);
+  for (const warning of warnings) console.error(`build: ${warning}`);
   const trim = fixture === undefined ? undefined : trimSnapshot(full, await readFixtureTexts(fixture));
   const snapshot = trim?.trimmed ?? full;
   parseSnapshot(snapshot);

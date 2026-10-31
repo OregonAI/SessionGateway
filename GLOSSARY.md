@@ -246,11 +246,11 @@ _Avoid_: table link, table row, when an entry is meant
 A Statute Link that amends, repeals or adds to, which the parsed text and a Table entry both have (`confirmed_by_table` in `get_measure`): the same ORS target, the same kind (the table's "A" is amends, "R" repeals, "Add" adds to) and the same measure section. A disagreement is the other two cases, a Table entry with no such parsed link and a parsed link with no such entry, each shown as its source has it. Citations are never compared.
 
 **Agency**:
-A state government unit as the OregonAI agency registry names it.
+A state government unit as the OregonAI agency registry names it. A sub-unit (a division with its own OAR chapter) is an Agency of its own, and the registry places it under a parent, which the Snapshot carries (ADR-0029).
 _Avoid_: department, issuing body
 
 **Agency Link**:
-A connection from a Measure, Version or Proposed Amendment to an Agency, of one kind: named in a Fiscal Impact Statement, named in the text, submitted Testimony, or derived through a Statute Link. Only a Statute Link that amends, repeals or adds to derives one, never a citation (ADR-0027). A Fiscal Impact Statement's link sits on the Version the statement is of, or on the Measure when the feed places it on none.
+A connection from a Measure, Version or Proposed Amendment to an Agency, of one kind: named in a Fiscal Impact Statement, named in the text, submitted Testimony, or derived through a Statute Link. Only a Statute Link that amends, repeals or adds to derives one, never a citation (ADR-0027), and a link derived to a sub-unit also gives its parent a link, which says it came through the sub-unit (ADR-0029). A Fiscal Impact Statement's link sits on the Version the statement is of, or on the Measure when the feed places it on none.
 _Avoid_: affected agency, unqualified
 
 **Posted time**:
@@ -273,5 +273,5 @@ The slice of OregonAI's data copied at build time, from a checkout of its execut
 _Avoid_: cache, mirror
 
 **Chapter table**:
-The Snapshot's table from an ORS chapter to the Agencies whose rules implement its sections, found from the rules' links to ORS sections and each rule's OAR chapter. It is how a Statute Link to a chapter reaches an Agency.
+The Snapshot's table from an ORS chapter to the Agencies whose rules implement its sections, found from the rules' links to ORS sections and each rule's OAR chapter. It is how a Statute Link to a chapter reaches an Agency. It lists a sub-unit, not its parent.
 _Avoid_: statute-to-agency map

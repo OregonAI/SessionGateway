@@ -166,6 +166,23 @@ function countsOf(file: SnapshotFile): Counts {
   };
 }
 
+/**
+ * The Agencies and the parents of them. A sub-unit that is kept names its parent, so the parent is kept whether or not
+ * a text names it or a rule of its own implements a kept chapter, and a parent's own parent after it.
+ */
+export function withParents(
+  kept: ReadonlySet<string>,
+  agencies: readonly { slug: string; parent: string | null }[],
+): Set<string> {
+  const parentOf = new Map(agencies.map((agency) => [agency.slug, agency.parent]));
+  const all = new Set(kept);
+  for (const slug of all) {
+    const parent = parentOf.get(slug);
+    if (parent !== null && parent !== undefined) all.add(parent);
+  }
+  return all;
+}
+
 /** The snapshot cut down to what the texts touch, and the parts of the record that follow from it. */
 export function trimSnapshot(
   file: SnapshotFile,
@@ -179,7 +196,7 @@ export function trimSnapshot(
     Object.entries(file.chapterAgencies).filter(([id]) => keptChapters.has(id)),
   );
   const named = agenciesNamedIn(texts, file.agencies);
-  const keptAgencies = new Set([...named, ...Object.values(chapterAgencies).flat()]);
+  const keptAgencies = withParents(new Set([...named, ...Object.values(chapterAgencies).flat()]), file.agencies);
   const trimmed: SnapshotFile = {
     ...file,
     agencies: file.agencies.filter((agency) => keptAgencies.has(agency.slug)),

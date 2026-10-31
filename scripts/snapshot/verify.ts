@@ -6,7 +6,7 @@
 //     recorded, so a Measure added to the 2025R1 fixture that cites a new chapter fails here until the
 //     snapshot fixture is rebuilt;
 //   - the snapshot holds the sections of exactly the cited chapters it could, and exactly the Agencies
-//     the fixture names or the table of a kept chapter lists.
+//     the fixture names or the table of a kept chapter lists, with the parent of each of them.
 // What a verify without the ERF checkout cannot see is whether the trim kept every section ERF has of a
 // kept chapter; rebuilding from the checkout (see the folder's README.md) is what shows that.
 //
@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { orsChaptersOf } from "#/packages/domain/oregonai.ts";
 import { parseSnapshot } from "#/packages/oregonai-snapshot/index.ts";
-import { agenciesNamedIn, citedOrsChapters, readFixtureTexts, trimRecordSchema } from "./touched.ts";
+import { agenciesNamedIn, citedOrsChapters, readFixtureTexts, trimRecordSchema, withParents } from "./touched.ts";
 
 const folder = process.argv[2] ?? "test/fixtures/oregonai-snapshot";
 const problems: string[] = [];
@@ -60,7 +60,12 @@ try {
   same(
     "the Agencies kept",
     snapshot.agencies.map((agency) => agency.slug),
-    [...new Set([...record.agenciesNamedInText, ...[...snapshot.chapterAgencies.values()].flat()])],
+    [
+      ...withParents(
+        new Set([...record.agenciesNamedInText, ...[...snapshot.chapterAgencies.values()].flat()]),
+        snapshot.agencies,
+      ),
+    ],
   );
 
   const kept = {

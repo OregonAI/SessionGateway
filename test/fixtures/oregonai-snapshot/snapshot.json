@@ -11,322 +11,368 @@
       "name": "Board of Geologist Examiners",
       "aliases": [],
       "oarChapter": "809",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": null
     },
     {
       "slug": "board-of-medical-imaging",
       "name": "Board of Medical Imaging",
       "aliases": [],
       "oarChapter": "337",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": null
     },
     {
       "slug": "board-of-nursing",
       "name": "Board of Nursing",
       "aliases": [],
       "oarChapter": "851",
-      "dasAgencyNumber": "851"
+      "dasAgencyNumber": "851",
+      "parent": null
     },
     {
       "slug": "board-of-optometry",
       "name": "Board of Optometry",
       "aliases": [],
       "oarChapter": "852",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": null
     },
     {
       "slug": "board-of-parole-and-post-prison-supervision",
       "name": "Board of Parole and Post-Prison Supervision",
       "aliases": [],
       "oarChapter": "255",
-      "dasAgencyNumber": "255"
+      "dasAgencyNumber": "255",
+      "parent": null
     },
     {
       "slug": "board-of-pharmacy",
       "name": "Board of Pharmacy",
       "aliases": [],
       "oarChapter": "855",
-      "dasAgencyNumber": "855"
+      "dasAgencyNumber": "855",
+      "parent": null
     },
     {
       "slug": "bureau-of-labor-and-industries",
       "name": "Bureau of Labor and Industries",
       "aliases": [],
       "oarChapter": "839",
-      "dasAgencyNumber": "839"
+      "dasAgencyNumber": "839",
+      "parent": null
     },
     {
       "slug": "commission-for-the-blind",
       "name": "Commission for the Blind",
       "aliases": [],
       "oarChapter": "585",
-      "dasAgencyNumber": "585"
+      "dasAgencyNumber": "585",
+      "parent": null
     },
     {
       "slug": "construction-contractors-board",
       "name": "Construction Contractors Board",
       "aliases": [],
       "oarChapter": "812",
-      "dasAgencyNumber": "915"
+      "dasAgencyNumber": "915",
+      "parent": null
     },
     {
       "slug": "department-of-administrative-services",
       "name": "Department of Administrative Services",
       "aliases": [],
       "oarChapter": "125",
-      "dasAgencyNumber": "107"
+      "dasAgencyNumber": "107",
+      "parent": null
     },
     {
       "slug": "department-of-administrative-services-chief-financial-office",
       "name": "Department of Administrative Services, Chief Financial Office",
       "aliases": [],
       "oarChapter": "122",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-administrative-services"
     },
     {
       "slug": "department-of-administrative-services-chief-human-resources-office",
       "name": "Department of Administrative Services, Chief Human Resources Office",
       "aliases": [],
       "oarChapter": "105",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-administrative-services"
     },
     {
       "slug": "department-of-agriculture",
       "name": "Department of Agriculture",
       "aliases": [],
       "oarChapter": "603",
-      "dasAgencyNumber": "603"
+      "dasAgencyNumber": "603",
+      "parent": null
     },
     {
       "slug": "department-of-agriculture-oregon-albacore-commission",
       "name": "Department of Agriculture, Oregon Albacore Commission",
       "aliases": [],
       "oarChapter": "972",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-agriculture"
     },
     {
       "slug": "department-of-agriculture-oregon-beef-council",
       "name": "Department of Agriculture, Oregon Beef Council",
       "aliases": [],
       "oarChapter": "605",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-agriculture"
     },
     {
       "slug": "department-of-agriculture-oregon-blueberry-commission",
       "name": "Department of Agriculture, Oregon Blueberry Commission",
       "aliases": [],
       "oarChapter": "670",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-agriculture"
     },
     {
       "slug": "department-of-agriculture-oregon-clover-seed-commission",
       "name": "Department of Agriculture, Oregon Clover Seed Commission",
       "aliases": [],
       "oarChapter": "664",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-agriculture"
     },
     {
       "slug": "department-of-agriculture-oregon-dairy-products-commission",
       "name": "Department of Agriculture, Oregon Dairy Products Commission",
       "aliases": [],
       "oarChapter": "617",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-agriculture"
     },
     {
       "slug": "department-of-agriculture-oregon-dungeness-crab-commission",
       "name": "Department of Agriculture, Oregon Dungeness Crab Commission",
       "aliases": [],
       "oarChapter": "645",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-agriculture"
     },
     {
       "slug": "department-of-agriculture-oregon-fine-fescue-commission",
       "name": "Department of Agriculture, Oregon Fine Fescue Commission",
       "aliases": [],
       "oarChapter": "604",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-agriculture"
     },
     {
       "slug": "department-of-agriculture-oregon-hazelnut-commission",
       "name": "Department of Agriculture, Oregon Hazelnut Commission",
       "aliases": [],
       "oarChapter": "623",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-agriculture"
     },
     {
       "slug": "department-of-agriculture-oregon-mint-commission",
       "name": "Department of Agriculture, Oregon Mint Commission",
       "aliases": [],
       "oarChapter": "642",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-agriculture"
     },
     {
       "slug": "department-of-agriculture-oregon-potato-commission",
       "name": "Department of Agriculture, Oregon Potato Commission",
       "aliases": [],
       "oarChapter": "658",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-agriculture"
     },
     {
       "slug": "department-of-agriculture-oregon-processed-vegetable-commission",
       "name": "Department of Agriculture, Oregon Processed Vegetable Commission",
       "aliases": [],
       "oarChapter": "647",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-agriculture"
     },
     {
       "slug": "department-of-agriculture-oregon-raspberry-and-blackberry-commission",
       "name": "Department of Agriculture, Oregon Raspberry and Blackberry Commission",
       "aliases": [],
       "oarChapter": "611",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-agriculture"
     },
     {
       "slug": "department-of-agriculture-oregon-ryegrass-growers-seed-commission",
       "name": "Department of Agriculture, Oregon Ryegrass Growers Seed Commission",
       "aliases": [],
       "oarChapter": "657",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-agriculture"
     },
     {
       "slug": "department-of-agriculture-oregon-salmon-commission",
       "name": "Department of Agriculture, Oregon Salmon Commission",
       "aliases": [],
       "oarChapter": "646",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-agriculture"
     },
     {
       "slug": "department-of-agriculture-oregon-sheep-commission",
       "name": "Department of Agriculture, Oregon Sheep Commission",
       "aliases": [],
       "oarChapter": "644",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-agriculture"
     },
     {
       "slug": "department-of-agriculture-oregon-strawberry-commission",
       "name": "Department of Agriculture, Oregon Strawberry Commission",
       "aliases": [],
       "oarChapter": "668",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-agriculture"
     },
     {
       "slug": "department-of-agriculture-oregon-sweet-cherry-commission",
       "name": "Department of Agriculture, Oregon Sweet Cherry Commission",
       "aliases": [],
       "oarChapter": "669",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-agriculture"
     },
     {
       "slug": "department-of-agriculture-oregon-tall-fescue-commission",
       "name": "Department of Agriculture, Oregon Tall Fescue Commission",
       "aliases": [],
       "oarChapter": "607",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-agriculture"
     },
     {
       "slug": "department-of-agriculture-oregon-trawl-commission",
       "name": "Department of Agriculture, Oregon Trawl Commission",
       "aliases": [],
       "oarChapter": "656",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-agriculture"
     },
     {
       "slug": "department-of-agriculture-oregon-wheat-commission",
       "name": "Department of Agriculture, Oregon Wheat Commission",
       "aliases": [],
       "oarChapter": "678",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-agriculture"
     },
     {
       "slug": "department-of-consumer-and-business-services",
       "name": "Department of Consumer and Business Services",
       "aliases": [],
       "oarChapter": null,
-      "dasAgencyNumber": "440"
+      "dasAgencyNumber": "440",
+      "parent": null
     },
     {
       "slug": "department-of-consumer-and-business-services-building-codes-division",
       "name": "Department of Consumer and Business Services, Building Codes Division",
       "aliases": [],
       "oarChapter": "918",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-consumer-and-business-services"
     },
     {
       "slug": "department-of-consumer-and-business-services-director-s-office",
       "name": "Department of Consumer and Business Services, Director's Office",
       "aliases": [],
       "oarChapter": "440",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-consumer-and-business-services"
     },
     {
       "slug": "department-of-consumer-and-business-services-finance-and-securities-regulation",
       "name": "Department of Consumer and Business Services, Finance and Securities Regulation",
       "aliases": [],
       "oarChapter": "441",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-consumer-and-business-services"
     },
     {
       "slug": "department-of-consumer-and-business-services-insurance-regulation",
       "name": "Department of Consumer and Business Services, Insurance Regulation",
       "aliases": [],
       "oarChapter": "836",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-consumer-and-business-services"
     },
     {
       "slug": "department-of-consumer-and-business-services-oregon-occupational-safety-and-health-division",
       "name": "Department of Consumer and Business Services, Oregon Occupational Safety and Health Division",
       "aliases": [],
       "oarChapter": "437",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-consumer-and-business-services"
     },
     {
       "slug": "department-of-consumer-and-business-services-workers-compensation-board",
       "name": "Department of Consumer and Business Services, Workers' Compensation Board",
       "aliases": [],
       "oarChapter": "438",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-consumer-and-business-services"
     },
     {
       "slug": "department-of-consumer-and-business-services-workers-compensation-division",
       "name": "Department of Consumer and Business Services, Workers' Compensation Division",
       "aliases": [],
       "oarChapter": "436",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-consumer-and-business-services"
     },
     {
       "slug": "department-of-corrections",
       "name": "Department of Corrections",
       "aliases": [],
       "oarChapter": "291",
-      "dasAgencyNumber": "291"
+      "dasAgencyNumber": "291",
+      "parent": null
     },
     {
       "slug": "department-of-energy",
       "name": "Department of Energy",
       "aliases": [],
       "oarChapter": "330",
-      "dasAgencyNumber": "330"
+      "dasAgencyNumber": "330",
+      "parent": null
     },
     {
       "slug": "department-of-energy-energy-facility-siting-council",
       "name": "Department of Energy, Energy Facility Siting Council",
       "aliases": [],
       "oarChapter": "345",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-energy"
     },
     {
       "slug": "department-of-environmental-quality",
       "name": "Department of Environmental Quality",
       "aliases": [],
       "oarChapter": "340",
-      "dasAgencyNumber": "340"
+      "dasAgencyNumber": "340",
+      "parent": null
     },
     {
       "slug": "department-of-fish-and-wildlife",
       "name": "Department of Fish and Wildlife",
       "aliases": [],
       "oarChapter": "635",
-      "dasAgencyNumber": "635"
+      "dasAgencyNumber": "635",
+      "parent": null
     },
     {
       "slug": "department-of-forestry",
@@ -335,70 +381,80 @@
         "State Forestry Department"
       ],
       "oarChapter": "629",
-      "dasAgencyNumber": "629"
+      "dasAgencyNumber": "629",
+      "parent": null
     },
     {
       "slug": "department-of-human-services",
       "name": "Department of Human Services",
       "aliases": [],
       "oarChapter": "407",
-      "dasAgencyNumber": "100"
+      "dasAgencyNumber": "100",
+      "parent": null
     },
     {
       "slug": "department-of-human-services-aging-and-people-with-disabilities-and-developmental-disabilities",
       "name": "Department of Human Services, Aging and People with Disabilities and Developmental Disabilities",
       "aliases": [],
       "oarChapter": "411",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-human-services"
     },
     {
       "slug": "department-of-human-services-child-welfare-programs",
       "name": "Department of Human Services, Child Welfare Programs",
       "aliases": [],
       "oarChapter": "413",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-human-services"
     },
     {
       "slug": "department-of-human-services-home-care-commission",
       "name": "Department of Human Services, Home Care Commission",
       "aliases": [],
       "oarChapter": "418",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-human-services"
     },
     {
       "slug": "department-of-human-services-self-sufficiency-programs",
       "name": "Department of Human Services, Self-Sufficiency Programs",
       "aliases": [],
       "oarChapter": "461",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-human-services"
     },
     {
       "slug": "department-of-justice",
       "name": "Department of Justice",
       "aliases": [],
       "oarChapter": "137",
-      "dasAgencyNumber": "137"
+      "dasAgencyNumber": "137",
+      "parent": null
     },
     {
       "slug": "department-of-public-safety-standards-and-training",
       "name": "Department of Public Safety Standards and Training",
       "aliases": [],
       "oarChapter": "259",
-      "dasAgencyNumber": "259"
+      "dasAgencyNumber": "259",
+      "parent": null
     },
     {
       "slug": "department-of-revenue",
       "name": "Department of Revenue",
       "aliases": [],
       "oarChapter": "150",
-      "dasAgencyNumber": "150"
+      "dasAgencyNumber": "150",
+      "parent": null
     },
     {
       "slug": "department-of-state-police",
       "name": "Department of State Police",
       "aliases": [],
       "oarChapter": "257",
-      "dasAgencyNumber": "257"
+      "dasAgencyNumber": "257",
+      "parent": null
     },
     {
       "slug": "department-of-state-police-office-of-state-fire-marshal",
@@ -409,70 +465,80 @@
         "State Fire Marshal"
       ],
       "oarChapter": "837",
-      "dasAgencyNumber": "260"
+      "dasAgencyNumber": "260",
+      "parent": "department-of-state-police"
     },
     {
       "slug": "department-of-transportation",
       "name": "Department of Transportation",
       "aliases": [],
       "oarChapter": "731",
-      "dasAgencyNumber": "730"
+      "dasAgencyNumber": "730",
+      "parent": null
     },
     {
       "slug": "department-of-transportation-driver-and-motor-vehicle-services-division",
       "name": "Department of Transportation, Driver and Motor Vehicle Services Division",
       "aliases": [],
       "oarChapter": "735",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-transportation"
     },
     {
       "slug": "department-of-transportation-highway-division",
       "name": "Department of Transportation, Highway Division",
       "aliases": [],
       "oarChapter": "734",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-transportation"
     },
     {
       "slug": "department-of-transportation-motor-carrier-transportation-division",
       "name": "Department of Transportation, Motor Carrier Transportation Division",
       "aliases": [],
       "oarChapter": "740",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-transportation"
     },
     {
       "slug": "department-of-transportation-public-transit-division",
       "name": "Department of Transportation, Public Transit Division",
       "aliases": [],
       "oarChapter": "732",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-transportation"
     },
     {
       "slug": "department-of-transportation-rail-division",
       "name": "Department of Transportation, Rail Division",
       "aliases": [],
       "oarChapter": "741",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-transportation"
     },
     {
       "slug": "department-of-transportation-transportation-safety-division",
       "name": "Department of Transportation, Transportation Safety Division",
       "aliases": [],
       "oarChapter": "737",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "department-of-transportation"
     },
     {
       "slug": "employment-department",
       "name": "Employment Department",
       "aliases": [],
       "oarChapter": "471",
-      "dasAgencyNumber": "471"
+      "dasAgencyNumber": "471",
+      "parent": null
     },
     {
       "slug": "employment-relations-board",
       "name": "Employment Relations Board",
       "aliases": [],
       "oarChapter": "115",
-      "dasAgencyNumber": "115"
+      "dasAgencyNumber": "115",
+      "parent": null
     },
     {
       "slug": "higher-education-coordinating-commission",
@@ -481,35 +547,40 @@
         "Higher Education Coordinating Commission"
       ],
       "oarChapter": "715",
-      "dasAgencyNumber": "525"
+      "dasAgencyNumber": "525",
+      "parent": null
     },
     {
       "slug": "higher-education-coordinating-commission-office-of-community-colleges-and-workforce-development",
       "name": "Higher Education Coordinating Commission, Office of Community Colleges and Workforce Development",
       "aliases": [],
       "oarChapter": "589",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "higher-education-coordinating-commission"
     },
     {
       "slug": "higher-education-coordinating-commission-office-of-degree-authorization",
       "name": "Higher Education Coordinating Commission, Office of Degree Authorization",
       "aliases": [],
       "oarChapter": "583",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "higher-education-coordinating-commission"
     },
     {
       "slug": "higher-education-coordinating-commission-office-of-student-access-and-completion",
       "name": "Higher Education Coordinating Commission, Office of Student Access and Completion",
       "aliases": [],
       "oarChapter": "575",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "higher-education-coordinating-commission"
     },
     {
       "slug": "judicial-department",
       "name": "Judicial Department",
       "aliases": [],
       "oarChapter": "198",
-      "dasAgencyNumber": "198"
+      "dasAgencyNumber": "198",
+      "parent": null
     },
     {
       "slug": "land-conservation-and-development-department",
@@ -518,91 +589,104 @@
         "Department of Land Conservation and Development"
       ],
       "oarChapter": "660",
-      "dasAgencyNumber": "660"
+      "dasAgencyNumber": "660",
+      "parent": null
     },
     {
       "slug": "landscape-architect-board",
       "name": "Landscape Architect Board",
       "aliases": [],
       "oarChapter": "804",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": null
     },
     {
       "slug": "landscape-contractors-board",
       "name": "Landscape Contractors Board",
       "aliases": [],
       "oarChapter": "808",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": null
     },
     {
       "slug": "legislative-assembly",
       "name": "Legislative Assembly",
       "aliases": [],
       "oarChapter": null,
-      "dasAgencyNumber": "155"
+      "dasAgencyNumber": "155",
+      "parent": null
     },
     {
       "slug": "legislative-commission-on-indian-services",
       "name": "Legislative Commission on Indian Services",
       "aliases": [],
       "oarChapter": null,
-      "dasAgencyNumber": "425"
+      "dasAgencyNumber": "425",
+      "parent": null
     },
     {
       "slug": "legislative-revenue-office",
       "name": "Legislative Revenue Office",
       "aliases": [],
       "oarChapter": null,
-      "dasAgencyNumber": "144"
+      "dasAgencyNumber": "144",
+      "parent": null
     },
     {
       "slug": "occupational-therapy-licensing-board",
       "name": "Occupational Therapy Licensing Board",
       "aliases": [],
       "oarChapter": "339",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": null
     },
     {
       "slug": "office-of-training-investigations-and-safety",
       "name": "Office of Training, Investigations and Safety",
       "aliases": [],
       "oarChapter": "419",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": null
     },
     {
       "slug": "oregon-board-of-dentistry",
       "name": "Oregon Board of Dentistry",
       "aliases": [],
       "oarChapter": "818",
-      "dasAgencyNumber": "834"
+      "dasAgencyNumber": "834",
+      "parent": null
     },
     {
       "slug": "oregon-board-of-naturopathic-medicine",
       "name": "Oregon Board of Naturopathic Medicine",
       "aliases": [],
       "oarChapter": "850",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": null
     },
     {
       "slug": "oregon-business-development-department",
       "name": "Oregon Business Development Department",
       "aliases": [],
       "oarChapter": "123",
-      "dasAgencyNumber": "123"
+      "dasAgencyNumber": "123",
+      "parent": null
     },
     {
       "slug": "oregon-department-of-aviation",
       "name": "Oregon Department of Aviation",
       "aliases": [],
       "oarChapter": "738",
-      "dasAgencyNumber": "109"
+      "dasAgencyNumber": "109",
+      "parent": null
     },
     {
       "slug": "oregon-department-of-education",
       "name": "Oregon Department of Education",
       "aliases": [],
       "oarChapter": "581",
-      "dasAgencyNumber": "581"
+      "dasAgencyNumber": "581",
+      "parent": null
     },
     {
       "slug": "oregon-department-of-education-early-learning-division",
@@ -613,77 +697,88 @@
         "Early Learning Division of the Department of Education"
       ],
       "oarChapter": "414",
-      "dasAgencyNumber": "588"
+      "dasAgencyNumber": "588",
+      "parent": "oregon-department-of-education"
     },
     {
       "slug": "oregon-film-and-video-office",
       "name": "Oregon Film and Video Office",
       "aliases": [],
       "oarChapter": "951",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": null
     },
     {
       "slug": "oregon-government-ethics-commission",
       "name": "Oregon Government Ethics Commission",
       "aliases": [],
       "oarChapter": "199",
-      "dasAgencyNumber": "199"
+      "dasAgencyNumber": "199",
+      "parent": null
     },
     {
       "slug": "oregon-health-authority",
       "name": "Oregon Health Authority",
       "aliases": [],
       "oarChapter": "943",
-      "dasAgencyNumber": "443"
+      "dasAgencyNumber": "443",
+      "parent": null
     },
     {
       "slug": "oregon-health-authority-health-licensing-office",
       "name": "Oregon Health Authority, Health Licensing Office",
       "aliases": [],
       "oarChapter": "331",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "oregon-health-authority"
     },
     {
       "slug": "oregon-health-authority-health-systems-division-addiction-services",
       "name": "Oregon Health Authority, Health Systems Division: Addiction Services",
       "aliases": [],
       "oarChapter": "415",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "oregon-health-authority"
     },
     {
       "slug": "oregon-health-authority-health-systems-division-behavioral-health-services",
       "name": "Oregon Health Authority, Health Systems Division: Behavioral Health Services",
       "aliases": [],
       "oarChapter": "309",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "oregon-health-authority"
     },
     {
       "slug": "oregon-health-authority-health-systems-division-medical-assistance-programs",
       "name": "Oregon Health Authority, Health Systems Division: Medical Assistance Programs",
       "aliases": [],
       "oarChapter": "410",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "oregon-health-authority"
     },
     {
       "slug": "oregon-health-authority-public-employees-benefit-board",
       "name": "Oregon Health Authority, Public Employees' Benefit Board",
       "aliases": [],
       "oarChapter": "101",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "oregon-health-authority"
     },
     {
       "slug": "oregon-health-authority-public-health-division",
       "name": "Oregon Health Authority, Public Health Division",
       "aliases": [],
       "oarChapter": "333",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "oregon-health-authority"
     },
     {
       "slug": "oregon-housing-and-community-services-department",
       "name": "Oregon Housing and Community Services Department",
       "aliases": [],
       "oarChapter": "813",
-      "dasAgencyNumber": "914"
+      "dasAgencyNumber": "914",
+      "parent": null
     },
     {
       "slug": "oregon-liquor-control-commission",
@@ -693,35 +788,40 @@
         "Oregon Liquor and Cannabis Commission"
       ],
       "oarChapter": "845",
-      "dasAgencyNumber": "845"
+      "dasAgencyNumber": "845",
+      "parent": null
     },
     {
       "slug": "oregon-medical-board",
       "name": "Oregon Medical Board",
       "aliases": [],
       "oarChapter": "847",
-      "dasAgencyNumber": "847"
+      "dasAgencyNumber": "847",
+      "parent": null
     },
     {
       "slug": "oregon-public-employees-retirement-system",
       "name": "Oregon Public Employees Retirement System",
       "aliases": [],
       "oarChapter": "459",
-      "dasAgencyNumber": "459"
+      "dasAgencyNumber": "459",
+      "parent": null
     },
     {
       "slug": "oregon-state-library",
       "name": "Oregon State Library",
       "aliases": [],
       "oarChapter": "543",
-      "dasAgencyNumber": "543"
+      "dasAgencyNumber": "543",
+      "parent": null
     },
     {
       "slug": "oregon-state-lottery",
       "name": "Oregon State Lottery",
       "aliases": [],
       "oarChapter": "177",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": null
     },
     {
       "slug": "oregon-state-treasury",
@@ -731,98 +831,112 @@
         "State Treasurer"
       ],
       "oarChapter": "170",
-      "dasAgencyNumber": "170"
+      "dasAgencyNumber": "170",
+      "parent": null
     },
     {
       "slug": "oregon-tourism-commission",
       "name": "Oregon Tourism Commission",
       "aliases": [],
       "oarChapter": "976",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": null
     },
     {
       "slug": "oregon-watershed-enhancement-board",
       "name": "Oregon Watershed Enhancement Board",
       "aliases": [],
       "oarChapter": "695",
-      "dasAgencyNumber": "691"
+      "dasAgencyNumber": "691",
+      "parent": null
     },
     {
       "slug": "oregon-watershed-enhancement-board-oregon-agricultural-heritage-program",
       "name": "Oregon Watershed Enhancement Board, Oregon Agricultural Heritage Program",
       "aliases": [],
       "oarChapter": "698",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "oregon-watershed-enhancement-board"
     },
     {
       "slug": "oregon-youth-authority",
       "name": "Oregon Youth Authority",
       "aliases": [],
       "oarChapter": "416",
-      "dasAgencyNumber": "415"
+      "dasAgencyNumber": "415",
+      "parent": null
     },
     {
       "slug": "parks-and-recreation-department",
       "name": "Parks and Recreation Department",
       "aliases": [],
       "oarChapter": "736",
-      "dasAgencyNumber": "634"
+      "dasAgencyNumber": "634",
+      "parent": null
     },
     {
       "slug": "psychiatric-security-review-board",
       "name": "Psychiatric Security Review Board",
       "aliases": [],
       "oarChapter": "859",
-      "dasAgencyNumber": "399"
+      "dasAgencyNumber": "399",
+      "parent": null
     },
     {
       "slug": "public-utility-commission",
       "name": "Public Utility Commission",
       "aliases": [],
       "oarChapter": "860",
-      "dasAgencyNumber": "860"
+      "dasAgencyNumber": "860",
+      "parent": null
     },
     {
       "slug": "real-estate-agency",
       "name": "Real Estate Agency",
       "aliases": [],
       "oarChapter": "863",
-      "dasAgencyNumber": "919"
+      "dasAgencyNumber": "919",
+      "parent": null
     },
     {
       "slug": "secretary-of-state",
       "name": "Secretary of State",
       "aliases": [],
       "oarChapter": null,
-      "dasAgencyNumber": "165"
+      "dasAgencyNumber": "165",
+      "parent": null
     },
     {
       "slug": "secretary-of-state-archives-division",
       "name": "Secretary of State, Archives Division",
       "aliases": [],
       "oarChapter": "166",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "secretary-of-state"
     },
     {
       "slug": "secretary-of-state-corporation-division",
       "name": "Secretary of State, Corporation Division",
       "aliases": [],
       "oarChapter": "160",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "secretary-of-state"
     },
     {
       "slug": "secretary-of-state-elections-division",
       "name": "Secretary of State, Elections Division",
       "aliases": [],
       "oarChapter": "165",
-      "dasAgencyNumber": null
+      "dasAgencyNumber": null,
+      "parent": "secretary-of-state"
     },
     {
       "slug": "water-resources-department",
       "name": "Water Resources Department",
       "aliases": [],
       "oarChapter": "690",
-      "dasAgencyNumber": "690"
+      "dasAgencyNumber": "690",
+      "parent": null
     }
   ],
   "orsSections": [

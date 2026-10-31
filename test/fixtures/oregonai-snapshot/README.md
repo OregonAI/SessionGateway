@@ -6,7 +6,7 @@ OregonAI's repository. It is made by the same script that builds the whole snaps
 
 | File | What it holds |
 |---|---|
-| `snapshot.json` | The snapshot: `version` (the `executive-regulatory-frameworks` commit it was read from and the commit's date), `agencies`, `orsSections` and `chapterAgencies`. |
+| `snapshot.json` | The snapshot: `version` (the `executive-regulatory-frameworks` commit it was read from and the commit's date), `agencies` (each with its `parent`, the body the registry's `relations` places it under, or null), `orsSections` and `chapterAgencies`. |
 | `trim.json` | What the trim kept and why: the ORS chapters the fixture cites, those of them the snapshot has no section of, the Agencies the fixture names, the counts kept and in all, and the SHA-256 of `snapshot.json`. |
 
 ## What was kept
@@ -17,9 +17,12 @@ Taken from the checkout at commit `58e1839d441addf3ac1e1748c91ce3de78d3f342` (20
 - 39 ORS chapters, of 531 with a section: every chapter that a document or a Measure of the 2025R1
   fixture cites in one of the forms listed under "How the list was taken". Each keeps all its sections
   (4,392 of 37,534), so a range can be expanded inside it.
-- 114 Agencies, of 190 registry rows: the 28 whose name or alias the fixture's texts contain, and every
-  Agency a rule of which implements a section of a kept chapter. The second kind is most of them: chapter
-  192 (public records) alone has 57, because many agencies' rules implement it.
+- 114 Agencies, of 190 registry rows: the 28 whose name or alias the fixture's texts contain, every
+  Agency a rule of which implements a section of a kept chapter, and the parent of each Agency kept
+  (ADR-0029), so that no `parent` names a row the file lacks. The second kind is most of them: chapter
+  192 (public records) alone has 57, because many agencies' rules implement it. Of the 114, 55 have a
+  parent (27 `part_of`, 26 `administered_by` and 2 `undetermined` relations), and all 55 parents were
+  already kept by the first two rules; the third rule matters when a fixture or a registry changes.
 - The chapter table's rows for the kept chapters: each of the 39 has one (39 of 439 rows in all).
 
 `snapshot.json` is about 120 KB; the whole snapshot is about 850 KB.
@@ -43,7 +46,7 @@ too much rather than too little:
    `trim.json` under `orsChaptersNotInSnapshot`; this time there is none.
 2. **Agencies.** An Agency is kept when its `name` or one of its `aliases` is written, as whole words and
    without regard to case, in any of those texts or in the `Organization` of a Testimony row, or when the
-   chapter table lists it under a kept chapter.
+   chapter table lists it under a kept chapter, or when it is the parent of an Agency kept for either reason.
 
 ## Regenerating
 
@@ -64,7 +67,7 @@ fixture that cites a chapter this one lacks fails `verify.ts` until the snapshot
 `verify.ts` needs no checkout and runs in `npm run check` (`snapshot:verify`, a step of its own after `fixture:verify`, so that the summary says whether this fixture is sound when the 2025R1 one is not). It checks that
 `snapshot.json` is the file `trim.json` hashed, that it parses, that the chapters the 2025R1 fixture cites
 are the recorded ones, and that the snapshot holds the sections of exactly those chapters and the
-Agencies the fixture names or the table lists. It cannot see whether the trim kept every section ERF has
+Agencies the fixture names or the table lists, with their parents. It cannot see whether the trim kept every section ERF has
 of a kept chapter; rebuilding from the checkout shows that.
 
 Do not edit the generated files by hand. The hash check would catch it, and the snapshot could no longer

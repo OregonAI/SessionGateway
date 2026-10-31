@@ -19,6 +19,11 @@ export type Agency = {
   oarChapter: string | null;
   /** The number DAS assigns the body in the Oregon Accounting Manual, such as "340". */
   dasAgencyNumber: string | null;
+  /**
+   * The body the registry's `relations` places this one under: a sub-unit's Department. Null for a body with no relation,
+   * and for one the registry places under more than one body, which the build reports (ERF treats that as a finding).
+   */
+  parent: AgencyId | null;
 };
 
 export type Snapshot = {
@@ -33,6 +38,8 @@ export type Snapshot = {
    * implements has no entry.
    */
   chapterAgencies: ReadonlyMap<OrsChapterId, AgencyId[]>;
+  /** Each Agency that has a parent, by slug, to its parent's slug: the `parent` of the rows of `agencies`. */
+  agencyParents: ReadonlyMap<AgencyId, AgencyId>;
 };
 
 /** Parses what a snapshot file holds. Throws, naming each problem, if it is not a snapshot. */
