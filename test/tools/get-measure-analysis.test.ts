@@ -6,7 +6,7 @@
 // fixture lacks, or that change a row between two pulls, are in get-measure-analysis-labels.test.ts.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 
 let system: System;
 
@@ -15,7 +15,7 @@ beforeAll(async () => {
   // documents, the analysis documents among them.
   // The cases make more than the default 120 tool calls in a minute together (the simulated clock never
   // moves, so the window never ends); the limit has its own file, get-measure-rate-limit.test.ts.
-  system = await startSystem({
+  system = await startCopiedSystem({
     clockAt: "2026-08-01T17:00:00Z",
     documents: true,
     serverEnv: { MCP_RATE_LIMIT: "1000" },

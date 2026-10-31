@@ -8,7 +8,7 @@
 // Legislators rows, and the id form is the one GLOSSARY.md gives.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 import {
   hb3795Hechs,
   hb3795FloorVotes,
@@ -25,7 +25,7 @@ let system: System;
 beforeAll(async () => {
   // 2025-12-15, after every row these Measures have was created: the fake OLIS hides a row created
   // after its clock, and the Legislators snapshot's newest row is from 2025-06-07.
-  system = await startSystem({ clockAt: "2025-12-15T17:00:00Z" });
+  system = await startCopiedSystem({ clockAt: "2025-12-15T17:00:00Z" });
 });
 
 afterAll(async () => {

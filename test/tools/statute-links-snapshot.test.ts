@@ -16,7 +16,7 @@ import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.
 import { createFakeEmbedder } from "../support/fake-embedder.ts";
 import { readAgencyLinksWithOnlyTheStamp } from "../support/old-database.ts";
 import { createFixtureCopy, type FixtureCopy } from "../support/made-up-snapshot.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { systemTemplate, type System, type SystemTemplate } from "../support/system.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -51,13 +51,13 @@ function snapshotCopy(): FixtureCopy {
   return copy;
 }
 
+// Every case begins with the pull of the committed snapshot at a clock of its own, so the cases copy one database for each
+// clock; the pull each case runs after `changeIt()` is the subject and is a real one (test/CLAUDE.md, "Database").
+const templateAt = (clockAt: string): SystemTemplate =>
+  systemTemplate({ clockAt, documents: true, serverEnv: { MCP_RATE_LIMIT: "1000" } });
+
 async function startAt(snapshot: string, clockAt = "2026-08-01T17:00:00Z"): Promise<System> {
-  const system = await startSystem({
-    clockAt,
-    documents: true,
-    snapshot,
-    serverEnv: { MCP_RATE_LIMIT: "1000" },
-  });
+  const system = await templateAt(clockAt).start({ snapshot });
   cleanups.push(() => system.stop());
   return system;
 }
