@@ -168,6 +168,148 @@ describe.for(eras)("get_measure's Agency Links for a %s client", (era) => {
     });
   });
 
+  /** A derived evidence entry as [node, document, chapter, link kind, link target, measure section, links in the chapter]. */
+  function derivedOf(
+    links: AgencyLinks,
+    agency: string,
+  ): [string, string, string, string, string, string | null, number][] {
+    const entry = links.agencies.find((candidate) => candidate.agency_id === agency);
+    return (entry?.evidence ?? [])
+      .filter((evidence) => evidence.kind === "derived")
+      .map((evidence) => [
+        evidence.node_id,
+        evidence.document_id,
+        evidence.chapter_id ?? "",
+        evidence.statute_link?.kind ?? "",
+        evidence.statute_link?.target_id ?? "",
+        evidence.statute_link?.measure_section ?? null,
+        evidence.links_in_chapter ?? 0,
+      ]);
+  }
+
+  // SB 69's A-Engrossed and Enrolled Versions and its Proposed Amendments -1 and -2 have the same changes to the law
+  // (pdftotext of measure-documents/SB69/A-Engrossed.pdf and proposed-amendments/26284.pdf, 26286.pdf): SECTION 1 adds
+  // section 2 of the Act "to and made a part of ORS chapter 657B"; SECTIONS 3 to 10 amend ORS 657B.070, 659A.159,
+  // 659A.165, 657B.400, 657B.060, 653.616, 653.626 and 659A.156. So the changes reach chapter 657B four times (SECTIONS
+  // 1, 3, 6 and 7), chapter 659A three times (4, 5 and 10) and chapter 653 twice (8 and 9). The snapshot fixture's
+  // Chapter table (test/fixtures/oregonai-snapshot/snapshot.json) gives chapter 653 to the Bureau of Labor and Industries
+  // alone, 657B to it and the Employment Department, and 659A to it, DAS's Chief Human Resources Office, Corrections,
+  // DHS's Aging and People with Disabilities and Developmental Disabilities, OHA's Public Employees Benefit Board and
+  // the State Treasury. The same text cites ORS chapter 657 ("ORS chapter 657." in 26284.pdf and Enrolled.pdf), whose
+  // Agencies include the Board of Nursing, and the Introduced Version cites ORS 192.245, a chapter 57 Agencies
+  // implement, among them the Board of Optometry: a citation is not a change, so neither Agency is linked (ADR-0027).
+  describe("derived through a Statute Link", () => {
+    const sb69Nodes = [
+      ["amendment-2025r1-sb69-1", "posting-2025r1-26284"],
+      ["amendment-2025r1-sb69-2", "posting-2025r1-26286"],
+      ["version-2025r1-sb69-a-engrossed", "version-2025r1-sb69-a-engrossed"],
+      ["version-2025r1-sb69-enrolled", "version-2025r1-sb69-enrolled"],
+    ] as const;
+
+    it("links the Bureau of Labor and Industries to SB 69 through each chapter its sections change, naming the Statute Link", async () => {
+      const links = await agencyLinksOf("SB 69");
+
+      expect(derivedOf(links, "bureau-of-labor-and-industries")).toEqual(
+        sb69Nodes.flatMap(([node, document]): [string, string, string, string, string, string | null, number][] => [
+          [node, document, "ors-chapter-657b", "adds-to", "ors-chapter-657b", "1", 4],
+          [node, document, "ors-chapter-659a", "amends", "ors-659a.159", "4", 3],
+          [node, document, "ors-chapter-653", "amends", "ors-653.616", "8", 2],
+        ]),
+      );
+    });
+
+    it("links every Agency the Chapter table gives those chapters, and no other, to SB 69's A-Engrossed Version", async () => {
+      const links = await agencyLinksOf("SB 69");
+
+      const onAEngrossed = links.agencies
+        .filter((agency) =>
+          agency.evidence.some(
+            (evidence) => evidence.kind === "derived" && evidence.node_id === "version-2025r1-sb69-a-engrossed",
+          ),
+        )
+        .map((agency) => agency.agency_id);
+      expect(onAEngrossed).toEqual([
+        "bureau-of-labor-and-industries",
+        "department-of-administrative-services-chief-human-resources-office",
+        "department-of-corrections",
+        "department-of-human-services-aging-and-people-with-disabilities-and-developmental-disabilities",
+        "employment-department",
+        "oregon-health-authority-public-employees-benefit-board",
+        "oregon-state-treasury",
+      ]);
+    });
+
+    it("derives nothing from a citation", async () => {
+      const links = await agencyLinksOf("SB 69");
+
+      const agencies = links.agencies.map((agency) => agency.agency_id);
+      expect(agencies).not.toContain("board-of-optometry");
+      expect(agencies).not.toContain("board-of-nursing");
+      const chapters = links.agencies.flatMap((agency) => agency.evidence.map((evidence) => evidence.chapter_id));
+      expect(chapters).not.toContain("ors-chapter-192");
+      expect(chapters).not.toContain("ors-chapter-657");
+    });
+
+    // HB 3795: A-Engrossed amends ORS 409.711 (SECTION 1); B-Engrossed and Enrolled amend it and ORS 418.808 (SECTION 2);
+    // Proposed Amendment -1 amends 409.711 (SECTION 1) and -A3 amends 418.808 (SECTION 2) (pdftotext of
+    // measure-documents/HB3795/ and proposed-amendments/27966.pdf, 28997.pdf). The Introduced Version amends no ORS
+    // section (SECTION 2 repeals section 1 of the Act). The Chapter table gives chapters 409 and 418 the Department
+    // of Human Services among others.
+    it("links the Department of Human Services to HB 3795 through the sections its Versions and amendments change", async () => {
+      const links = await agencyLinksOf("HB 3795");
+
+      expect(derivedOf(links, "department-of-human-services")).toEqual([
+        ["amendment-2025r1-hb3795-1", "posting-2025r1-27966", "ors-chapter-409", "amends", "ors-409.711", "1", 1],
+        ["amendment-2025r1-hb3795-a3", "posting-2025r1-28997", "ors-chapter-418", "amends", "ors-418.808", "2", 1],
+        [
+          "version-2025r1-hb3795-a-engrossed",
+          "version-2025r1-hb3795-a-engrossed",
+          "ors-chapter-409",
+          "amends",
+          "ors-409.711",
+          "1",
+          1,
+        ],
+        [
+          "version-2025r1-hb3795-b-engrossed",
+          "version-2025r1-hb3795-b-engrossed",
+          "ors-chapter-409",
+          "amends",
+          "ors-409.711",
+          "1",
+          1,
+        ],
+        [
+          "version-2025r1-hb3795-b-engrossed",
+          "version-2025r1-hb3795-b-engrossed",
+          "ors-chapter-418",
+          "amends",
+          "ors-418.808",
+          "2",
+          1,
+        ],
+        [
+          "version-2025r1-hb3795-enrolled",
+          "version-2025r1-hb3795-enrolled",
+          "ors-chapter-409",
+          "amends",
+          "ors-409.711",
+          "1",
+          1,
+        ],
+        [
+          "version-2025r1-hb3795-enrolled",
+          "version-2025r1-hb3795-enrolled",
+          "ors-chapter-418",
+          "amends",
+          "ors-418.808",
+          "2",
+          1,
+        ],
+      ]);
+    });
+  });
+
   // SB 983's Introduced Fiscal Impact Statement is analysis 88044 and its A-Engrossed one 91466 (feed/
   // MeasureAnalysisDocuments.json, Version "INTRO" and "A"); both read "Government Unit(s) Affected: Cities, Counties,
   // School Districts, Special Districts, Metro, TriMet" (pdftotext of measure-analysis-documents/88044.pdf and

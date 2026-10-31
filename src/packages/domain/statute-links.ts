@@ -63,6 +63,12 @@ export type StatuteLink = {
   measureSection: string | null;
 };
 
+/** Orders the numbers of measure sections as a reader does: "8" before "10" before "21a", and a link with no measure section last. */
+export function compareMeasureSections(a: string | null, b: string | null): number {
+  if (a === null || b === null) return a === b ? 0 : a === null ? 1 : -1;
+  return a.localeCompare(b, "en", { numeric: true });
+}
+
 /**
  * The letters the Statutes Affected Table (GLOSSARY.md) puts beside an ORS target: "A" for an amendment, "R" for a
  * repeal, "Add" for a section "added to and made a part of" a chapter or series. The table has no letter for a citation.

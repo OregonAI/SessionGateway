@@ -427,10 +427,17 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     for (const file of writer.unreadStatuteFiles(config.session)) {
       writer.storeStatuteParse(statuteParseOf(file, writer.storedText(file.documentId), snapshot.orsSections));
     }
-    // The Agency Links of every stored Fiscal Impact Statement not yet read, from the text the store holds
-    // (ADR-0027).
+    // The Agency Links of every stored Fiscal Impact Statement, Version and posting not yet read, from the text the
+    // store holds and the Statute Links read from it just above (ADR-0027).
     for (const document of writer.unreadAgencyDocuments(config.session)) {
-      writer.storeAgencyRead(agencyReadOf(document, writer.storedText(document.documentId), snapshot));
+      writer.storeAgencyRead(
+        agencyReadOf(
+          document,
+          writer.storedText(document.documentId),
+          writer.statuteLinksOf(document.documentId),
+          snapshot,
+        ),
+      );
     }
     const listingCounts = new Map(writer.listingCounts(config.session).map((count) => [count.entitySet, count]));
     const unresolvedMemberCodes = new Set(

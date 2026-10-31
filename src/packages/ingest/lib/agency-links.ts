@@ -1,7 +1,8 @@
 // Reading a stored document for Agency Links (spec #1, module 5; ADR-0027). The extractor is `agency-links`; this
 // is only what the worker does with it: which function reads which kind of document, with the snapshot's registry.
-import { fiscalImpactAgencyLinks, textAgencyLinks } from "#/packages/agency-links/index.ts";
+import { derivedAgencyLinks, fiscalImpactAgencyLinks, textAgencyLinks } from "#/packages/agency-links/index.ts";
 import type { AgencyReadRecord, UnreadAgencyDocument } from "#/packages/database/writer.ts";
+import type { StatuteLink } from "#/packages/domain/statute-links.ts";
 import type { Snapshot } from "#/packages/oregonai-snapshot/index.ts";
 
 /**
@@ -11,6 +12,7 @@ import type { Snapshot } from "#/packages/oregonai-snapshot/index.ts";
 export function agencyReadOf(
   document: UnreadAgencyDocument,
   stored: { text: string; hasTextLayer: boolean },
+  statuteLinks: readonly StatuteLink[],
   snapshot: Snapshot,
 ): AgencyReadRecord {
   const none: AgencyReadRecord = { documentId: document.documentId, links: [], unresolvedUnits: [] };
@@ -32,7 +34,10 @@ export function agencyReadOf(
     case "proposed_amendment":
       return {
         documentId: document.documentId,
-        links: textAgencyLinks(stored.text, snapshot.agencies),
+        links: [
+          ...textAgencyLinks(stored.text, snapshot.agencies),
+          ...derivedAgencyLinks(statuteLinks, snapshot.chapterAgencies),
+        ],
         unresolvedUnits: [],
       };
     default:

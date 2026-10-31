@@ -9,6 +9,7 @@ import {
 } from "#/packages/domain/documents.ts";
 import type { MeasureKey } from "#/packages/domain/index.ts";
 import {
+  compareMeasureSections,
   statuteLinkKinds,
   type AmendmentFile,
   type RelatingClauseEdit,
@@ -75,12 +76,6 @@ export const relatingClauseEditOutput = z.object({
 
 export type StatuteLinksOutput = z.infer<typeof statuteLinksOutput>;
 export type RelatingClauseEditOutput = z.infer<typeof relatingClauseEditOutput>;
-
-/** "8" before "10" before "21a"; a link with no measure section last. */
-export function compareMeasureSections(a: string | null, b: string | null): number {
-  if (a === null || b === null) return a === b ? 0 : a === null ? 1 : -1;
-  return a.localeCompare(b, "en", { numeric: true });
-}
 
 /**
  * The links by kind (spec #1, story 24: the changes first, then the mentions, which the order of the keys
