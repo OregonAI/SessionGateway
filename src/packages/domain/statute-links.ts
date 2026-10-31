@@ -2,7 +2,13 @@
 // (ADR-0004): `ors-163a.040` for a section, with a subsection cut back to its section, and
 // `ors-chapter-657b` for a chapter, which OregonAI has no page for. Those ids are minted and parsed in
 // oregonai.ts, the one module for OregonAI's id forms (src/CLAUDE.md, "Shape").
-import type { AmendmentHeader, AmendmentId, AmendmentPosting, DocumentId } from "./documents.ts";
+import {
+  versionDescriptionOfLetter,
+  type AmendmentHeader,
+  type AmendmentId,
+  type AmendmentPosting,
+  type DocumentId,
+} from "./documents.ts";
 import type { MeasureId } from "./index.ts";
 import type { OrsChapterId, OrsSectionId } from "./oregonai.ts";
 
@@ -32,6 +38,57 @@ export type StatuteLink = {
   target: StatuteTarget;
   measureSection: string | null;
 };
+
+/**
+ * The letters the Statutes Affected Table (GLOSSARY.md) puts beside an ORS target: "A" for an amendment, "R" for a
+ * repeal, "Add" for a section "added to and made a part of" a chapter or series. The table has no letter for a citation.
+ */
+export const tableActions = ["A", "R", "Add"] as const;
+export type TableAction = (typeof tableActions)[number];
+
+/** The kind of Statute Link a table action says: the table's "A" is a link that amends, its "R" one that repeals, its "Add" one that adds to. */
+export const statuteLinkKindOfTableAction: Record<TableAction, Exclude<StatuteLinkKind, "cites">> = {
+  A: "amends",
+  R: "repeals",
+  Add: "adds-to",
+};
+
+/** The kinds the table can say, which are the kinds that change the law: every kind but "cites". */
+export const statuteChangeKinds = statuteLinkKinds.filter(
+  (kind): kind is Exclude<StatuteLinkKind, "cites"> => kind !== "cites",
+);
+
+/**
+ * One row of the Statutes Affected Table (GLOSSARY.md, "Table entry"): an ORS section or chapter, what the Measure does
+ * to it, the measure section that does it, and the Measure with the engrossing level the table made the row from. A
+ * series the table prints once ("9.005 to 9.757") is one entry for each section of it that the snapshot lists.
+ */
+export type StatutesAffectedEntry = {
+  /** The Measure the row is for. The table is of one Session, so it names no Session. */
+  measure: { prefix: string; number: number };
+  /**
+   * The engrossing level printed beside the Measure: "A" for the A-Engrossed Version, "B", "C", or a longer one such as
+   * "BCC" (a conference committee report). Null when none is printed, which is the Introduced Version.
+   */
+  level: string | null;
+  action: TableAction;
+  /** The ORS section or chapter. A chapter is marked as having no OregonAI id, as a parsed link's is. */
+  target: StatuteTarget;
+  /** The measure section as the table prints it after the section sign ("8", "93a"). */
+  measureSection: string;
+  /** True when the table's last column has an "E": an emergency clause applies. */
+  emergency: boolean;
+};
+
+/**
+ * The description of the Version a table entry's level names, in the words the feed describes Versions in:
+ * no level is "Introduced", the letter "A" is "A-Engrossed". A level of more than one letter ("BCC", a conference
+ * committee report) names no Version the store holds as such, so nothing is guessed: undefined.
+ */
+export function versionDescriptionOfTableLevel(level: string | null): string | undefined {
+  if (level === null) return versionDescriptionOfLetter(null);
+  return /^[A-Z]$/.test(level) ? versionDescriptionOfLetter(level) : undefined;
+}
 
 /**
  * One edit a Proposed Amendment makes to the Measure's relating clause, the text that says what the Measure
