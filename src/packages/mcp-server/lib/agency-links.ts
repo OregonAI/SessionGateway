@@ -153,7 +153,8 @@ export type AgencyLinksOutput = z.infer<typeof agencyLinksOutput>;
 export const AGENCY_LINKS_NOTE =
   "An Agency Link sits on the Measure, a Version or a Proposed Amendment (node_id): a Fiscal Impact Statement's links on the Version the Legislature's label places it on, or on the Measure when it places it on none; a Version's or a posting's on that Version or Proposed Amendment; Testimony's on the Measure. A link derived through a Statute Link counts only Statute Links that amend, repeal or add to: a citation of a section derives none.";
 
-function compareLinks(a: StoredAgencyLink, b: StoredAgencyLink): number {
+/** The order links are listed in: by kind (derived first), then the node, then the document the evidence was read from. */
+export function compareLinks(a: StoredAgencyLink, b: StoredAgencyLink): number {
   return (
     agencyEvidenceKinds.indexOf(a.evidence.kind) - agencyEvidenceKinds.indexOf(b.evidence.kind) ||
     numbersInOrder.compare(a.node.id, b.node.id) ||

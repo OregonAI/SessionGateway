@@ -47,6 +47,11 @@ export function downloadUrlOf(sourceUrl: string, documentOrigin: string): URL {
   return new URL(url.pathname + url.search, documentOrigin);
 }
 
+/** The `createdAt` of a link: the row's own `CreatedDate`, when the row has one. */
+function createdAtOf(createdDate: Timestamp | null | undefined): { createdAt?: Timestamp } {
+  return createdDate === null || createdDate === undefined ? {} : { createdAt: createdDate };
+}
+
 function measureRelation(key: MeasureKey, provenance: string): DocumentRelation {
   return { relation: "measure", to: measureIdOf(key), meaning: null, provenance };
 }
@@ -131,6 +136,7 @@ async function readVersions(
       sourceUrl: sourceUrlOf(row.DocumentUrl),
       postedAt: null,
       date: row.CreatedDate ?? null,
+      ...createdAtOf(row.CreatedDate),
       relations,
     };
   });
@@ -187,6 +193,7 @@ async function readAnalyses(
       sourceUrl: sourceUrlOf(row.DocumentUrl),
       postedAt: null,
       date: row.CreatedDate ?? null,
+      ...createdAtOf(row.CreatedDate),
       versionLabel,
       isMinority,
       relations,
@@ -252,6 +259,7 @@ const testimonyRow = z.looseObject({
   MeasurePrefix: z.string().nullable(),
   MeasureNumber: z.number().int().nullable(),
   DocumentUrl: z.string(),
+  CreatedDate: feedTimestamp.nullish(),
 });
 
 async function readTestimony(
@@ -270,6 +278,7 @@ async function readTestimony(
       label: row.DocumentDescription,
       sourceUrl: `${root}/Downloads/PublicTestimonyDocument/${row.CommTestId}`,
       postedAt: null,
+      ...createdAtOf(row.CreatedDate),
       testimony: {
         commTestId: row.CommTestId,
         position: positionOf(row.PositionOnMeasureId),
@@ -298,6 +307,7 @@ const postingRow = z.looseObject({
   AmendmentNumber: z.string(),
   Meaning: z.string(),
   ProposedAmendmentUrl: z.string(),
+  CreatedDate: feedTimestamp.nullish(),
 });
 
 async function readPostings(
@@ -319,6 +329,7 @@ async function readPostings(
       sourceUrl: sourceUrlOf(row.ProposedAmendmentUrl),
       postedAt: row.MeetingDate,
       date: row.MeetingDate,
+      ...createdAtOf(row.CreatedDate),
       relations: [
         measureRelation(key, provenance),
         committeeRelation(session, row.CommitteeCode, provenance),

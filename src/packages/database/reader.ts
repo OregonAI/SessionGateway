@@ -377,6 +377,7 @@ const agencyLinkRow = z.object({
   document_label: z.string(),
   document_kind: z.enum(["version", "proposed_amendment", "analysis"]),
   node_id: z.string(),
+  document_created_at: z.string().nullable(),
   measure_id: z.string(),
   version_id: z.string().nullable(),
 });
@@ -385,6 +386,7 @@ const testimonyLinkRow = z.object({
   organization: z.string().nullable(),
   document_id: z.string(),
   document_source_url: z.string(),
+  document_created_at: z.string().nullable(),
   measure_id: z.string(),
 });
 const unresolvedUnitRow = z.object({
@@ -397,6 +399,7 @@ const unresolvedUnitRow = z.object({
 const versionNodeRow = z.object({ label: z.string(), source_url: z.string() });
 const amendmentNumberRow = z.object({ label: z.string() });
 const amendmentFileRow = z.object({ source_url: z.string() });
+const createdRow = z.object({ created_at: z.string() });
 const countRow = z.object({ n: z.number() });
 const kindCountRow = z.object({ kind: z.string(), n: z.number() });
 const listingRow = z.object({ listed: z.number().nullable(), last_listed_at: z.string().nullable() });
@@ -601,18 +604,21 @@ export function openIndexReader(path: string): IndexReader {
   // that document belongs to. An analysis document also gives the Version the feed places it on (ADR-0013), if any.
   const selectAgencyLinks = database.prepare(
     `SELECT a.agency_id, a.kind AS link_kind, a.evidence, d.id AS document_id, d.source_url AS document_source_url,
-            d.label AS document_label, d.kind AS document_kind, d.node_id, mr.to_id AS measure_id, vr.to_id AS version_id
+            d.label AS document_label, d.kind AS document_kind, d.node_id, dc.created_at AS document_created_at,
+            mr.to_id AS measure_id, vr.to_id AS version_id
      FROM agency_link a
        JOIN document d ON d.id = a.document_id
        JOIN document_relation mr ON mr.document_id = d.id AND mr.relation = 'measure'
        LEFT JOIN document_relation vr ON vr.document_id = d.id AND vr.relation = 'version'
+       LEFT JOIN document_created dc ON dc.document_id = d.id
      WHERE d.session_key = ?1 AND (?2 IS NULL OR a.agency_id = ?2) AND (?3 IS NULL OR mr.to_id = ?3)
      ORDER BY a.agency_id, d.id, a.ordinal`,
   );
   // Testimony whose Organization names an Agency: the worker matched it when it stored the row (ADR-0016, ADR-0027).
   const selectTestimonyLinks = database.prepare(
-    `SELECT t.agency_id, t.organization, t.document_id, t.source_url AS document_source_url, t.measure_id
-     FROM testimony t
+    `SELECT t.agency_id, t.organization, t.document_id, t.source_url AS document_source_url,
+            dc.created_at AS document_created_at, t.measure_id
+     FROM testimony t LEFT JOIN document_created dc ON dc.document_id = t.document_id
      WHERE t.session_key = ?1 AND t.agency_id IS NOT NULL AND t.measure_id IS NOT NULL
        AND (?2 IS NULL OR t.agency_id = ?2) AND (?3 IS NULL OR t.measure_id = ?3)
      ORDER BY t.agency_id, t.comm_test_id`,
@@ -635,6 +641,12 @@ export function openIndexReader(path: string): IndexReader {
   );
   const selectAmendmentFile = database.prepare(
     "SELECT source_url FROM document WHERE node_id = ? AND node_id <> id ORDER BY posted_at DESC, id DESC LIMIT 1",
+  );
+  const selectCreated = database.prepare("SELECT created_at FROM document_created WHERE document_id = ?");
+  // Every posting the feed lists for a Proposed Amendment, whether or not its file is fetched, with when OLIS created it.
+  const selectAmendmentCreated = database.prepare(
+    `SELECT dc.created_at FROM meeting_document md JOIN document_created dc ON dc.document_id = md.document_id
+     WHERE md.kind = 'proposed_amendment' AND md.node_id = ?`,
   );
   const selectVersionNode = database.prepare(
     "SELECT label, source_url FROM document WHERE id = ? AND kind = 'version'",
@@ -715,7 +727,15 @@ export function openIndexReader(path: string): IndexReader {
   }
   /** The Version a stored Version document is. */
   function versionNodeOf(key: MeasureKey, id: string, label: string, sourceUrl: string): LinkedNode {
-    return { type: "version", id: id as DocumentId, measure: key, label, sourceUrl, createdAt: [] };
+    const created = selectCreated.get(id);
+    return {
+      type: "version",
+      id: id as DocumentId,
+      measure: key,
+      label,
+      sourceUrl,
+      createdAt: created === undefined ? [] : [createdRow.parse(created).created_at as Timestamp],
+    };
   }
   /** The Proposed Amendment a stored posting is of: its number as its earliest posting writes it, and the file served for it. */
   function amendmentNodeOf(key: MeasureKey, id: string): LinkedNode {
@@ -727,7 +747,7 @@ export function openIndexReader(path: string): IndexReader {
       measure: key,
       label: number.label,
       sourceUrl: file.source_url,
-      createdAt: [],
+      createdAt: selectAmendmentCreated.all(id).map((row) => createdRow.parse(row).created_at as Timestamp),
     };
   }
   /**
@@ -741,15 +761,31 @@ export function openIndexReader(path: string): IndexReader {
     const stored = versionNodeRow.parse(version);
     return versionNodeOf(key, versionId, stored.label, stored.source_url);
   }
-  /** The node a stored Agency Link sits on, from the document its evidence was read from. */
-  function nodeOfDocument(found: z.infer<typeof agencyLinkRow>, key: MeasureKey): LinkedNode {
+  /**
+   * The node a stored Agency Link sits on, from the document its evidence was read from. A call asks for the same
+   * Version or amendment once for each link, so `known` keeps the nodes it has made.
+   */
+  function nodeOfDocument(
+    found: z.infer<typeof agencyLinkRow>,
+    key: MeasureKey,
+    known: Map<string, LinkedNode>,
+  ): LinkedNode {
+    const remembered = (nodeKey: string, make: () => LinkedNode): LinkedNode => {
+      const node = known.get(nodeKey) ?? make();
+      known.set(nodeKey, node);
+      return node;
+    };
     switch (found.document_kind) {
       case "analysis":
-        return statementNodeOf(key, found.version_id);
+        return remembered(`statement ${found.version_id ?? found.measure_id}`, () =>
+          statementNodeOf(key, found.version_id),
+        );
       case "version":
-        return versionNodeOf(key, found.document_id, found.document_label, found.document_source_url);
+        return remembered(`version ${found.document_id}`, () =>
+          versionNodeOf(key, found.document_id, found.document_label, found.document_source_url),
+        );
       case "proposed_amendment":
-        return amendmentNodeOf(key, found.node_id);
+        return remembered(`amendment ${found.node_id}`, () => amendmentNodeOf(key, found.node_id));
       default:
         return found.document_kind satisfies never;
     }
@@ -838,14 +874,19 @@ export function openIndexReader(path: string): IndexReader {
       const stored = selectAgencyLinks
         .all(session, filter.agency ?? null, filter.measure === undefined ? null : measureIdOf(filter.measure))
         .map((row) => agencyLinkRow.parse(row));
+      const known = new Map<string, LinkedNode>();
       const read = stored.map((found): StoredAgencyLink => {
         const key = measureKeyOf(found.measure_id, session);
         const evidence: AgencyEvidence = evidenceFromJson(found.link_kind, found.evidence);
         return {
           agency: found.agency_id as AgencyId,
           evidence,
-          document: { id: found.document_id as DocumentId, sourceUrl: found.document_source_url, createdAt: null },
-          node: nodeOfDocument(found, key),
+          document: {
+            id: found.document_id as DocumentId,
+            sourceUrl: found.document_source_url,
+            createdAt: found.document_created_at as Timestamp | null,
+          },
+          node: nodeOfDocument(found, key, known),
         };
       });
       const testimony = selectTestimonyLinks
@@ -857,7 +898,11 @@ export function openIndexReader(path: string): IndexReader {
             agency: found.agency_id as AgencyId,
             // The Agency Link extractor matches the Organization with stray spaces trimmed (agency-links, matchOrganization).
             evidence: { kind: "testimony", organization: (found.organization ?? "").trim() },
-            document: { id: found.document_id as DocumentId, sourceUrl: found.document_source_url, createdAt: null },
+            document: {
+              id: found.document_id as DocumentId,
+              sourceUrl: found.document_source_url,
+              createdAt: found.document_created_at as Timestamp | null,
+            },
             node: measureNodeOf(key),
           };
         });
