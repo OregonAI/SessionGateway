@@ -92,6 +92,20 @@ describe("15min: the latest update is over two hours old during working hours", 
   });
 });
 
+describe("the defaults: INGEST_INCREMENTS and INGEST_FULL_PULL unset", () => {
+  it("warn by the daily rule: not before the first night window has closed, and after it with no update", async () => {
+    // No `ingest` option, so the server's environment sets neither variable. Friday 2025-01-17, pulled at 2:00 pm.
+    const system = await start({ clockAt: "2025-01-17T22:00:00Z" });
+
+    system.clock.set("2025-01-18T13:59:00Z"); // 5:59 am Saturday: the night's window is still open
+    expect(await answerText(system)).not.toContain(WARNING);
+    system.clock.set("2025-01-18T14:00:00Z"); // 6:00 am: it has closed and no night update came
+    const text = await answerText(system);
+    expect(text).toContain(WARNING);
+    expect(text).toContain("a nightly update was missed");
+  });
+});
+
 describe("daily: the latest update is older than the last night window", () => {
   // Friday 2025-01-17, pulled at 2:00 pm. Night windows run from 5 pm to 6 am.
   const options: SystemOptions = {
