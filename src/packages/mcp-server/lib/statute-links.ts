@@ -27,7 +27,7 @@ const measureSectionsOutput = z
     'The numbered sections of the text the target is linked in, as the text prints them, in order: "8" for SECTION 8, "21a" for a section inserted later. A null entry means the text has no numbered sections.',
   );
 
-const sectionTargetOutput = z.object({
+export const sectionTargetOutput = z.object({
   target_id: z
     .string()
     .describe(
@@ -36,7 +36,7 @@ const sectionTargetOutput = z.object({
   measure_sections: measureSectionsOutput,
 });
 
-const chapterTargetOutput = z.object({
+export const chapterTargetOutput = z.object({
   target_id: z.string().describe("The ORS chapter, in OregonAI's id form (ors-chapter-657b)."),
   resolvable_on_oregonai: z
     .boolean()
@@ -77,7 +77,7 @@ export type StatuteLinksOutput = z.infer<typeof statuteLinksOutput>;
 export type RelatingClauseEditOutput = z.infer<typeof relatingClauseEditOutput>;
 
 /** "8" before "10" before "21a"; a link with no measure section last. */
-function compareMeasureSections(a: string | null, b: string | null): number {
+export function compareMeasureSections(a: string | null, b: string | null): number {
   if (a === null || b === null) return a === b ? 0 : a === null ? 1 : -1;
   return a.localeCompare(b, "en", { numeric: true });
 }

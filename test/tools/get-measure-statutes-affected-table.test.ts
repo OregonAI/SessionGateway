@@ -11,8 +11,9 @@ import { callTool, connectClient, eras, type ConnectedClient } from "../support/
 import { type StatuteLinks } from "../support/statute-links.ts";
 import {
   chapterTarget,
+  confirmed,
   expectedChanges,
-  noChanges,
+  expectedParsedChanges,
   sectionTarget,
   tableUrlOn,
   tablePath,
@@ -95,32 +96,38 @@ describe.for(eras)("get_measure's Statutes Affected Table for a %s client", (era
     it("shows the A-Engrossed Version's links as confirmed by the table: 653.616 §8 and 659A.159 §4 amend, and ORS chapter 657B §1 is added to", async () => {
       const shown = version(await linksOf("SB 69"), "A-Engrossed").statutes_affected_table;
 
-      expect(shown?.confirmed.amends.sections).toContainEqual(sectionTarget("ors-653.616", "8"));
-      expect(shown?.confirmed.amends.sections).toContainEqual(sectionTarget("ors-659a.159", "4"));
-      expect(shown?.confirmed["adds-to"].chapters).toEqual([chapterTarget("ors-chapter-657b", "1")]);
+      expect(shown?.parsed_changes?.amends.sections).toContainEqual(confirmed(sectionTarget("ors-653.616", "8")));
+      expect(shown?.parsed_changes?.amends.sections).toContainEqual(confirmed(sectionTarget("ors-659a.159", "4")));
+      expect(shown?.parsed_changes?.["adds-to"].chapters).toEqual([confirmed(chapterTarget("ors-chapter-657b", "1"))]);
     });
 
-    it("shows all nine of the table's rows for the A-Engrossed Version, each confirmed, and no disagreement", async () => {
+    it("shows the A-Engrossed Version's nine links that change the law, each confirmed by the table, and no disagreement", async () => {
       const shown = version(await linksOf("SB 69"), "A-Engrossed").statutes_affected_table;
 
       expect(shown).toEqual({
         compared: true,
         not_compared_reason: null,
-        entries: nine,
-        confirmed: nine,
-        only_in_table: noChanges,
-        only_in_parsed_links: noChanges,
+        parsed_changes: expectedParsedChanges({
+          amends: { sections: nine.amends.sections.map(confirmed) },
+          "adds-to": { chapters: nine["adds-to"].chapters.map(confirmed) },
+        }),
+        only_in_table: null,
+        only_in_parsed_links: null,
+        entries_not_compared: null,
       });
     });
 
-    it("leaves the parsed links of the A-Engrossed Version as they are: the table is beside them, never over them", async () => {
-      const links = await linksOf("SB 69");
-      const aEngrossed = version(links, "A-Engrossed");
+    it("does not list the table's entries a second time: the Version's block has no entries list and no confirmed list", async () => {
+      const shown = version(await linksOf("SB 69"), "A-Engrossed").statutes_affected_table;
 
-      expect(aEngrossed.statute_links.amends.sections.map((target) => target.target_id)).toEqual(
-        nine.amends.sections.map((target) => target.target_id),
-      );
-      expect(aEngrossed.statute_links.cites.sections.length).toBeGreaterThan(200);
+      expect(Object.keys(shown ?? {}).toSorted()).toEqual([
+        "compared",
+        "entries_not_compared",
+        "not_compared_reason",
+        "only_in_parsed_links",
+        "only_in_table",
+        "parsed_changes",
+      ]);
     });
 
     it("says nothing of the Introduced and Enrolled Versions, which no row of the table names: the table's rows are for the A-Engrossed Version", async () => {
@@ -152,14 +159,14 @@ describe.for(eras)("get_measure's Statutes Affected Table for a %s client", (era
       expect(version(links, "B-Engrossed").statutes_affected_table).toEqual({
         compared: true,
         not_compared_reason: null,
-        entries: expectedChanges({
-          amends: { sections: [sectionTarget("ors-409.711", "1"), sectionTarget("ors-418.808", "2")] },
+        parsed_changes: expectedParsedChanges({
+          amends: {
+            sections: [confirmed(sectionTarget("ors-409.711", "1")), confirmed(sectionTarget("ors-418.808", "2"))],
+          },
         }),
-        confirmed: expectedChanges({
-          amends: { sections: [sectionTarget("ors-409.711", "1"), sectionTarget("ors-418.808", "2")] },
-        }),
-        only_in_table: noChanges,
-        only_in_parsed_links: noChanges,
+        only_in_table: null,
+        only_in_parsed_links: null,
+        entries_not_compared: null,
       });
       for (const label of ["Introduced", "A-Engrossed", "Enrolled"]) {
         expect(version(links, label).statutes_affected_table).toBeUndefined();
@@ -196,16 +203,20 @@ describe.for(eras)("get_measure's Statutes Affected Table for a %s client", (era
       "ors-345.340",
     ].map((id) => sectionTarget(id, "1"));
 
-    it("confirms each section of the series that the text adds to", async () => {
+    it("confirms the sections of the series that the text adds to, and cuts the list at twenty with a count of the two it left out", async () => {
       const shown = version(await linksOf("HB 3027"), "Introduced").statutes_affected_table;
 
       expect(shown).toEqual({
         compared: true,
         not_compared_reason: null,
-        entries: expectedChanges({ "adds-to": { sections: series } }),
-        confirmed: expectedChanges({ "adds-to": { sections: series } }),
-        only_in_table: noChanges,
-        only_in_parsed_links: noChanges,
+        // The series is 22 sections. A list shows twenty targets and says how many sections it left out, so a long
+        // series (the table has ranges of hundreds of sections) cannot make the answer grow without a bound.
+        parsed_changes: expectedParsedChanges({
+          "adds-to": { sections: series.slice(0, 20).map(confirmed), sections_not_shown: 2 },
+        }),
+        only_in_table: null,
+        only_in_parsed_links: null,
+        entries_not_compared: null,
       });
     });
   });

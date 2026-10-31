@@ -1,8 +1,9 @@
 // How the Statutes Affected Table is shown beside a Version's parsed Statute Links by get_measure (ticket #22, ADR-0033).
 // The table is a second source: its entries are set beside the links parsed from the Version they name, never over them.
-// An entry the parsed links also have, with the same target, the same kind and the same measure section, is confirmed.
-// An entry the parsed links lack, and a parsed link that changes the law and has no entry, are each listed as they are,
-// so that the two sides of a disagreement are both shown.
+// A Version's block lists each parsed link that changes the law once, flagged with whether the table has an entry for it
+// (same target, same kind, same measure section), and then only the disagreements: the entries the parsed links lack, and
+// the parsed links the table lacks. Nothing is listed twice, and a list that can grow with a series is cut at a fixed
+// number of targets with a count of what it left out.
 import { z } from "zod";
 import {
   statuteChangeKinds,
@@ -14,6 +15,9 @@ import {
   type StoredVersion,
 } from "#/packages/domain/statute-links.ts";
 import {
+  chapterTargetOutput,
+  compareMeasureSections,
+  sectionTargetOutput,
   statuteLinksBySourceOutput,
   statuteLinksShown,
   targetsOutput,
@@ -23,13 +27,60 @@ import {
 } from "./statute-links.ts";
 
 /**
- * Links by the kinds the table can say: what a Measure does to the law. There is no "cites", because the table does
- * not list citations, so a citation is never a disagreement.
+ * How many ORS sections, and how many ORS chapters, a list of the table's block shows. A series the table prints once
+ * ("319.510 to 319.880") is one entry for each section of it, so a list can grow with the ORS, not with the Measure.
+ */
+export const TARGETS_SHOWN_PER_LIST = 20;
+
+const notShown = (what: string): z.ZodOptional<z.ZodNumber> =>
+  z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe(
+      `Present only when the list was cut after its first ${String(TARGETS_SHOWN_PER_LIST)} ${what}: how many ${what} it left out.`,
+    );
+
+/** Targets of one kind as the table's block shows them: the compact form of #13, cut at a fixed number with a count. */
+const cappedTargetsOutput = targetsOutput.extend({
+  sections_not_shown: notShown("sections"),
+  chapters_not_shown: notShown("chapters"),
+});
+
+/**
+ * Links by the kinds the table can say: what a Measure does to the law. There is no "cites", because the table does not
+ * list citations, so a citation is never a disagreement.
  */
 const changeLinksOutput = z.object(
-  Object.fromEntries(statuteChangeKinds.map((kind) => [kind, targetsOutput])) as Record<
+  Object.fromEntries(statuteChangeKinds.map((kind) => [kind, cappedTargetsOutput])) as Record<
     (typeof statuteChangeKinds)[number],
-    typeof targetsOutput
+    typeof cappedTargetsOutput
+  >,
+);
+
+const confirmedByTableOutput = z
+  .boolean()
+  .describe(
+    "True when the table has an entry for this target, of this kind, in these measure sections. A target the text links in a measure section the table has an entry for and in one it has none for is listed twice, once for each.",
+  );
+
+/** The parsed links of one kind that change the law, each flagged with whether the table confirms it. */
+const flaggedTargetsOutput = z.object({
+  sections: z
+    .array(sectionTargetOutput.extend({ confirmed_by_table: confirmedByTableOutput }))
+    .describe("The ORS sections, in the order of their first measure section."),
+  chapters: z
+    .array(chapterTargetOutput.extend({ confirmed_by_table: confirmedByTableOutput }))
+    .describe("The ORS chapters, in the order of their first measure section."),
+  sections_not_shown: notShown("sections"),
+  chapters_not_shown: notShown("chapters"),
+});
+
+const parsedChangesOutput = z.object(
+  Object.fromEntries(statuteChangeKinds.map((kind) => [kind, flaggedTargetsOutput])) as Record<
+    (typeof statuteChangeKinds)[number],
+    typeof flaggedTargetsOutput
   >,
 );
 
@@ -37,21 +88,29 @@ export const tableOfVersionOutput = z.object({
   compared: z
     .boolean()
     .describe(
-      "True when the table's entries were set beside this Version's parsed Statute Links. False when this index did not read the Version's text for Statute Links, so that there is nothing to compare with: confirmed, only_in_table and only_in_parsed_links are then empty, and that says nothing.",
+      "True when the table's entries were set beside this Version's parsed Statute Links. False when this index did not read the Version's text for Statute Links, so that there is nothing to compare with: parsed_changes, only_in_table and only_in_parsed_links are then null, that says nothing about the text, and the table's entries are in entries_not_compared.",
     ),
   not_compared_reason: z.string().nullable().describe("Why the entries were not compared. Null when compared is true."),
-  entries: changeLinksOutput.describe(
-    "Every entry the table has for this Version of the Measure, as the table prints it, by what it does (amends, repeals, adds-to): each ORS target once with the measure sections the table says. Never changed by the parsed links.",
-  ),
-  confirmed: changeLinksOutput.describe(
-    "The links both sources have: the same ORS target, the same kind and the same measure section, parsed from the Version's text and listed in the table.",
-  ),
-  only_in_table: changeLinksOutput.describe(
-    "Entries of the table that the parsed links lack: a disagreement. The parsed link, if there is one for the same target, differs in kind or in measure section and is in only_in_parsed_links.",
-  ),
-  only_in_parsed_links: changeLinksOutput.describe(
-    "Parsed links that change the law (amends, repeals, adds-to) and that the table has no entry for: a disagreement. Citations are not compared.",
-  ),
+  parsed_changes: parsedChangesOutput
+    .nullable()
+    .describe(
+      "The links parsed from this Version's text that change the law (amends, repeals, adds-to), by kind, each target once with its measure sections, as in statute_links, each flagged with confirmed_by_table: true when the table has an entry for it. Citations are not listed, because the table does not list them. Null when there are none to list, or when compared is false.",
+    ),
+  only_in_table: changeLinksOutput
+    .nullable()
+    .describe(
+      "Disagreement: the table's entries for this Version that the parsed links lack, by what the table says they do, as the table has them. The parsed link for the same target, if there is one, differs in kind or in measure section and is in only_in_parsed_links. Null when there are none, or when compared is false.",
+    ),
+  only_in_parsed_links: changeLinksOutput
+    .nullable()
+    .describe(
+      "Disagreement: the parsed links that change the law and that the table has no entry for (the targets of parsed_changes with confirmed_by_table false). Citations are not compared. Null when there are none, or when compared is false.",
+    ),
+  entries_not_compared: changeLinksOutput
+    .nullable()
+    .describe(
+      "Only when compared is false: every entry the table has for this Version, as the table has them, because nothing was parsed to set them beside. Null when compared is true, where the table's entries are the targets of parsed_changes with confirmed_by_table true, and only_in_table, and none is listed twice.",
+    ),
 });
 
 export const tableOfMeasureOutput = z.object({
@@ -92,7 +151,7 @@ export const statuteLinksBySourceWithTableOutput = statuteLinksBySourceOutput.ex
       statutes_affected_table: tableOfVersionOutput
         .optional()
         .describe(
-          "Present when the Statutes Affected Table has entries that name this Version: the entries, and how they compare with the parsed links in statute_links. Absent when the table names another Version, or the index holds no table.",
+          "Present when the Statutes Affected Table has entries that name this Version: which of the parsed links that change the law the table confirms, and where the table and the parsed links disagree. Absent when the table names no entry for this Version, or the index holds no table.",
         ),
     }),
   ),
@@ -106,7 +165,7 @@ export const statuteLinksBySourceWithTableOutput = statuteLinksBySourceOutput.ex
 export type StatuteLinksBySourceWithTable = z.infer<typeof statuteLinksBySourceWithTableOutput>;
 
 export const STATUTES_AFFECTED_TABLE_NOTE =
-  "Legislative Counsel publishes the Statutes Affected Table after the Session. It lists, for each Measure, the ORS sections and chapters the Measure amends, repeals or adds to, with the measure section, at the engrossing level the Measure's row was made from (SB 69 A is the A-Engrossed Version; no letter is the Introduced Version). It is a second source: its entries are set beside the Statute Links parsed from the text of the Version each names, in that Version's statutes_affected_table, and never replace them. A link both sources have is confirmed. A disagreement is shown on both sides, unchanged. A Version that no entry names has no table, and the table does not list citations, so citations are never compared.";
+  "Legislative Counsel's Statutes Affected Table is a second source for the Statute Links. Its entries are set beside the links parsed from the text of the Version each names, in that Version's statutes_affected_table, and never replace them. A Version no entry names has no such block, and citations are not compared, because the table does not list them.";
 
 /** A link to compare: what a parsed link or a table entry says, by the three things that must agree. */
 function keyOf(link: Pick<StatuteLink, "kind" | "measureSection"> & { target: { id: string } }): string {
@@ -127,27 +186,91 @@ function distinctLinks(links: readonly StatuteLink[]): StatuteLink[] {
   return [...new Map(links.map((link) => [keyOf(link), link])).values()];
 }
 
-function changeLinksShown(links: readonly StatuteLink[]): z.infer<typeof changeLinksOutput> {
-  const shown = statuteLinksShown(links);
-  return Object.fromEntries(statuteChangeKinds.map((kind) => [kind, shown[kind]])) as z.infer<typeof changeLinksOutput>;
+/** The first targets of a list and how many it leaves out (undefined when it leaves none out). */
+function cut<Target>(targets: readonly Target[]): { shown: Target[]; notShown: number | undefined } {
+  const left = targets.length - TARGETS_SHOWN_PER_LIST;
+  return { shown: targets.slice(0, TARGETS_SHOWN_PER_LIST), notShown: left > 0 ? left : undefined };
 }
 
-/** The table's entries for a Version, set beside what was parsed of its text. */
+/** The sections and chapters of a list, each cut at the same number, with the counts of what was cut. */
+function cutLists<Section, Chapter>(
+  sections: readonly Section[],
+  chapters: readonly Chapter[],
+): {
+  sections: Section[];
+  chapters: Chapter[];
+  sections_not_shown?: number;
+  chapters_not_shown?: number;
+} {
+  const cutSections = cut(sections);
+  const cutChapters = cut(chapters);
+  return {
+    sections: cutSections.shown,
+    chapters: cutChapters.shown,
+    ...(cutSections.notShown === undefined ? {} : { sections_not_shown: cutSections.notShown }),
+    ...(cutChapters.notShown === undefined ? {} : { chapters_not_shown: cutChapters.notShown }),
+  };
+}
+
+function changeLinksShown(links: readonly StatuteLink[]): z.infer<typeof changeLinksOutput> {
+  const shown = statuteLinksShown(links);
+  return Object.fromEntries(
+    statuteChangeKinds.map((kind) => [kind, cutLists(shown[kind].sections, shown[kind].chapters)]),
+  ) as z.infer<typeof changeLinksOutput>;
+}
+
+/** The first measure section a target is linked in, which the lists are in the order of. */
+function firstSectionOf(target: { measure_sections: (string | null)[] }): string | null {
+  return target.measure_sections[0] ?? null;
+}
+
+/**
+ * The parsed links that change the law, by kind and each target once, flagged with whether the table has an entry for the
+ * link. A target the table confirms in some measure sections and not in others is one target for each.
+ */
+function parsedChangesShown(
+  parsed: readonly { link: StatuteLink; confirmed: boolean }[],
+): z.infer<typeof parsedChangesOutput> {
+  const ofKind = (kind: (typeof statuteChangeKinds)[number]): z.infer<typeof flaggedTargetsOutput> => {
+    const links = (confirmed: boolean): StatuteLink[] =>
+      parsed.filter((item) => item.link.kind === kind && item.confirmed === confirmed).map((item) => item.link);
+    const yes = statuteLinksShown(links(true))[kind];
+    const no = statuteLinksShown(links(false))[kind];
+    const byFirstSection = <Target extends { measure_sections: (string | null)[] }>(a: Target, b: Target): number =>
+      compareMeasureSections(firstSectionOf(a), firstSectionOf(b));
+    return cutLists(
+      [
+        ...yes.sections.map((target) => ({ ...target, confirmed_by_table: true })),
+        ...no.sections.map((target) => ({ ...target, confirmed_by_table: false })),
+      ].toSorted(byFirstSection),
+      [
+        ...yes.chapters.map((target) => ({ ...target, confirmed_by_table: true })),
+        ...no.chapters.map((target) => ({ ...target, confirmed_by_table: false })),
+      ].toSorted(byFirstSection),
+    );
+  };
+  return Object.fromEntries(statuteChangeKinds.map((kind) => [kind, ofKind(kind)])) as z.infer<
+    typeof parsedChangesOutput
+  >;
+}
+
+/** The table's entries for a Version, set beside what was parsed of its text. A list with nothing in it is null. */
 function tableOfVersion(
   version: StoredVersion,
   entries: readonly StatutesAffectedEntry[],
 ): z.infer<typeof tableOfVersionOutput> {
   const inTable = distinctLinks(entries.map(linkOfEntry));
-  const nothing = changeLinksShown([]);
+  const listed = (links: readonly StatuteLink[]): z.infer<typeof changeLinksOutput> | null =>
+    links.length === 0 ? null : changeLinksShown(links);
   if (!version.parse.textRead) {
     return {
       compared: false,
       not_compared_reason:
         "This index did not read the Version's text for Statute Links (it has no text layer, or the index has not read it yet), so there are no parsed links to set the entries beside.",
-      entries: changeLinksShown(inTable),
-      confirmed: nothing,
-      only_in_table: nothing,
-      only_in_parsed_links: nothing,
+      parsed_changes: null,
+      only_in_table: null,
+      only_in_parsed_links: null,
+      entries_not_compared: listed(inTable),
     };
   }
   const parsed = distinctLinks(version.parse.links.filter((link) => link.kind !== "cites"));
@@ -156,10 +279,13 @@ function tableOfVersion(
   return {
     compared: true,
     not_compared_reason: null,
-    entries: changeLinksShown(inTable),
-    confirmed: changeLinksShown(inTable.filter((link) => parsedKeys.has(keyOf(link)))),
-    only_in_table: changeLinksShown(inTable.filter((link) => !parsedKeys.has(keyOf(link)))),
-    only_in_parsed_links: changeLinksShown(parsed.filter((link) => !tableKeys.has(keyOf(link)))),
+    parsed_changes:
+      parsed.length === 0
+        ? null
+        : parsedChangesShown(parsed.map((link) => ({ link, confirmed: tableKeys.has(keyOf(link)) }))),
+    only_in_table: listed(inTable.filter((link) => !parsedKeys.has(keyOf(link)))),
+    only_in_parsed_links: listed(parsed.filter((link) => !tableKeys.has(keyOf(link)))),
+    entries_not_compared: null,
   };
 }
 
