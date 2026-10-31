@@ -273,8 +273,18 @@ export const versionEntryOutput = z.object({
   label: z.string().describe('The Version as the Legislature describes it: "Introduced", "A-Engrossed", "Enrolled"...'),
   source_url: z.string().describe("Where the Legislature publishes the Version."),
   no_longer_listed: noLongerListedOutput,
-  ...parseResultFields,
+  same_as: z
+    .string()
+    .optional()
+    .describe(
+      "Present when this Version's entry is exactly the entry of the Version before it in print order, whose id this is: the same reading (text_read, not_read_reason and statute_links), the same Statutes Affected Table block beside it or none, and the same no_longer_listed. The reading and the table block are then left out, and are that Version's. A Version whose entry differs from the one before it only in its table block or its no_longer_listed is listed in full, and only a Version that was read can be the same as another.",
+    ),
+  text_read: parseResultFields.text_read.optional(),
+  not_read_reason: parseResultFields.not_read_reason.optional(),
+  statute_links: parseResultFields.statute_links.optional(),
 });
+
+type VersionEntry = z.infer<typeof versionEntryOutput>;
 
 /** A Version named in superseded_amendments: the one the amendment amends (which may not be held), or the one that replaces it. */
 const amendedVersionRefOutput = z.object({
@@ -306,7 +316,7 @@ export function versionsOutputOf<Entry extends z.ZodType>(entry: Entry): z.ZodAr
   return z
     .array(entry)
     .describe(
-      "The Measure's Versions that this index holds, in the order they were printed (a Version with no place in that order, such as a minority report's, comes last), each with the Statute Links read from its text. A Printed Amendment is not a Version and is not read.",
+      "The Measure's Versions that this index holds, in the order they were printed (a Version with no place in that order, such as a minority report's, comes last), each with the Statute Links read from its text, or with same_as when the text was read and the whole entry (the links, the Statutes Affected Table's block beside them and no_longer_listed) is exactly that of the Version before it (an Enrolled Version that repeats the last Engrossed one). A Printed Amendment is not a Version and is not read.",
     );
 }
 
@@ -441,4 +451,35 @@ export function statuteLinksBySourceOf(
     superseded_amendments: superseded,
     note: SUPERSEDED_AMENDMENTS_NOTE,
   };
+}
+
+/** A Version's entry with only what makes it that Version: what `same_as` keeps of it. */
+type SameAsEntry = Pick<VersionEntry, "id" | "label" | "source_url" | "no_longer_listed"> & { same_as: string };
+
+/** What an entry says beyond the Version it is (its id, label and source_url): everything `same_as` compares. */
+function saidBy(entry: VersionEntry): string {
+  return JSON.stringify({ ...entry, id: undefined, label: undefined, source_url: undefined });
+}
+
+/**
+ * The Versions in print order, each listed in full or as `same_as` the Version before it. A Version whose whole entry, as an
+ * agent would otherwise see it, is exactly that of the Version before it says `same_as` that Version's id and leaves out
+ * the rest, so that an Enrolled Version that repeats the last Engrossed one is not listed twice (L1 of the fix pass of #16:
+ * 15,145 characters of SB 69's answer). The whole entry is compared: the reading, the Statutes Affected Table's block that
+ * ticket #22 sets beside it, and the no_longer_listed flag of ticket #18, so a Version that differs only in its table block
+ * or its flag is listed in full; the flag, which is the Version's own, is kept. It runs on the entries as get_measure shows
+ * them, after the table's blocks are added. A Version that was not read is never the same as another: it has said nothing.
+ */
+export function versionsWithSameAs<Entry extends VersionEntry>(entries: readonly Entry[]): (Entry | SameAsEntry)[] {
+  return entries.map((entry, index) => {
+    const before = entries[index - 1];
+    if (before === undefined || entry.text_read !== true || saidBy(entry) !== saidBy(before)) return entry;
+    return {
+      id: entry.id,
+      label: entry.label,
+      source_url: entry.source_url,
+      ...noLongerListedFlag(entry.no_longer_listed !== true),
+      same_as: before.id,
+    };
+  });
 }

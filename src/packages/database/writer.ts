@@ -88,6 +88,8 @@ export type FullPullRecord = {
   committeeVotes: readonly CommitteeVoteRecord[];
   /** The version of the OregonAI snapshot the build used. */
   snapshot: SnapshotVersion;
+  /** The parent of each Agency the snapshot gives one: stored with its version, so the two always agree (ADR-0029). */
+  agencyParents: readonly { agency: AgencyId; parent: AgencyId }[];
   committees: readonly Committee[];
   /** The committee meetings. A meeting's status is the feed's latest. */
   meetings: readonly Meeting[];
@@ -401,6 +403,8 @@ export function openIndexWriter(path: string): IndexWriter {
          ON CONFLICT (session_key) DO UPDATE SET
            source = excluded.source, commit_sha = excluded.commit_sha, commit_date = excluded.commit_date`,
       );
+      const clearAgencyParents = database.prepare("DELETE FROM agency_parent");
+      const insertAgencyParent = database.prepare("INSERT INTO agency_parent (agency_id, parent_id) VALUES (?, ?)");
       const upsertCommittee = database.prepare(
         `INSERT INTO committee (session_key, code, id, name) VALUES (?, ?, ?, ?)
          ON CONFLICT (session_key, code) DO UPDATE SET id = excluded.id, name = excluded.name`,
@@ -663,6 +667,8 @@ export function openIndexWriter(path: string): IndexWriter {
         }
         const agedOut = countRow.parse(countDocumentsLastListedIn.get(session, number - 2)).n > 0;
         if (relisted || agedOut) bumpSearchGeneration();
+        clearAgencyParents.run();
+        for (const { agency, parent } of pulled.agencyParents) insertAgencyParent.run(agency, parent);
         database.exec("COMMIT");
       } catch (error) {
         database.exec("ROLLBACK");

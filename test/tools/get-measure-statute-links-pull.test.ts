@@ -40,9 +40,10 @@ type Block = {
   versions: {
     id: string;
     label: string;
-    text_read: boolean;
-    not_read_reason: string | null;
-    statute_links: StatuteLinks;
+    same_as?: string;
+    text_read?: boolean;
+    not_read_reason?: string | null;
+    statute_links?: StatuteLinks;
   }[];
   proposed_amendments: Amendment[];
   superseded_amendments: { id: string; number: string; later_version: { id: string; label: string } }[];
@@ -192,8 +193,8 @@ describe.for(eras)("when the next Version comes in with a later pull, for a %s c
 
     const after = await blockOf(connected, "SB 69");
     expect(after.versions.map((version) => version.label)).toEqual(["Introduced", "A-Engrossed", "Enrolled"]);
-    expect(after.versions[1]?.statute_links.amends).toEqual({ sections: sb69Amends, chapters: [] });
-    expect(after.versions[1]?.statute_links["adds-to"]).toEqual({ sections: [], chapters: sb69AddsTo });
+    expect(after.versions[1]?.statute_links?.amends).toEqual({ sections: sb69Amends, chapters: [] });
+    expect(after.versions[1]?.statute_links?.["adds-to"]).toEqual({ sections: [], chapters: sb69AddsTo });
     expect(after.proposed_amendments).toEqual([]);
     expect(after.superseded_amendments.map((amendment) => [amendment.number, amendment.later_version.label])).toEqual([
       ["-1", "A-Engrossed"],
@@ -280,12 +281,16 @@ describe("rows the fixture lacks", () => {
     it("lists a Version with no text layer as not read, and a Version with no place in the order of printing last", async () => {
       const block = await blockOf(connected, "SB 69");
 
-      expect(block.versions.map((version) => [version.label, version.text_read])).toEqual([
-        ["Introduced", true],
-        ["A-Engrossed", true],
-        ["B-Engrossed", false],
-        ["Enrolled", true],
-        ["Minority Report A-Engrossed", true],
+      // The made-up Minority Report is served with the A-Engrossed file, and Enrolled reads the same as that file: so the
+      // Minority Report is the same as Enrolled, the Version before it in print order (L1 of the fix pass of #16). Enrolled
+      // is listed in full: the Version before it, B-Engrossed, was not read, and a Version that was not read is nothing
+      // another can be the same as.
+      expect(block.versions.map((version) => [version.label, version.text_read, version.same_as])).toEqual([
+        ["Introduced", true, undefined],
+        ["A-Engrossed", true, undefined],
+        ["B-Engrossed", false, undefined],
+        ["Enrolled", true, undefined],
+        ["Minority Report A-Engrossed", undefined, "version-2025r1-sb69-enrolled"],
       ]);
       const scan = block.versions[2];
       expect(scan?.statute_links).toEqual(noLinks);
