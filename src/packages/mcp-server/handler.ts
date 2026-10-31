@@ -12,6 +12,7 @@ import {
   getDocumentInput,
   getDocumentOutput,
   noSuchPartMessage,
+  testimonyNoLongerListedMessage,
   testimonyNotHeldMessage,
   unknownDocumentMessage,
 } from "./lib/get-document.ts";
@@ -174,7 +175,14 @@ function buildServer(
         case "not_held":
           return {
             isError: true,
-            content: [{ type: "text", text: testimonyNotHeldMessage(result.id, result.session) }],
+            content: [
+              {
+                type: "text",
+                text: result.noLongerListed
+                  ? testimonyNoLongerListedMessage(result.id, result.session)
+                  : testimonyNotHeldMessage(result.id, result.session),
+              },
+            ],
           };
         case "no_such_part":
           return {

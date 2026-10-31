@@ -3,6 +3,7 @@ import type { IndexReader } from "#/packages/database/reader.ts";
 import { listedPositions, positionOf, type DocumentId, type TestimonyEntry } from "#/packages/domain/documents.ts";
 import { measureIdOf, parseMeasureReference, type MeasureId, type SessionKey } from "#/packages/domain/index.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
+import { noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 
 export const testimonyInput = z.object({
   measure: z.string().describe('A Measure\'s id, such as "measure-2025r1-hb3131", or its citation, such as "HB 3131".'),
@@ -117,6 +118,7 @@ const itemOutput = z.object({
     .describe(
       "The OregonAI agency registry slug of the Agency that Organization names, from the build-time snapshot. Null when Organization is not an Agency's name or alias.",
     ),
+  no_longer_listed: noLongerListedOutput,
 });
 
 const identicalLetterOutput = z.object({
@@ -255,6 +257,7 @@ function itemOf(entry: TestimonyEntry, sameLetterAs: ReadonlyMap<DocumentId, Let
     same_letter_as: sameLetterAs.get(entry.id)?.idToRead ?? null,
     same_letter_count: sameLetterAs.get(entry.id)?.count ?? null,
     agency_id: entry.agencyId,
+    ...noLongerListedFlag(entry.listed),
   };
 }
 

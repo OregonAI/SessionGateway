@@ -5,6 +5,7 @@ import { measureIdOf, type SessionKey } from "#/packages/domain/index.ts";
 import { formatPacific, isAtOrAfter } from "#/packages/time/pacific.ts";
 import { checkFilters, type FilterFault } from "./filters.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
+import { noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 
 export const meetingsInput = z.object({
   measure: z
@@ -44,6 +45,7 @@ const meetingOutput = z.object({
   }),
   at: z.string().describe("When the meeting starts, in Pacific time with its UTC offset."),
   status: z.string().describe('What OLIS says of the meeting: "Scheduled", "Cancelled" or "No Meeting Scheduled".'),
+  no_longer_listed: noLongerListedOutput,
   upcoming: z.boolean().describe("True when the meeting starts at or after the time in `now`."),
   olis_page_url: z
     .string()
@@ -60,6 +62,7 @@ const meetingOutput = z.object({
         .describe(
           "True when this index holds the file, so get_document serves the id. False when OLIS lists it but the file is not here yet (a failed or not yet reached fetch): source_url is where to read it, and get_document does not know the id until a later pull fetches it.",
         ),
+      no_longer_listed: noLongerListedOutput,
     })
     .nullable()
     .describe("The meeting's agenda document, when OLIS links one."),
@@ -82,6 +85,7 @@ const meetingOutput = z.object({
           .describe("OLIS's text for the item, as published. It can hold HTML tags, tabs and line breaks."),
         board_name: z.string().nullable().describe("For an executive appointment: the board."),
         executive_appointee: z.string().nullable().describe("For an executive appointment: the appointee."),
+        no_longer_listed: noLongerListedOutput,
       }),
     )
     .describe("The meeting's agenda items, in print order. They are the meeting's, not only the Measure asked for."),
@@ -107,6 +111,7 @@ const meetingOutput = z.object({
           .describe(
             "True when this index holds the file, so get_document serves the id. False when OLIS lists it but the file is not here yet (a failed or not yet reached fetch): source_url is where to read it, and get_document does not know the id until a later pull fetches it.",
           ),
+        no_longer_listed: noLongerListedOutput,
       }),
     )
     .describe(
@@ -125,6 +130,7 @@ const meetingOutput = z.object({
           .describe(
             "True when this index holds the file, so get_document serves the id. False when OLIS lists it but the file is not here yet (a failed or not yet reached fetch): source_url is where to read it, and get_document does not know the id until a later pull fetches it.",
           ),
+        no_longer_listed: noLongerListedOutput,
       }),
     )
     .describe(
@@ -151,6 +157,7 @@ const meetingOutput = z.object({
           .describe(
             "True when this index holds the file, so get_document serves the id. False when OLIS lists it but the file is not here yet (a failed or not yet reached fetch): source_url is where to read it, and get_document does not know the id until a later pull fetches it.",
           ),
+        no_longer_listed: noLongerListedOutput,
       }),
     )
     .describe(
@@ -266,6 +273,7 @@ function meetingOutputOf(
     committee: meeting.committee,
     at: meeting.at,
     status: meeting.status,
+    ...noLongerListedFlag(meeting.listed),
     upcoming: meeting.upcoming,
     olis_page_url: olisMeetingPageUrlOf(session, meeting.committee.code, meeting.at),
     agenda:
@@ -276,6 +284,7 @@ function meetingOutputOf(
             label: contents.agenda.label,
             source_url: contents.agenda.sourceUrl,
             fetched: contents.agenda.fetched,
+            ...noLongerListedFlag(contents.agenda.listed),
           },
     agenda_items: contents.agendaItems.map((item) => ({
       print_order: item.printOrder,
@@ -285,6 +294,7 @@ function meetingOutputOf(
       comments: item.comments,
       board_name: item.boardName,
       executive_appointee: item.executiveAppointee,
+      ...noLongerListedFlag(item.listed),
     })),
     exhibits: contents.exhibits.map((exhibit) => ({
       id: exhibit.id,
@@ -293,12 +303,14 @@ function meetingOutputOf(
       measure_id: exhibit.measureId,
       source_url: exhibit.sourceUrl,
       fetched: exhibit.fetched,
+      ...noLongerListedFlag(exhibit.listed),
     })),
     recording_logs: contents.recordingLogs.map((log) => ({
       id: log.id,
       label: log.label,
       source_url: log.sourceUrl,
       fetched: log.fetched,
+      ...noLongerListedFlag(log.listed),
     })),
     proposed_amendments: contents.amendments.map((amendment) => ({
       id: amendment.id,
@@ -308,6 +320,7 @@ function meetingOutputOf(
       document_id: amendment.documentId,
       source_url: amendment.sourceUrl,
       fetched: amendment.fetched,
+      ...noLongerListedFlag(amendment.listed),
     })),
   };
 }
