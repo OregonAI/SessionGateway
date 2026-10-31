@@ -9,7 +9,7 @@
 // once on any calendar date, however late the worker started. The part of the night before midnight runs the night's
 // increment (`daily`), on nights that are not a full-pull night.
 import type { FullPullSetting, IncrementsSetting } from "#/packages/config/index.ts";
-import type { Timestamp } from "#/packages/time/pacific.ts";
+import { atPacificLocalTime, compareTimestamps, type Timestamp } from "#/packages/time/pacific.ts";
 
 export type Settings = { increments: IncrementsSetting; fullPull: FullPullSetting };
 
@@ -80,6 +80,97 @@ export function whatRunsAt(at: Timestamp, settings: Settings, schedule: SessionS
       if (!sessionMeetsOn(date, schedule)) return { kind: "nothing" };
       const minute = String(Math.floor(wallClock.minute / 15) * 15).padStart(2, "0");
       return { kind: "increment", slot: `${date.toString()}T${String(wallClock.hour).padStart(2, "0")}:${minute}` };
+    }
+    default:
+      return settings.increments satisfies never;
+  }
+}
+
+/** The longest the index may go without an update during working hours, with `15min` increments. */
+export const STALE_AFTER_HOURS = 2;
+
+/** Whether the index is too old, by the rhythm configured, and what it should have been updated after. */
+export type Staleness =
+  | { stale: false }
+  | {
+      stale: true;
+      mode: "15min";
+      /** The start of the latest update. */
+      updatedAt: Timestamp;
+    }
+  | {
+      stale: true;
+      mode: "daily" | "off";
+      /** The start of the latest update (`daily`) or of the last full pull (`off`). */
+      updatedAt: Timestamp;
+      /** The start of the last night window that has closed: the update should be no older than this. */
+      windowStart: Timestamp;
+    };
+
+/** The start of the night that ends on a date: 5 pm the day before, on the clock. */
+function nightStart(endsOn: Temporal.PlainDate): Timestamp {
+  return atPacificLocalTime(endsOn.subtract({ days: 1 }).toPlainDateTime({ hour: NIGHT_STARTS_HOUR }));
+}
+
+/** The date of the latest night that has closed by this wall-clock reading (its 6 am has passed), and for which `counts` is true. */
+function lastClosedNight(
+  wallClock: Temporal.PlainDateTime,
+  counts: (endsOn: Temporal.PlainDate) => boolean,
+): Temporal.PlainDate | undefined {
+  let endsOn =
+    wallClock.hour >= NIGHT_ENDS_HOUR ? wallClock.toPlainDate() : wallClock.toPlainDate().subtract({ days: 1 });
+  // A monthly rhythm has at most 31 days between two of them; a year bounds the search for a setting that never runs.
+  for (let back = 0; back < 366; back += 1) {
+    if (counts(endsOn)) return endsOn;
+    endsOn = endsOn.subtract({ days: 1 });
+  }
+  return undefined;
+}
+
+/**
+ * Whether the index is too old, following the configured rhythm (ADR-0039):
+ *  - `15min`: the latest update is over two hours old, during working hours (a day the Session meets, 6 am to 10 pm);
+ *  - `daily`: the latest update is older than the start of the last night window that has closed (a night was missed);
+ *  - `off`: the last full pull is older than the start of the last full-pull night that has closed (one was missed).
+ * `latestUpdate` is the start of the latest full pull or increment, `lastFullPull` the start of the latest full pull.
+ */
+export function stalenessAt(input: {
+  now: Timestamp;
+  settings: Settings;
+  schedule: SessionSchedule;
+  latestUpdate: Timestamp;
+  lastFullPull: Timestamp;
+}): Staleness {
+  const { now, settings, schedule, latestUpdate, lastFullPull } = input;
+  const wallClock = wallClockOf(now);
+  switch (settings.increments) {
+    case "15min": {
+      const working =
+        wallClock.hour >= NIGHT_ENDS_HOUR &&
+        wallClock.hour < WORKING_HOURS_END &&
+        sessionMeetsOn(wallClock.toPlainDate(), schedule);
+      const ageMilliseconds =
+        Temporal.Instant.from(now).epochMilliseconds - Temporal.Instant.from(latestUpdate).epochMilliseconds;
+      if (working && ageMilliseconds > STALE_AFTER_HOURS * 60 * 60 * 1000) {
+        return { stale: true, mode: "15min", updatedAt: latestUpdate };
+      }
+      return { stale: false };
+    }
+    case "daily": {
+      const night = lastClosedNight(wallClock, () => true);
+      if (night === undefined) return { stale: false };
+      const windowStart = nightStart(night);
+      return compareTimestamps(latestUpdate, windowStart) < 0
+        ? { stale: true, mode: "daily", updatedAt: latestUpdate, windowStart }
+        : { stale: false };
+    }
+    case "off": {
+      const night = lastClosedNight(wallClock, (endsOn) => isFullPullDate(endsOn, settings.fullPull));
+      if (night === undefined) return { stale: false };
+      const windowStart = nightStart(night);
+      return compareTimestamps(lastFullPull, windowStart) < 0
+        ? { stale: true, mode: "off", updatedAt: lastFullPull, windowStart }
+        : { stale: false };
     }
     default:
       return settings.increments satisfies never;
