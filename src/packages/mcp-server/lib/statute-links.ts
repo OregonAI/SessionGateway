@@ -456,19 +456,19 @@ export function statuteLinksBySourceOf(
 /** The fields of a Version's entry that say what was read of its text: what `same_links_as` compares and leaves out. */
 const readingFields = ["text_read", "not_read_reason", "statute_links"] as const;
 type Reading = Pick<VersionEntry, (typeof readingFields)[number]>;
+const readingFieldSet: ReadonlySet<string> = new Set(readingFields);
 
 /** A Version's entry without its reading, which is the Version before it's: everything else is the Version's own. */
 type SameLinksAsEntry<Entry extends VersionEntry> = Omit<Entry, keyof Reading> & { same_links_as: string };
 
-/** What was read of a Version's text, as one string to compare. */
-function readingOf(entry: VersionEntry): string {
+/** What was read of a Version's text, as one string to compare with another Version's. */
+function readingKeyOf(entry: VersionEntry): string {
   return JSON.stringify(readingFields.map((field) => entry[field]));
 }
 
 /** A Version's entry with its reading left out. */
 function withoutReading<Entry extends VersionEntry>(entry: Entry): Omit<Entry, keyof Reading> {
-  const reading: ReadonlySet<string> = new Set(readingFields);
-  return Object.fromEntries(Object.entries(entry).filter(([field]) => !reading.has(field))) as Omit<
+  return Object.fromEntries(Object.entries(entry).filter(([field]) => !readingFieldSet.has(field))) as Omit<
     Entry,
     keyof Reading
   >;
@@ -487,7 +487,7 @@ export function versionsWithSameLinksAs<Entry extends VersionEntry>(
 ): (Entry | SameLinksAsEntry<Entry>)[] {
   return entries.map((entry, index) => {
     const before = entries[index - 1];
-    if (before === undefined || entry.text_read !== true || readingOf(entry) !== readingOf(before)) return entry;
+    if (before === undefined || entry.text_read !== true || readingKeyOf(entry) !== readingKeyOf(before)) return entry;
     return { ...withoutReading(entry), same_links_as: before.id };
   });
 }
