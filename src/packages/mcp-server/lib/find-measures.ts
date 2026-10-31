@@ -2,8 +2,14 @@
 // Amendments that an Agency Link or a Statute Link ties to an Agency, optionally only the ones whose evidence OLIS created since a time.
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
-import { agencyEvidenceKinds, type LinkedNode, type StoredStatuteLinked } from "#/packages/domain/agency-links.ts";
-import { parseAmendmentNumber, type AmendmentId, type DocumentId } from "#/packages/domain/documents.ts";
+import {
+  agencyEvidenceKinds,
+  agencyLinkKey,
+  listedLinkKeys,
+  type LinkedNode,
+  type StoredStatuteLinked,
+} from "#/packages/domain/agency-links.ts";
+import { parseAmendmentNumber, type AmendmentId, type DocumentId, type Listing } from "#/packages/domain/documents.ts";
 import { citationOfMeasureId, measureIdOf, parseMeasureReference, type SessionKey } from "#/packages/domain/index.ts";
 import {
   parseOrsChapterReference,
@@ -24,7 +30,7 @@ import {
 } from "./agency-links.ts";
 import { notAnAgencyIdMessage, parseAgencyArgument } from "./filters.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
-import { noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
+import { documentListingFields, listingShown, noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 
 /**
  * How many items one page lists, across the groups. A full page, with every item at its evidence cap, is to stay at or
@@ -95,6 +101,7 @@ const exampleOutput = z.object({
     .describe(
       "The document the evidence was read from: the Fiscal Impact Statement, the Version, the posting of the Proposed Amendment or the Testimony. Give it to get_document. Its source_url is in documents.",
     ),
+  ...documentListingFields,
   ...evidenceFieldsOutput,
   target_id: z
     .string()
@@ -149,7 +156,9 @@ const itemOutput = z.object({
     .describe(
       "Where the Legislature publishes it: the Measure's OLIS page, the Version's file, or the file get_document serves for the Proposed Amendment (its latest posting).",
     ),
-  no_longer_listed: noLongerListedOutput,
+  no_longer_listed: noLongerListedOutput.describe(
+    "Present, and true, only when the feed has stopped listing the item's own row (two complete full pulls in a row did not list it), or, for a call with agency, when it has stopped listing every document the Agency's evidence on this node was read from: the Agency's link is then still listed, flagged, and search's Agency filter does not count it. An Agency with any listed evidence document on the node has no flag. Absent otherwise.",
+  ),
   created_at: z
     .string()
     .nullable()
@@ -256,6 +265,8 @@ type Piece = {
   document: { id: string; sourceUrl: string };
   fields: EvidenceFields & Pick<ExampleOutput, "target_id" | "measure_sections">;
   createdAt: Timestamp[];
+  /** Whether the feed lists the document, for an Agency Link's evidence (ADR-0037). */
+  listing?: Listing;
 };
 
 /** What makes one node an item: the pieces of evidence, in their order. */
@@ -280,6 +291,7 @@ function candidatesOfLinks(links: readonly GatheredLink[]): Candidate[] {
       document: { id: link.document.id, sourceUrl: link.document.sourceUrl },
       fields: evidenceFieldsOf(link.evidence),
       createdAt,
+      listing: link.document.listing,
     });
     byNode.set(link.node.id, own);
   }
@@ -332,7 +344,12 @@ function candidatesOfStatuteLinks(stored: readonly StoredStatuteLinked[]): Candi
 /** A piece as an example: its document, its fields of its kind, and the latest time a document holding it was created. */
 function exampleOf(piece: Piece): ExampleOutput {
   const latest = latestOf(piece.createdAt);
-  return { document_id: piece.document.id, ...piece.fields, ...(latest === undefined ? {} : { created_at: latest }) };
+  return {
+    document_id: piece.document.id,
+    ...(piece.listing === undefined ? {} : listingShown(piece.listing)),
+    ...piece.fields,
+    ...(latest === undefined ? {} : { created_at: latest }),
+  };
 }
 
 /**
@@ -506,10 +523,16 @@ export function findMeasures(
     };
   }
   let groups: Group[];
+  // The Agency's links with a listed evidence document, by node (ADR-0037); undefined when the call is not about an Agency.
+  let listedLinks: ((nodeId: string) => boolean) | undefined;
   const notes: string[] = [];
   switch (target.kind) {
     case "agency": {
-      const stored = gatherRepeats(reader.findAgencyLinks(session, { agency: target.id }));
+      const links = reader.findAgencyLinks(session, { agency: target.id });
+      const listed = listedLinkKeys(links);
+      const agency = target.id;
+      listedLinks = (nodeId) => listed.has(agencyLinkKey(agency, nodeId));
+      const stored = gatherRepeats(links);
       groups = agencyEvidenceKinds.map((kind) =>
         groupOfCandidates(kind, candidatesOfLinks(stored.filter(({ link }) => link.evidence.kind === kind)), since),
       );
@@ -534,7 +557,12 @@ export function findMeasures(
       return target satisfies never;
   }
   const page = input.page ?? 1;
-  const paged = pageOf(groups, page, (item) => itemListed(reader, session, item));
+  const keys = listedLinks;
+  const paged = pageOf(
+    groups,
+    page,
+    (item) => itemListed(reader, session, item) && (keys === undefined || keys(item.id)),
+  );
   const lastPage = Math.max(1, Math.ceil(paged.total / PAGE_SIZE));
   if (page > lastPage) return { kind: "no_such_page", page, lastPage };
   return {

@@ -3,6 +3,8 @@
 import { z } from "zod";
 import {
   agencyEvidenceKinds,
+  agencyLinkKey,
+  listedLinkKeys,
   type AgencyEvidence,
   type LinkedNode,
   type StoredAgencyLink,
@@ -11,6 +13,7 @@ import {
 import type { AgencyId } from "#/packages/domain/oregonai.ts";
 import { statuteLinkKinds } from "#/packages/domain/statute-links.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
+import { documentListingFields, listingShown, noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 
 const numbersInOrder = new Intl.Collator("en", { numeric: true });
 
@@ -175,6 +178,9 @@ const exampleOutput = z.object({
       "The document the evidence was read from: the Fiscal Impact Statement, the Version, the posting of the Proposed Amendment or the Testimony. Give it to get_document. Its source_url is in documents.",
     ),
   ...nodeFields,
+  no_longer_listed: noLongerListedOutput.describe(
+    "Present, and true, only when the Agency's link to this node has no evidence document the feed still lists: every document the evidence of the Agency's links to node_id was read from (this one among them) is one the feed has stopped listing (two complete full pulls in a row did not list it; see documents). The link is still shown. A link with any listed evidence document, on this node, has no flag even when this example's document is not listed. Absent otherwise.",
+  ),
   ...evidenceFieldsOutput,
 });
 
@@ -231,6 +237,7 @@ export const agencyLinksOutput = z.object({
       z.object({
         id: z.string().describe("The document's id: a document_id of the examples or a statement_id of the units."),
         source_url: z.string().describe("Where the Legislature publishes the document."),
+        ...documentListingFields,
       }),
     )
     .describe("Each document the examples and the units name, once, with where the Legislature publishes it."),
@@ -288,7 +295,8 @@ export function agencyLinksOf(
     }
     byAgency.set(link.agency, [...(byAgency.get(link.agency) ?? []), link]);
   }
-  const named = new Map<string, string>();
+  const listedLinks = listedLinkKeys(links);
+  const named = new Map<string, { sourceUrl: string; listing: StoredAgencyLink["document"]["listing"] }>();
   const entries = [...byAgency.entries()]
     .toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([agency, own]) => ({
@@ -298,8 +306,13 @@ export function agencyLinksOf(
         const ofKind = own.filter((link) => link.evidence.kind === kind).toSorted(compareLinks);
         if (ofKind.length === 0) return [];
         const examples = ofKind.slice(0, AGENCY_LINK_EXAMPLES).map((link) => {
-          named.set(link.document.id, link.document.sourceUrl);
-          return { document_id: link.document.id, ...nodeOutput(link.node), ...evidenceFieldsOf(link.evidence) };
+          named.set(link.document.id, { sourceUrl: link.document.sourceUrl, listing: link.document.listing });
+          return {
+            document_id: link.document.id,
+            ...nodeOutput(link.node),
+            ...noLongerListedFlag(listedLinks.has(agencyLinkKey(link.agency, link.node.id))),
+            ...evidenceFieldsOf(link.evidence),
+          };
         });
         return [{ kind, count: ofKind.length, examples }];
       }),
@@ -307,12 +320,19 @@ export function agencyLinksOf(
   const orderedUnits = units
     // By statement; the units of one statement stay in the order it lists them (the sort is stable).
     .toSorted((a, b) => numbersInOrder.compare(a.statement.id, b.statement.id));
-  for (const unit of orderedUnits) named.set(unit.statement.id, unit.statement.sourceUrl);
+  for (const unit of orderedUnits) {
+    if (!named.has(unit.statement.id))
+      named.set(unit.statement.id, { sourceUrl: unit.statement.sourceUrl, listing: unit.statement.listing });
+  }
   return {
     agencies: entries,
     documents: [...named.entries()]
       .toSorted(([a], [b]) => numbersInOrder.compare(a, b))
-      .map(([id, sourceUrl]) => ({ id, source_url: sourceUrl })),
+      .map(([id, { sourceUrl, listing }]) => ({
+        id,
+        source_url: sourceUrl,
+        ...listingShown(listing),
+      })),
     unresolved_units: orderedUnits.map((unit) => ({
       unit: unit.unit,
       statement_id: unit.statement.id,
