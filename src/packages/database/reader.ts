@@ -161,6 +161,8 @@ export type IndexReader = {
    * Amendment's links are all here, replaced by a later Version or not. In no particular order.
    */
   findStatuteLinked(session: SessionKey, target: OrsSectionId | OrsChapterId): StoredStatuteLinked[];
+  /** The Measures with an Agency Link of any evidence to the Agency: through a Version, a Proposed Amendment, a statement or Testimony. */
+  measuresWithAgencyLink(session: SessionKey, agency: AgencyId): MeasureId[];
   /** The units a Measure's Fiscal Impact Statements list that are not Agencies, as each statement writes them. */
   findUnresolvedUnits(measure: MeasureKey): StoredUnresolvedUnit[];
   /** What the index holds of the Session. */
@@ -410,6 +412,7 @@ const statuteLinkedRow = statuteLinkRow.extend({
   node_id: z.string(),
   measure_id: z.string(),
 });
+const measureOfAgencyRow = z.object({ measure_id: z.string() });
 const unresolvedUnitRow = z.object({
   unit: z.string(),
   document_id: z.string(),
@@ -634,6 +637,16 @@ export function openIndexReader(path: string): IndexReader {
        LEFT JOIN document_created dc ON dc.document_id = d.id
      WHERE d.session_key = ?1 AND (?2 IS NULL OR a.agency_id = ?2) AND (?3 IS NULL OR mr.to_id = ?3)
      ORDER BY a.agency_id, d.id, a.ordinal`,
+  );
+  const selectMeasuresOfAgency = database.prepare(
+    `SELECT mr.to_id AS measure_id
+     FROM agency_link a
+       JOIN document d ON d.id = a.document_id
+       JOIN document_relation mr ON mr.document_id = d.id AND mr.relation = 'measure'
+     WHERE d.session_key = ?1 AND a.agency_id = ?2
+     UNION
+     SELECT t.measure_id FROM testimony t
+     WHERE t.session_key = ?1 AND t.agency_id = ?2 AND t.measure_id IS NOT NULL`,
   );
   // The files with a Statute Link to a section, or to a chapter or any section in it: `?3` and `?4` bound the ids of the
   // chapter's sections ("ors-657b." up to "ors-657b/", the character after the dot), so chapter 657 does not take 657B.
@@ -962,6 +975,11 @@ export function openIndexReader(path: string): IndexReader {
             link: statuteLinkOfRow(found),
           };
         });
+    },
+    measuresWithAgencyLink(session, agency) {
+      return selectMeasuresOfAgency
+        .all(session, agency)
+        .map((row) => measureOfAgencyRow.parse(row).measure_id as MeasureId);
     },
     findUnresolvedUnits(measure) {
       return selectUnresolvedUnits.all(measureIdOf(measure)).map((row): StoredUnresolvedUnit => {
