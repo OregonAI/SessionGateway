@@ -129,6 +129,10 @@ export async function buildSystemTemplate(options: SystemOptions): Promise<Syste
     rmSync(directory, { recursive: true, force: true });
     throw error;
   }
+  // A file that never calls `remove` (a case that starts its system in `beforeAll`) still leaves nothing behind.
+  process.once("exit", () => {
+    rmSync(directory, { recursive: true, force: true });
+  });
   return {
     start: (extra = {}) =>
       startSystem(
@@ -172,6 +176,15 @@ export function lazySystemTemplate(options: SystemOptions, key?: string): System
   };
   if (key !== undefined) shared.set(key, { template, holders: 1 });
   return template;
+}
+
+/**
+ * `startSystem` for a case that only reads, or that changes state after the pull: the system is a copy of the template
+ * that `key` names, built the first time the key is asked for and kept until the test process ends. Cases (and the two
+ * clients of `describe.for(eras)`) that give the same key must give the same options.
+ */
+export function startCopiedSystem(key: string, options: SystemOptions): Promise<System> {
+  return lazySystemTemplate(options, key).start();
 }
 
 /** The templates a file shares between its describes, by the key the file gives (a file's module is its own). */
