@@ -143,6 +143,31 @@ describe.for(eras)("get_measure's Agency Links for a %s client", (era) => {
     });
   });
 
+  // SB 69's Testimony 196915 (feed/CommitteePublicTestimonies.json) was submitted by Josh Nasbe for HLWS's meeting of
+  // 2025-04-21 with Organization "Bureau of Labor and Industries", which is the registry's name for the Agency, so the
+  // Measure has an Agency Link to it. The Testimony of SB 64 gives the Organization "Oregon State Senate" (7 rows) and
+  // "Southern Oregon", and HB 3795's 209256 gives "ODHS": the snapshot's registry names none of them (it has no alias
+  // "ODHS", ADR-0012), so they link no Agency.
+  describe("submitted Testimony", () => {
+    it("links SB 69 to the Bureau of Labor and Industries through Testimony 196915, on the Measure", async () => {
+      const links = await agencyLinksOf("SB 69");
+
+      expect(evidenceOf(links, "testimony")).toEqual([
+        ["bureau-of-labor-and-industries", "testimony-2025r1-196915", "measure-2025r1-sb69", "measure"],
+      ]);
+      const boli = links.agencies.find((agency) => agency.agency_id === "bureau-of-labor-and-industries");
+      expect(boli?.evidence.find((evidence) => evidence.kind === "testimony")).toMatchObject({
+        organization: "Bureau of Labor and Industries",
+        source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/PublicTestimonyDocument/196915",
+      });
+    });
+
+    it("links no Agency for an Organization the registry does not name", async () => {
+      expect(evidenceOf(await agencyLinksOf("SB 64"), "testimony")).toEqual([]);
+      expect(evidenceOf(await agencyLinksOf("HB 3795"), "testimony")).toEqual([]);
+    });
+  });
+
   // SB 983's Introduced Fiscal Impact Statement is analysis 88044 and its A-Engrossed one 91466 (feed/
   // MeasureAnalysisDocuments.json, Version "INTRO" and "A"); both read "Government Unit(s) Affected: Cities, Counties,
   // School Districts, Special Districts, Metro, TriMet" (pdftotext of measure-analysis-documents/88044.pdf and
