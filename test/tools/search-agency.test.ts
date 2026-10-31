@@ -89,4 +89,22 @@ describe.for(eras)("search by Agency for a %s client", (era) => {
       "The index holds no Agency Link to no-such-agency, so no hit has a Measure with one. Check the slug against the OregonAI agency registry.",
     ]);
   });
+
+  // #16 F11: search's `agency` is parsed at the edge, as find_measures' is, so the same input is the same tool error in
+  // both tools. A name is not a registry slug; a slug the index holds no link to is a normal answer with a note (above).
+  it("refuses a name where a slug is wanted, with the message find_measures gives", async () => {
+    const message =
+      '"Bureau of Labor and Industries" is not an Agency id. Give an OregonAI agency registry slug such as bureau-of-labor-and-industries.';
+
+    const searched = await callTool(connected, "search", {
+      query: "sick time",
+      agency: "Bureau of Labor and Industries",
+    });
+    const found = await callTool(connected, "find_measures", { agency: "Bureau of Labor and Industries" });
+
+    expect(searched.isError).toBe(true);
+    expect(searched.text).toBe(message);
+    expect(found.isError).toBe(true);
+    expect(found.text).toBe(message);
+  });
 });

@@ -6,7 +6,6 @@ import { agencyEvidenceKinds, type LinkedNode, type StoredStatuteLinked } from "
 import { parseAmendmentNumber, type AmendmentId, type DocumentId } from "#/packages/domain/documents.ts";
 import { citationOfMeasureId, measureIdOf, parseMeasureReference, type SessionKey } from "#/packages/domain/index.ts";
 import {
-  parseAgencyId,
   parseOrsChapterReference,
   parseOrsSectionReference,
   type AgencyId,
@@ -23,6 +22,7 @@ import {
   type EvidenceFields,
   type GatheredLink,
 } from "./agency-links.ts";
+import { notAnAgencyIdMessage, parseAgencyArgument } from "./filters.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 import { noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 
@@ -466,12 +466,9 @@ function targetOf(input: z.infer<typeof findMeasuresInput>): Target {
     return { kind: "bad_request", message: "Give exactly one of agency, ors_section and ors_chapter." };
   }
   if (input.agency !== undefined) {
-    const id = parseAgencyId(input.agency.trim());
-    return id === undefined
-      ? {
-          kind: "bad_request",
-          message: `"${input.agency}" is not an Agency id. Give an OregonAI agency registry slug such as bureau-of-labor-and-industries.`,
-        }
+    const id = parseAgencyArgument(input.agency);
+    return typeof id === "object"
+      ? { kind: "bad_request", message: notAnAgencyIdMessage(id.reference) }
       : { kind: "agency", id };
   }
   if (input.ors_section !== undefined) {

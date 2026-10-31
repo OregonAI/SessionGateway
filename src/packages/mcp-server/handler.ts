@@ -32,7 +32,7 @@ import {
 } from "./lib/find-measures.ts";
 import { getMeasure, getMeasureInput, getMeasureOutput, unknownMeasureMessage } from "./lib/get-measure.ts";
 import { createLiveStatusReader, type LiveLookupFailure, type LiveStatusReader } from "./lib/live-status.ts";
-import { filterFaultMessage } from "./lib/filters.ts";
+import { filterFaultMessage, notAnAgencyIdMessage } from "./lib/filters.ts";
 import { MAX_MEETINGS_CHARACTERS, meetings, meetingsInput, meetingsOutput, NO_FILTER_MESSAGE } from "./lib/meetings.ts";
 import { search, searchInput, searchOutput, type SearchDeps } from "./lib/search.ts";
 import { createVectorCache } from "./lib/vector-cache.ts";
@@ -318,6 +318,8 @@ function buildServer(
         case "unknown_committee":
         case "backwards_range":
           return { isError: true, content: [{ type: "text", text: filterFaultMessage(result) }] };
+        case "not_an_agency_id":
+          return { isError: true, content: [{ type: "text", text: notAnAgencyIdMessage(result.reference) }] };
         default:
           return result satisfies never;
       }
