@@ -25,6 +25,7 @@ import {
   expectedChanges,
   expectedParsedChanges,
   madeUpTable,
+  madeUpTablePages,
   publishedTableUrl,
   sectionTarget,
   tablePath,
@@ -614,6 +615,35 @@ describe("a made-up table in shapes the 2025R1 table never shows", () => {
   const lists = (links: LinksBySource | undefined): boolean | undefined =>
     links?.statutes_affected_table?.lists_measure;
 
+  /** The table's entries for a Version as [kind, target, measure section], whether or not the text agrees: the confirmed links and the ones only in the table. */
+  function tableEntriesOf(links: LinksBySource | undefined, label: string): [string, string, string | undefined][] {
+    const block = links?.versions.find((entry) => entry.label === label)?.statutes_affected_table;
+    const kinds = ["amends", "repeals", "adds-to"] as const;
+    const asEntries = (
+      kind: string,
+      targets: readonly { target_id: string; measure_sections: (string | null)[] }[],
+    ): [string, string, string | undefined][] =>
+      targets.flatMap((target) =>
+        target.measure_sections.map((section): [string, string, string | undefined] => [
+          kind,
+          target.target_id,
+          section ?? undefined,
+        ]),
+      );
+    const confirmedByTable = kinds.flatMap((kind) => {
+      const parsed = block?.parsed_changes?.[kind];
+      return asEntries(
+        kind,
+        [...(parsed?.sections ?? []), ...(parsed?.chapters ?? [])].filter((t) => t.confirmed_by_table),
+      );
+    });
+    const onlyInTable = kinds.flatMap((kind) => {
+      const listed = block?.only_in_table?.[kind];
+      return asEntries(kind, [...(listed?.sections ?? []), ...(listed?.chapters ?? [])]);
+    });
+    return [...confirmedByTable, ...onlyInTable];
+  }
+
   // An ORS row the parser cannot read (two levels after the Measure, which the legend has no form for; four tokens, which
   // no row has), and a series that is begun and never closed. The rows after each, which omit their ORS number, belong to
   // the number the unread row printed, which is not known: they are left unread, not filed under the row before.
@@ -646,5 +676,52 @@ describe("a made-up table in shapes the 2025R1 table never shows", () => {
     ).toContainEqual(confirmed(sectionTarget("ors-653.626", "9")));
     // Three entries were read (653.601 HB 3795, 653.626 SB 69, 653.626 SB 983), and seven lines left unread.
     expect(tableReport(rig.system)).toMatchObject({ outcome: "loaded", entries: 3, unread_lines: 7 });
+  });
+
+  // The footer of every page of the table is its date, which PDF.js writes straight after the last row. A date with a
+  // one- or two-digit month or day can be mistaken for the end of the Measure number before it ("SB 69" and "11/3/2027"
+  // are "SB 6911/3/2027", which also ends in the date "1/3/2027"). The date every page ends with is the table's.
+  it("reads the last row of each page when the table is dated in November: the 1 of 11/3/2027 is the month's, not the Measure number's", async () => {
+    // MADE UP: two pages, each ending in a Measure and 11/3/2027 with no line end, as 2025R1's 8/19/2025 does:
+    // "SB 6911/3/2027" and "HB 313111/3/2027" (HB 2464 and SB 69 are the review's; the fixture holds SB 69 and HB 3131).
+    const read = await serve(
+      madeUpTablePages(
+        [
+          ["409.711 A §1 HB 3795 B", "653.626 A §9 SB 69"],
+          ["418.808 A §2 HB 3795 B", "659A.159 A §4 HB 3131"],
+        ],
+        "11/3/2027",
+      ),
+      ["SB 69", "HB 3131", "HB 3795"],
+    );
+
+    expect(tableEntriesOf(read["SB 69"], "Introduced")).toEqual([["amends", "ors-653.626", "9"]]);
+    expect(tableEntriesOf(read["HB 3131"], "Introduced")).toEqual([["amends", "ors-659a.159", "4"]]);
+    expect(tableEntriesOf(read["HB 3795"], "B-Engrossed")).toEqual([
+      ["amends", "ors-409.711", "1"],
+      ["amends", "ors-418.808", "2"],
+    ]);
+    expect(tableReport(rig.system)).toMatchObject({ outcome: "loaded", entries: 4, unread_lines: 0 });
+  });
+
+  // This is the case a row of table-entries.test.ts made up (a table dated 1/19/2025, pages ending "SB 11/19/2025" and
+  // "SB 21/19/2025"), which seam 2 could not keep: a row of that table quotes only real text. Here the date is the one
+  // most pages end in, because "11/19/2025" ends only the page whose Measure ends in 1.
+  it("reads the last row of each page when the table is dated 1/19/2025 and a Measure number ends in 1: the date most pages end in settles it", async () => {
+    // MADE UP: "HB 31311/19/2025" ends in 1/19/2025 and also in 11/19/2025; "SB 691/19/2025" ends in 1/19/2025 only.
+    const read = await serve(
+      madeUpTablePages(
+        [
+          ["409.711 A §1 HB 3795 B", "653.626 A §9 HB 3131"],
+          ["418.808 A §2 HB 3795 B", "659A.159 A §4 SB 69"],
+        ],
+        "1/19/2025",
+      ),
+      ["SB 69", "HB 3131", "HB 3795"],
+    );
+
+    expect(tableEntriesOf(read["HB 3131"], "Introduced")).toEqual([["amends", "ors-653.626", "9"]]);
+    expect(tableEntriesOf(read["SB 69"], "Introduced")).toEqual([["amends", "ors-659a.159", "4"]]);
+    expect(tableReport(rig.system)).toMatchObject({ outcome: "loaded", entries: 4, unread_lines: 0 });
   });
 });
