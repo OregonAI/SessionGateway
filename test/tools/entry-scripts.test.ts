@@ -142,7 +142,8 @@ describe("the entry scripts", () => {
       source: "olis",
       lookup_failed: false,
       as_of: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-0[78]:00$/) as unknown,
-      location: { current: "Chapter Number Assigned", committee_code: null },
+      // The pull and the read see the same OLIS, so the block says the location is the top level's.
+      location: { status: "unchanged" },
     });
     expect(await exited).toBe(0);
   }, 20_000);
