@@ -9,14 +9,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { sponsorsOf } from "../support/sponsors.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 
 let system: System;
 
 beforeAll(async () => {
   // 2025-12-15, after the Legislators snapshot's newest row (2025-06-07) was created: the fake OLIS
   // hides a row created after the clock, and every Legislators row must be there.
-  system = await startSystem({ clockAt: "2025-12-15T17:00:00Z" });
+  system = await startCopiedSystem({ clockAt: "2025-12-15T17:00:00Z" });
 });
 
 afterAll(async () => {

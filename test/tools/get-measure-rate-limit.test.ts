@@ -4,7 +4,7 @@
 // because the limit and the clock are what is under test.
 import { afterEach, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient, type Era } from "../support/mcp-clients.ts";
-import { startSystem, type System, type SystemOptions } from "../support/system.ts";
+import { startCopiedSystem, type System, type SystemOptions } from "../support/system.ts";
 
 const started: System[] = [];
 const connections: ConnectedClient[] = [];
@@ -18,7 +18,7 @@ async function connect(
   era: Era,
   serverEnv: SystemOptions["serverEnv"],
 ): Promise<{ system: System; agent: ConnectedClient }> {
-  const system = await startSystem({
+  const system = await startCopiedSystem({
     clockAt: "2025-01-29T17:00:00Z",
     ...(serverEnv === undefined ? {} : { serverEnv }),
   });

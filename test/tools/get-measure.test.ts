@@ -4,7 +4,7 @@
 // file because none of them changes it; cases that build their own are in get-measure-feed.test.ts.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 
 // Expected values are literals from outside the code: the CatchLine is the feed row's as the fixture
 // holds it (test/fixtures/olis-2025R1/feed/Measures.json, SB 69), the id form is spec #1's, and the
@@ -26,7 +26,7 @@ let system: System;
 
 beforeAll(async () => {
   // 2025-01-29 09:00 in Oregon, the day before SLB heard SB 69 (spec #1, case (c)).
-  system = await startSystem({ clockAt: "2025-01-29T17:00:00Z" });
+  system = await startCopiedSystem({ clockAt: "2025-01-29T17:00:00Z" });
 });
 
 afterAll(async () => {
