@@ -140,6 +140,62 @@ describe("the live status with OLIS answering", () => {
 //            211740  SHS    2025-05-20T08:00:00  Public Hearing and Work Session   created 2025-05-15
 // (The property that names the committee is spelled `CommitteCode` in the feed.) The fake OLIS serves only
 // the rows created by its clock's time.
+// 2026-08-01 10:00 in Oregon, after every row of the fixture exists: the pull and the read are at one clock,
+// so OLIS gives exactly what the Index holds (ticket #48, ADR-0038). Nothing is ahead on that day.
+const sameClock = "2026-08-01T17:00:00Z";
+
+describe("the live status with OLIS answering exactly as the Index", () => {
+  let system: System;
+
+  beforeAll(async () => {
+    system = await startSystem({ clockAt: sameClock });
+  });
+
+  afterAll(async () => {
+    await system.stop();
+  });
+
+  describe.for(eras)("for a %s client", (era) => {
+    let connected: ConnectedClient;
+
+    beforeAll(async () => {
+      connected = await connectClient(era, system.handler);
+    });
+
+    afterAll(async () => {
+      await connected.close();
+    });
+
+    // The fixture's MeasureHistoryActions rows: 20 for SB 69, 30 for HB 3795. The block is 478 characters
+    // for both, measured on this fixture and clock (14,608 and 23,289 before the ticket): the read's source
+    // and time, the notice, four "unchanged" and an empty schedule.
+    it.for([
+      ["SB 69", 20],
+      ["HB 3795", 30],
+    ] as const)(
+      "says %s's location, history and votes are unchanged and shows the schedule",
+      async ([measure, actions]) => {
+        const outcome = await callTool(connected, "get_measure", { measure });
+
+        expect(outcome.isError).toBe(false);
+        expect(liveStatusOf(outcome)).toMatchObject({
+          source: "olis",
+          lookup_failed: false,
+          as_of: "2026-08-01T10:00:00-07:00",
+          location: { status: "unchanged" },
+          history: { status: "unchanged" },
+          floor_votes: { status: "unchanged" },
+          committee_votes: { status: "unchanged" },
+          schedule: [],
+        });
+        expect(JSON.stringify(liveStatusOf(outcome))).toHaveLength(478);
+        // The top level still holds them in full.
+        expect(outcome.structured?.["history"]).toHaveLength(actions);
+      },
+    );
+  });
+});
+
 describe("the schedule with OLIS answering", () => {
   let system: System;
 

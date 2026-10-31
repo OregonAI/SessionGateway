@@ -3,6 +3,9 @@
 // gives as the top level shows it is `unchanged`, a list that OLIS gives as the top level's entries plus
 // new ones at the end shows `new_entries`, and any other difference shows the value `full`.
 //
+// Every describe here changes what the fake OLIS says, so the read-only case (OLIS answering exactly as
+// the Index) is in get-measure-live.test.ts and a moved location is in get-measure-live-feed.test.ts.
+//
 // The pull and the read are at one clock (2026-08-01, after every row of the fixture exists), so with
 // the fake OLIS as the pull left it, OLIS gives exactly what the Index holds. A case then changes what
 // the fake says, with rows MADE UP for the case. Each case builds its own system, and is read with both
@@ -45,49 +48,6 @@ function madeUpHistoryRow(id: number, actionDate: string, text: string): Record<
     PublicNotification: false,
   };
 }
-
-describe("OLIS answering exactly as the Index", () => {
-  let system: System;
-
-  beforeAll(async () => {
-    system = await startSystem({ clockAt });
-  });
-
-  afterAll(async () => {
-    await system.stop();
-  });
-
-  // SB 69 has 20 history actions, 2 floor votes and 2 committee votes in the fixture; HB 3795 has history,
-  // 3 floor votes and 2 committee votes. Nothing is ahead on 2026-08-01.
-  describe.for(eras)("for a %s client", (era) => {
-    it.for(["SB 69", "HB 3795"])(
-      "says %s's location, history and votes are unchanged, and shows only the schedule and the read",
-      async (measure) => {
-        const outcome = await getMeasure(system, era, measure);
-
-        expect(outcome.isError).toBe(false);
-        expect(liveStatusOf(outcome)).toMatchObject({
-          source: "olis",
-          lookup_failed: false,
-          as_of: asOf,
-          location: unchanged,
-          history: unchanged,
-          floor_votes: unchanged,
-          committee_votes: unchanged,
-          schedule: [],
-        });
-        // The top level still has them in full.
-        expect((outcome.structured?.["history"] as unknown[]).length).toBeGreaterThan(10);
-      },
-    );
-
-    it("keeps the block small: SB 69's is well under a tenth of the 14,608 characters it was", async () => {
-      const outcome = await getMeasure(system, era, "SB 69");
-
-      expect(JSON.stringify(liveStatusOf(outcome)).length).toBeLessThan(1_500);
-    });
-  });
-});
 
 describe("OLIS giving one more History action and one more floor vote than the Index", () => {
   let system: System;
@@ -192,33 +152,65 @@ describe("OLIS giving a History that differs before its end", () => {
   });
 });
 
-describe("OLIS giving a location the Index does not hold", () => {
-  let system: System;
+describe("OLIS giving a History that is not the top level's with more after it", () => {
+  const historyRows = (row: Record<string, unknown>): boolean =>
+    row["MeasurePrefix"] === "SB" && row["MeasureNumber"] === 69;
 
-  beforeAll(async () => {
-    system = await startSystem({ clockAt });
-    // MADE UP: SB 69's location, which the Index holds as "Chapter Number Assigned", moves at OLIS.
-    system.olis.amendRows("Measures", (row) => row["MeasurePrefix"] === "SB" && row["MeasureNumber"] === 69, {
-      CurrentLocation: "In House Committee",
-      CurrentCommitteeCode: "HLWS",
-    });
+  it("shows OLIS's whole History when it gives fewer entries than the Index holds", async () => {
+    const system = await startSystem({ clockAt });
+    try {
+      // MADE UP: OLIS no longer gives SB 69's last action (the row now belongs to a Measure the Index does not
+      // hold), so it gives 19 actions where the Index holds 20.
+      system.olis.amendRows(
+        "MeasureHistoryActions",
+        (row) => historyRows(row) && row["ActionText"] === "Effective on the 91st day following adjournment sine die.",
+        { MeasureNumber: 9999 },
+      );
+      for (const era of eras) {
+        const outcome = await getMeasure(system, era, "SB 69");
+
+        const live = liveStatusOf(outcome);
+        expect(live?.source).toBe("olis");
+        expect(live?.history.status).toBe("full");
+        const entries = live?.history.status === "full" ? live.history.entries : [];
+        expect(entries).toHaveLength(19);
+        expect(entries.map((entry) => entry.text)).not.toContain(
+          "Effective on the 91st day following adjournment sine die.",
+        );
+        expect(outcome.structured?.["history"]).toHaveLength(20);
+      }
+    } finally {
+      await system.stop();
+    }
   });
 
-  afterAll(async () => {
-    await system.stop();
-  });
-
-  describe.for(eras)("for a %s client", (era) => {
-    it("shows the location in full", async () => {
-      const outcome = await getMeasure(system, era, "SB 69");
-
-      expect(liveStatusOf(outcome)?.location).toEqual({
-        status: "full",
-        current: "In House Committee",
-        committee_code: "HLWS",
+  it("shows OLIS's whole History when it gives the same actions in another order", async () => {
+    const system = await startSystem({ clockAt });
+    try {
+      // MADE UP: two actions of SB 69 swap their dates at OLIS, so the same 20 actions come in a different
+      // order (the later one now comes first).
+      const first = "Introduction and first reading. Referred to President's desk.";
+      const second = "Referred to Labor and Workplace Standards.";
+      const [firstDate, secondDate] = ["2025-01-13T09:07:30", "2025-02-12T13:25:30"];
+      system.olis.amendRows("MeasureHistoryActions", (row) => historyRows(row) && row["ActionText"] === first, {
+        ActionDate: secondDate,
       });
-      expect(outcome.structured?.["location"]).toEqual({ current: "Chapter Number Assigned", committee_code: null });
-    });
+      system.olis.amendRows("MeasureHistoryActions", (row) => historyRows(row) && row["ActionText"] === second, {
+        ActionDate: firstDate,
+      });
+      for (const era of eras) {
+        const outcome = await getMeasure(system, era, "SB 69");
+
+        const live = liveStatusOf(outcome);
+        expect(live?.history.status).toBe("full");
+        const entries = live?.history.status === "full" ? live.history.entries : [];
+        expect(entries).toHaveLength(20);
+        expect(entries[0]?.text).toBe(second);
+        expect(entries.map((entry) => entry.text).indexOf(first)).toBeGreaterThan(1);
+      }
+    } finally {
+      await system.stop();
+    }
   });
 });
 
