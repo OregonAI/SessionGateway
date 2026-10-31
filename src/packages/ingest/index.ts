@@ -423,10 +423,15 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       stored.add(link.id);
       documentsFetched += 1;
     }
-    // The Statute Links of every stored Version and posting not yet read, from the text the store holds: the
-    // files are not fetched again. Postings that share a file are read once (ADR-0015).
-    for (const file of writer.unreadStatuteFiles(config.session)) {
-      writer.storeStatuteParse(statuteParseOf(file, writer.storedText(file.documentId), snapshot.orsSections));
+    // The Statute Links of every stored Version and posting not yet read with this snapshot, from the text the store
+    // holds: the files are not fetched again. Postings that share a file are read once (ADR-0015). A snapshot that has
+    // changed since a file was read makes it unread, because its ranges are expanded against the snapshot's section
+    // list, and this comes before the Agency Links below, which are made from these links (ADR-0035).
+    for (const file of writer.unreadStatuteFiles(config.session, snapshot.version)) {
+      writer.storeStatuteParse(
+        statuteParseOf(file, writer.storedText(file.documentId), snapshot.orsSections),
+        snapshot.version,
+      );
     }
     // The Agency Links of every stored Fiscal Impact Statement, Version and posting not yet read with this snapshot, from
     // the text the store holds and the Statute Links read from it just above (ADR-0027). A snapshot that has changed since

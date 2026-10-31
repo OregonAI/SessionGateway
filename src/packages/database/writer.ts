@@ -256,13 +256,18 @@ export type IndexWriter = {
   storeDocument(session: SessionKey, document: StoredDocument, search: SearchRecord): void;
   /**
    * The files of the Session's stored Versions and postings of Proposed Amendments that have not been read
-   * for Statute Links, each once however many documents share it. Read from the stored text; nothing is fetched.
+   * for Statute Links with this snapshot, each once however many documents share it: a file never read, and every
+   * file read with another commit, because a range is expanded against the snapshot's section list (ADR-0035).
+   * Read from the stored text; nothing is fetched.
    */
-  unreadStatuteFiles(session: SessionKey): UnreadStatuteFile[];
+  unreadStatuteFiles(session: SessionKey, snapshot: SnapshotVersion): UnreadStatuteFile[];
   /** The stored text of one document, and whether the file had a text layer. */
   storedText(id: DocumentId): { text: string; hasTextLayer: boolean };
-  /** Keeps what reading one file came to, its links with it, in one transaction. */
-  storeStatuteParse(record: StatuteParseRecord): void;
+  /**
+   * Keeps what reading one file came to with this snapshot, its links with it, in one transaction. The links an
+   * earlier reading of the file made are replaced.
+   */
+  storeStatuteParse(record: StatuteParseRecord, snapshot: SnapshotVersion): void;
   /** The content hash of the Statutes Affected Table the Session's index holds, or undefined while it holds none. */
   statutesAffectedTableHash(session: SessionKey): string | undefined;
   /**
@@ -884,15 +889,16 @@ export function openIndexWriter(path: string): IndexWriter {
         throw error;
       }
     },
-    unreadStatuteFiles(session) {
+    unreadStatuteFiles(session, snapshot) {
       const rows = database
         .prepare(
           `SELECT MIN(d.id) AS id, d.kind, d.content_hash FROM document d
            WHERE d.session_key = ? AND d.kind IN ('version', 'proposed_amendment')
-             AND NOT EXISTS (SELECT 1 FROM statute_parse p WHERE p.content_hash = d.content_hash AND p.parsed_as = d.kind)
+             AND NOT EXISTS (SELECT 1 FROM statute_read r WHERE r.content_hash = d.content_hash AND r.parsed_as = d.kind
+                               AND r.snapshot_commit = ?)
            GROUP BY d.content_hash, d.kind ORDER BY MIN(d.id)`,
         )
-        .all(session);
+        .all(session, snapshot.commit);
       return rows.map((row) => {
         const unread = unreadFileRow.parse(row);
         return { documentId: unread.id as DocumentId, readAs: unread.kind, contentHash: unread.content_hash };
@@ -904,7 +910,13 @@ export function openIndexWriter(path: string): IndexWriter {
       const stored = storedTextRow.parse(row);
       return { text: stored.text, hasTextLayer: stored.has_text_layer === 1 };
     },
-    storeStatuteParse(record) {
+    storeStatuteParse(record, snapshot) {
+      const deleteParse = database.prepare("DELETE FROM statute_parse WHERE content_hash = ? AND parsed_as = ?");
+      const deleteLinks = database.prepare("DELETE FROM statute_link WHERE content_hash = ? AND parsed_as = ?");
+      const insertRead = database.prepare(
+        `INSERT INTO statute_read (content_hash, parsed_as, snapshot_commit) VALUES (?, ?, ?)
+         ON CONFLICT (content_hash, parsed_as) DO UPDATE SET snapshot_commit = excluded.snapshot_commit`,
+      );
       const insertParse = database.prepare(
         `INSERT INTO statute_parse (content_hash, parsed_as, text_read, amended_version_header,
                                     header_measure_prefix, header_measure_number, relating_clause_edits)
@@ -916,6 +928,9 @@ export function openIndexWriter(path: string): IndexWriter {
       );
       database.exec("BEGIN IMMEDIATE");
       try {
+        deleteParse.run(record.contentHash, record.readAs);
+        deleteLinks.run(record.contentHash, record.readAs);
+        insertRead.run(record.contentHash, record.readAs, snapshot.commit);
         insertParse.run(
           record.contentHash,
           record.readAs,

@@ -205,6 +205,15 @@ const schema = `
     relating_clause_edits TEXT NOT NULL,
     PRIMARY KEY (content_hash, parsed_as)
   ) STRICT;
+  -- With which commit of the OregonAI snapshot a file was read for Statute Links (ADR-0035): a range is expanded against
+  -- the snapshot's ORS section list, so the worker reads every file again from the stored text when the commit changes.
+  -- A database that has no row here (made before this table) reads every file once more.
+  CREATE TABLE IF NOT EXISTS statute_read (
+    content_hash TEXT NOT NULL,
+    parsed_as TEXT NOT NULL CHECK (parsed_as IN ('version', 'proposed_amendment')),
+    snapshot_commit TEXT NOT NULL,
+    PRIMARY KEY (content_hash, parsed_as)
+  ) STRICT;
   CREATE TABLE IF NOT EXISTS statute_link (
     content_hash TEXT NOT NULL,
     parsed_as TEXT NOT NULL,
