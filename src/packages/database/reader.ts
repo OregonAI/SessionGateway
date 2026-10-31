@@ -45,6 +45,7 @@ import {
 } from "#/packages/domain/index.ts";
 import { comparePrintOrder, type Legislator, type LegislatorId, type Sponsor } from "#/packages/domain/legislators.ts";
 import {
+  orsSectionIdRangeOf,
   parseOrsSectionId,
   type AgencyId,
   type OrsChapterId,
@@ -160,7 +161,10 @@ export type IndexReader = {
    * any section in it, with each link (a Proposed Amendment posted again is a link for each posting). A Proposed
    * Amendment's links are all here, replaced by a later Version or not. In no particular order.
    */
-  findStatuteLinked(session: SessionKey, target: OrsSectionId | OrsChapterId): StoredStatuteLinked[];
+  findStatuteLinked(
+    session: SessionKey,
+    target: { section: OrsSectionId } | { chapter: OrsChapterId },
+  ): StoredStatuteLinked[];
   /** The Measures with an Agency Link of any evidence to the Agency: through a Version, a Proposed Amendment, a statement or Testimony. */
   measuresWithAgencyLink(session: SessionKey, agency: AgencyId): MeasureId[];
   /** The units a Measure's Fiscal Impact Statements list that are not Agencies, as each statement writes them. */
@@ -948,12 +952,17 @@ export function openIndexReader(path: string): IndexReader {
       return [...read, ...testimony];
     },
     findStatuteLinked(session, target) {
-      const chapter = target.startsWith("ors-chapter-") ? target.slice("ors-chapter-".length) : undefined;
       const known = new Map<string, LinkedNode>();
-      const rows = [
-        ...selectStatuteLinkedTo.all(session, target),
-        ...(chapter === undefined ? [] : selectStatuteLinkedWithin.all(session, `ors-${chapter}.`, `ors-${chapter}/`)),
-      ];
+      let rows;
+      if ("section" in target) {
+        rows = selectStatuteLinkedTo.all(session, target.section);
+      } else {
+        const { from, before } = orsSectionIdRangeOf(target.chapter);
+        rows = [
+          ...selectStatuteLinkedTo.all(session, target.chapter),
+          ...selectStatuteLinkedWithin.all(session, from, before),
+        ];
+      }
       return rows
         .map((row) => statuteLinkedRow.parse(row))
         .map((found): StoredStatuteLinked => {
