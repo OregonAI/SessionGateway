@@ -206,7 +206,7 @@ export function readSince(text: string): Timestamp | undefined {
   const trimmed = text.trim();
   try {
     // A time with an offset names an instant; it is written back in Pacific time.
-    if (/(?:Z|[+-]\d{2}:\d{2})$/i.test(trimmed)) {
+    if (/T.*(?:Z|[+-]\d{2}(?::?\d{2})?)$/i.test(trimmed)) {
       return Temporal.Instant.from(trimmed).toZonedDateTimeISO("America/Los_Angeles").toString({
         timeZoneName: "never",
       }) as Timestamp;
