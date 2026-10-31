@@ -58,7 +58,7 @@ Every tool result carries one more block of text, after the tool's own, when the
 
 - **Keep ADR-0005's fixed rhythm.** The deployment on two shared cores (ADR-0007) cannot always afford a 15-minute increment, and cannot say so.
 - **The staleness rule in the server alone.** The rule is the schedule read backwards ("older than the last window"); two copies of the windows would drift. The server imports the one pure module.
-- **A warning field in each output schema.** Nine tools would each grow a field; a block of text reaches an agent the same way and changes none of them.
+- **A warning field in each output schema.** Eight tools would each grow a field; a block of text reaches an agent the same way and changes none of them.
 - **The full pull anywhere in the night.** A pull at 3 am and the next at 5 pm fall on one calendar date, which "once per day" can be read to forbid.
 
 ## Consequences
