@@ -49,6 +49,9 @@ _Avoid_: page, chunk (search's word is Passage)
 The text a PDF carries, as opposed to a picture of text. A scan or a photograph has none, and its Document is flagged.
 _Avoid_: OCR, which reads a picture and is out of scope
 
+**Hash sample**:
+The documents the worker fetches again each night (about 200, `INGEST_HASH_SAMPLE_SIZE`) to compare their hashes with the stored ones, so that a file replaced behind the same URL is noticed. It runs every night inside 5 pm to 6 am Pacific, outside the Full pull's hours. A file whose hash differs is a Hash mismatch: it is reported, in `hash-sample-report.json` beside the database, and the stored document is not replaced. A document OLIS would not give is reported as not checked, not as a mismatch (ADR-0040).
+
 **Build report**:
 What the ingest worker writes after a full pull, beside the database (spec #1, story 54): `build-report.json`, the sets the pull read with the rows the feed counted, the rows that came and how many the Index lists (ADR-0030), the Documents with no Text layer, the Documents it could not get or read, and what it made of the Passages it stored (how many were embedded and how many reused, ADR-0025), what it made of the Statutes Affected Table when the deployment names one (ADR-0034), and `unresolved-legislator-codes.json`, the Unresolved Legislator Codes. For the Committee members it holds, the report lists each committee's rows by Legislator Code, with the unresolved ones. A refused pull writes a report of its own, with the sets and which were short.
 
