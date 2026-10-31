@@ -40,7 +40,7 @@ type Block = {
   versions: {
     id: string;
     label: string;
-    same_as?: string;
+    same_links_as?: string;
     text_read?: boolean;
     not_read_reason?: string | null;
     statute_links?: StatuteLinks;
@@ -282,10 +282,10 @@ describe("rows the fixture lacks", () => {
       const block = await blockOf(connected, "SB 69");
 
       // The made-up Minority Report is served with the A-Engrossed file, and Enrolled reads the same as that file: so the
-      // Minority Report is the same as Enrolled, the Version before it in print order (L1 of the fix pass of #16). Enrolled
+      // Minority Report's links are the same as Enrolled's, the Version before it in print order (ADR-0036). Enrolled
       // is listed in full: the Version before it, B-Engrossed, was not read, and a Version that was not read is nothing
       // another can be the same as.
-      expect(block.versions.map((version) => [version.label, version.text_read, version.same_as])).toEqual([
+      expect(block.versions.map((version) => [version.label, version.text_read, version.same_links_as])).toEqual([
         ["Introduced", true, undefined],
         ["A-Engrossed", true, undefined],
         ["B-Engrossed", false, undefined],
