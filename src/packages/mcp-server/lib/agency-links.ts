@@ -180,10 +180,8 @@ export function agencyLinksOf(
         evidence: own.toSorted(compareLinks).map((link) => ({ ...evidenceShown(link), ...nodeOutput(link.node) })),
       })),
     unresolved_units: units
-      .toSorted(
-        (a, b) =>
-          numbersInOrder.compare(a.statement.id, b.statement.id) || (a.unit < b.unit ? -1 : a.unit > b.unit ? 1 : 0),
-      )
+      // By statement; the units of one statement stay in the order it lists them (the sort is stable).
+      .toSorted((a, b) => numbersInOrder.compare(a.statement.id, b.statement.id))
       .map((unit) => ({
         unit: unit.unit,
         statement_id: unit.statement.id,

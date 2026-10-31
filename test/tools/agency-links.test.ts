@@ -95,4 +95,31 @@ describe.for(eras)("get_measure's Agency Links for a %s client", (era) => {
       });
     });
   });
+
+  // SB 983's Introduced Fiscal Impact Statement is analysis 88044 and its A-Engrossed one 91466 (feed/
+  // MeasureAnalysisDocuments.json, Version "INTRO" and "A"); both read "Government Unit(s) Affected: Cities, Counties,
+  // School Districts, Special Districts, Metro, TriMet" (pdftotext of measure-analysis-documents/88044.pdf and
+  // 91466.pdf, and test/fixtures/olis-2025R1/measures.txt). None of them is a state agency, so none is an Agency: they
+  // stay as the statements write them (spec #1 story 34).
+  describe("units that are not Agencies", () => {
+    const units = ["Cities", "Counties", "School Districts", "Special Districts", "Metro", "TriMet"];
+
+    it("keeps SB 983's units as each statement writes them, with the statement and the Version it sits on, in the statement's order", async () => {
+      const links = await agencyLinksOf("SB 983");
+
+      expect(links.unresolved_units.map((unit) => [unit.statement_id, unit.node_id, unit.node_type, unit.unit])).toEqual([
+        ...units.map((unit) => ["analysis-2025r1-88044", "version-2025r1-sb983-introduced", "version", unit]),
+        ...units.map((unit) => ["analysis-2025r1-91466", "version-2025r1-sb983-a-engrossed", "version", unit]),
+      ]);
+      expect(links.unresolved_units[0]?.source_url).toBe(
+        "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureAnalysisDocument/88044",
+      );
+    });
+
+    it("links no Agency to them", async () => {
+      const links = await agencyLinksOf("SB 983");
+
+      expect(evidenceOf(links, "fiscal-impact-statement")).toEqual([]);
+    });
+  });
 });
