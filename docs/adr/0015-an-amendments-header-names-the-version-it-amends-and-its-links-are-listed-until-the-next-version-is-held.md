@@ -1,3 +1,7 @@
+---
+status: accepted; the sentence of Consequences that a deployment which changes its snapshot rebuilds the database is superseded by ADR-0035
+---
+
 # An amendment's header names the Version it amends, and its Statute Links are listed until the next Version is held
 
 ADR-0001 says a Proposed Amendment is parsed only for what it says itself, and that "when the next Version is printed, its parse replaces these links for that Measure". Ticket #13 builds `compare_amendment` and the Statute Links of `get_measure` on that, and this ADR records the four things the ticket left to the code (2026-10-30, corrected after review the same day).

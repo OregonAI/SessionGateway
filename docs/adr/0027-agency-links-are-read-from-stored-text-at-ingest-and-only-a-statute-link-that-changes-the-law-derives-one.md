@@ -1,3 +1,7 @@
+---
+status: accepted; the Consequence that Statute Links are not read again when the snapshot changes is superseded by ADR-0035, and the part that makes `same_as` compare the whole Version entry by ADR-0036
+---
+
 # Agency Links are read from the stored text at ingest, one document at a time, and only a Statute Link that amends, repeals or adds to derives one
 
 ADR-0004 says what the four kinds of evidence for an Agency Link are, ADR-0012 that only the worker reads the snapshot, and ADR-0012 left to "the first ticket that reads" the registry or the Chapter table how it is kept. Ticket #16 is that ticket. This ADR records where the links are made, where they sit, and the one rule that decides what a Statute Link derives.
