@@ -371,8 +371,6 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       sponsors,
       floorVotes: floorVoteRecords,
       committeeVotes: committeeVoteRecords,
-      snapshot: snapshot.version,
-      agencyParents: [...snapshot.agencyParents].map(([agency, parent]) => ({ agency, parent })),
       committees,
       meetings,
       agendaItems,
@@ -447,6 +445,13 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
         snapshot.version,
       );
     }
+    // The index reports this snapshot only now, when every link in it has been read with it, and a pull that stopped
+    // before this line leaves the snapshot of the last pull that finished (ADR-0035). The Agencies' parents go with it.
+    writer.recordSnapshotRead(
+      config.session,
+      snapshot.version,
+      [...snapshot.agencyParents].map(([agency, parent]) => ({ agency, parent })),
+    );
     const listingCounts = new Map(writer.listingCounts(config.session).map((count) => [count.entitySet, count]));
     const unresolvedMemberCodes = new Set(
       resolver

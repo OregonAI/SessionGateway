@@ -13,6 +13,7 @@
 // not any true ORS section.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
+import { createFakeEmbedder } from "../support/fake-embedder.ts";
 import { createFixtureCopy, type FixtureCopy } from "../support/made-up-snapshot.ts";
 import { startSystem, type System } from "../support/system.ts";
 
@@ -53,9 +54,9 @@ function snapshotCopy(): FixtureCopy {
   return copy;
 }
 
-async function startAt(snapshot: string): Promise<System> {
+async function startAt(snapshot: string, clockAt = "2026-08-01T17:00:00Z"): Promise<System> {
   const system = await startSystem({
-    clockAt: "2026-08-01T17:00:00Z",
+    clockAt,
     documents: true,
     snapshot,
     serverEnv: { MCP_RATE_LIMIT: "1000" },
@@ -131,7 +132,7 @@ describe.for(eras)("the Statute Links after the snapshot changes, for a %s clien
     expect(system.olis.documentRequests()).toHaveLength(requestsBefore);
   });
 
-  it("reports the new snapshot only when its Statute Links and Agency Links have all been read with it", async () => {
+  it("after a complete pull, the overview reports the new snapshot and the links read with it", async () => {
     const snapshot = snapshotCopy();
     const system = await startAt(snapshot.path);
 
@@ -143,5 +144,25 @@ describe.for(eras)("the Statute Links after the snapshot changes, for a %s clien
     const measure = await hb3027(system, era);
     expect(addsTo(measure)).toContain(madeUpSection);
     expect(linksInChapter(measure)).toBe(23);
+  });
+
+  it("keeps reporting the old snapshot while a pull that has seen the new one is not finished: the links are still the old ones", async () => {
+    const snapshot = snapshotCopy();
+    const system = await startAt(snapshot.path, "2025-01-29T17:00:00Z");
+    const oldCommit = ((await asked(system, era, "session_overview", {}))["snapshot"] as { commit: string }).commit;
+    expect(oldCommit).not.toBe(newCommit);
+
+    // A later clock lists documents the first pull did not, and an embedder that fails on them stops the second pull
+    // after the feed is stored and before the links are read again.
+    snapshot.changeIt();
+    system.clock.set("2025-07-15T17:00:00Z");
+    const embedder = {
+      ...(await createFakeEmbedder()),
+      embedPassages: () => Promise.reject(new Error("embedder down")),
+    };
+    await expect(system.pullAgain({ embedder })).rejects.toThrow("embedder down");
+
+    const overview = await asked(system, era, "session_overview", {});
+    expect(overview["snapshot"]).toMatchObject({ commit: oldCommit });
   });
 });
