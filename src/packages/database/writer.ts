@@ -6,6 +6,7 @@ import {
   type AgendaItem,
   type AmendmentHeader,
   type Committee,
+  type CommitteeMember,
   type DocumentId,
   type DocumentKind,
   type DocumentLink,
@@ -14,7 +15,7 @@ import {
   type TestimonyDetails,
 } from "#/packages/domain/documents.ts";
 import type { HistoryAction, Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
-import type { Legislator, LegislatorId, SponsorLevel } from "#/packages/domain/legislators.ts";
+import type { Legislator, LegislatorId, LegislatorRow, SponsorLevel } from "#/packages/domain/legislators.ts";
 import type { AgencyId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
 import type { Citation } from "#/packages/domain/citations.ts";
 import type { Passage, SearchEntry } from "#/packages/domain/search.ts";
@@ -22,6 +23,7 @@ import type { RelatingClauseEdit, StatuteLink, StatuteLinkSource } from "#/packa
 import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openWriteConnection } from "./lib/connection.ts";
+import { listedRowsOf } from "./lib/listing.ts";
 
 type SponsorRecordFields = {
   id: number;
@@ -66,6 +68,8 @@ export type TestimonyRecord = {
 export type FullPullRecord = {
   measures: readonly Measure[];
   history: readonly HistoryAction[];
+  /** The feed's Legislators rows, one for each Legislator Code, as the pull read them: the rows the index keeps and lists. */
+  legislatorRows: readonly LegislatorRow[];
   /** The Legislators the resolver can name. */
   legislators: readonly Legislator[];
   /** Every Legislator Code the resolver can resolve, with the id of the Legislator it names (the live lookup resolves codes OLIS sends later). */
@@ -93,6 +97,8 @@ export type FullPullRecord = {
    * not only as document links, so the server can say who testified before every file is fetched.
    */
   testimony: readonly TestimonyRecord[];
+  /** The CommitteeMembers rows, every one: the set's declared key is not unique (`CommitteeMember.key` is the whole row). */
+  committeeMembers: readonly CommitteeMember[];
 };
 
 /** A file the store holds that has not been read for Statute Links yet: one document stands for every document with the same file. */
@@ -160,6 +166,9 @@ export type IndexWriter = {
    * so the server can tell a Measure whose statement the worker could not fetch from one that has none.
    * The same goes for the Testimony rows: what the feed says of each, and the Agency its Organization names,
    * are the feed's latest, whether or not the file is fetched. A full pull never deletes anything else (ADR-0005).
+   * The pull counts as a complete one in the same transaction: every row it read is listed by it, and a row
+   * that two complete pulls in a row have not listed is no longer listed (ADR-0030). A pull that is not complete
+   * is never given to this method.
    */
   recordFullPull(session: SessionKey, asOf: Timestamp, pulled: FullPullRecord): void;
   /** The ids of the documents already stored for the Session: a stored document is never fetched again. */
@@ -209,6 +218,8 @@ export type IndexWriter = {
 };
 
 const idRow = z.object({ id: z.string() });
+const pullNumberRow = z.object({ number: z.number() });
+const countRow = z.object({ n: z.number() });
 const scanRow = z.object({ id: z.string(), source_url: z.string() });
 const unreadFileRow = z.object({
   id: z.string(),
@@ -343,6 +354,22 @@ export function openIndexWriter(path: string): IndexWriter {
         "INSERT INTO analysis_listing (document_id, session_key, measure_id) VALUES (?, ?, ?)",
       );
       const clearAnalysisListing = database.prepare("DELETE FROM analysis_listing WHERE session_key = ?");
+      const selectLatestPull = database.prepare(
+        "SELECT COALESCE(MAX(number), 0) AS number FROM feed_pull WHERE session_key = ?",
+      );
+      const insertPull = database.prepare("INSERT INTO feed_pull (session_key, number, as_of) VALUES (?, ?, ?)");
+      const listRow = database.prepare(
+        `INSERT INTO feed_row (session_key, entity_set, row_key, document_id, last_listed_pull) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (session_key, entity_set, row_key) DO UPDATE SET
+           document_id = excluded.document_id, last_listed_pull = excluded.last_listed_pull`,
+      );
+      const selectUnlistedDocuments = database.prepare(
+        "SELECT document_id AS id FROM feed_row WHERE session_key = ? AND document_id IS NOT NULL AND last_listed_pull <= ?",
+      );
+      const countDocumentsLastListedIn = database.prepare(
+        "SELECT COUNT(*) AS n FROM feed_row WHERE session_key = ? AND document_id IS NOT NULL AND last_listed_pull = ?",
+      );
+      const bumpGeneration = database.prepare("UPDATE search_generation SET generation = generation + 1");
       database.exec("BEGIN IMMEDIATE");
       try {
         for (const measure of pulled.measures) {
@@ -493,6 +520,21 @@ export function openIndexWriter(path: string): IndexWriter {
         }
         recordAsOf.run(session, asOf);
         recordSnapshot.run(session, pulled.snapshot.source, pulled.snapshot.commit, pulled.snapshot.commitDate);
+        // The pull is a complete one: it lists every row it read. A document that was no longer listed and is
+        // listed again, or that this pull makes no longer listed, changes what search holds in memory.
+        const previous = pullNumberRow.parse(selectLatestPull.get(session)).number;
+        const number = previous + 1;
+        const unlistedBefore = new Set(
+          selectUnlistedDocuments.all(session, previous - 2).map((row) => idRow.parse(row).id),
+        );
+        insertPull.run(session, number, asOf);
+        let relisted = false;
+        for (const row of listedRowsOf(pulled)) {
+          listRow.run(session, row.entitySet, row.key, row.documentId, number);
+          if (row.documentId !== null && unlistedBefore.has(row.documentId)) relisted = true;
+        }
+        const agedOut = countRow.parse(countDocumentsLastListedIn.get(session, number - 2)).n > 0;
+        if (relisted || agedOut) bumpGeneration.run();
         database.exec("COMMIT");
       } catch (error) {
         database.exec("ROLLBACK");

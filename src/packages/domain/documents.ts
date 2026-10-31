@@ -430,11 +430,28 @@ export type RelatedNode = {
   documentId: DocumentId;
 };
 
+/**
+ * Whether the feed still lists a row the index keeps, and when it last did (ADR-0005, ADR-0030). A row is no
+ * longer listed once two complete full pulls in a row have not listed it. It leaves search and stays fetchable
+ * by id; nothing is deleted.
+ */
+export type Listing = {
+  /** False once two complete full pulls in a row have not listed the row. */
+  listed: boolean;
+  /** The as-of time of the latest complete full pull that listed the row. */
+  lastListedAt: Timestamp;
+};
+
 /** What `get_document` resolves an id to: a document, and the nodes it (or the amendment's postings) point at. */
 export type DocumentView = {
   /** The document whose text is served: the id asked for, or an amendment's latest posting. */
   document: Omit<StoredDocument, "relations" | "textHash" | "date">;
   related: RelatedNode[];
+  /**
+   * Whether the feed lists the document. For a Proposed Amendment it lists the amendment while it lists any of
+   * its postings, and `lastListedAt` is the latest any posting was listed.
+   */
+  listing: Listing;
 };
 
 /** A document with its extracted text, as the store keeps it and the server reads it. */
@@ -583,6 +600,27 @@ export type Committee = {
   code: string;
   id: CommitteeId;
   name: string;
+};
+
+/**
+ * One row of the feed's CommitteeMembers. The set's declared key is (CommitteeCode, CreatedDate, Title), which is
+ * not unique: Rep Helm and Rep Owens are two rows with one key (docs/research/olis-odata.md section 8, gotcha 5).
+ * So a row is told apart by all of its properties, and no tool shows the set yet.
+ */
+export type CommitteeMember = {
+  session: SessionKey;
+  /** The whole row as a string: every property the feed sent, in a fixed order. Two rows are one only if this is. */
+  key: string;
+  committeeCode: string;
+  /**
+   * As the feed writes it. It names a Legislator, or on a task force a person who is not one ("Shanbo Zhang"),
+   * so a code that matches no Legislators row is reported as unresolved and is not an error.
+   */
+  legislatorCode: string;
+  /** "Chair", "Co-Chair", "Member"... */
+  title: string;
+  createdAt: Timestamp;
+  modifiedAt: Timestamp | null;
 };
 
 /** What the index holds of a Session. */

@@ -47,6 +47,16 @@ export const getDocumentOutput = z.object({
   part_count: z.number().describe("How many parts the text has."),
   text: z.string().describe("This part of the text, exactly as published, with a form feed between pages."),
   related: z.array(related).describe("The nodes this document points at."),
+  no_longer_listed: z
+    .boolean()
+    .describe(
+      "True when the Legislature's feed has stopped listing the document: two complete full pulls in a row did not list it. It is then left out of search results, and this call still serves it, as it was fetched. For a Proposed Amendment it is true when none of its postings is listed.",
+    ),
+  last_listed_at: z
+    .string()
+    .describe(
+      "When the feed last listed the document: the as-of time of the latest complete full pull that did, in Pacific time with its UTC offset. It is the index's as-of time while the latest pull lists the document.",
+    ),
   as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
   notice: z.string().describe("A reminder that this is not the official record."),
 });
@@ -101,6 +111,8 @@ export function getDocument(
         meaning: node.meaning,
         document_id: node.relation === "posted_to" ? node.documentId : null,
       })),
+      no_longer_listed: !found.listing.listed,
+      last_listed_at: found.listing.lastListedAt,
       as_of: asOf,
       notice: NON_OFFICIAL_NOTICE,
     },

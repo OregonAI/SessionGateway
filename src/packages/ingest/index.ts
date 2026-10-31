@@ -309,6 +309,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     writer.recordFullPull(config.session, asOf, {
       measures,
       history,
+      legislatorRows,
       legislators: resolver.people,
       legislatorCodes: resolver.codes.map(({ code, legislator }) => ({ code, legislatorId: legislator.id })),
       sponsors,
@@ -320,6 +321,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       agendaItems,
       documentLinks: links,
       testimony: testimonyRecordsOf(links, snapshot),
+      committeeMembers: [],
     });
     const stored = writer.storedDocumentIds(config.session);
     // A fetched file is unchanging (ADR-0005) but its feed row is not: OLIS changes a posting's Meaning,
