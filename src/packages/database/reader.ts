@@ -409,6 +409,7 @@ const statuteLinkedRow = statuteLinkRow.extend({
   document_kind: z.enum(["version", "proposed_amendment"]),
   document_label: z.string(),
   document_source_url: z.string(),
+  document_created_at: z.string().nullable(),
   node_id: z.string(),
   measure_id: z.string(),
 });
@@ -423,7 +424,6 @@ const unresolvedUnitRow = z.object({
 const versionNodeRow = z.object({ label: z.string(), source_url: z.string() });
 const amendmentNumberRow = z.object({ label: z.string() });
 const amendmentFileRow = z.object({ source_url: z.string() });
-const createdRow = z.object({ created_at: z.string() });
 const countRow = z.object({ n: z.number() });
 const kindCountRow = z.object({ kind: z.string(), n: z.number() });
 const listingRow = z.object({ listed: z.number().nullable(), last_listed_at: z.string().nullable() });
@@ -654,10 +654,12 @@ export function openIndexReader(path: string): IndexReader {
   // from "ors-657b." up to "ors-657b/", the character after the dot, so chapter 657 does not take 657B's sections.
   const statuteLinkedWhere = (condition: string): string =>
     `SELECT d.id AS document_id, d.kind AS document_kind, d.label AS document_label, d.source_url AS document_source_url,
-            d.node_id, mr.to_id AS measure_id, l.kind, l.target_type, l.target_id, l.measure_section
+            d.node_id, dc.created_at AS document_created_at, mr.to_id AS measure_id,
+            l.kind, l.target_type, l.target_id, l.measure_section
      FROM statute_link l INDEXED BY statute_link_target
        JOIN document d ON d.content_hash = l.content_hash AND d.kind = l.parsed_as
        JOIN document_relation mr ON mr.document_id = d.id AND mr.relation = 'measure'
+       LEFT JOIN document_created dc ON dc.document_id = d.id
      WHERE d.session_key = ?1 AND ${condition}
      ORDER BY d.id, l.ordinal`;
   const selectStatuteLinkedTo = database.prepare(statuteLinkedWhere("l.target_id = ?2"));
@@ -689,12 +691,6 @@ export function openIndexReader(path: string): IndexReader {
   );
   const selectAmendmentFile = database.prepare(
     "SELECT source_url FROM document WHERE node_id = ? AND node_id <> id ORDER BY posted_at DESC, id DESC LIMIT 1",
-  );
-  const selectCreated = database.prepare("SELECT created_at FROM document_created WHERE document_id = ?");
-  // Every posting the feed lists for a Proposed Amendment, whether or not its file is fetched, with when OLIS created it.
-  const selectAmendmentCreated = database.prepare(
-    `SELECT dc.created_at FROM meeting_document md JOIN document_created dc ON dc.document_id = md.document_id
-     WHERE md.kind = 'proposed_amendment' AND md.node_id = ?`,
   );
   const selectVersionNode = database.prepare(
     "SELECT label, source_url FROM document WHERE id = ? AND kind = 'version'",
@@ -764,7 +760,6 @@ export function openIndexReader(path: string): IndexReader {
       measure: key,
       label: null,
       sourceUrl: olisPageUrlOf(key),
-      createdAt: [],
     };
   }
   /** The Measure a stored id names. The ids in the store were minted from a Measure of this Session. */
@@ -775,15 +770,7 @@ export function openIndexReader(path: string): IndexReader {
   }
   /** The Version a stored Version document is. */
   function versionNodeOf(key: MeasureKey, id: string, label: string, sourceUrl: string): LinkedNode {
-    const created = selectCreated.get(id);
-    return {
-      type: "version",
-      id: id as DocumentId,
-      measure: key,
-      label,
-      sourceUrl,
-      createdAt: created === undefined ? [] : [createdRow.parse(created).created_at as Timestamp],
-    };
+    return { type: "version", id: id as DocumentId, measure: key, label, sourceUrl };
   }
   /** The Proposed Amendment a stored posting is of: its number as its earliest posting writes it, and the file served for it. */
   function amendmentNodeOf(key: MeasureKey, id: string): LinkedNode {
@@ -795,7 +782,6 @@ export function openIndexReader(path: string): IndexReader {
       measure: key,
       label: number.label,
       sourceUrl: file.source_url,
-      createdAt: selectAmendmentCreated.all(id).map((row) => createdRow.parse(row).created_at as Timestamp),
     };
   }
   /**
@@ -976,7 +962,11 @@ export function openIndexReader(path: string): IndexReader {
               : (known.get(found.node_id) ?? amendmentNodeOf(key, found.node_id));
           known.set(node.id, node);
           return {
-            document: { id: found.document_id as DocumentId, sourceUrl: found.document_source_url },
+            document: {
+              id: found.document_id as DocumentId,
+              sourceUrl: found.document_source_url,
+              createdAt: found.document_created_at as Timestamp | null,
+            },
             node,
             link: statuteLinkOfRow(found),
           };

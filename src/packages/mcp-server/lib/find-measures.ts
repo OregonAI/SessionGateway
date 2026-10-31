@@ -2,12 +2,7 @@
 // Amendments that an Agency Link or a Statute Link ties to an Agency, optionally only the ones posted since a time.
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
-import {
-  agencyEvidenceKinds,
-  type LinkedNode,
-  type StoredAgencyLink,
-  type StoredStatuteLinked,
-} from "#/packages/domain/agency-links.ts";
+import { agencyEvidenceKinds, type LinkedNode, type StoredStatuteLinked } from "#/packages/domain/agency-links.ts";
 import { parseAmendmentNumber, type AmendmentId, type DocumentId } from "#/packages/domain/documents.ts";
 import { citationOfMeasureId, measureIdOf, parseMeasureReference, type SessionKey } from "#/packages/domain/index.ts";
 import {
@@ -20,7 +15,7 @@ import {
 } from "#/packages/domain/oregonai.ts";
 import { compareMeasureSections, statuteLinkKinds } from "#/packages/domain/statute-links.ts";
 import { compareTimestamps, readTimestamp, type Timestamp } from "#/packages/time/pacific.ts";
-import { compareLinks, evidenceOutput, evidenceShown, withoutRepeats } from "./agency-links.ts";
+import { compareLinks, evidenceOutput, evidenceShown, gatherRepeats, type GatheredLink } from "./agency-links.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 import { noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 
@@ -212,35 +207,25 @@ function titleOf(node: LinkedNode): string {
     : `${citation}-${number.letter ?? ""}${number.digits}`;
 }
 
-/** The times at which what makes an Agency Link was posted: the node's rows, or the evidence's own document. */
-function postedTimesOf(link: StoredAgencyLink): Timestamp[] {
-  switch (link.evidence.kind) {
-    case "derived":
-    case "named-in-text":
-      return link.node.createdAt;
-    case "fiscal-impact-statement":
-    case "testimony":
-      return link.document.createdAt === null ? [] : [link.document.createdAt];
-    default:
-      return link.evidence satisfies never;
-  }
-}
-
-/** What makes one node an item: the evidence, in its order, and the times at which it was posted. */
+/** What makes one node an item: the evidence, in its order, and the times at which the documents that hold it were created. */
 type Candidate = { node: LinkedNode; evidence: Evidence[]; times: Timestamp[] };
 
-/** The Agency Links of one kind, gathered by the node they sit on. */
-function candidatesOfLinks(links: readonly StoredAgencyLink[]): Candidate[] {
-  const byNode = new Map<string, { node: LinkedNode; links: StoredAgencyLink[] }>();
-  for (const link of links.toSorted(compareLinks)) {
-    const gathered = byNode.get(link.node.id) ?? { node: link.node, links: [] };
-    gathered.links.push(link);
-    byNode.set(link.node.id, gathered);
+/**
+ * The Agency Links of one kind, gathered by the node they sit on. A link is dated by the postings whose own file gives
+ * it (`gatherRepeats`): the Version's or statement's or Testimony's own row, or each posting of a Proposed Amendment
+ * that reads the same. A posting of a different file never dates it.
+ */
+function candidatesOfLinks(links: readonly GatheredLink[]): Candidate[] {
+  const byNode = new Map<string, { node: LinkedNode; links: GatheredLink[] }>();
+  for (const gathered of links.toSorted((a, b) => compareLinks(a.link, b.link))) {
+    const own = byNode.get(gathered.link.node.id) ?? { node: gathered.link.node, links: [] };
+    own.links.push(gathered);
+    byNode.set(gathered.link.node.id, own);
   }
   return [...byNode.values()].map(({ node, links: own }) => ({
     node,
-    evidence: own.map(evidenceShown),
-    times: own.flatMap(postedTimesOf),
+    evidence: own.map(({ link }) => evidenceShown(link)),
+    times: own.flatMap(({ createdAt }) => createdAt),
   }));
 }
 
@@ -248,13 +233,19 @@ function candidatesOfLinks(links: readonly StoredAgencyLink[]): Candidate[] {
  * The Statute Links to a section or chapter, gathered by the Version or Proposed Amendment they were read from. Each
  * target is one piece of evidence under its kind, with every measure section it is linked in (a Proposed Amendment posted
  * to several meetings is one item, and postings that say the same add nothing). The document named is the first, in the
- * order of the feed's numbers.
+ * order of the feed's numbers. The item is dated by the documents whose file holds a link to the target: a posting of
+ * another file does not date it (#16 F2).
  */
 function candidatesOfStatuteLinks(stored: readonly StoredStatuteLinked[]): Candidate[] {
   type Entry = { evidence: Evidence; sections: (string | null)[] };
-  const byNode = new Map<string, { node: LinkedNode; entries: Map<string, Entry> }>();
+  const byNode = new Map<string, { node: LinkedNode; entries: Map<string, Entry>; times: Map<string, Timestamp> }>();
   for (const found of stored.toSorted((a, b) => numbersInOrder.compare(a.document.id, b.document.id))) {
-    const gathered = byNode.get(found.node.id) ?? { node: found.node, entries: new Map<string, Entry>() };
+    const gathered = byNode.get(found.node.id) ?? {
+      node: found.node,
+      entries: new Map<string, Entry>(),
+      times: new Map<string, Timestamp>(),
+    };
+    if (found.document.createdAt !== null) gathered.times.set(found.document.id, found.document.createdAt);
     const key = `${found.link.kind} ${found.link.target.id}`;
     const entry = gathered.entries.get(key) ?? {
       evidence: {
@@ -271,7 +262,7 @@ function candidatesOfStatuteLinks(stored: readonly StoredStatuteLinked[]): Candi
     gathered.entries.set(key, entry);
     byNode.set(found.node.id, gathered);
   }
-  return [...byNode.values()].map(({ node, entries }) => ({
+  return [...byNode.values()].map(({ node, entries, times }) => ({
     node,
     evidence: [...entries.values()]
       .toSorted(
@@ -284,7 +275,7 @@ function candidatesOfStatuteLinks(stored: readonly StoredStatuteLinked[]): Candi
         ...evidence,
         measure_sections: sections.toSorted(compareMeasureSections),
       })),
-    times: node.createdAt,
+    times: [...times.values()],
   }));
 }
 
@@ -435,9 +426,9 @@ export function findMeasures(
   const notes: string[] = [];
   switch (target.kind) {
     case "agency": {
-      const stored = withoutRepeats(reader.findAgencyLinks(session, { agency: target.id }));
+      const stored = gatherRepeats(reader.findAgencyLinks(session, { agency: target.id }));
       groups = agencyEvidenceKinds.map((kind) =>
-        groupOfCandidates(kind, candidatesOfLinks(stored.filter((link) => link.evidence.kind === kind)), since),
+        groupOfCandidates(kind, candidatesOfLinks(stored.filter(({ link }) => link.evidence.kind === kind)), since),
       );
       if (stored.length === 0) {
         notes.push(

@@ -62,11 +62,6 @@ export type LinkedNode = {
   label: string | null;
   /** The Measure's page on OLIS, the Version's file, or the file `get_document` serves for the amendment (its latest posting). */
   sourceUrl: string;
-  /**
-   * When OLIS created each row that posted it: the Version's row, or every posting of an amendment, whether or not
-   * its file is fetched. Empty for a Measure, which no row posts.
-   */
-  createdAt: Timestamp[];
 };
 
 /** An Agency Link as the store holds it: the link, the document its evidence was read from, and the node it sits on. */
@@ -95,7 +90,11 @@ export type StoredUnresolvedUnit = {
 
 /** A Version or Proposed Amendment with a Statute Link to a section or chapter, and the link. */
 export type StoredStatuteLinked = {
-  document: { id: DocumentId; sourceUrl: string };
+  /**
+   * The Version's or posting's document the link was read from, with when OLIS created its row (null when the feed gave
+   * none). A Proposed Amendment's other postings are other documents: they are here only if their own file holds the link.
+   */
+  document: { id: DocumentId; sourceUrl: string; createdAt: Timestamp | null };
   node: LinkedNode;
   link: StatuteLink;
 };
