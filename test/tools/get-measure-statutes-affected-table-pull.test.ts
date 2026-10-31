@@ -756,4 +756,43 @@ describe("a made-up table in shapes the 2025R1 table never shows", () => {
       unread_lines: 0,
     });
   });
+
+  // The legend (lines 17 and 25 of the PDF.js text of page 1): "The engrossing level is printed next to the measure number
+  // if the measure has been engrossed (such as “C” to indicate the C-engrossed version ...)" and "(4) An “E” if an
+  // emergency clause applies to the amendment, repeal or addition." Column (4) is not in PDF.js's text, so an E alone
+  // after the Measure number is the emergency clause of a row at the Introduced Version, or the level of an E-Engrossed
+  // Version. The 2025R1 table has no level past C, so it never needs the second reading, and 836 lines of its ORS pages
+  // end in an E alone (a regex count over pages 1 to 56 of the PDF.js text), none of them for a Measure of the fixture. The
+  // rows are MADE UP.
+  it("sets no Version beside the entries of a row that ends in an E alone: it is the emergency clause or the E-Engrossed level, and the table does not say which", async () => {
+    const read = await serve(madeUpTable(["653.616 A §8 SB 69 E", "A §1 SB 121 E", "653.626 A §9 SB 69 A E"]), [
+      "SB 69",
+      "SB 121",
+    ]);
+
+    // The E alone is not read as an emergency clause at the Introduced Version: that Version has no table beside it.
+    expect(
+      read["SB 69"]?.versions.find((entry) => entry.label === "Introduced")?.statutes_affected_table,
+    ).toBeUndefined();
+    // A level and an E after it are known: the A-Engrossed Version, and an emergency clause.
+    expect(tableEntriesOf(read["SB 69"], "A-Engrossed")).toEqual([["amends", "ors-653.626", "9"]]);
+    // The entries of the E alone are shown, apart, with what the table leaves unsaid.
+    expect(read["SB 69"]?.statutes_affected_table?.other_entries).toEqual([
+      {
+        level: "E",
+        version: null,
+        reason: holding("the E-Engrossed Version's level"),
+        entries: expectedChanges({ amends: { sections: [sectionTarget("ors-653.616", "8")] } }),
+      },
+    ]);
+    expect(read["SB 121"]?.statutes_affected_table?.other_entries).toEqual([
+      {
+        level: "E",
+        version: null,
+        reason: holding("emergency clause"),
+        entries: expectedChanges({ amends: { sections: [sectionTarget("ors-653.616", "1")] } }),
+      },
+    ]);
+    expect(tableReport(rig.system)).toMatchObject({ outcome: "loaded", entries: 3, unread_lines: 0 });
+  });
 });

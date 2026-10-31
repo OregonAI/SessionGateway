@@ -121,16 +121,24 @@ function isVeto(token: string): token is Veto {
   return token === "OV" || token === "OVP";
 }
 
+/** What the tokens after the Measure number say. */
+type Tail = { level: string | null; emergency: boolean; loneE: boolean; veto: Veto | null };
+
 /**
  * What follows the Measure number, which the legend (page 1 of the table) describes: "The section number and current
  * session measure number or previous session measure number if a measure was repassed over the Governor’s veto, followed
  * by “OV” for a current session overturned veto or “OVP” for a previous session overturned veto", then "The engrossing
- * level is printed next to the measure number", and "(4) An “E” if an emergency clause applies". So the tail holds an
- * engrossing level, a veto mark and an "E", each at most once, any of them missing. The legend does not say whether the
- * level or the veto mark comes first, so the tokens are told apart by what they say; the "E" of the last column is last.
- * Undefined for anything else.
+ * level is printed next to the measure number if the measure has been engrossed (such as “C” to indicate the C-engrossed
+ * version, “AMR” or “AMR2” ... “BCC” or “BCC2” ...)", and "(4) An “E” if an emergency clause applies to the amendment,
+ * repeal or addition". So the tail holds an engrossing level, a veto mark and an "E", each at most once, any of them
+ * missing. The legend does not say whether the level or the veto mark comes first, so the tokens are told apart by what
+ * they say; the "E" of the last column is last, and follows a level.
+ *
+ * An "E" alone is the legend's emergency clause (column 4) or an E-Engrossed level (the legend's levels are examples), and
+ * the text has no columns to tell them apart (pdftotext -layout has, PDF.js's does not): it is read as neither, and the
+ * entry says so (`loneE`). Undefined for anything the legend has no form for.
  */
-function readTail(rest: string): { level: string | null; emergency: boolean; veto: Veto | null } | undefined {
+function readTail(rest: string): Tail | undefined {
   const tokens = rest.split(/\s+/).filter((token) => token !== "");
   const vetoes = tokens.filter(isVeto);
   if (tokens.length > 3 || vetoes.length > 1) return undefined;
@@ -138,12 +146,14 @@ function readTail(rest: string): { level: string | null; emergency: boolean; vet
   const [first = null, second] = tokens.filter((token) => !isVeto(token));
   switch (tokens.length - vetoes.length) {
     case 0:
-      return { level: null, emergency: false, veto };
+      return { level: null, emergency: false, loneE: false, veto };
     case 1:
-      return first === "E" ? { level: null, emergency: true, veto } : { level: first, emergency: false, veto };
+      return first === "E"
+        ? { level: null, emergency: false, loneE: true, veto }
+        : { level: first, emergency: false, loneE: false, veto };
     case 2:
       return second === "E" && first !== "E" && tokens.at(-1) === "E"
-        ? { level: first, emergency: true, veto }
+        ? { level: first, emergency: true, loneE: false, veto }
         : undefined;
     default:
       return undefined;
@@ -267,6 +277,7 @@ export function readStatutesAffectedTable(
         target: entryTarget,
         measureSection: groups["measureSection"] ?? "",
         emergency: tail.emergency,
+        loneE: tail.loneE,
       });
     }
   }

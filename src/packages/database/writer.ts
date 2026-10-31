@@ -881,8 +881,8 @@ export function openIndexWriter(path: string): IndexWriter {
     storeStatutesAffectedTable(session, record) {
       const insertEntry = database.prepare(
         `INSERT INTO statutes_affected_entry (session_key, ordinal, prefix, number, level, action, target_type,
-                                              target_id, measure_section, emergency)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                              target_id, measure_section, emergency, lone_e)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       database.exec("BEGIN IMMEDIATE");
       try {
@@ -908,6 +908,7 @@ export function openIndexWriter(path: string): IndexWriter {
             entry.target.id,
             entry.measureSection,
             entry.emergency ? 1 : 0,
+            entry.loneE ? 1 : 0,
           );
         });
         database.exec("COMMIT");

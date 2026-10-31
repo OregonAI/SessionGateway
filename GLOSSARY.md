@@ -239,7 +239,7 @@ Legislative Counsel's official table of the ORS sections each Measure amends, re
 _Avoid_: artables, the cross-reference table
 
 **Table entry**:
-One row of the Statutes Affected Table's ORS section, read into the Measure, its engrossing level, an ORS section or chapter, the table's letter ("A", "R" or "Add") and the measure section. A row that omits the ORS number (a continuation row) belongs to the last one above it, and a series ("9.005 to 9.757") is one entry for each section of it that the snapshot lists. The level names a Version: "SB 69 A" is the A-Engrossed Version of SB 69 and no letter is the Introduced Version; a longer level such as "BCC" names none. A row whose Measure was repassed over the Governor's veto ends in "OV" (this Session's) or "OVP" (a previous Session's); an OVP row is kept apart from this Session's entries.
+One row of the Statutes Affected Table's ORS section, read into the Measure, its engrossing level, an ORS section or chapter, the table's letter ("A", "R" or "Add") and the measure section. A row that omits the ORS number (a continuation row) belongs to the last one above it, and a series ("9.005 to 9.757") is one entry for each section of it that the snapshot lists. The level names a Version: "SB 69 A" is the A-Engrossed Version of SB 69 and no letter is the Introduced Version; a longer level such as "BCC" names none, and so does an "E" alone after the Measure number, which is the emergency clause or an E-Engrossed level and the table's text does not say which. A row whose Measure was repassed over the Governor's veto ends in "OV" (this Session's) or "OVP" (a previous Session's); an OVP row is kept apart from this Session's entries.
 _Avoid_: table link, table row, when an entry is meant
 
 **Confirmed link**:

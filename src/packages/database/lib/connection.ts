@@ -230,6 +230,7 @@ const schema = `
     target_id TEXT NOT NULL,
     measure_section TEXT NOT NULL,
     emergency INTEGER NOT NULL,
+    lone_e INTEGER NOT NULL,
     PRIMARY KEY (session_key, ordinal)
   ) STRICT;
   CREATE INDEX IF NOT EXISTS statutes_affected_entry_measure ON statutes_affected_entry (session_key, prefix, number);

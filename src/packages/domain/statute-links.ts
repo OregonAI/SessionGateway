@@ -100,9 +100,21 @@ export type StatutesAffectedEntry = {
   target: StatuteTarget;
   /** The measure section as the table prints it after the section sign ("8", "93a"). */
   measureSection: string;
-  /** True when the table's last column has an "E": an emergency clause applies. */
+  /** True when the row printed an "E" after its engrossing level, the last column's mark that an emergency clause applies. False when it printed an E alone (see `loneE`), which may be that mark and is not read as it. */
   emergency: boolean;
+  /**
+   * True when the row printed an E alone after the Measure number (and any veto mark). The legend gives "E" both as the
+   * mark of an emergency clause (column 4) and, by its examples, as a letter an engrossing level may be, and PDF.js's text
+   * has no columns, so the E is either an emergency clause on the Introduced Version or the E-Engrossed level. Nothing
+   * is guessed: `level` is null and `emergency` false then, neither is known, and the entry names no Version.
+   */
+  loneE: boolean;
 };
+
+/** The description of the Version an entry names: none when the row printed an E alone, which may be a level or may not. */
+export function versionDescriptionOfEntry(entry: Pick<StatutesAffectedEntry, "level" | "loneE">): string | undefined {
+  return entry.loneE ? undefined : versionDescriptionOfTableLevel(entry.level);
+}
 
 /**
  * The description of the Version a table entry's level names, in the words the feed describes Versions in:

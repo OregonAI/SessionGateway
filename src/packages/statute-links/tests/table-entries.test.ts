@@ -12,6 +12,8 @@ import { orsSectionList } from "./section-ids.ts";
 // entries are read from the passage by hand: the ORS target, the table's letter (A amends, R repeals, Add adds to),
 // the measure section, the Measure and the engrossing level printed beside it.
 
+// The level is the letter printed beside the Measure, null when none is, or "E alone" when the row ends in an E alone,
+// which is the emergency clause or the E-Engrossed level and names no Version (ADR-0033).
 type Expected = [target: string, action: string, measureSection: string, measure: string, level: string | null];
 
 type Row = {
@@ -37,7 +39,7 @@ function readRow(row: Row): { entries: Expected[]; unread: string[] } {
       entry.action,
       entry.measureSection,
       `${entry.measure.prefix} ${String(entry.measure.number)}`,
-      entry.level,
+      entry.loneE ? "E alone" : entry.level,
     ]),
     unread: unreadLines,
   };
@@ -153,7 +155,7 @@ A §3 HB 2614 BCC E
     ],
   },
   {
-    name: "an emergency clause and no level, as 'E' alone ('A §8 HB 3944 E', 'A §21 SB 678 E'), is the clause and not a level; the next page's rows then begin",
+    name: "an E alone after the Measure number ('A §8 HB 3944 E', 'A §21 SB 678 E') is the emergency clause or an E-Engrossed level, and the entry's Version is not known; the next page's rows then begin",
     source:
       "PDF.js text of documents/reports/artables2025R1.pdf, lines 2195-2201 (the foot of page 14 and the head of page 15), where the date is glued to 'SB 678 E'",
     text: `215.291 A §8 HB 3944 E
@@ -164,11 +166,11 @@ A §21 SB 678 E8/19/2025\fTABLES - 2025 REGULAR SESSION RS25-T-15
 (1) (2) (3) (4) (1) (2) (3) (4)
 215.293 A §33 HB 2347 A`,
     entries: [
-      ["ors-215.291", "A", "8", "HB 3944", null],
+      ["ors-215.291", "A", "8", "HB 3944", "E alone"],
       ["ors-215.291", "A", "2", "SB 75", "A"],
       ["ors-215.291", "A", "1", "SB 78", null],
       ["ors-215.291", "A", "17", "SB 83", "A"],
-      ["ors-215.291", "A", "21", "SB 678", null],
+      ["ors-215.291", "A", "21", "SB 678", "E alone"],
       ["ors-215.293", "A", "33", "HB 2347", "A"],
     ],
   },
@@ -303,7 +305,7 @@ A §4 SB 947 A`,
     ],
   },
   {
-    name: "the date at the foot of a page is glued to the Measure number SB 1, and an emergency clause follows on the next page",
+    name: "the date at the foot of a page is glued to the Measure number SB 1, and rows that end in an E alone follow on the next page",
     source:
       "PDF.js text of documents/reports/artables2025R1.pdf, lines 4153-4158 (the foot of page 26 and the head of page 27): 'SB 1' and '8/19/2025' with no space",
     text: `339.866 A §1 SB 1
@@ -316,8 +318,8 @@ R §1 HB 2187 E`,
       ["ors-339.866", "A", "1", "SB 1", null],
       ["ors-339.867", "A", "2", "SB 1", null],
       ["ors-339.871", "A", "3", "SB 1", null],
-      ["ors-339.990", "A", "5", "HB 2052", null],
-      ["ors-339.990", "R", "1", "HB 2187", null],
+      ["ors-339.990", "A", "5", "HB 2052", "E alone"],
+      ["ors-339.990", "R", "1", "HB 2187", "E alone"],
     ],
   },
   {
