@@ -48,7 +48,8 @@ const loneDate = /^\d{1,2}\/\d{1,2}\/\d{4}$/;
 // UNCODIFIED LAW AMENDED,". A row has a digit and a section sign.
 const tableTitle = /^[A-Z][A-Z ,()“”".'-]{10,}$/;
 const orsTableTitle = /^ORS SECTIONS /;
-const footerDate = /^(?:1[0-2]|[1-9])\/(?:3[01]|[12]\d|0?[1-9])\/\d{4}$/;
+// The date at the foot of every page, as the table prints it: month and day of one or two digits ("8/19/2025", "11/3/2027").
+const footerDate = /^(?:1[0-2]|0?[1-9])\/(?:3[01]|[12]\d|0?[1-9])\/\d{4}$/;
 
 /** What the table's reading came to. */
 export type StatutesAffectedTableParse = {
@@ -60,7 +61,19 @@ export type StatutesAffectedTableParse = {
   unreadLines: string[];
 };
 
-/** The date that ends every page: the one that most pages end with, the shortest if they tie. Undefined when none ends in a date. */
+/**
+ * The date that ends every page: the one that most pages end with. Undefined when none ends in a date.
+ *
+ * PDF.js writes the date straight after the last row, so "SB 69" and "11/3/2027" arrive as "SB 6911/3/2027", and a
+ * date can be read with one digit more or fewer than the table printed it: that text ends in "11/3/2027" and in
+ * "1/3/2027", and "SB 691" is as good a Measure as "SB 69". The date is the table's, the same on every page, so the one
+ * that ends the most pages is it: with the table printed "1/19/2025", a page that ends "SB 11/19/2025" ends in
+ * "11/19/2025" too, but the other pages do not. When the same pages end in both, they tie, and the longer wins: the
+ * shorter is the same date with its first digit taken off, which is how a November or December date ("11/3/2027",
+ * "12/1/2027") ends every page, while the shorter would be the table's only if the last Measure number of every page
+ * ended in 1 and the table were dated in January or February. The text cannot tell those two apart, and the second
+ * needs one chance in ten for each page.
+ */
 function pageFooterDate(pages: readonly string[]): string | undefined {
   const counts = new Map<string, number>();
   for (const page of pages) {
@@ -69,9 +82,7 @@ function pageFooterDate(pages: readonly string[]): string | undefined {
       if (tail.length === length && footerDate.test(tail)) counts.set(tail, (counts.get(tail) ?? 0) + 1);
     }
   }
-  // PDF.js writes the date straight after the last row, so "HB 2464" and "8/19/2025" arrive as "HB 24648/19/2025",
-  // and a Measure number ending in 1 can run into a month: every page ends in the same date, which tells them apart.
-  return [...counts.entries()].sort(([a, countA], [b, countB]) => countB - countA || a.length - b.length)[0]?.[0];
+  return [...counts.entries()].sort(([a, countA], [b, countB]) => countB - countA || b.length - a.length)[0]?.[0];
 }
 
 /** The lines of the text, with the date the pages end in taken off. */

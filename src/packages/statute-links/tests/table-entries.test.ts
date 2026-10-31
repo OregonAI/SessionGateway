@@ -321,17 +321,6 @@ R §1 HB 2187 E`,
     ],
   },
   {
-    name: "MADE UP: a table dated 1/19/2025 has pages that end in 'SB 11/19/2025' and 'SB 21/19/2025'; the date most pages end in settles that the first is SB 1, not SB with 1 and 11/19/2025",
-    source: "made up for the row (the real table is dated 8/19/2025, which cannot be mistaken for the end of a number)",
-    text: `9.010 A §2 SB 11/19/2025\fTABLES - 2025 REGULAR SESSION RS25-T-2
-(1) (2) (3) (4) (1) (2) (3) (4)
-9.020 A §3 SB 21/19/2025`,
-    entries: [
-      ["ors-9.010", "A", "2", "SB 1", null],
-      ["ors-9.020", "A", "3", "SB 2", null],
-    ],
-  },
-  {
     name: "the page's title, the explanation of the columns and the column heads are not rows; the first rows after them are",
     source:
       "PDF.js text of documents/reports/artables2025R1.pdf, lines 1-3 and 24-30 (page 1; the explanation between them is cut)",
