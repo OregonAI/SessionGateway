@@ -5,9 +5,9 @@
 //
 // The expected values are written out from the rule, not computed: night windows run from 5 pm to 6 am Pacific; a
 // night "belongs" to the date it ends on. Increments `15min` run 6 am to 10 pm on days the Session meets. The full
-// pull runs from midnight to 6 am of its date: every date for `nightly`, Sundays for `weekly`, the 1st for `monthly`.
-// The calendar facts are the ones everybody can check: 2025-01-12 and 2025-03-09 and 2025-11-02 are Sundays, 2025-04-01
-// is a Tuesday and 2025-01-08 a Wednesday. Daylight time began on Sunday 2025-03-09 (2 am became 3 am, UTC-8 to UTC-7)
+// pull runs from midnight to 6 am of its date: every date for `nightly`, Saturdays for `weekly`, the 1st for `monthly`.
+// The calendar facts are the ones everybody can check: 2025-01-11 is a Saturday, 2025-01-12 and 2025-03-09 and
+// 2025-11-02 are Sundays, 2025-04-01 is a Tuesday and 2025-01-08 a Wednesday. Daylight time began on Sunday 2025-03-09 (2 am became 3 am, UTC-8 to UTC-7)
 // and ended on Sunday 2025-11-02 (2 am became 1 am, UTC-7 to UTC-8).
 import { describe, expect, test } from "vitest";
 import type { FullPullSetting, IncrementsSetting } from "#/packages/config/index.ts";
@@ -84,46 +84,60 @@ const rows: Row[] = [
     expected: nothing,
   },
   {
-    name: "daily, weekly: the evening before a full-pull night's morning runs no increment",
+    name: "daily, weekly: the evening before a full-pull night's morning runs no increment (Friday 5 pm)",
+    at: "2025-01-10T17:00:00-08:00",
+    increments: "daily",
+    fullPull: "weekly",
+    expected: nothing,
+  },
+  {
+    name: "daily, weekly: 4:59 pm that Friday is before the night",
+    at: "2025-01-10T16:59:00-08:00",
+    increments: "daily",
+    fullPull: "weekly",
+    expected: nothing,
+  },
+  {
+    name: "weekly: Saturday midnight starts the full pull",
+    at: "2025-01-11T00:00:00-08:00",
+    increments: "daily",
+    fullPull: "weekly",
+    expected: fullPull("full-pull-2025-01-11"),
+  },
+  {
+    name: "weekly: 5:59 am Saturday is inside the window",
+    at: "2025-01-11T05:59:00-08:00",
+    increments: "daily",
+    fullPull: "weekly",
+    expected: fullPull("full-pull-2025-01-11"),
+  },
+  {
+    name: "weekly: 6:00 am Saturday is outside it",
+    at: "2025-01-11T06:00:00-08:00",
+    increments: "daily",
+    fullPull: "weekly",
+    expected: nothing,
+  },
+  {
+    name: "weekly: Saturday 5:00 pm opens an ordinary night",
     at: "2025-01-11T17:00:00-08:00",
     increments: "daily",
     fullPull: "weekly",
-    expected: nothing,
+    expected: increment("night-2025-01-12"),
   },
   {
-    name: "daily, weekly: 4:59 pm that Saturday is before the night",
-    at: "2025-01-11T16:59:00-08:00",
-    increments: "daily",
-    fullPull: "weekly",
-    expected: nothing,
-  },
-  {
-    name: "weekly: Sunday midnight starts the full pull",
+    name: "weekly: Sunday midnight is no longer a full-pull night",
     at: "2025-01-12T00:00:00-08:00",
     increments: "daily",
     fullPull: "weekly",
-    expected: fullPull("full-pull-2025-01-12"),
+    expected: increment("night-2025-01-12"),
   },
   {
-    name: "weekly: 5:59 am Sunday is inside the window",
+    name: "weekly: Sunday 5:59 am runs the night's increment, not a full pull",
     at: "2025-01-12T05:59:00-08:00",
     increments: "daily",
     fullPull: "weekly",
-    expected: fullPull("full-pull-2025-01-12"),
-  },
-  {
-    name: "weekly: 6:00 am Sunday is outside it",
-    at: "2025-01-12T06:00:00-08:00",
-    increments: "daily",
-    fullPull: "weekly",
-    expected: nothing,
-  },
-  {
-    name: "weekly: Sunday 5:00 pm opens an ordinary night",
-    at: "2025-01-12T17:00:00-08:00",
-    increments: "daily",
-    fullPull: "weekly",
-    expected: increment("night-2025-01-13"),
+    expected: increment("night-2025-01-12"),
   },
   {
     name: "weekly: Monday 3 am is not a full-pull night",
@@ -290,12 +304,12 @@ const rows: Row[] = [
     expected: nothing,
   },
   {
-    name: "15min, weekly: the full pull still runs Sunday morning",
-    at: "2025-01-12T00:00:00-08:00",
+    name: "15min, weekly: the full pull still runs Saturday morning",
+    at: "2025-01-11T00:00:00-08:00",
     increments: "15min",
     fullPull: "weekly",
     schedule: meets("2025-01-08"),
-    expected: fullPull("full-pull-2025-01-12"),
+    expected: fullPull("full-pull-2025-01-11"),
   },
   {
     name: "15min, nightly: the full pull runs in the small hours",
@@ -398,38 +412,38 @@ const rows: Row[] = [
 
   // daylight time begins: Sunday 2025-03-09, 2 am does not exist
   {
-    name: "spring forward, weekly: 1:59 am PST is in the full pull",
+    name: "spring forward, nightly: 1:59 am PST is in the full pull",
     at: "2025-03-09T01:59:00-08:00",
     increments: "daily",
-    fullPull: "weekly",
+    fullPull: "nightly",
     expected: fullPull("full-pull-2025-03-09"),
   },
   {
-    name: "spring forward, weekly: 3:00 am PDT, the minute after, is in it",
+    name: "spring forward, nightly: 3:00 am PDT, the minute after, is in it",
     at: "2025-03-09T03:00:00-07:00",
     increments: "daily",
-    fullPull: "weekly",
+    fullPull: "nightly",
     expected: fullPull("full-pull-2025-03-09"),
   },
   {
-    name: "spring forward, weekly: 5:59 am PDT is the last minute",
+    name: "spring forward, nightly: 5:59 am PDT is the last minute",
     at: "2025-03-09T05:59:00-07:00",
     increments: "daily",
-    fullPull: "weekly",
+    fullPull: "nightly",
     expected: fullPull("full-pull-2025-03-09"),
   },
   {
-    name: "spring forward, weekly: 6:00 am PDT is out",
+    name: "spring forward, nightly: 6:00 am PDT is out",
     at: "2025-03-09T06:00:00-07:00",
     increments: "daily",
-    fullPull: "weekly",
+    fullPull: "nightly",
     expected: nothing,
   },
   {
-    name: "spring forward, weekly: the Saturday evening before is a full-pull night",
+    name: "spring forward, nightly: the Saturday evening before is a full-pull night",
     at: "2025-03-08T17:00:00-08:00",
     increments: "daily",
-    fullPull: "weekly",
+    fullPull: "nightly",
     expected: nothing,
   },
   {
@@ -479,31 +493,31 @@ const rows: Row[] = [
 
   // daylight time ends: Sunday 2025-11-02, 1 am to 2 am happens twice
   {
-    name: "fall back, weekly: 1:30 am PDT, the first time, is in the full pull",
+    name: "fall back, nightly: 1:30 am PDT, the first time, is in the full pull",
     at: "2025-11-02T01:30:00-07:00",
     increments: "daily",
-    fullPull: "weekly",
+    fullPull: "nightly",
     expected: fullPull("full-pull-2025-11-02"),
   },
   {
-    name: "fall back, weekly: 1:30 am PST, the second time, is the same full pull",
+    name: "fall back, nightly: 1:30 am PST, the second time, is the same full pull",
     at: "2025-11-02T01:30:00-08:00",
     increments: "daily",
-    fullPull: "weekly",
+    fullPull: "nightly",
     expected: fullPull("full-pull-2025-11-02"),
   },
   {
-    name: "fall back, weekly: 5:59 am PST is the last minute",
+    name: "fall back, nightly: 5:59 am PST is the last minute",
     at: "2025-11-02T05:59:00-08:00",
     increments: "daily",
-    fullPull: "weekly",
+    fullPull: "nightly",
     expected: fullPull("full-pull-2025-11-02"),
   },
   {
-    name: "fall back, weekly: 6:00 am PST is out",
+    name: "fall back, nightly: 6:00 am PST is out",
     at: "2025-11-02T06:00:00-08:00",
     increments: "daily",
-    fullPull: "weekly",
+    fullPull: "nightly",
     expected: nothing,
   },
   {

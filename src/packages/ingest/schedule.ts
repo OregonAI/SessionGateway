@@ -61,13 +61,13 @@ export function nightEndingOn(wallClock: Temporal.PlainDateTime): Temporal.Plain
   return undefined;
 }
 
-/** Whether the full pull runs in the night that ends on this date: `weekly` on Sundays, `monthly` on the 1st. */
+/** Whether the full pull runs in the night that ends on this date: `weekly` on Saturdays, `monthly` on the 1st. */
 export function isFullPullDate(date: Temporal.PlainDate, setting: FullPullSetting): boolean {
   switch (setting) {
     case "nightly":
       return true;
     case "weekly":
-      return date.dayOfWeek === 7;
+      return date.dayOfWeek === 6;
     case "monthly":
       return date.day === 1;
     default:

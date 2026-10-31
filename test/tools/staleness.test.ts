@@ -146,44 +146,44 @@ describe("daily: the latest update is older than the last night window", () => {
 });
 
 describe("off: the last full pull is older than its last scheduled run", () => {
-  // Weekly full pulls run in the small hours of Sunday. The pull is on Sunday 2025-01-12 at 7:00 am; the next is
-  // scheduled for the night that ends on Sunday 2025-01-19 (5 pm Saturday to 6 am Sunday).
-  const options: SystemOptions = { clockAt: "2025-01-12T15:00:00Z", ingest: { increments: "off", fullPull: "weekly" } };
+  // Weekly full pulls run in the small hours of Saturday. The pull is on Saturday 2025-01-11 at 7:00 am; the next is
+  // scheduled for the night that ends on Saturday 2025-01-18 (5 pm Friday to 6 am Saturday).
+  const options: SystemOptions = { clockAt: "2025-01-11T15:00:00Z", ingest: { increments: "off", fullPull: "weekly" } };
 
   it("does not warn for days after the pull, however many", async () => {
     const system = await start(options);
     system.clock.set("2025-01-15T20:00:00Z"); // Wednesday 12:00 pm, a meeting-less week or not
     expect(await answerText(system)).not.toContain(WARNING);
-    system.clock.set("2025-01-19T13:59:00Z"); // 5:59 am the next Sunday: the window is still open
+    system.clock.set("2025-01-18T13:59:00Z"); // 5:59 am the next Saturday: the window is still open
     expect(await answerText(system)).not.toContain(WARNING);
   });
 
   it("warns when the scheduled full pull did not happen, in every tool", async () => {
     const system = await start(options);
-    system.clock.set("2025-01-19T14:00:00Z"); // 6:00 am the next Sunday
+    system.clock.set("2025-01-18T14:00:00Z"); // 6:00 am the next Saturday
     for (const tool of ["session_overview", "search", "get_measure"]) {
       const text = await answerText(system, tool);
       expect(text, tool).toContain(WARNING);
       expect(text, tool).toContain("a scheduled full pull was missed");
-      expect(text, tool).toContain("2025-01-12T07:00:00-08:00");
+      expect(text, tool).toContain("2025-01-11T07:00:00-08:00");
     }
   });
 
   it("does not warn once the full pull has run", async () => {
     const system = await start(options);
-    system.clock.set("2025-01-19T11:00:00Z"); // 3:00 am Sunday
+    system.clock.set("2025-01-18T11:00:00Z"); // 3:00 am Saturday
     await system.pullAgain();
 
-    system.clock.set("2025-01-19T15:00:00Z"); // 7:00 am
+    system.clock.set("2025-01-18T15:00:00Z"); // 7:00 am
     expect(await answerText(system)).not.toContain(WARNING);
   });
 
   it("is not cleared by an increment, which is not a full pull", async () => {
     const system = await start(options);
-    system.clock.set("2025-01-19T11:00:00Z");
+    system.clock.set("2025-01-18T11:00:00Z");
     await system.incrementAgain();
 
-    system.clock.set("2025-01-19T15:00:00Z");
+    system.clock.set("2025-01-18T15:00:00Z");
     expect(await answerText(system)).toContain(WARNING);
   });
 });

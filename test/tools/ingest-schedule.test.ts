@@ -53,49 +53,57 @@ async function idsFound(system: System, era: Era): Promise<string[]> {
   }
 }
 
-describe("the default rhythm: an increment a night, the full pull on Sunday", () => {
+// MADE UP: a Testimony row for HB 3131 that the feed does not list; the test serves a file for it.
+function madeUpTestimony(id: number, createdDate: string): Record<string, unknown> {
+  return {
+    SessionKey: "2025R1",
+    CommTestId: id,
+    SubmitterFirstName: "Made",
+    SubmitterLastName: `Up ${id}`,
+    PositionOnMeasureId: 3983,
+    CommitteeCode: "HALNRW",
+    MeetingDate: "2025-01-22T08:00:00",
+    DocumentDescription: "Testimony",
+    MeasurePrefix: "HB",
+    MeasureNumber: 3131,
+    DocumentUrl: "https://olis.oregonlegislature.gov/liz/2025R1",
+    CreatedDate: createdDate,
+    ModifiedDate: null,
+  };
+}
+
+describe("the default rhythm: an increment a night, the full pull on Saturday", () => {
   it("finds a document created during the day after that night's increment, and runs no full pull", async () => {
-    // Friday 2025-01-17 at 2 pm, before HB 3131's Testimony 117165 was created (3:16 pm). The night that ends on
-    // Saturday is not a full-pull night (those end on a Sunday).
-    const system = await start({ clockAt: "2025-01-17T22:00:00Z" });
-    for (const era of eras) expect(await idsFound(system, era)).not.toContain("testimony-2025r1-117165");
+    // Thursday 2025-01-16 at 2 pm. The night that ends on Friday is not a full-pull night (those end on a Saturday).
+    // MADE UP: a Testimony row created at 3 pm that Thursday, served the file of the real letter 117165.
+    const path = "/liz/2025R1/Downloads/PublicTestimonyDocument/900200";
+    const system = await start({
+      clockAt: "2025-01-16T22:00:00Z",
+      olis: { strayDocuments: { [path]: "testimony/117165.pdf" } },
+    });
+    system.olis.addRows("CommitteePublicTestimonies", [madeUpTestimony(900200, "2025-01-16T15:00:00")]);
+    for (const era of eras) expect(await idsFound(system, era)).not.toContain("testimony-2025r1-900200");
 
-    system.clock.set("2025-01-17T23:30:00Z"); // 3:30 pm: the letter exists and the worker has not looked
-    await system.runSchedule("2025-01-18T16:00:00Z"); // Saturday 8 am
+    system.clock.set("2025-01-16T23:30:00Z"); // 3:30 pm: the letter exists and the worker has not looked
+    await system.runSchedule("2025-01-17T16:00:00Z"); // Friday 8 am
 
-    for (const era of eras) expect(await idsFound(system, era)).toContain("testimony-2025r1-117165");
+    for (const era of eras) expect(await idsFound(system, era)).toContain("testimony-2025r1-900200");
     // One increment for the night, none in the daytime, and the full pull did not run.
     expect(runsOf(system.olis)).toEqual({ increments: 1, fullPulls: 0 });
   });
 
   it("runs the full pull in the small hours of the full-pull night, and no increment that night", async () => {
-    // Saturday 2025-01-18 at 2 pm. The night that ends on Sunday 2025-01-19 is the weekly full-pull night. MADE UP:
-    // a Testimony row created at 3 pm that Saturday, served the file of the real letter 117166.
+    // Friday 2025-01-17 at 2 pm. The night that ends on Saturday 2025-01-18 is the weekly full-pull night. MADE UP:
+    // a Testimony row created at 3 pm that Friday, served the file of the real letter 117166.
     const path = "/liz/2025R1/Downloads/PublicTestimonyDocument/900201";
     const system = await start({
-      clockAt: "2025-01-18T22:00:00Z",
+      clockAt: "2025-01-17T22:00:00Z",
       olis: { strayDocuments: { [path]: "testimony/117166.pdf" } },
     });
-    system.olis.addRows("CommitteePublicTestimonies", [
-      {
-        SessionKey: "2025R1",
-        CommTestId: 900201,
-        SubmitterFirstName: "Made",
-        SubmitterLastName: "Up 900201",
-        PositionOnMeasureId: 3983,
-        CommitteeCode: "HALNRW",
-        MeetingDate: "2025-01-22T08:00:00",
-        DocumentDescription: "Testimony",
-        MeasurePrefix: "HB",
-        MeasureNumber: 3131,
-        DocumentUrl: "https://olis.oregonlegislature.gov/liz/2025R1",
-        CreatedDate: "2025-01-18T15:00:00",
-        ModifiedDate: null,
-      },
-    ]);
-    system.clock.set("2025-01-18T23:30:00Z");
+    system.olis.addRows("CommitteePublicTestimonies", [madeUpTestimony(900201, "2025-01-17T15:00:00")]);
+    system.clock.set("2025-01-17T23:30:00Z");
 
-    await system.runSchedule("2025-01-19T16:00:00Z"); // Sunday 8 am
+    await system.runSchedule("2025-01-18T16:00:00Z"); // Saturday 8 am
 
     for (const era of eras) expect(await isHeld(system, era, "testimony-2025r1-900201")).toBe(true);
     expect(runsOf(system.olis)).toEqual({ increments: 0, fullPulls: 1 });
@@ -104,32 +112,32 @@ describe("the default rhythm: an increment a night, the full pull on Sunday", ()
 
 describe("a full pull that OLIS gave short", () => {
   it("is the night's one full pull: a worker restarted in the same night does not read the Session again", async () => {
-    // The night that ends on Sunday 2025-01-19 is the weekly full-pull night. The feed counts its rows and pages one
+    // The night that ends on Saturday 2025-01-18 is the weekly full-pull night. The feed counts its rows and pages one
     // fewer, so the pull is refused and stores nothing (full-pull-report.test.ts).
-    const system = await start({ clockAt: "2025-01-18T22:00:00Z" });
+    const system = await start({ clockAt: "2025-01-17T22:00:00Z" });
     system.olis.withholdLastRows(1);
 
-    // The worker runs from Saturday 3:30 pm to Sunday 2 am: the full pull starts at midnight and is refused.
-    await expect(system.runSchedule("2025-01-19T10:00:00Z")).rejects.toThrow("A run of the worker's loop failed");
+    // The worker runs from Friday 2 pm to Saturday 2 am: the full pull starts at midnight and is refused.
+    await expect(system.runSchedule("2025-01-18T10:00:00Z")).rejects.toThrow("A run of the worker's loop failed");
     const afterFirst = runsOf(system.olis);
     expect(afterFirst.fullPulls).toBe(1);
 
     // The worker restarts at 2 am and runs until 4 am. The Acceptable Use Agreement allows one full pull a day.
-    await expect(system.runSchedule("2025-01-19T12:00:00Z")).resolves.toBeUndefined();
+    await expect(system.runSchedule("2025-01-18T12:00:00Z")).resolves.toBeUndefined();
     expect(runsOf(system.olis)).toEqual(afterFirst);
   });
 });
 
 describe("a full pull that is still running at 6 am", () => {
   it("is stopped there: the Acceptable Use Agreement allows a full pull only until 6 am", async () => {
-    // Sunday 2025-01-19 at 5:59:59.9 am Pacific, a worker starting in the last tenth of a second of the night. OLIS
+    // Saturday 2025-01-18 at 5:59:59.9 am Pacific, a worker starting in the last tenth of a second of the night. OLIS
     // never answers, so the pull would run on into business hours; the 6 am deadline is 100 ms away.
-    const system = await start({ clockAt: "2025-01-18T22:00:00Z" });
+    const system = await start({ clockAt: "2025-01-17T22:00:00Z" });
     system.olis.behave({ kind: "hang" });
-    system.clock.set("2025-01-19T13:59:59.900Z");
+    system.clock.set("2025-01-18T13:59:59.900Z");
     const began = Date.now();
 
-    await expect(system.runSchedule("2025-01-19T14:10:00Z")).rejects.toThrow("A run of the worker's loop failed");
+    await expect(system.runSchedule("2025-01-18T14:10:00Z")).rejects.toThrow("A run of the worker's loop failed");
 
     // The harness's own limit on a run is 30 seconds: the pull ended long before it.
     expect(Date.now() - began).toBeLessThan(10_000);

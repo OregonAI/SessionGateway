@@ -51,7 +51,7 @@ node src/bin/server.ts   # serves it at http://127.0.0.1:3000/mcp
 | `OLIS_DOCUMENT_ORIGIN` | worker | `https://olis.oregonlegislature.gov` | Where the worker fetches the documents the feed links. They are not on the feed's host. Only a test sets it. |
 | `STATUTES_AFFECTED_TABLE_URL` | worker | none | Where Legislative Counsel publishes the Session's Statutes Affected Table, such as `https://www.oregonlegislature.gov/AutoPubs/artables2025R1.pdf` (an `http` or `https` URL; another value stops the start-up). It is not on OLIS, and it appears only after the Session ends (2025R1's is dated 8/19/2025). With it set, each full pull fetches the table, reads it again only when its bytes change, and `get_measure` sets its entries beside each Version's parsed Statute Links (ADR-0033, ADR-0034). Unset, or while the address answers 404, nothing changes. |
 | `INGEST_INCREMENTS` | both | `daily` | How often the worker reads what OLIS changed between full pulls: `off`, `daily` (one a night, 5 pm to 6 am Pacific, on nights the full pull does not run) or `15min` (every 15 minutes, 6 am to 10 pm Pacific, on days the Session meets). Another value stops the start-up (ADR-0039). The server reads it to know when the index is too old. |
-| `INGEST_FULL_PULL` | both | `weekly` | How often the worker reads the whole Session: `nightly`, `weekly` (Sunday) or `monthly` (the 1st). It runs from midnight to 6 am Pacific, once a day at most, whatever the value. Another value stops the start-up (ADR-0039). |
+| `INGEST_FULL_PULL` | both | `weekly` | How often the worker reads the whole Session: `nightly`, `weekly` (Saturday) or `monthly` (the 1st). It runs from midnight to 6 am Pacific, once a day at most, whatever the value. Another value stops the start-up (ADR-0039). |
 | `MCP_PATH` | server | `/mcp` | Where the endpoint is mounted. |
 | `MCP_HOST`, `MCP_PORT` | server | `127.0.0.1`, `3000` | Where it listens. |
 | `MCP_ALLOWED_HOSTS` | server | `localhost,127.0.0.1,[::1]` | Host names a request may be addressed to; any other `Host` is refused with 403. |
@@ -81,7 +81,7 @@ the feed's CommitteeMembers, by Legislator Code.
 A full pull against the live feed is allowed only between 5 pm and 6 am Pacific (ADR-0005). `ingest.ts` with no
 argument runs the schedule (ADR-0039): it wakes every quarter hour and runs what the two settings say is due, an
 increment or the full pull, once for each night or quarter hour. A full pull runs from midnight to 6 am of its day
-(every day, Sunday or the 1st), so it falls once on a date however often the worker restarts. `ingest.ts --once`
+(every day, Saturday or the 1st), so it falls once on a date however often the worker restarts. `ingest.ts --once`
 makes one full pull at once, ignoring the window, and exits: make the first pull with it (an increment needs a full
 pull before it), inside the window.
 
