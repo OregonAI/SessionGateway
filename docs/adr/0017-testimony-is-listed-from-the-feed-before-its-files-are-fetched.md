@@ -11,4 +11,4 @@ So the ticket's box "each item has an id that `get_document` resolves" holds for
 
 ## Consequences
 
-A database built before this ticket has no `testimony` table, and a server given it does not start (the same position as ADR-0016). The table is only upserted: a row OLIS stops listing stays in `total` and on its page until removals are marked (spec #1, module 2; ticket #18), and `total` says it is the rows the index holds from the feed it last read.
+A database built before this ticket has no `testimony` table, and a server given it does not start (the same position as ADR-0016). The table is only upserted: a row OLIS stops listing stays in `total` and on its page until removals are marked (spec #1, module 2; ticket #18), and `total` says it is the rows the index holds from the feed it last read. Ticket #18 marks them (ADR-0030), and the row still stays in `total` and on its page, flagged `no_longer_listed`.

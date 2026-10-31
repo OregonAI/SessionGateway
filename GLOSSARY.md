@@ -19,7 +19,14 @@ The Session currently meeting, whose measures, documents and votes change during
 Everything a deployment holds of its Session, pulled from OLIS.
 
 **Full pull**:
-A pass that reads every row of the Session from the OLIS feed. It counts as complete only when every set's rows match the feed's own count (ADR-0005).
+A pass that reads every row of the Session from the OLIS feed. It counts as complete only when every set's rows match the feed's own count (ADR-0005). A pull that is short of any count is refused whole: it stores nothing, the Index stays as the last complete pull left it, and the Build report says which sets were short (ADR-0030).
+
+**No longer listed**:
+Said of a row the Index keeps when two complete Full pulls in a row did not list it. The row leaves search results, stays served by id (`get_document` says `no_longer_listed` and when the feed last listed it), and stays in the lists of the other tools, flagged `no_longer_listed`. A row that one complete pull misses is still listed, a pull that was refused counts for nothing, and a row that a later complete pull lists is listed again. Nothing is deleted (ADR-0005, ADR-0030).
+_Avoid_: deleted, withdrawn, removed (OLIS says none of these: a row stops being listed)
+
+**Committee member**:
+A row of the feed's CommitteeMembers: a Legislator Code, a title ("Chair", "Co-Chair", "Member") and a Committee. The set's declared key (committee, date created, title) is not unique, so a row is told apart by all its properties, and Rep Helm and Rep Owens, Co-Chairs of HALNRW from one instant, are two rows. A task force's members are not all Legislators, so the code is stored as written, and one that names no Legislators row is an Unresolved Legislator Code, not an error. No tool shows the set yet.
 
 **Document**:
 One file OLIS links (a Version, a Printed Amendment, a posting of a Proposed Amendment, an analysis document, an Exhibit, a Recording Log, Testimony or an agenda), fetched once and kept with its extracted text, `source_url`, retrieval time and content hash.
@@ -34,7 +41,7 @@ The text a PDF carries, as opposed to a picture of text. A scan or a photograph 
 _Avoid_: OCR, which reads a picture and is out of scope
 
 **Build report**:
-What the ingest worker writes after a full pull, beside the database (spec #1, story 54): `build-report.json`, the Documents with no Text layer, the Documents it could not get or read, and what it made of the Passages it stored (how many were embedded and how many reused, ADR-0025), and `unresolved-legislator-codes.json`, the Unresolved Legislator Codes.
+What the ingest worker writes after a full pull, beside the database (spec #1, story 54): `build-report.json`, the sets the pull read with the rows the feed counted, the rows that came and how many the Index lists (ADR-0030), the Documents with no Text layer, the Documents it could not get or read, and what it made of the Passages it stored (how many were embedded and how many reused, ADR-0025), and `unresolved-legislator-codes.json`, the Unresolved Legislator Codes. A refused pull writes a report of its own, with the sets and which were short.
 
 **As of**:
 When the Index was last refreshed from OLIS: the moment the latest completed full pull began, shown in Pacific time with its UTC offset. Every result carries it.

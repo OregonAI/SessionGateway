@@ -151,9 +151,9 @@ describe.for(eras)("get_document on a Testimony no pull fetched, for a %s client
   it("says plainly that a Testimony the feed no longer lists was never fetched", async () => {
     const system = await startSystem({ clockAt: firstPull });
     try {
-      await twoPullsWithout(system, () =>
-        stopListing(system.olis, "CommitteePublicTestimonies", (row) => row["CommTestId"] === 117165),
-      );
+      await twoPullsWithout(system, () => {
+        stopListing(system.olis, "CommitteePublicTestimonies", (row) => row["CommTestId"] === 117165);
+      });
       const connected = await connectClient(era, system.handler);
       try {
         const outcome = await callTool(connected, "get_document", { id: "testimony-2025r1-117165" });
