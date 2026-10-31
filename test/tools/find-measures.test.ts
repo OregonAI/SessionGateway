@@ -452,12 +452,63 @@ describe.for(eras)("find_measures for a %s client", (era) => {
     });
   });
 
-  // The ticket's second box: non-agency units stay unresolved. SB 983's statements list "Cities, Counties, School
-  // Districts, Special Districts, Metro, TriMet", and no Agency's items hold SB 983 on the strength of them.
+  // The ticket's second box: non-agency units stay unresolved. SB 983's Introduced statement is analysis 88044 and its
+  // A-Engrossed one 91466; both read "Government Unit(s) Affected: Cities, Counties, School Districts, Special Districts,
+  // Metro, TriMet" (pdftotext of measure-analysis-documents/88044.pdf and 91466.pdf). None is a state agency, so the units
+  // are kept as written and the statements give no Agency a link of any kind (#16 F10: this case checked three slugs
+  // that no defect would have put there).
   describe("units that are not Agencies", () => {
-    it("tie no Agency's Fiscal Impact Statement group to SB 983", async () => {
-      for (const agency of ["department-of-revenue", "judicial-department", "department-of-justice"]) {
-        const found = await find({ agency });
+    const statements = ["analysis-2025r1-88044", "analysis-2025r1-91466"];
+    const units = ["Cities", "Counties", "School Districts", "Special Districts", "Metro", "TriMet"];
+
+    async function linksOfSb983(): Promise<{
+      agencies: { agency_id: string; evidence: { kind: string; examples: { document_id: string }[] }[] }[];
+      unresolved_units: { unit: string; statement_id: string }[];
+    }> {
+      const outcome = await callTool(connected, "get_measure", { measure: "SB 983" });
+      expect(outcome.isError, outcome.text).toBe(false);
+      return outcome.structured?.["agency_links"] as Awaited<ReturnType<typeof linksOfSb983>>;
+    }
+
+    it("keeps each statement's six units as it writes them, in its order", async () => {
+      const links = await linksOfSb983();
+
+      expect(links.unresolved_units.map((unit) => [unit.statement_id, unit.unit])).toEqual([
+        ["analysis-2025r1-88044", "Cities"],
+        ["analysis-2025r1-88044", "Counties"],
+        ["analysis-2025r1-88044", "School Districts"],
+        ["analysis-2025r1-88044", "Special Districts"],
+        ["analysis-2025r1-88044", "Metro"],
+        ["analysis-2025r1-88044", "TriMet"],
+        ["analysis-2025r1-91466", "Cities"],
+        ["analysis-2025r1-91466", "Counties"],
+        ["analysis-2025r1-91466", "School Districts"],
+        ["analysis-2025r1-91466", "Special Districts"],
+        ["analysis-2025r1-91466", "Metro"],
+        ["analysis-2025r1-91466", "TriMet"],
+      ]);
+    });
+
+    it("gives no Agency a link of any kind from either statement", async () => {
+      const links = await linksOfSb983();
+
+      const documents = links.agencies.flatMap((agency) =>
+        agency.evidence.flatMap((group) => group.examples.map((example) => example.document_id)),
+      );
+      for (const statement of statements) expect(documents).not.toContain(statement);
+      expect(links.agencies.flatMap((agency) => agency.evidence.map((group) => group.kind))).not.toContain(
+        "fiscal-impact-statement",
+      );
+      // And none of the units is an Agency id.
+      const ids = links.agencies.map((agency) => agency.agency_id);
+      for (const unit of units) expect(ids).not.toContain(unit.toLowerCase().replaceAll(" ", "-"));
+    });
+
+    it("ties SB 983 to no Agency's Fiscal Impact Statement group, for every Agency the Measure has a link to", async () => {
+      const links = await linksOfSb983();
+
+      for (const agency of links.agencies) {
+        const found = await find({ agency: agency.agency_id });
         const items = groupOf(found, "fiscal-impact-statement").items;
         expect(items.filter((item) => item.measure_id === "measure-2025r1-sb983")).toEqual([]);
       }
