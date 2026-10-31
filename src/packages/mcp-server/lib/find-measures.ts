@@ -131,8 +131,18 @@ const itemOutput = z.object({
   evidence_total: z
     .number()
     .int()
-    .describe("How many pieces of evidence the item has, of which evidence lists the first ones."),
-  evidence: z.array(findEvidenceOutput).describe(`The item's evidence, at most ${MAX_EVIDENCE}.`),
+    .describe(
+      "How many pieces of evidence the item has (with since, only those posted at or after it), of which evidence lists the newest.",
+    ),
+  evidence_left_out: z
+    .number()
+    .int()
+    .describe("How many pieces of evidence the cut left out: evidence_total less the length of evidence."),
+  evidence: z
+    .array(findEvidenceOutput)
+    .describe(
+      `The item's evidence, the newest first, at most ${MAX_EVIDENCE}. With since, only evidence posted at or after it.`,
+    ),
 });
 
 const groupOutput = z.object({
@@ -207,8 +217,16 @@ function titleOf(node: LinkedNode): string {
     : `${citation}-${number.letter ?? ""}${number.digits}`;
 }
 
-/** What makes one node an item: the evidence, in its order, and the times at which the documents that hold it were created. */
-type Candidate = { node: LinkedNode; evidence: Evidence[]; times: Timestamp[] };
+/** One piece of an item's evidence, with when OLIS created each document that holds it (none when the feed gave no time). */
+type Piece = { evidence: Evidence; createdAt: Timestamp[] };
+
+/** What makes one node an item: the pieces of evidence, in their order. */
+type Candidate = { node: LinkedNode; pieces: Piece[] };
+
+/** The latest of a piece's times, or undefined when it has none. */
+function latestOf(createdAt: readonly Timestamp[]): Timestamp | undefined {
+  return createdAt.toSorted(compareTimestamps).at(-1);
+}
 
 /**
  * The Agency Links of one kind, gathered by the node they sit on. A link is dated by the postings whose own file gives
@@ -216,36 +234,27 @@ type Candidate = { node: LinkedNode; evidence: Evidence[]; times: Timestamp[] };
  * that reads the same. A posting of a different file never dates it.
  */
 function candidatesOfLinks(links: readonly GatheredLink[]): Candidate[] {
-  const byNode = new Map<string, { node: LinkedNode; links: GatheredLink[] }>();
-  for (const gathered of links.toSorted((a, b) => compareLinks(a.link, b.link))) {
-    const own = byNode.get(gathered.link.node.id) ?? { node: gathered.link.node, links: [] };
-    own.links.push(gathered);
-    byNode.set(gathered.link.node.id, own);
+  const byNode = new Map<string, Candidate>();
+  for (const { link, createdAt } of links.toSorted((a, b) => compareLinks(a.link, b.link))) {
+    const own = byNode.get(link.node.id) ?? { node: link.node, pieces: [] };
+    own.pieces.push({ evidence: evidenceShown(link), createdAt });
+    byNode.set(link.node.id, own);
   }
-  return [...byNode.values()].map(({ node, links: own }) => ({
-    node,
-    evidence: own.map(({ link }) => evidenceShown(link)),
-    times: own.flatMap(({ createdAt }) => createdAt),
-  }));
+  return [...byNode.values()];
 }
 
 /**
  * The Statute Links to a section or chapter, gathered by the Version or Proposed Amendment they were read from. Each
  * target is one piece of evidence under its kind, with every measure section it is linked in (a Proposed Amendment posted
  * to several meetings is one item, and postings that say the same add nothing). The document named is the first, in the
- * order of the feed's numbers. The item is dated by the documents whose file holds a link to the target: a posting of
+ * order of the feed's numbers. A piece is dated by the documents whose file holds a link to the target: a posting of
  * another file does not date it (#16 F2).
  */
 function candidatesOfStatuteLinks(stored: readonly StoredStatuteLinked[]): Candidate[] {
-  type Entry = { evidence: Evidence; sections: (string | null)[] };
-  const byNode = new Map<string, { node: LinkedNode; entries: Map<string, Entry>; times: Map<string, Timestamp> }>();
+  type Entry = { evidence: Evidence; sections: (string | null)[]; createdAt: Map<string, Timestamp> };
+  const byNode = new Map<string, { node: LinkedNode; entries: Map<string, Entry> }>();
   for (const found of stored.toSorted((a, b) => numbersInOrder.compare(a.document.id, b.document.id))) {
-    const gathered = byNode.get(found.node.id) ?? {
-      node: found.node,
-      entries: new Map<string, Entry>(),
-      times: new Map<string, Timestamp>(),
-    };
-    if (found.document.createdAt !== null) gathered.times.set(found.document.id, found.document.createdAt);
+    const gathered = byNode.get(found.node.id) ?? { node: found.node, entries: new Map<string, Entry>() };
     const key = `${found.link.kind} ${found.link.target.id}`;
     const entry = gathered.entries.get(key) ?? {
       evidence: {
@@ -257,30 +266,50 @@ function candidatesOfStatuteLinks(stored: readonly StoredStatuteLinked[]): Candi
         measure_sections: [],
       },
       sections: [],
+      createdAt: new Map<string, Timestamp>(),
     };
     if (!entry.sections.includes(found.link.measureSection)) entry.sections.push(found.link.measureSection);
+    if (found.document.createdAt !== null) entry.createdAt.set(found.document.id, found.document.createdAt);
     gathered.entries.set(key, entry);
     byNode.set(found.node.id, gathered);
   }
-  return [...byNode.values()].map(({ node, entries, times }) => ({
+  return [...byNode.values()].map(({ node, entries }) => ({
     node,
-    evidence: [...entries.values()]
+    pieces: [...entries.values()]
       .toSorted(
         (a, b) =>
           statuteLinkKinds.indexOf(a.evidence.link_kind ?? "cites") -
             statuteLinkKinds.indexOf(b.evidence.link_kind ?? "cites") ||
           numbersInOrder.compare(a.evidence.target_id ?? "", b.evidence.target_id ?? ""),
       )
-      .map(({ evidence, sections }) => ({
-        ...evidence,
-        measure_sections: sections.toSorted(compareMeasureSections),
+      .map(({ evidence, sections, createdAt }) => ({
+        evidence: { ...evidence, measure_sections: sections.toSorted(compareMeasureSections) },
+        createdAt: [...createdAt.values()],
       })),
-    times: [...times.values()],
   }));
 }
 
-function itemOf(candidate: Candidate): Item {
-  const ordered = candidate.times.toSorted(compareTimestamps);
+/**
+ * The item a node makes: the evidence posted at or after `since` (all of it with no `since`), the newest first and cut to
+ * MAX_EVIDENCE with the number left out said, dated by the documents that hold that evidence: `posted_at` the earliest
+ * and `last_posted_at` the latest of their times. Undefined when no evidence is left, so the node is no item.
+ */
+function itemOf(candidate: Candidate, since: Timestamp | undefined): Item | undefined {
+  const pieces = candidate.pieces.filter((piece) => {
+    if (since === undefined) return true;
+    const latest = latestOf(piece.createdAt);
+    return latest !== undefined && compareTimestamps(latest, since) >= 0;
+  });
+  if (pieces.length === 0) return undefined;
+  // Newest first. The sort is stable, so pieces from one time keep the order they were gathered in.
+  const newestFirst = pieces.toSorted((a, b) => {
+    const left = latestOf(a.createdAt);
+    const right = latestOf(b.createdAt);
+    if (left === undefined || right === undefined) return left === right ? 0 : left === undefined ? 1 : -1;
+    return compareTimestamps(right, left);
+  });
+  const ordered = pieces.flatMap((piece) => piece.createdAt).toSorted(compareTimestamps);
+  const shown = newestFirst.slice(0, MAX_EVIDENCE);
   return {
     id: candidate.node.id,
     type: candidate.node.type,
@@ -289,8 +318,9 @@ function itemOf(candidate: Candidate): Item {
     source_url: candidate.node.sourceUrl,
     posted_at: ordered[0] ?? null,
     last_posted_at: ordered.at(-1) ?? null,
-    evidence_total: candidate.evidence.length,
-    evidence: candidate.evidence.slice(0, MAX_EVIDENCE),
+    evidence_total: pieces.length,
+    evidence_left_out: pieces.length - shown.length,
+    evidence: shown.map((piece) => piece.evidence),
   };
 }
 
@@ -305,16 +335,13 @@ function compareItems(a: Item, b: Item): number {
 
 type Group = { kind: GroupKind; items: Item[] };
 
-/** The items of a group that were posted at or after `since`, newest first. With no `since`, all of them. */
+/** The items of a group that have evidence posted at or after `since`, newest first. With no `since`, all of them. */
 function groupOfCandidates(kind: GroupKind, candidates: readonly Candidate[], since: Timestamp | undefined): Group {
   return {
     kind,
     items: candidates
-      .map(itemOf)
-      .filter(
-        (item) =>
-          since === undefined || (item.last_posted_at !== null && compareTimestamps(item.last_posted_at, since) >= 0),
-      )
+      .map((candidate) => itemOf(candidate, since))
+      .filter((item) => item !== undefined)
       .toSorted(compareItems),
   };
 }
