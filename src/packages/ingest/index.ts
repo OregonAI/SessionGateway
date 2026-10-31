@@ -470,6 +470,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
             writer,
             session: config.session,
             orsSections: snapshot.orsSections,
+            snapshotCommit: snapshot.version.commit,
             now: () => formatPacific(deps.clock.now()),
             signal: deps.signal,
           });

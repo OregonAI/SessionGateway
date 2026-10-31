@@ -137,6 +137,8 @@ export type StatutesAffectedTableRecord = {
   /** The extracted text, as the pdf-text package gives it. */
   text: string;
   entries: readonly StatutesAffectedEntry[];
+  /** The commit of the snapshot whose ORS section list the table's series were expanded against (ADR-0035). */
+  snapshotCommit: string;
 };
 
 /** What an Agency Link is read from: a Fiscal Impact Statement's text, or a Version's or a posting's. */
@@ -278,6 +280,11 @@ export type IndexWriter = {
   /** The content hash of the Statutes Affected Table the Session's index holds, or undefined while it holds none. */
   statutesAffectedTableHash(session: SessionKey): string | undefined;
   /**
+   * The commit of the snapshot the table the Session's index holds was read with, or undefined while it holds none or
+   * holds one read before the index kept this (ADR-0035: a series is expanded against the snapshot's section list).
+   */
+  statutesAffectedTableSnapshot(session: SessionKey): string | undefined;
+  /**
    * The Measures for which the feed lists a Version with this description ("E-Engrossed"), as the last full pull read
    * the feed and whether or not the worker fetched the Version's file.
    */
@@ -321,6 +328,7 @@ const unreadFileRow = z.object({
 });
 const storedTextRow = z.object({ text: z.string(), has_text_layer: z.number() });
 const tableHashRow = z.object({ content_hash: z.string() });
+const tableSnapshotRow = z.object({ snapshot_commit: z.string() });
 const measureIdRow = z.object({ measure_id: z.string() });
 const refusalRow = z.object({ content_hash: z.string(), reason: z.string() });
 const unreadAgencyRow = z.object({ id: z.string(), kind: z.enum(["version", "proposed_amendment", "analysis"]) });
@@ -984,6 +992,12 @@ export function openIndexWriter(path: string): IndexWriter {
         .get(session);
       return row === undefined ? undefined : tableHashRow.parse(row).content_hash;
     },
+    statutesAffectedTableSnapshot(session) {
+      const row = database
+        .prepare("SELECT snapshot_commit FROM statutes_affected_read WHERE session_key = ?")
+        .get(session);
+      return row === undefined ? undefined : tableSnapshotRow.parse(row).snapshot_commit;
+    },
     measuresListingVersion(session, description) {
       const rows = database
         .prepare("SELECT DISTINCT measure_id FROM version_listing WHERE session_key = ? AND label = ?")
@@ -1007,6 +1021,12 @@ export function openIndexWriter(path: string): IndexWriter {
                content_hash = excluded.content_hash, page_count = excluded.page_count, text = excluded.text`,
           )
           .run(session, record.sourceUrl, record.retrievedAt, record.contentHash, record.pageCount, record.text);
+        database
+          .prepare(
+            `INSERT INTO statutes_affected_read (session_key, snapshot_commit) VALUES (?, ?)
+             ON CONFLICT (session_key) DO UPDATE SET snapshot_commit = excluded.snapshot_commit`,
+          )
+          .run(session, record.snapshotCommit);
         database.prepare("DELETE FROM statutes_affected_entry WHERE session_key = ?").run(session);
         database.prepare("DELETE FROM statutes_affected_refusal WHERE session_key = ?").run(session);
         record.entries.forEach((entry, ordinal) => {
