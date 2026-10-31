@@ -33,7 +33,12 @@ import {
   type SessionKey,
 } from "#/packages/domain/index.ts";
 import { comparePrintOrder, type Legislator, type LegislatorId, type Sponsor } from "#/packages/domain/legislators.ts";
-import { parseOrsChapterId, parseOrsSectionId, type AgencyId, type SnapshotVersion } from "#/packages/domain/oregonai.ts";
+import {
+  parseOrsChapterId,
+  parseOrsSectionId,
+  type AgencyId,
+  type SnapshotVersion,
+} from "#/packages/domain/oregonai.ts";
 import {
   statuteLinkKinds,
   unreadStatuteParse,
