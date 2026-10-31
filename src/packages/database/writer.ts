@@ -980,7 +980,7 @@ export function openIndexWriter(path: string): IndexWriter {
         .prepare(
           `SELECT d.id, d.kind FROM document d
            WHERE d.session_key = ?
-             AND d.kind = 'analysis' AND d.label = 'Fiscal Impact Statement'
+             AND (d.kind IN ('version', 'proposed_amendment') OR (d.kind = 'analysis' AND d.label = 'Fiscal Impact Statement'))
              AND NOT EXISTS (SELECT 1 FROM agency_read r WHERE r.document_id = d.id)
            ORDER BY d.id`,
         )

@@ -374,7 +374,9 @@ const agencyLinkRow = z.object({
   evidence: z.string(),
   document_id: z.string(),
   document_source_url: z.string(),
+  document_label: z.string(),
   document_kind: z.enum(["version", "proposed_amendment", "analysis"]),
+  node_id: z.string(),
   measure_id: z.string(),
   version_id: z.string().nullable(),
 });
@@ -386,6 +388,8 @@ const unresolvedUnitRow = z.object({
   version_id: z.string().nullable(),
 });
 const versionNodeRow = z.object({ label: z.string(), source_url: z.string() });
+const amendmentNumberRow = z.object({ label: z.string() });
+const amendmentFileRow = z.object({ source_url: z.string() });
 const countRow = z.object({ n: z.number() });
 const kindCountRow = z.object({ kind: z.string(), n: z.number() });
 const listingRow = z.object({ listed: z.number().nullable(), last_listed_at: z.string().nullable() });
@@ -590,7 +594,7 @@ export function openIndexReader(path: string): IndexReader {
   // that document belongs to. An analysis document also gives the Version the feed places it on (ADR-0013), if any.
   const selectAgencyLinks = database.prepare(
     `SELECT a.agency_id, a.kind AS link_kind, a.evidence, d.id AS document_id, d.source_url AS document_source_url,
-            d.kind AS document_kind, mr.to_id AS measure_id, vr.to_id AS version_id
+            d.label AS document_label, d.kind AS document_kind, d.node_id, mr.to_id AS measure_id, vr.to_id AS version_id
      FROM agency_link a
        JOIN document d ON d.id = a.document_id
        JOIN document_relation mr ON mr.document_id = d.id AND mr.relation = 'measure'
@@ -607,6 +611,15 @@ export function openIndexReader(path: string): IndexReader {
        LEFT JOIN document_relation vr ON vr.document_id = d.id AND vr.relation = 'version'
      WHERE mr.to_id = ?
      ORDER BY d.id, u.ordinal`,
+  );
+  // A Proposed Amendment's number as its earliest posting writes it, and the file `get_document` serves for it.
+  const selectAmendmentNumber = database.prepare(
+    `SELECT md.label FROM meeting_document md JOIN meeting m ON m.id = md.meeting_id
+     WHERE md.kind = 'proposed_amendment' AND md.node_id = ?
+     ORDER BY m.at, length(md.document_id), md.document_id LIMIT 1`,
+  );
+  const selectAmendmentFile = database.prepare(
+    "SELECT source_url FROM document WHERE node_id = ? AND node_id <> id ORDER BY posted_at DESC, id DESC LIMIT 1",
   );
   const selectVersionNode = database.prepare(
     "SELECT label, source_url FROM document WHERE id = ? AND kind = 'version'",
@@ -685,6 +698,23 @@ export function openIndexReader(path: string): IndexReader {
     if (key === undefined) throw new Error(`The store holds ${measureId}, which is no Measure of ${session}`);
     return key;
   }
+  /** The Version a stored Version document is. */
+  function versionNodeOf(key: MeasureKey, id: string, label: string, sourceUrl: string): LinkedNode {
+    return { type: "version", id: id as DocumentId, measure: key, label, sourceUrl, createdAt: [] };
+  }
+  /** The Proposed Amendment a stored posting is of: its number as its earliest posting writes it, and the file served for it. */
+  function amendmentNodeOf(key: MeasureKey, id: string): LinkedNode {
+    const number = amendmentNumberRow.parse(selectAmendmentNumber.get(id));
+    const file = amendmentFileRow.parse(selectAmendmentFile.get(id));
+    return {
+      type: "proposed_amendment",
+      id: id as AmendmentId,
+      measure: key,
+      label: number.label,
+      sourceUrl: file.source_url,
+      createdAt: [],
+    };
+  }
   /**
    * Where a Fiscal Impact Statement sits: the Version the feed places it on (ADR-0013) when the store holds that
    * Version's file, and otherwise the Measure. A Version whose file did not come cannot be named or linked to.
@@ -694,14 +724,20 @@ export function openIndexReader(path: string): IndexReader {
     const version = selectVersionNode.get(versionId);
     if (version === undefined) return measureNodeOf(key);
     const stored = versionNodeRow.parse(version);
-    return {
-      type: "version",
-      id: versionId as DocumentId,
-      measure: key,
-      label: stored.label,
-      sourceUrl: stored.source_url,
-      createdAt: [],
-    };
+    return versionNodeOf(key, versionId, stored.label, stored.source_url);
+  }
+  /** The node a stored Agency Link sits on, from the document its evidence was read from. */
+  function nodeOfDocument(found: z.infer<typeof agencyLinkRow>, key: MeasureKey): LinkedNode {
+    switch (found.document_kind) {
+      case "analysis":
+        return statementNodeOf(key, found.version_id);
+      case "version":
+        return versionNodeOf(key, found.document_id, found.document_label, found.document_source_url);
+      case "proposed_amendment":
+        return amendmentNodeOf(key, found.node_id);
+      default:
+        return found.document_kind satisfies never;
+    }
   }
   function relationsOf(documentId: DocumentId): RelatedNode[] {
     return selectRelations.all(documentId).map((row) => {
@@ -794,7 +830,7 @@ export function openIndexReader(path: string): IndexReader {
           agency: found.agency_id as AgencyId,
           evidence,
           document: { id: found.document_id as DocumentId, sourceUrl: found.document_source_url, createdAt: null },
-          node: statementNodeOf(key, found.version_id),
+          node: nodeOfDocument(found, key),
         };
       });
     },

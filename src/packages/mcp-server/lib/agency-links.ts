@@ -165,13 +165,30 @@ function nodeOutput(node: LinkedNode): { node_id: string; node_type: LinkedNode[
   return { node_id: node.id, node_type: node.type };
 }
 
+/**
+ * The links with a repeated one left out: a Proposed Amendment posted to several meetings has a posting for each, and
+ * postings that say the same name an Agency in the same way once. The link kept is the one from the first document, in
+ * the order of the feed's numbers, so which posting an agent is given does not depend on the order of the rows.
+ */
+export function withoutRepeats(links: readonly StoredAgencyLink[]): StoredAgencyLink[] {
+  const seen = new Set<string>();
+  const kept: StoredAgencyLink[] = [];
+  for (const link of links.toSorted((a, b) => numbersInOrder.compare(a.document.id, b.document.id))) {
+    const key = JSON.stringify([link.agency, link.node.id, link.evidence]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    kept.push(link);
+  }
+  return kept;
+}
+
 /** A Measure's Agency Links: by Agency, with each link's evidence and node, and the units that are not Agencies. */
 export function agencyLinksOf(
   links: readonly StoredAgencyLink[],
   units: readonly StoredUnresolvedUnit[],
 ): AgencyLinksOutput {
   const byAgency = new Map<string, StoredAgencyLink[]>();
-  for (const link of links) byAgency.set(link.agency, [...(byAgency.get(link.agency) ?? []), link]);
+  for (const link of withoutRepeats(links)) byAgency.set(link.agency, [...(byAgency.get(link.agency) ?? []), link]);
   return {
     agencies: [...byAgency.entries()]
       .toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
