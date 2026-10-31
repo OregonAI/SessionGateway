@@ -214,6 +214,35 @@ const schema = `
     measure_id TEXT NOT NULL
   ) STRICT;
   CREATE INDEX IF NOT EXISTS analysis_listing_measure ON analysis_listing (measure_id);
+  -- The two-pull rule (ADR-0005, ADR-0030). feed_pull has a row for each complete full pull of a Session,
+  -- numbered from 1; a pull that was refused for being short of its counts has none. feed_row has a row for
+  -- every row the index keeps from the feed, by its entity set and its key, with the number of the latest
+  -- complete pull that listed it. A row is listed while fewer than two complete pulls have missed it (see the
+  -- view), so a pull that lists a row is the only thing that writes to it and an absent row needs no write.
+  -- document_id is the document the row links, for the sets that link one. Increments add rows here with the
+  -- latest pull's number and never age one.
+  CREATE TABLE IF NOT EXISTS feed_pull (
+    session_key TEXT NOT NULL,
+    number INTEGER NOT NULL,
+    as_of TEXT NOT NULL,
+    PRIMARY KEY (session_key, number)
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS feed_row (
+    session_key TEXT NOT NULL,
+    entity_set TEXT NOT NULL,
+    row_key TEXT NOT NULL,
+    document_id TEXT,
+    last_listed_pull INTEGER NOT NULL,
+    PRIMARY KEY (session_key, entity_set, row_key)
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS feed_row_document ON feed_row (document_id) WHERE document_id IS NOT NULL;
+  CREATE VIEW IF NOT EXISTS feed_row_state AS
+    SELECT r.session_key, r.entity_set, r.row_key, r.document_id, r.last_listed_pull, p.as_of AS last_listed_at,
+           r.last_listed_pull > latest.number - 2 AS listed
+    FROM feed_row r
+      JOIN feed_pull p ON p.session_key = r.session_key AND p.number = r.last_listed_pull
+      JOIN (SELECT session_key, MAX(number) AS number FROM feed_pull GROUP BY session_key) latest
+        ON latest.session_key = r.session_key;
   -- Search (ADR-0025). What search files each stored document under, written in the same transaction as
   -- the document. node_id is the id a hit carries: the document's, or a posting's Proposed Amendment.
   CREATE TABLE IF NOT EXISTS search_document (

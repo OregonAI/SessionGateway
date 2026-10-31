@@ -12,6 +12,7 @@ import {
   type DocumentKind,
   type DocumentView,
   type IndexCounts,
+  type Listing,
   type AmendmentHeader,
   type CommitteeId,
   type MeetingContents,
@@ -319,6 +320,7 @@ const relatingClauseEdits = z.array(
 );
 const countRow = z.object({ n: z.number() });
 const kindCountRow = z.object({ kind: z.string(), n: z.number() });
+const listingRow = z.object({ listed: z.number(), last_listed_at: z.string() });
 const relationRow = z.object({
   relation: z.string(),
   to_id: z.string(),
@@ -383,6 +385,16 @@ export function openIndexReader(path: string): IndexReader {
     "SELECT kind, COUNT(*) AS n FROM document WHERE session_key = ? GROUP BY kind",
   );
   const selectDocument = database.prepare("SELECT * FROM document WHERE id = ?");
+  // Whether the feed lists a document: its feed row's state (ADR-0030). For a Proposed Amendment the postings'
+  // rows are looked at together, and the latest pull that listed any of them says.
+  const selectDocumentListing = database.prepare(
+    "SELECT listed, last_listed_at FROM feed_row_state WHERE document_id = ?",
+  );
+  const selectPostingsListing = database.prepare(
+    `SELECT listed, last_listed_at FROM feed_row_state
+     WHERE document_id IN (SELECT id FROM document WHERE node_id = ? AND node_id <> id)
+     ORDER BY last_listed_pull DESC LIMIT 1`,
+  );
   const selectPostings = database.prepare(
     "SELECT * FROM document WHERE node_id = ? AND node_id <> id ORDER BY posted_at DESC, id DESC",
   );
@@ -521,6 +533,11 @@ export function openIndexReader(path: string): IndexReader {
       relatingClauseEdits: edits,
     };
   }
+  function listingOf(row: unknown, what: string): Listing {
+    if (row === undefined) throw new Error(`The index has no feed row for ${what}`);
+    const stored = listingRow.parse(row);
+    return { listed: stored.listed === 1, lastListedAt: stored.last_listed_at as Timestamp };
+  }
   function relationsOf(documentId: DocumentId): RelatedNode[] {
     return selectRelations.all(documentId).map((row) => {
       const stored = relationRow.parse(row);
@@ -628,7 +645,11 @@ export function openIndexReader(path: string): IndexReader {
       const own = selectDocument.get(id);
       if (own !== undefined) {
         const document = documentOf(own);
-        return { document, related: relationsOf(document.id) };
+        return {
+          document,
+          related: relationsOf(document.id),
+          listing: listingOf(selectDocumentListing.get(document.id), `the stored document ${document.id}`),
+        };
       }
       // Not a document: a Proposed Amendment, which has a posting (and a file) for each meeting.
       const postings = selectPostings.all(id).map(documentOf);
@@ -646,7 +667,11 @@ export function openIndexReader(path: string): IndexReader {
           related.push(node);
         }
       }
-      return { document: latest, related };
+      return {
+        document: latest,
+        related,
+        listing: listingOf(selectPostingsListing.get(id), `the postings of the Proposed Amendment ${id}`),
+      };
     },
     findAmendment(id) {
       return amendmentOf(id);

@@ -166,9 +166,17 @@ const detailsRow = z.object({
   end_offset: z.number().nullable(),
 });
 
+/**
+ * The WHERE term that leaves out a document the feed no longer lists (ADR-0005, ADR-0030), over `search_document`
+ * aliased `sd`. Every query of the index and the load of the vectors have it, so that a document that two complete
+ * pulls in a row have not listed is in no result and in no scan, and `get_document` still serves it.
+ */
+const listedDocument =
+  "EXISTS (SELECT 1 FROM feed_row_state fr WHERE fr.document_id = sd.document_id AND fr.listed = 1)";
+
 /** The WHERE terms of a filter over `search_document` (aliased `sd`), and the values they take. */
 function filterTerms(filter: SearchFilter): { sql: string; values: string[] } {
-  const terms = ["sd.session_key = ?"];
+  const terms = ["sd.session_key = ?", listedDocument];
   const values: string[] = [filter.session];
   if (filter.kind !== undefined) {
     terms.push("sd.kind = ?");
@@ -215,7 +223,7 @@ export function openSearchReader(path: string): SearchIndexReader {
   const vectorSelection = `FROM passage p
        JOIN search_document sd ON sd.document_id = p.document_id
        JOIN passage_vector v ON v.text_hash = p.text_hash AND v.model_id = ?2
-     WHERE sd.session_key = ?1 AND sd.keyword_only = 0`;
+     WHERE sd.session_key = ?1 AND sd.keyword_only = 0 AND ${listedDocument}`;
   const selectGeneration = database.prepare("SELECT generation FROM search_generation WHERE id = 1");
   const selectVectorCount = database.prepare(`SELECT COUNT(*) AS n ${vectorSelection}`);
   const selectVectors = database.prepare(
