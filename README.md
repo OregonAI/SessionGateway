@@ -65,7 +65,13 @@ values and says the lookup failed.
 A full pull also fetches every document the feed links that the database does not hold yet, once each,
 and writes `build-report.json` beside the database: the documents that are scans with no text layer, and
 the ones it could not get or read (ADR-0011), and how many passages it embedded and how many it reused because
-the same text already had a vector (ADR-0025).
+the same text already had a vector (ADR-0025). The report also has `pull`: every set the pull read, with the rows
+the feed counted for it, the rows that came, and how many the index lists and holds without listing. A pull counts
+as complete only when every set's rows match the feed's count. One that does not is refused: it stores nothing,
+leaves the database as the last complete pull left it, exits with an error that names each short set, and writes a
+`build-report.json` of its own (`attempted_at` and `pull`, with `complete: false` and the short sets). A row that two
+complete pulls in a row did not list stays in the database and is served by id, but search leaves it out
+(ADR-0005, ADR-0030).
 
 A full pull against the live feed is allowed only between 5 pm and 6 am Pacific (ADR-0005). Nothing
 schedules it yet, so run it by hand inside that window.
@@ -74,7 +80,8 @@ After a pull, `ingest.ts` writes `unresolved-legislator-codes.json` beside the d
 Legislator Codes it could not resolve through the Legislators rows or the alias file
 (`src/packages/legislators/data/legislator-aliases.json`), with how many rows used each. An empty list
 means every code resolved. An entry in the alias file needs evidence from the feed itself (see the
-file's `about` entry).
+file's `about` entry). The pull also reads the committee members, and the members of a task force are not all
+Legislators, so their names are listed here as unresolved (`CommitteeMembers`) and are not an error.
 
 ## Building the OregonAI snapshot
 
