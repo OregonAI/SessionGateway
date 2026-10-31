@@ -348,7 +348,7 @@ REPEALED OR ADDED
   {
     name: "pdftotext -layout, the left column of each line, with the spacing it prints: a Measure's number runs from 'SB     69 A' to 'HB   3376'",
     source:
-      "pdftotext -layout of documents/reports/artables2025R1.pdf, lines 4019-4025 and 51 of its output, cut at the left column. A labelled extra: the store holds PDF.js's text, in which a row has single spaces",
+      "pdftotext -layout of documents/reports/artables2025R1.pdf, lines 4020-4023 of its output (page 45) and line 51 (page 1), cut at the left column. A labelled extra: the store holds PDF.js's text, in which a row has single spaces",
     text: `653.606       A     §3    HB   2786
               A     §17   HB   2962
 653.616       A     §8    SB     69 A
@@ -385,8 +385,8 @@ Add §1 HB 3790`,
   {
     name: "pdftotext -layout prints both columns on a line: that line is two rows, not one, and it is left unread, not read as the left row alone",
     source:
-      "pdftotext -layout of documents/reports/artables2025R1.pdf, line 4022 of its output under the column heads of page 32. A labelled extra: the store holds PDF.js's text, which has one row to a line",
-    text: `(1)         (2)                (3)       (4)               (1)     (2)              (3)      (4)
+      "pdftotext -layout of documents/reports/artables2025R1.pdf, line 3990 of its output (the column heads of page 45) and line 4022 (a row of page 45). A labelled extra: the store holds PDF.js's text, which has one row to a line",
+    text: `  (1)         (2)              (3)       (4)                 (1)         (2)               (3)      (4)
 653.616       A     §8    SB     69 A                      654.423       R     §19    HB   3778     E`,
     entries: [],
     unread: ["653.616       A     §8    SB     69 A                      654.423       R     §19    HB   3778     E"],
