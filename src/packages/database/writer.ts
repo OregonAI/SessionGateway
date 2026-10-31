@@ -10,10 +10,11 @@ import {
   type DocumentLink,
   type Meeting,
   type StoredDocument,
+  type TestimonyDetails,
 } from "#/packages/domain/documents.ts";
 import type { HistoryAction, Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
 import type { Legislator, LegislatorId, SponsorLevel } from "#/packages/domain/legislators.ts";
-import type { SnapshotVersion } from "#/packages/domain/oregonai.ts";
+import type { AgencyId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
 import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openWriteConnection } from "./lib/connection.ts";
@@ -45,6 +46,16 @@ export type FloorVoteRecord = FloorVoteEntry & { legislatorId: LegislatorId | nu
 export type CommitteeVoteRecord = CommitteeVoteEntry & { legislatorId: LegislatorId | null };
 
 /**
+ * One CommitteePublicTestimonies row of the feed, with the Agency its `Organization` names, if any. The
+ * link is the Testimony's document link, which carries what the feed says of it (`testimony`), and the
+ * Measure, committee and meeting it points at.
+ */
+export type TestimonyRecord = {
+  link: DocumentLink & { testimony: TestimonyDetails };
+  agencyId: AgencyId | null;
+};
+
+/**
  * Everything a full pull read, ready to store: one field for each kind of row. A ticket that makes the
  * pull read another kind of row adds a field here, not a parameter to `recordFullPull`.
  */
@@ -73,6 +84,11 @@ export type FullPullRecord = {
    * fetched, so a file that fails to come is still listed (ADR-0011, "Order of a pull").
    */
   documentLinks: readonly DocumentLink[];
+  /**
+   * The Testimony rows of the feed, each with the Agency its `Organization` names. They are listed here, and
+   * not only as document links, so the server can say who testified before every file is fetched.
+   */
+  testimony: readonly TestimonyRecord[];
 };
 
 /** The columns of the sponsor table that only some kinds of row fill; the others stay NULL. */
@@ -101,7 +117,8 @@ export type IndexWriter = {
    * transaction. A meeting's status, an agenda item's action, and a listed document's label, Measure and
    * a posting's Meaning are the feed's latest. The listing of analysis documents replaces the Session's,
    * so the server can tell a Measure whose statement the worker could not fetch from one that has none.
-   * A full pull never deletes anything else (ADR-0005).
+   * The same goes for the Testimony rows: what the feed says of each, and the Agency its Organization names,
+   * are the feed's latest, whether or not the file is fetched. A full pull never deletes anything else (ADR-0005).
    */
   recordFullPull(session: SessionKey, asOf: Timestamp, pulled: FullPullRecord): void;
   /** The ids of the documents already stored for the Session: a stored document is never fetched again. */
@@ -227,6 +244,18 @@ export function openIndexWriter(path: string): IndexWriter {
            node_id = excluded.node_id, label = excluded.label, source_url = excluded.source_url,
            title = excluded.title, measure_id = excluded.measure_id, meaning = excluded.meaning`,
       );
+      const upsertTestimony = database.prepare(
+        `INSERT INTO testimony (document_id, session_key, comm_test_id, measure_id, source_url, document_description,
+                                position_id, submitter, behalf_of, organization, committee_id, committee_code,
+                                meeting_at, agency_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (document_id) DO UPDATE SET
+           comm_test_id = excluded.comm_test_id, measure_id = excluded.measure_id, source_url = excluded.source_url,
+           document_description = excluded.document_description, position_id = excluded.position_id,
+           submitter = excluded.submitter, behalf_of = excluded.behalf_of, organization = excluded.organization,
+           committee_id = excluded.committee_id, committee_code = excluded.committee_code,
+           meeting_at = excluded.meeting_at, agency_id = excluded.agency_id`,
+      );
       const insertAnalysisListing = database.prepare(
         "INSERT INTO analysis_listing (document_id, session_key, measure_id) VALUES (?, ?, ?)",
       );
@@ -350,6 +379,27 @@ export function openIndexWriter(path: string): IndexWriter {
             listing.meaning,
           );
         }
+        // Who testified: every Testimony row as the feed says it, whether or not its file is fetched.
+        for (const { link, agencyId } of pulled.testimony) {
+          const committee = link.relations.find((relation) => relation.relation === "committee");
+          if (committee === undefined) throw new Error(`The Testimony ${link.id} names no committee`);
+          upsertTestimony.run(
+            link.id,
+            session,
+            link.testimony.commTestId,
+            link.relations.find((relation) => relation.relation === "measure")?.to ?? null,
+            link.sourceUrl,
+            link.label,
+            link.testimony.position.id,
+            link.testimony.submitter,
+            link.testimony.behalfOf,
+            link.testimony.organization,
+            committee.to,
+            link.testimony.committeeCode,
+            link.testimony.meetingAt,
+            agencyId,
+          );
+        }
         // Which analysis documents the feed lists for each Measure, as this pull read it.
         clearAnalysisListing.run(session);
         for (const link of pulled.documentLinks) {
@@ -414,9 +464,9 @@ export function openIndexWriter(path: string): IndexWriter {
     storeDocument(session, document) {
       const insertDocument = database.prepare(
         `INSERT INTO document (id, node_id, session_key, kind, label, source_url, retrieved_at, content_hash,
-                               page_count, has_text_layer, posted_at, analysis_version_label,
+                               text_hash, page_count, has_text_layer, posted_at, analysis_version_label,
                                analysis_is_minority, text)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       const insertRelation = database.prepare(
         `INSERT INTO document_relation (document_id, relation, to_id, meaning, provenance) VALUES (?, ?, ?, ?, ?)`,
@@ -432,6 +482,7 @@ export function openIndexWriter(path: string): IndexWriter {
           document.sourceUrl,
           document.retrievedAt,
           document.contentHash,
+          document.textHash,
           document.pageCount,
           document.hasTextLayer ? 1 : 0,
           document.postedAt,

@@ -1,18 +1,21 @@
 // The ingest worker. A full pull reads the deployment's Session from OLIS (its Measures, Legislators,
-// sponsors, history and votes, its committees, meetings and their agenda items, and the documents they
-// link) and stores the feed, with which documents each meeting lists, the version of the OregonAI
-// snapshot and the time the pull started as the index's "as of" time. It resolves the Legislator Code of
+// sponsors, history and votes, its committees, meetings and their agenda items, its Testimony rows, and
+// the documents they link) and stores the feed, with which documents each meeting lists, the Agency each
+// Testimony's Organization names, the version of the OregonAI snapshot and the time the pull started as
+// the index's "as of" time. It resolves the Legislator Code of
 // each sponsor and each vote to a Legislator on the way and reports the codes it could not. It refreshes
 // what the feed says about the documents it already holds, fetches every linked document the store does
 // not hold yet, once each, keeps its text, and writes the build report
 // (docs/adr/0011-an-amendment-is-a-node-and-its-postings-are-documents.md).
 import { createHash } from "node:crypto";
+import { testimonyAgencyLinks } from "#/packages/agency-links/index.ts";
 import type { IngestConfig } from "#/packages/config/index.ts";
 import {
   openIndexWriter,
   type CommitteeVoteRecord,
   type FloorVoteRecord,
   type SponsorRecord,
+  type TestimonyRecord,
 } from "#/packages/database/writer.ts";
 import type { DocumentLink } from "#/packages/domain/documents.ts";
 import type { LegislatorId, Sponsorship } from "#/packages/domain/legislators.ts";
@@ -25,7 +28,7 @@ import {
   type UnresolvedLegislatorCode,
 } from "#/packages/legislators/resolver.ts";
 import { createOlisClient, type OlisClient } from "#/packages/olis-client/index.ts";
-import { loadSnapshot } from "#/packages/oregonai-snapshot/index.ts";
+import { loadSnapshot, type Snapshot } from "#/packages/oregonai-snapshot/index.ts";
 import { extractPdfText, type ExtractedPdf } from "#/packages/pdf-text/index.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
@@ -145,6 +148,22 @@ function committeeVoteRecordOf(entry: CommitteeVoteEntry, resolver: LegislatorRe
   return { ...entry, legislatorId: legislatorIdOfResolution(resolver.resolve("CommitteeVotes", entry.legislatorCode)) };
 }
 
+/**
+ * The Testimony rows among the links, each with the Agency its `Organization` names. The match is the Agency
+ * Link extractor's (`testimonyAgencyLinks`, spec #1 module 5), made here because the registry is the snapshot's
+ * and only the worker reads that (ADR-0012). It matches the Organization and nothing else.
+ */
+function testimonyRecordsOf(links: readonly DocumentLink[], snapshot: Snapshot): TestimonyRecord[] {
+  const records: TestimonyRecord[] = [];
+  for (const link of links) {
+    const details = link.testimony;
+    if (details === undefined) continue;
+    const agency = testimonyAgencyLinks(details.organization ?? "", snapshot.agencies)[0];
+    records.push({ link: { ...link, testimony: details }, agencyId: agency?.agency ?? null });
+  }
+  return records;
+}
+
 export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promise<FullPullResult> {
   // The snapshot is read before OLIS is: a build with no usable snapshot fails at once, naming the file.
   const snapshot = await loadSnapshot(config.snapshotPath);
@@ -203,6 +222,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       meetings,
       agendaItems,
       documentLinks: links,
+      testimony: testimonyRecordsOf(links, snapshot),
     });
     const stored = writer.storedDocumentIds(config.session);
     // A fetched file is unchanging (ADR-0005) but its feed row is not: OLIS changes a posting's Meaning,
@@ -222,6 +242,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
         ...link,
         retrievedAt: formatPacific(deps.clock.now()),
         contentHash: createHash("sha256").update(fetched.bytes).digest("hex"),
+        textHash: createHash("sha256").update(fetched.pdf.text).digest("hex"),
         pageCount: fetched.pdf.pageCount,
         hasTextLayer: fetched.pdf.hasTextLayer,
         text: fetched.pdf.text,

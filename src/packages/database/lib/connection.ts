@@ -146,6 +146,7 @@ const schema = `
     source_url TEXT NOT NULL,
     retrieved_at TEXT NOT NULL,
     content_hash TEXT NOT NULL,
+    text_hash TEXT NOT NULL,
     page_count INTEGER NOT NULL,
     has_text_layer INTEGER NOT NULL,
     posted_at TEXT,
@@ -163,6 +164,26 @@ const schema = `
     PRIMARY KEY (document_id, relation, to_id)
   ) STRICT;
   CREATE INDEX IF NOT EXISTS document_relation_to ON document_relation (to_id, relation);
+  -- What the feed says of each Testimony row, written for every row before any file is fetched, so the
+  -- server can list who testified whether or not the file is in. A row here has a row in "document" only
+  -- once its file is.
+  CREATE TABLE IF NOT EXISTS testimony (
+    document_id TEXT NOT NULL PRIMARY KEY,
+    session_key TEXT NOT NULL,
+    comm_test_id INTEGER NOT NULL,
+    measure_id TEXT,
+    source_url TEXT NOT NULL,
+    document_description TEXT NOT NULL,
+    position_id INTEGER NOT NULL,
+    submitter TEXT NOT NULL,
+    behalf_of TEXT,
+    organization TEXT,
+    committee_id TEXT NOT NULL,
+    committee_code TEXT NOT NULL,
+    meeting_at TEXT NOT NULL,
+    agency_id TEXT
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS testimony_measure ON testimony (measure_id);
   CREATE TABLE IF NOT EXISTS analysis_listing (
     document_id TEXT NOT NULL PRIMARY KEY,
     session_key TEXT NOT NULL,

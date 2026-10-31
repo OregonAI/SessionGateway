@@ -11,6 +11,7 @@ import {
   exhibitIdOf,
   isPrintedAmendment,
   meetingIdOf,
+  positionOf,
   postingIdOf,
   recordingLogIdOf,
   testimonyIdOf,
@@ -232,6 +233,14 @@ async function readExhibits(
 const testimonyRow = z.looseObject({
   SessionKey: z.string(),
   CommTestId: z.number().int(),
+  // The submitter, for whom, and from where. In the 99,665 rows of the 2025R1 cache the submitter's two
+  // names and the position are never null; BehalfOf is null in 76,767 rows, and Organization is typed by
+  // whoever submitted, so it is read as free text that may be missing.
+  SubmitterFirstName: z.string(),
+  SubmitterLastName: z.string(),
+  BehalfOf: z.string().nullish(),
+  Organization: z.string().nullish(),
+  PositionOnMeasureId: z.number().int(),
   CommitteeCode: z.string(),
   MeetingDate: feedTimestamp,
   DocumentDescription: z.string(),
@@ -256,6 +265,15 @@ async function readTestimony(
       label: row.DocumentDescription,
       sourceUrl: `${root}/Downloads/PublicTestimonyDocument/${row.CommTestId}`,
       postedAt: null,
+      testimony: {
+        commTestId: row.CommTestId,
+        position: positionOf(row.PositionOnMeasureId),
+        submitter: `${row.SubmitterFirstName} ${row.SubmitterLastName}`,
+        behalfOf: row.BehalfOf ?? null,
+        organization: row.Organization ?? null,
+        committeeCode: row.CommitteeCode,
+        meetingAt: row.MeetingDate,
+      },
       relations: meetingBoundRelations(session, row, `CommitteePublicTestimonies ${row.CommTestId}`),
     };
   });

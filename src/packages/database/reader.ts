@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { StoredAnalysis } from "#/packages/domain/analysis.ts";
 import {
   documentKinds,
+  positionOf,
   type AgendaItem,
   type AmendmentId,
   type Committee,
@@ -19,6 +20,7 @@ import {
   type PostedAmendment,
   type Relation,
   type RelatedNode,
+  type TestimonyEntry,
 } from "#/packages/domain/documents.ts";
 import {
   measureIdOf,
@@ -29,7 +31,7 @@ import {
   type SessionKey,
 } from "#/packages/domain/index.ts";
 import { comparePrintOrder, type Legislator, type LegislatorId, type Sponsor } from "#/packages/domain/legislators.ts";
-import type { SnapshotVersion } from "#/packages/domain/oregonai.ts";
+import type { AgencyId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
 import {
   groupCommitteeVotes,
   groupFloorVotes,
@@ -104,6 +106,16 @@ export type IndexReader = {
   findMeetings(session: SessionKey, filter: MeetingFilter): MeetingHeader[];
   /** What one meeting holds. */
   meetingContents(meeting: MeetingId): MeetingContents;
+  /**
+   * Every Testimony row the feed lists for a Measure, in the order of the feed's `CommTestId`, whether or not
+   * its file is fetched.
+   */
+  findTestimony(key: MeasureKey): TestimonyEntry[];
+  /**
+   * Whether the feed lists a Testimony with this id, whether or not its file is fetched. A Testimony that is
+   * listed and whose file the store lacks is one `findDocument` does not resolve yet: the next pull fetches it.
+   */
+  listsTestimony(id: DocumentId | AmendmentId): boolean;
   close(): void;
 };
 
@@ -220,6 +232,23 @@ const meetingDocumentRow = z.object({
   meaning: z.string().nullable(),
   fetched: z.number(),
 });
+const testimonyRow = z.object({
+  id: z.string(),
+  comm_test_id: z.number(),
+  source_url: z.string(),
+  document_description: z.string(),
+  position_id: z.number(),
+  submitter: z.string(),
+  behalf_of: z.string().nullable(),
+  organization: z.string().nullable(),
+  committee_id: z.string(),
+  committee_code: z.string(),
+  meeting_at: z.string(),
+  agency_id: z.string().nullable(),
+  fetched: z.number(),
+  has_text_layer: z.number().nullable(),
+  text_hash: z.string().nullable(),
+});
 const countRow = z.object({ n: z.number() });
 const kindCountRow = z.object({ kind: z.string(), n: z.number() });
 const relationRow = z.object({
@@ -326,6 +355,15 @@ export function openIndexReader(path: string): IndexReader {
             EXISTS (SELECT 1 FROM document d WHERE d.id = l.document_id) AS fetched
      FROM meeting_document l WHERE l.meeting_id = ?`,
   );
+  // The Testimony the feed lists for a Measure, and whether the document table holds each file yet.
+  const selectTestimony = database.prepare(
+    `SELECT t.document_id AS id, t.comm_test_id, t.source_url, t.document_description, t.position_id, t.submitter,
+            t.behalf_of, t.organization, t.committee_id, t.committee_code, t.meeting_at, t.agency_id,
+            d.id IS NOT NULL AS fetched, d.has_text_layer, d.text_hash
+     FROM testimony t LEFT JOIN document d ON d.id = t.document_id
+     WHERE t.measure_id = ? ORDER BY t.comm_test_id`,
+  );
+  const selectTestimonyListing = database.prepare("SELECT 1 AS listed FROM testimony WHERE document_id = ?");
   const numbersInOrder = new Intl.Collator("en", { numeric: true });
   function documentOf(row: unknown): DocumentView["document"] {
     const stored = documentRow.parse(row);
@@ -518,6 +556,31 @@ export function openIndexReader(path: string): IndexReader {
         exhibits: documentsOfKind("exhibit"),
         recordingLogs: documentsOfKind("recording_log"),
       };
+    },
+    listsTestimony(id) {
+      return selectTestimonyListing.get(id) !== undefined;
+    },
+    findTestimony(key) {
+      return selectTestimony.all(measureIdOf(key)).map((row): TestimonyEntry => {
+        const stored = testimonyRow.parse(row);
+        return {
+          id: stored.id as DocumentId,
+          commTestId: stored.comm_test_id,
+          sourceUrl: stored.source_url,
+          documentDescription: stored.document_description,
+          position: positionOf(stored.position_id),
+          submitter: stored.submitter,
+          behalfOf: stored.behalf_of,
+          organization: stored.organization,
+          committeeId: stored.committee_id as CommitteeId,
+          committeeCode: stored.committee_code,
+          meetingAt: stored.meeting_at as Timestamp,
+          agencyId: stored.agency_id as AgencyId | null,
+          fetched: stored.fetched === 1,
+          hasTextLayer: stored.has_text_layer === null ? null : stored.has_text_layer === 1,
+          textHash: stored.text_hash,
+        };
+      });
     },
     findMeasure(key) {
       const row = selectMeasure.get(key.session, key.prefix, key.number);

@@ -10,6 +10,7 @@ import {
   getDocumentInput,
   getDocumentOutput,
   noSuchPartMessage,
+  testimonyNotHeldMessage,
   unknownDocumentMessage,
 } from "./lib/get-document.ts";
 import { getMeasure, getMeasureInput, getMeasureOutput, unknownMeasureMessage } from "./lib/get-measure.ts";
@@ -24,6 +25,14 @@ import {
   unknownCommitteeMessage,
 } from "./lib/meetings.ts";
 import { sessionOverview, sessionOverviewInput, sessionOverviewOutput } from "./lib/session-overview.ts";
+import {
+  noSuchPageMessage,
+  TESTIMONY_MAX_LISTED_LETTER_SETS,
+  TESTIMONY_PAGE_SIZE,
+  testimony,
+  testimonyInput,
+  testimonyOutput,
+} from "./lib/testimony.ts";
 import { createRateLimiter, rateLimitMessage, type RateLimiter } from "./lib/rate-limit.ts";
 
 export type HandlerDeps = {
@@ -126,6 +135,11 @@ function buildServer(
             isError: true,
             content: [{ type: "text", text: unknownDocumentMessage(result.id, result.session) }],
           };
+        case "not_held":
+          return {
+            isError: true,
+            content: [{ type: "text", text: testimonyNotHeldMessage(result.id, result.session) }],
+          };
         case "no_such_part":
           return {
             isError: true,
@@ -169,6 +183,40 @@ function buildServer(
           return { isError: true, content: [{ type: "text", text: NO_FILTER_MESSAGE }] };
         case "backwards_range":
           return { isError: true, content: [{ type: "text", text: backwardsRangeMessage(result.from, result.to) }] };
+        default:
+          return result satisfies never;
+      }
+    },
+  );
+  server.registerTool(
+    "testimony",
+    {
+      title: "Testimony on a Measure",
+      description: `Lists the Testimony submitted to committees on one Measure of the Session, by its id or citation, grouped by position (support, oppose, neutral, unknown; any other position id is shown under its number) and then by Organization, with each item's submitter, BehalfOf, committee, meeting date, whether its file has a text layer, and the Agency's registry slug when Organization names an Agency. Organization is free text typed by the submitter and is often a city ("Portland"), not an organization: it is grouped as written, with capitals and spaces ignored, and no attempt is made to tell cities from organizations. BehalfOf often names the real organization, so it is shown on every item. The tool returns no letter text: give an item's id to get_document to read it. Rows whose files hold the same text are one set of identical letters: identical_letters lists the ${TESTIMONY_MAX_LISTED_LETTER_SETS} largest sets, each once, as the id to read and a count (identical_letters_left_out says how many it leaves out), and every item of a set, on any page, says its id to read (same_letter_as) and the set's count (same_letter_count); the items stay one per row. A Measure can have thousands of rows, so a call returns a page of ${TESTIMONY_PAGE_SIZE} items in a fixed order (position, organization group, CommTestId): ask for the next with page. Every page carries the Measure's total, the counts by position, the number of organization groups and the identical letters. It is not the official record.`,
+      inputSchema: testimonyInput,
+      outputSchema: testimonyOutput,
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    (input) => {
+      const refused = refuseOverRateLimit(limiter, config);
+      if (refused !== undefined) return refused;
+      const result = testimony(reader, config.session, input);
+      switch (result.kind) {
+        case "found":
+          return {
+            content: [{ type: "text", text: JSON.stringify(result.testimony) }],
+            structuredContent: result.testimony,
+          };
+        case "unknown_measure":
+          return {
+            isError: true,
+            content: [{ type: "text", text: unknownMeasureMessage(result.reference, result.session) }],
+          };
+        case "no_such_page":
+          return {
+            isError: true,
+            content: [{ type: "text", text: noSuchPageMessage(result.measureId, result.page, result.lastPage) }],
+          };
         default:
           return result satisfies never;
       }

@@ -3,6 +3,7 @@
 // and follow ADR-0004's `{kind}-{session}-{key}` shape for what only SessionGateway holds.
 
 import type { MeasureId, MeasureKey, SessionKey } from "./index.ts";
+import type { AgencyId } from "./oregonai.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 
 /** What a document is, in the glossary's words. */
@@ -168,6 +169,48 @@ export type DocumentRelation = {
   provenance: string;
 };
 
+/** What a Position means, in the glossary's words. An id the feed does not list is "unlisted position". */
+export type PositionLabel = "support" | "oppose" | "neutral" | "unknown" | "unlisted position";
+
+/** Which side of a Measure a Testimony takes (GLOSSARY.md, "Position"): the feed's id and what it means. */
+export type Position = { id: number; label: PositionLabel };
+
+/**
+ * The Positions the feed lists, in the order `testimony` lists them: the feed's `PositionOnMeasureId` 3983 is
+ * support, 3982 oppose, 3981 neutral and 4022 unknown (docs/research/olis-odata.md, gotcha 3).
+ */
+export const listedPositions: readonly Position[] = [
+  { id: 3983, label: "support" },
+  { id: 3982, label: "oppose" },
+  { id: 3981, label: "neutral" },
+  { id: 4022, label: "unknown" },
+];
+
+/** The Position a `PositionOnMeasureId` names. An id the feed does not list keeps its number and is never dropped. */
+export function positionOf(id: number): Position {
+  return listedPositions.find((position) => position.id === id) ?? { id, label: "unlisted position" };
+}
+
+/**
+ * What a Testimony row says besides its file (GLOSSARY.md, "Testimony"), every text as the feed writes it:
+ * who submitted it, for whom, from where, and on which side of the Measure.
+ */
+export type TestimonyDetails = {
+  /** The feed's `CommTestId`, the key the Testimony's id is minted from. */
+  commTestId: number;
+  /** The Position of the feed's `PositionOnMeasureId`. */
+  position: Position;
+  /** The feed's `SubmitterFirstName` and `SubmitterLastName` joined by one space, neither trimmed. */
+  submitter: string;
+  /** The feed's `BehalfOf`: free text, often the real organization. Null when the feed gives none. */
+  behalfOf: string | null;
+  /** The feed's `Organization`: free text, often a city. Null when the feed gives none. */
+  organization: string | null;
+  committeeCode: string;
+  /** When the committee met, from the feed's `MeetingDate`. */
+  meetingAt: Timestamp;
+};
+
 /**
  * One document the feed links, before it is fetched: what the feed says about it, in domain terms.
  * `sourceUrl` is the link as OLIS gives it, percent-encoded; the store keeps it as the document's
@@ -189,6 +232,8 @@ export type DocumentLink = {
   isMinority?: boolean;
   /** For an Exhibit: the feed's `ExhibitTitle`, which tells one Exhibit from another. Absent when the feed gives none. */
   title?: string;
+  /** For Testimony: what the feed's row says besides the file. */
+  testimony?: TestimonyDetails;
   relations: DocumentRelation[];
 };
 
@@ -204,7 +249,7 @@ export type RelatedNode = {
 /** What `get_document` resolves an id to: a document, and the nodes it (or the amendment's postings) point at. */
 export type DocumentView = {
   /** The document whose text is served: the id asked for, or an amendment's latest posting. */
-  document: Omit<StoredDocument, "relations">;
+  document: Omit<StoredDocument, "relations" | "textHash">;
   related: RelatedNode[];
 };
 
@@ -213,11 +258,38 @@ export type StoredDocument = DocumentLink & {
   retrievedAt: Timestamp;
   /** The sha256 of the file OLIS served, in lower-case hex. */
   contentHash: string;
+  /**
+   * The sha256 of the extracted text, as the store keeps it, in lower-case hex. Two files with the same
+   * words can differ in bytes (a PDF's modification date, ADR-0010), so this and not `contentHash` says
+   * whether two documents read the same.
+   */
+  textHash: string;
   pageCount: number;
   /** False when extraction found nothing but whitespace: a scan or a photograph. */
   hasTextLayer: boolean;
   /** The text exactly as the extractor read it, with a form feed between pages. */
   text: string;
+};
+
+/**
+ * One Testimony row of a Measure as the server reads it: what the feed says, the Agency its `Organization`
+ * names (matched at ingest, where the registry is), and what the store holds of its file. The text itself is
+ * never in it; `get_document` serves that.
+ */
+export type TestimonyEntry = TestimonyDetails & {
+  id: DocumentId;
+  sourceUrl: string;
+  /** The feed's `DocumentDescription`: "Testimony", "Letter", "Report", "Photo"... */
+  documentDescription: string;
+  committeeId: CommitteeId;
+  /** The registry slug of the Agency the row's `Organization` names, or null when it names none. */
+  agencyId: AgencyId | null;
+  /** Whether the store holds the file. The feed lists the Testimony either way. */
+  fetched: boolean;
+  /** False when the file has no text layer; null while the store does not hold the file. */
+  hasTextLayer: boolean | null;
+  /** The sha256 of the file's extracted text (`StoredDocument.textHash`); null while the store does not hold the file. */
+  textHash: string | null;
 };
 
 export type Meeting = {
