@@ -273,6 +273,8 @@ const schema = `
     unit TEXT NOT NULL,
     PRIMARY KEY (document_id, ordinal)
   ) STRICT;
+  -- find_measures asks which files have a Statute Link to an ORS section or chapter.
+  CREATE INDEX IF NOT EXISTS statute_link_target ON statute_link (target_id);
   -- The analysis documents the feed has listed for each Measure (ADR-0013). Rows are kept, never replaced: the
   -- count of the ones the store does not hold reads the listing state (feed_row_state) of each (ADR-0030).
   CREATE TABLE IF NOT EXISTS analysis_listing (
