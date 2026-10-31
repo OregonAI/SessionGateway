@@ -8,7 +8,7 @@ import { orsSectionList } from "./section-ids.ts";
 // columns one after the other, the left column of a page and then its right, so a row that omits the ORS number
 // ("continuation row") belongs to the last ORS number above it in the text, whichever column it is in. Each row of
 // the tables below is a passage of that extracted text, pasted as a literal with its line numbers (counting the lines
-// of the extracted text, split at "\n"; the form feed that starts a page is on the line it ends). The expected
+// of the extracted text, split at "\n"; a form feed sits inside the one line that ends a page and begins the next). The expected
 // entries are read from the passage by hand: the ORS target, the table's letter (A amends, R repeals, Add adds to),
 // the measure section, the Measure and the engrossing level printed beside it.
 
@@ -74,7 +74,7 @@ A §2 SB 95 A E
   },
   {
     name: "SB 69's 653.616 and 653.626: each has a continuation row for another Measure, and the next ORS number ends it",
-    source: "PDF.js text of documents/reports/artables2025R1.pdf, lines 7117-7128 (page 32)",
+    source: "PDF.js text of documents/reports/artables2025R1.pdf, lines 7117-7128 (page 45)",
     text: `653.601 A §3 HB 2790
 653.606 A §3 HB 2786
 A §17 HB 2962
@@ -104,7 +104,7 @@ Ch. 654 Add §1 HB 2314`,
   },
   {
     name: "a chapter row ('Ch. 657B Add §1 SB 69 A') and the Add row that omits the chapter after it, then repeals and amendments of 657B.010",
-    source: "PDF.js text of documents/reports/artables2025R1.pdf, lines 7298-7306 (page 32)",
+    source: "PDF.js text of documents/reports/artables2025R1.pdf, lines 7298-7306 (page 46)",
     text: `657.855 A §69 HB 3348 A
 Ch. 657B Add §1 SB 69 A
 Add §1 SB 1052
@@ -127,26 +127,55 @@ A §3 SB 1052
     ],
   },
   {
-    name: "a level of three letters (BCC) with an emergency clause, a section lettered 30b, a level and no emergency clause, and an emergency clause and no level",
-    source:
-      "PDF.js text of documents/reports/artables2025R1.pdf, lines 1283-1288 (page 8), the row 'A §21 SB 678 E' from the foot of page 14, and the row 'A §30b HB 2460 B' read from 55.140 on page 3",
+    name: "a level of three letters (BCC) with an emergency clause",
+    source: "PDF.js text of documents/reports/artables2025R1.pdf, lines 1283-1285 (page 9)",
     text: `151.213 A §2 HB 2614 BCC E
 A §3 HB 2614 BCC E
-151.216 A §4 HB 2296
-55.140 A §30b HB 2460 B
-A §21 SB 678 E`,
+151.216 A §4 HB 2296`,
     entries: [
       ["ors-151.213", "A", "2", "HB 2614", "BCC"],
       ["ors-151.213", "A", "3", "HB 2614", "BCC"],
       ["ors-151.216", "A", "4", "HB 2296", null],
-      ["ors-55.140", "A", "30b", "HB 2460", "B"],
-      ["ors-55.140", "A", "21", "SB 678", null],
+    ],
+  },
+  {
+    name: "a measure section lettered 30d, a level and an emergency clause together, a level alone, and a Measure with neither",
+    source: "PDF.js text of documents/reports/artables2025R1.pdf, lines 145-148 (page 2)",
+    text: `19.235 A §1 SB 98 B E
+19.240 A §30d HB 2460 B
+19.270 A §3 SB 98 B E
+19.450 A §4 SB 98 B E`,
+    entries: [
+      ["ors-19.235", "A", "1", "SB 98", "B"],
+      ["ors-19.240", "A", "30d", "HB 2460", "B"],
+      ["ors-19.270", "A", "3", "SB 98", "B"],
+      ["ors-19.450", "A", "4", "SB 98", "B"],
+    ],
+  },
+  {
+    name: "an emergency clause and no level, as 'E' alone ('A §8 HB 3944 E', 'A §21 SB 678 E'), is the clause and not a level; the next page's rows then begin",
+    source:
+      "PDF.js text of documents/reports/artables2025R1.pdf, lines 2195-2201 (the foot of page 14 and the head of page 15), where the date is glued to 'SB 678 E'",
+    text: `215.291 A §8 HB 3944 E
+A §2 SB 75 A
+A §1 SB 78
+A §17 SB 83 A E
+A §21 SB 678 E8/19/2025\fTABLES - 2025 REGULAR SESSION RS25-T-15
+(1) (2) (3) (4) (1) (2) (3) (4)
+215.293 A §33 HB 2347 A`,
+    entries: [
+      ["ors-215.291", "A", "8", "HB 3944", null],
+      ["ors-215.291", "A", "2", "SB 75", "A"],
+      ["ors-215.291", "A", "1", "SB 78", null],
+      ["ors-215.291", "A", "17", "SB 83", "A"],
+      ["ors-215.291", "A", "21", "SB 678", null],
+      ["ors-215.293", "A", "33", "HB 2347", "A"],
     ],
   },
   {
     name: "a series over two lines ('151.211 to)' and '151.221 ) Add ...'), and the Add rows that omit its target, are one entry for each section of the series",
     source:
-      "PDF.js text of documents/reports/artables2025R1.pdf, lines 1276-1280 (page 8); the section list is made up for the row",
+      "PDF.js text of documents/reports/artables2025R1.pdf, lines 1276-1280 (page 9); the section list is made up for the row",
     text: `151.211 to)
 151.221 ) Add §1 HB 2296
 Add §9 HB 2614 BCC E
@@ -181,7 +210,7 @@ Add §1 HB 3376
   {
     name: "a series of chapters ('Ch. 71 to)' and 'Ch. 79 ) Add §93a SB 167') is its two chapters and the chapters of the section list between them",
     source:
-      "PDF.js text of documents/reports/artables2025R1.pdf, lines 488-490 (page 3); the section list is made up for the row",
+      "PDF.js text of documents/reports/artables2025R1.pdf, lines 488-490 (page 4); the section list is made up for the row",
     text: `Ch. 71 to)
 Ch. 79 ) Add §93a SB 167
 71.1010 A §1 SB 167`,
@@ -251,7 +280,7 @@ A §4 SB 947 A`,
   {
     name: "the date at the foot of a page is glued to the Measure number SB 1, and an emergency clause follows on the next page",
     source:
-      "PDF.js text of documents/reports/artables2025R1.pdf, the foot of page 26 and the head of page 27 (lines 3 of the last, 'SB 1' and '8/19/2025' with no space)",
+      "PDF.js text of documents/reports/artables2025R1.pdf, lines 4153-4158 (the foot of page 26 and the head of page 27): 'SB 1' and '8/19/2025' with no space",
     text: `339.866 A §1 SB 1
 339.867 A §2 SB 1
 339.871 A §3 SB 18/19/2025\fTABLES - 2025 REGULAR SESSION RS25-T-27
@@ -280,7 +309,7 @@ R §1 HB 2187 E`,
   {
     name: "the page's title, the explanation of the columns and the column heads are not rows; the first rows after them are",
     source:
-      "PDF.js text of documents/reports/artables2025R1.pdf, lines 1-2 and 24-30 (page 1; the explanation between them is cut)",
+      "PDF.js text of documents/reports/artables2025R1.pdf, lines 1-3 and 24-30 (page 1; the explanation between them is cut)",
     text: `TABLES - 2025 REGULAR SESSION RS25-T-1
 ORS SECTIONS AMENDED, REPEALED OR “ADDED TO”
 From left to right in the columns of the table below are found:
@@ -332,6 +361,35 @@ REPEALED OR ADDED
       ["ors-653.616", "A", "1", "SB 1108", "A"],
       ["ors-1.851", "A", "9", "HB 3376", null],
     ],
+  },
+  {
+    name: "a series that a ballot measure adds to ('BM 119'), with the Add rows of two Measures that omit it",
+    source:
+      "PDF.js text of documents/reports/artables2025R1.pdf, lines 6142-6146 (page 39); the section list is made up for the row",
+    text: `475C.001 A §46 SB 1111
+475C.005 to)
+475C.525 ) Add §2 BM 119
+Add §31 HB 2464
+Add §1 HB 3790`,
+    orsSections: ["ors-475c.005", "ors-475c.525"],
+    entries: [
+      ["ors-475c.001", "A", "46", "SB 1111", null],
+      ["ors-475c.005", "Add", "2", "BM 119", null],
+      ["ors-475c.525", "Add", "2", "BM 119", null],
+      ["ors-475c.005", "Add", "31", "HB 2464", null],
+      ["ors-475c.525", "Add", "31", "HB 2464", null],
+      ["ors-475c.005", "Add", "1", "HB 3790", null],
+      ["ors-475c.525", "Add", "1", "HB 3790", null],
+    ],
+  },
+  {
+    name: "pdftotext -layout prints both columns on a line: that line is two rows, not one, and it is left unread, not read as the left row alone",
+    source:
+      "pdftotext -layout of documents/reports/artables2025R1.pdf, line 4022 of its output under the column heads of page 32. A labelled extra: the store holds PDF.js's text, which has one row to a line",
+    text: `(1)         (2)                (3)       (4)               (1)     (2)              (3)      (4)
+653.616       A     §8    SB     69 A                      654.423       R     §19    HB   3778     E`,
+    entries: [],
+    unread: ["653.616       A     §8    SB     69 A                      654.423       R     §19    HB   3778     E"],
   },
 ];
 

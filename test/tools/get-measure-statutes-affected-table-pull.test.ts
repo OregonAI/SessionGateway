@@ -17,6 +17,7 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
+import { madeUpPdf } from "../support/made-up-pdf.ts";
 import { type StatuteLinks } from "../support/statute-links.ts";
 import {
   chapterTarget,
@@ -338,29 +339,29 @@ describe("a table that was loaded", () => {
   });
 });
 
-// MADE UP, as get-measure-statute-links-pull.test.ts makes them up: a row for a B-Engrossed Version of SB 69 (the feed has
-// none), served with the fixture's scan (Exhibit 288141, a PDF with no text layer), so that the index holds the Version and
-// has read nothing of it. A made-up table, served from the second pull, names that Version.
-describe("a Version whose text this index could not read", () => {
+// MADE UP, as get-measure-statute-links-pull.test.ts makes them up: rows for a B-Engrossed and a C-Engrossed Version of
+// SB 69 (the feed has neither). B-Engrossed is served with the fixture's scan (Exhibit 288141, a PDF with no text layer), so
+// that the index holds the Version and has read nothing of it. C-Engrossed's file is not served until the second case, and
+// is a PDF the test builds: no Version of the fixture repeals an ORS section, and a repeal is the table's "R". A made-up
+// table, served from the pull after, names each Version.
+const versionRow = (description: string): Record<string, unknown> => ({
+  SessionKey: "2025R1",
+  MeasurePrefix: "SB",
+  MeasureNumber: 69,
+  VersionDescription: description,
+  DocumentUrl: `https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/${description}`,
+  CreatedDate: "2025-03-01T10:00:00",
+  ModifiedDate: null,
+});
+
+describe("Versions this index could not read, and one made up to repeal", () => {
   let rig: Rig;
 
   beforeAll(async () => {
     rig = await openRig({
       statutesAffectedTableUrl: tableUrlOn,
       olis: {
-        strayRows: {
-          MeasureDocuments: [
-            {
-              SessionKey: "2025R1",
-              MeasurePrefix: "SB",
-              MeasureNumber: 69,
-              VersionDescription: "B-Engrossed",
-              DocumentUrl: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/B-Engrossed",
-              CreatedDate: "2025-03-01T10:00:00",
-              ModifiedDate: null,
-            },
-          ],
-        },
+        strayRows: { MeasureDocuments: [versionRow("B-Engrossed"), versionRow("C-Engrossed")] },
         strayDocuments: {
           "/liz/2025R1/Downloads/MeasureDocument/SB69/B-Engrossed": "committee-meeting-documents/288141.pdf",
         },
@@ -372,7 +373,7 @@ describe("a Version whose text this index could not read", () => {
     await rig.close();
   });
 
-  it("lists the table's entries for it and says there is nothing to set them beside, instead of calling every one a disagreement", async () => {
+  it("lists the table's entries for a Version with no text layer and says there is nothing to set them beside, instead of calling every one a disagreement", async () => {
     rig.system.olis.serveDocument(tablePath, madeUpTable(["653.616 A §8 SB 69 B", "657B.090 A §6 SB 69 B"]));
     rig.system.clock.set(nextDay);
     await rig.system.pullAgain();
@@ -391,5 +392,46 @@ describe("a Version whose text this index could not read", () => {
     });
     // The index holds the Version, so there is nothing left over for the entries to be listed apart.
     expect(links.statutes_affected_table?.other_entries).toEqual([]);
+    // C-Engrossed is listed by the feed and its file did not come, so the table's entries for it (none yet) have no Version to go beside.
+    expect(links.versions.map((entry) => entry.label)).not.toContain("C-Engrossed");
+  });
+
+  it("sets the table's R beside a repeal the text makes, its A beside an amendment, and shows a repeal only the table has", async () => {
+    // The Version's text, one line to a row of the page: SECTION 1 repeals ORS 653.616, SECTION 2 amends ORS 653.626.
+    rig.system.olis.serveDocument(
+      "/liz/2025R1/Downloads/MeasureDocument/SB69/C-Engrossed",
+      madeUpPdf([
+        [
+          "C-ENGROSSED SENATE BILL 69 (MADE UP)",
+          "SECTION 1. ORS 653.616 is repealed.",
+          "SECTION 2. ORS 653.626 is amended to read:",
+          "653.626. An employee may use sick time.",
+        ],
+      ]),
+    );
+    rig.system.olis.serveDocument(
+      tablePath,
+      madeUpTable(["653.616 R §1 SB 69 C", "653.626 A §2 SB 69 C", "653.646 R §3 SB 69 C"]),
+    );
+    rig.system.clock.set(dayAfterThat);
+    await rig.system.pullAgain();
+
+    const links = linksOf(await rig.ask("SB 69"));
+    const made = links.versions.find((entry) => entry.label === "C-Engrossed");
+    expect(made?.statute_links.repeals.sections).toEqual([sectionTarget("ors-653.616", "1")]);
+    expect(made?.statutes_affected_table).toEqual({
+      compared: true,
+      not_compared_reason: null,
+      entries: expectedChanges({
+        amends: { sections: [sectionTarget("ors-653.626", "2")] },
+        repeals: { sections: [sectionTarget("ors-653.616", "1"), sectionTarget("ors-653.646", "3")] },
+      }),
+      confirmed: expectedChanges({
+        amends: { sections: [sectionTarget("ors-653.626", "2")] },
+        repeals: { sections: [sectionTarget("ors-653.616", "1")] },
+      }),
+      only_in_table: expectedChanges({ repeals: { sections: [sectionTarget("ors-653.646", "3")] } }),
+      only_in_parsed_links: noChanges,
+    });
   });
 });
