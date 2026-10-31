@@ -522,7 +522,10 @@ export function findMeasures(
     }
     case "section":
     case "chapter": {
-      const stored = reader.findStatuteLinked(session, target.id);
+      const stored = reader.findStatuteLinked(
+        session,
+        target.kind === "section" ? { section: target.id } : { chapter: target.id },
+      );
       groups = [groupOfCandidates("statute-link", candidatesOfStatuteLinks(stored), since)];
       if (stored.length === 0) notes.push(`The index holds no Statute Link to ${target.id}.`);
       break;

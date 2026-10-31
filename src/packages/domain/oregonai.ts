@@ -153,6 +153,22 @@ export function orsChapterOf(section: OrsSectionId): OrsChapterId {
   return `ors-chapter-${parts.chapter}${parts.letter}` as OrsChapterId;
 }
 
+const chapterIdPartsPattern = new RegExp(String.raw`^ors-chapter-(${chapterDigits})(${chapterLetter})$`, "i");
+
+/**
+ * The ids of the sections in a chapter, as a range of strings: every id from `from` up to, not including, `before`. A
+ * section id is the chapter's name, a dot and the section (`ors-657b.060`), and "/" is the character after ".", so
+ * `ors-657b.` to `ors-657b/` holds 657B's sections and none of chapter 657's (`ors-657.`) or 657A's. The reader asks the
+ * database for the range and takes no id apart itself (#16 F12).
+ */
+export function orsSectionIdRangeOf(chapter: OrsChapterId): { from: string; before: string } {
+  const match = chapterIdPartsPattern.exec(chapter);
+  // An OrsChapterId is minted by parseOrsChapterId or orsChapterIdOf, which accept only this shape.
+  if (match?.[1] === undefined) throw new Error(`Not an ORS chapter id: ${chapter}`);
+  const name = `ors-${match[1]}${match[2] ?? ""}`;
+  return { from: `${name}.`, before: `${name}/` };
+}
+
 /** The ORS chapters that have a section among these. */
 export function orsChaptersOf(sections: Iterable<OrsSectionId>): Set<OrsChapterId> {
   return new Set([...sections].map(orsChapterOf));
