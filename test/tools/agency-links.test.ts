@@ -5,8 +5,10 @@
 // Expected values are literals from the fixture's feed rows (test/fixtures/olis-2025R1/feed/), the documents as
 // `pdftotext` prints them (test/fixtures/olis-2025R1/documents/), and the registry slugs of the snapshot fixture
 // (test/fixtures/oregonai-snapshot/snapshot.json).
+import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
+import { snapshotFixturePath } from "../support/oregonai-snapshot.ts";
 import { startSystem, type System } from "../support/system.ts";
 
 let system: System;
@@ -307,6 +309,27 @@ describe.for(eras)("get_measure's Agency Links for a %s client", (era) => {
           1,
         ],
       ]);
+    });
+  });
+
+  // The ticket's fourth box: "Agency ids are OregonAI registry slugs". The registry is the snapshot fixture's `agencies`
+  // (test/fixtures/oregonai-snapshot/snapshot.json, 114 rows), whose `slug` is OregonAI's id for the Agency
+  // (`bureau-of-labor-and-industries`). Every Agency Link of the Measures of the fixture names one of them, and none
+  // is a name: "Bureau of Labor and Industries" is the unit a statement writes, not the id.
+  describe("Agency ids", () => {
+    it("are slugs of the OregonAI registry, for every Measure of the fixture", async () => {
+      const snapshot: unknown = JSON.parse(readFileSync(snapshotFixturePath, "utf8"));
+      const registry = new Set((snapshot as { agencies: { slug: string }[] }).agencies.map((agency) => agency.slug));
+      const measures = ["SB 64", "SB 69", "SB 121", "SB 921", "SB 983", "HB 3027", "HB 3131", "HB 3795"];
+
+      const named = new Set<string>();
+      for (const measure of measures) {
+        for (const agency of (await agencyLinksOf(measure)).agencies) named.add(agency.agency_id);
+      }
+
+      expect(named.size).toBeGreaterThan(20);
+      expect([...named].filter((id) => !registry.has(id))).toEqual([]);
+      expect(named.has("bureau-of-labor-and-industries")).toBe(true);
     });
   });
 

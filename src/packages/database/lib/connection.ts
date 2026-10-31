@@ -273,8 +273,11 @@ const schema = `
     unit TEXT NOT NULL,
     PRIMARY KEY (document_id, ordinal)
   ) STRICT;
-  -- find_measures asks which files have a Statute Link to an ORS section or chapter.
+  -- find_measures asks which files have a Statute Link to an ORS section or chapter, and which Testimony an Agency's
+  -- Organization matched: it goes from the link to the documents that have the file, and from the Agency to its rows.
   CREATE INDEX IF NOT EXISTS statute_link_target ON statute_link (target_id);
+  CREATE INDEX IF NOT EXISTS document_content ON document (content_hash, kind);
+  CREATE INDEX IF NOT EXISTS testimony_agency ON testimony (agency_id);
   -- The analysis documents the feed has listed for each Measure (ADR-0013). Rows are kept, never replaced: the
   -- count of the ones the store does not hold reads the listing state (feed_row_state) of each (ADR-0030).
   CREATE TABLE IF NOT EXISTS analysis_listing (
