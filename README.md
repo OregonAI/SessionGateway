@@ -85,6 +85,95 @@ means every code resolved. An entry in the alias file needs evidence from the fe
 file's `about` entry). The pull also reads the committee members, and the members of a task force are not all
 Legislators, so their names are listed here as unresolved (`CommitteeMembers`) and are not an error.
 
+## Building in a Claude cloud session
+
+A ticket can be built in a Claude Code cloud session (claude.ai/code) as well as on a local checkout, with the
+same gate. A session starts from a fresh clone on a fresh Ubuntu 24.04 VM, so three things are set once in the
+session's cloud environment (Anthropic's [cloud environment
+docs](https://code.claude.com/docs/en/cloud-environments), read 2026-10-31):
+
+- **Node 26.** The image has Node 20, 21 and 22 (`/opt/node20` to `/opt/node22`, with 22 on `PATH`), and
+  `package.json` wants `>=26.13.0 <27`: Node runs the `.ts` source with no build step (ADR-0008). Install it
+  with the environment's setup script, which runs as root before the session starts and is kept in the
+  environment's cache. A script that exits non-zero stops the session from starting, so a download that fails
+  its hash never runs.
+
+  ```bash
+  #!/bin/bash
+  # Node 26.13.0 for SessionGateway (package.json: "node": ">=26.13.0 <27"). The hash is this file's line in
+  # the release's signed SHASUMS256.txt.
+  set -euo pipefail
+  v=26.13.0
+  f=node-v$v-linux-x64.tar.gz
+  if [ ! -x /opt/node26/bin/node ]; then
+    curl -fsSL "https://nodejs.org/dist/v$v/$f" -o "/tmp/$f"
+    echo "5848553868b402d3fabb5b09270649977780a390f832155721025a08b5104455  /tmp/$f" | sha256sum -c -
+    mkdir -p /opt/node26
+    tar -xzf "/tmp/$f" -C /opt/node26 --strip-components=1
+    rm "/tmp/$f"
+  fi
+  /opt/node26/bin/node --version
+  ```
+
+  The signature on that `SHASUMS256.txt` checks against Node release key
+  `C82FA3AE1CBEDC6BE46B9360C43CEC45C17AB93C` from [nodejs/release-keys](https://github.com/nodejs/release-keys)
+  (checked 2026-10-31). Node 26.13.0 ships npm 11.20.0, which knows the settings in `.npmrc`
+  (`strict-allow-scripts`, `min-release-age`, `allow-git`, `allow-remote`). Install with it, never with the
+  image's npm.
+- **Network.** Choose Custom access, keep "Also include default list of common package managers" (it has
+  `registry.npmjs.org` and `nodejs.org`), and add these two lines to the allowed domains:
+
+  ```
+  huggingface.co
+  *.hf.co
+  ```
+
+  `npm run model:fetch` downloads the pinned model (ADR-0026) from huggingface.co, which hands the 34 MB ONNX
+  file on to a CDN host under `hf.co` (`us.aws.cdn.hf.co` on 2026-10-31). `npm ci` reads only the npm
+  registry, because `.npmrc` refuses git and remote-tarball dependencies. `npm run check` needs no network: the
+  suite reaches only localhost. No OLIS host is on the list, and none should be added (see below).
+- **Command time.** Claude waits at most 10 minutes for a command in the foreground. `npm run check` took
+  11 min 12 s on the CI runner (run 41209641029, 649 s of it the tests), and a cloud session has about 4 vCPUs,
+  so give the check room: add `BASH_MAX_TIMEOUT_MS=1800000` to the environment's variables, or have Claude run
+  it in the background.
+
+Then, from the clone's root. Claude's commands do not keep an exported variable from one to the next, so each
+one puts Node 26 first on `PATH`:
+
+```
+PATH=/opt/node26/bin:$PATH node --version   # v26.13.0
+PATH=/opt/node26/bin:$PATH npm ci
+PATH=/opt/node26/bin:$PATH npm run model:fetch
+PATH=/opt/node26/bin:$PATH npm run check
+```
+
+Working on a ticket there differs in three ways
+([cloud session docs](https://code.claude.com/docs/en/claude-code-on-the-web)):
+
+- The repository is private, so the Claude GitHub App must be installed on the OregonAI organization (or
+  GitHub connected with `/web-setup`).
+- The session's GitHub proxy refuses the `gh` commands that use GraphQL, `gh issue` and `gh pr` among them.
+  Read a ticket with `gh api repos/OregonAI/SessionGateway/issues/<N>`, and open the PR with the session's
+  Create PR button or `gh api repos/OregonAI/SessionGateway/pulls`. A session pushes branches only, never a tag
+  or a deletion.
+- The mattpocock skills that the build flow uses (`/implement`, `/tdd`, `/code-review`, `/pr`) are a plugin each
+  person installs, and a cloud session installs no plugins. The session follows the rules in the CLAUDE.md
+  files without them.
+
+Three things stay on a local machine:
+
+- **The OLIS cache** (`.cache/olis-2025R1/`, gitignored). The Acceptable Use Agreement allows a full refresh once
+  a day, between 5 pm and 6 am Pacific, and grants no redistribution license (ADR-0005,
+  `docs/research/olis-odata.md`). So the cache is not copied into a cloud environment, and a session never pulls
+  the feed.
+- **The checkout of `executive-regulatory-frameworks`** that the snapshot build reads (see "Building the
+  OregonAI snapshot").
+- **The fixture build's downloads**, cached under `.cache/` with their retrieval times (`test/fixtures/CLAUDE.md`).
+
+So three kinds of ticket are built on a local checkout, not in a cloud session: a snapshot rebuild (such as
+#49), a fixture rebuild (such as #54), and anything that reads the OLIS cache, such as the 2025R1 backfill (#24)
+or an evaluation run against a full build (#23).
+
 ## Building the OregonAI snapshot
 
 The agency registry, the list of ORS section ids and the table of which Agencies' rules implement each
