@@ -92,7 +92,7 @@ const itemOutput = z.object({
   fetched: z
     .boolean()
     .describe(
-      "True when this index holds the file, so get_document serves the id. False when the feed this index last read lists the Testimony but the file is not here yet (a failed or not yet reached fetch): get_document then answers with an error that says the next pull fetches it, and source_url is where to read it.",
+      "True when this index holds the file, so get_document serves the id. False when the file is not here. While the feed lists the Testimony (a failed or not yet reached fetch), get_document answers with an error that says the next pull fetches it. Once the row is flagged no_longer_listed, no pull will fetch the file, since the feed does not list the row, and get_document answers with an error that says so. source_url is where to read it.",
     ),
   has_text_layer: z
     .boolean()

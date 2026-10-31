@@ -148,6 +148,12 @@ export type IndexReader = {
    * any pull, and the store holds the file only if it fetched it while the feed listed it.
    */
   testimonyListing(id: DocumentId | AmendmentId): Listing | undefined;
+  /**
+   * When the feed no longer lists the row behind a document id or a Proposed Amendment id, the time it last did:
+   * undefined when the feed lists it, or the index knows no such row. For an id `findDocument` does not resolve,
+   * because no pull fetched the file while the feed listed it, and none will now.
+   */
+  findNoLongerListed(id: DocumentId | AmendmentId): Extract<Listing, { listed: false }> | undefined;
   /** Whether the feed still lists a Measure the index holds, and when it last did. */
   measureListing(key: MeasureKey): Listing;
   close(): void;
@@ -848,6 +854,10 @@ export function openIndexReader(path: string): IndexReader {
     testimonyListing(id) {
       const row = selectTestimonyListing.get(id);
       return row === undefined ? undefined : listingOf(row);
+    },
+    findNoLongerListed(id) {
+      const listing = listingOf(selectDocumentListing.get(id) ?? selectPostingsListing.get(id));
+      return listing.listed ? undefined : listing;
     },
     measureListing(key) {
       return listingOf(selectMeasureListing.get(key.session, measureIdOf(key)));
