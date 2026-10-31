@@ -15,6 +15,3 @@ ADR-0015 reads a file's Statute Links once, and a deployment that changes its sn
 
 - A snapshot change costs one parse of every stored Version and posting, on top of ADR-0027's reading of the Agency Links. The snapshot changes only when a deployment is given a new one.
 - A parser fix still rebuilds the database, or deletes a file's reading, as ADR-0015 says: only the snapshot's commit triggers this step.
-- The Statutes Affected Table's series (ADR-0034) are expanded against the same section list, so the held table is read again when the snapshot's commit differs from the one it was read with, though its bytes are the same. A pull that cannot fetch the table leaves it as it was (ADR-0034), so it keeps the older expansion until a pull that can.
-- `session_overview` reports a snapshot only when a pull has read every Statute Link and Agency Link with it: the snapshot is recorded as the pull's last write, and a pull that stops earlier leaves the last finished pull's snapshot.
-- Rewriting a file's Statute Links makes every document that shares the file unread for Agency Links, so the two stamps follow by dependency and not only by moving together.
