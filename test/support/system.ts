@@ -16,6 +16,7 @@ import { createFakeEmbedder } from "./fake-embedder.ts";
 import { startFakeOlis, type FakeOlis, type FakeOlisOptions } from "./fake-olis.ts";
 import { snapshotFixturePath } from "./oregonai-snapshot.ts";
 import { modelPath } from "./real-embedder.ts";
+import { templateCacheVariable } from "./template-cache.ts";
 import { createTempDatabase, type TempDatabase } from "./temp-database.ts";
 
 /** Seam 1 runs under a zone other than Pacific, so code that relies on local time fails (test/CLAUDE.md). */
@@ -105,7 +106,7 @@ export type SystemTemplate = {
 };
 
 /** Where the templates of one test run are kept for every file to share: made by the global setup, removed at its end. */
-const cacheVariable = "SESSION_GATEWAY_TEMPLATE_CACHE";
+const cacheVariable = templateCacheVariable;
 
 /**
  * The name of the database a system's options build, or undefined when they build one that is not worth keeping. It
@@ -150,7 +151,12 @@ async function buildDirectory(options: SystemOptions, key: string | undefined): 
   try {
     const source = new DatabaseSync(first.database.path, { timeout: 5000 });
     try {
-      source.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+      // The pragma reports a checkpoint that another connection blocked as a row, not as an error: the copy leaves out
+      // the WAL, so a page left in it would go missing from every copy.
+      const row = source.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get();
+      if (row?.["busy"] !== 0 || row["log"] !== row["checkpointed"]) {
+        throw new Error(`The template's WAL was not fully checkpointed: ${JSON.stringify(row)}`);
+      }
     } finally {
       source.close();
     }
@@ -159,10 +165,11 @@ async function buildDirectory(options: SystemOptions, key: string | undefined): 
       recursive: true,
       filter: (path) => !path.endsWith("-wal") && !path.endsWith("-shm"),
     });
-    await first.stop();
   } catch (error) {
     rmSync(directory, { recursive: true, force: true });
     throw error;
+  } finally {
+    await first.stop();
   }
   if (target === undefined) {
     // A directory of this process alone: nothing else removes it.
@@ -173,9 +180,11 @@ async function buildDirectory(options: SystemOptions, key: string | undefined): 
   }
   try {
     renameSync(directory, target);
-  } catch {
-    // Another file's worker built the same database first and its rename won: use that one.
+  } catch (error) {
+    // Another file's worker built the same database first and its rename won: use that one. Any other failure is real.
+    const code = (error as NodeJS.ErrnoException).code;
     rmSync(directory, { recursive: true, force: true });
+    if (code !== "ENOTEMPTY" && code !== "EEXIST") throw error;
   }
   return target;
 }

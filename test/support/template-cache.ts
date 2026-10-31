@@ -5,9 +5,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+/** The variable that carries the folder to the workers; test/support/system.ts reads it. */
+export const templateCacheVariable = "SESSION_GATEWAY_TEMPLATE_CACHE";
+
 export default function setup(): () => void {
   const folder = mkdtempSync(join(tmpdir(), "session-gateway-templates-"));
-  process.env["SESSION_GATEWAY_TEMPLATE_CACHE"] = folder;
+  process.env[templateCacheVariable] = folder;
   return () => {
     rmSync(folder, { recursive: true, force: true });
   };
