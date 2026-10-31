@@ -40,6 +40,14 @@ The worker resolves the Legislator Code of every vote entry through the resolver
 - The worker writes a `legislator_code` table (code to Legislator id) beside the other tables, from the resolver, because the server has neither the alias file nor the resolver.
 - `src/bin/server.ts` creates and passes down what the lookup needs, as `src/bin/ingest.ts` does for the worker: `fetch`, the shutdown signal, the OLIS base URL and the bound on a lookup, with a callback that logs a lookup that failed.
 
+**Extended by ticket #22, the Statutes Affected Table (ADR-0033, ADR-0034).** No package is added.
+- `statute-links` gains one function on its existing entry point, `parseStatutesAffectedTable`: the table's text in, entries and the lines it could not read out, pure like `parseStatuteLinks`, with seam-2 tables of its own.
+- `domain` gains no entry point. `statute-links.ts` holds the table's action letters and their kinds (`tableActions`, `statuteLinkKindOfTableAction`), the entry (`StatutesAffectedEntry`), the Version a level names (`versionDescriptionOfTableLevel`) and the table as held for one Measure.
+- `database` creates `statutes_affected_table` (the copy, kept like a document: address, retrieval time, content hash, text) and `statutes_affected_entry`; `writer.ts` reads the hash and replaces both in one transaction, and `reader.ts` answers `statutesAffectedTableOf(key)`.
+- `olis-client` gains `downloadFile(url)` beside `downloadDocument`, with the same retries, for a file that is not an OLIS document; a failed `Download` now carries the HTTP `status` of its last answer, so the worker can tell a 404 from a failing server.
+- `config` adds the worker's optional `STATUTES_AFFECTED_TABLE_URL`; `ingest` fetches the table in each full pull (`lib/statutes-affected-table.ts`) and adds a `statutes_affected_table` block to the build report when the variable is set.
+- `mcp-server` shows the table in `get_measure` (`lib/statutes-affected-table.ts`), beside the Statute Links by source and unchanged from before when the index holds no table.
+
 **Extended by ticket #9, search (ADR-0025, ADR-0026).**
 - Two packages are added. `embedder` is the interface the worker and the server are given (`index.ts`), its real implementation (`onnx.ts`, onnxruntime-node and `@huggingface/tokenizers`) and the lock of the pinned model (`lock.ts`). `search` is pure: `passages.ts`, `documents.ts`, `text.ts`, `vectors.ts` and `ranking.ts` import `domain` and `node:crypto` and nothing else, so the worker and the server share them.
 - `domain` gains two entry points. `search.ts` holds the types of what the index keeps (`SearchEntry`, `Passage`); `citations.ts` reads Measure, Proposed Amendment and ORS citations out of a question as the ids they stand for, with the functions that already mint those ids. `DocumentLink` gains `date`, which the OLIS client sets (the meeting's start for anything posted to or for a meeting, else the row's `CreatedDate`).

@@ -41,7 +41,7 @@ The text a PDF carries, as opposed to a picture of text. A scan or a photograph 
 _Avoid_: OCR, which reads a picture and is out of scope
 
 **Build report**:
-What the ingest worker writes after a full pull, beside the database (spec #1, story 54): `build-report.json`, the sets the pull read with the rows the feed counted, the rows that came and how many the Index lists (ADR-0030), the Documents with no Text layer, the Documents it could not get or read, and what it made of the Passages it stored (how many were embedded and how many reused, ADR-0025), and `unresolved-legislator-codes.json`, the Unresolved Legislator Codes. For the Committee members it holds, the report lists each committee's rows by Legislator Code, with the unresolved ones. A refused pull writes a report of its own, with the sets and which were short.
+What the ingest worker writes after a full pull, beside the database (spec #1, story 54): `build-report.json`, the sets the pull read with the rows the feed counted, the rows that came and how many the Index lists (ADR-0030), the Documents with no Text layer, the Documents it could not get or read, and what it made of the Passages it stored (how many were embedded and how many reused, ADR-0025), what it made of the Statutes Affected Table when the deployment names one (ADR-0034), and `unresolved-legislator-codes.json`, the Unresolved Legislator Codes. For the Committee members it holds, the report lists each committee's rows by Legislator Code, with the unresolved ones. A refused pull writes a report of its own, with the sets and which were short.
 
 **As of**:
 When the Index was last refreshed from OLIS: the moment the latest completed full pull began, shown in Pacific time with its UTC offset. Every result carries it.
@@ -235,7 +235,15 @@ The words of a Measure's text that say what it does to the statutes: "Relating t
 _Avoid_: title
 
 **Statutes Affected Table**:
-Legislative Counsel's official table of the ORS sections each Measure amends, repeals or adds to, published after the Session ("artables").
+Legislative Counsel's official table of the ORS sections each Measure amends, repeals or adds to, published after the Session ("artables", `artables2025R1.pdf`: 64 pages dated 8/19/2025). The worker fetches it from the address `STATUTES_AFFECTED_TABLE_URL` names, reads it again only when its bytes change, and keeps the last copy it read when the server stops giving it (ADR-0034). It is a second source for Statute Links: `get_measure` sets its entries beside the links parsed from the Version each names (ADR-0033). It is not a Document.
+_Avoid_: artables, the cross-reference table
+
+**Table entry**:
+One row of the Statutes Affected Table's ORS section, read into the Measure, its engrossing level, an ORS section or chapter, the table's letter ("A", "R" or "Add") and the measure section. A row that omits the ORS number (a continuation row) belongs to the last one above it, and a series ("9.005 to 9.757") is one entry for each section of it that the snapshot lists. The level names a Version: "SB 69 A" is the A-Engrossed Version of SB 69 and no letter is the Introduced Version; a longer level such as "BCC" names none.
+_Avoid_: table link, table row, when an entry is meant
+
+**Confirmed link**:
+A Statute Link that amends, repeals or adds to, which the parsed text and a Table entry both have: the same ORS target, the same kind (the table's "A" is amends, "R" repeals, "Add" adds to) and the same measure section. A disagreement is the other two cases, a Table entry with no such parsed link and a parsed link with no such entry, each shown as its source has it. Citations are never compared.
 
 **Agency**:
 A state government unit as the OregonAI agency registry names it.

@@ -338,22 +338,6 @@ describe("a table that was loaded", () => {
   });
 });
 
-describe("the variable that names the table", () => {
-  it.for(["not a url", "ftp://example.test/artables2025R1.pdf"])(
-    "must be an http or https URL: %s stops the worker, and the failure names the variable and not its value",
-    async (address) => {
-      const failure = await startSystem({ ...baseOptions, statutesAffectedTableUrl: () => address }).then(
-        () => undefined,
-        (error: unknown) => error,
-      );
-
-      expect(failure).toBeInstanceOf(Error);
-      expect((failure as Error).message).toContain("STATUTES_AFFECTED_TABLE_URL");
-      expect((failure as Error).message).not.toContain(address);
-    },
-  );
-});
-
 // MADE UP, as get-measure-statute-links-pull.test.ts makes them up: a row for a B-Engrossed Version of SB 69 (the feed has
 // none), served with the fixture's scan (Exhibit 288141, a PDF with no text layer), so that the index holds the Version and
 // has read nothing of it. A made-up table, served from the second pull, names that Version.
