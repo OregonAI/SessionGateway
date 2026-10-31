@@ -30,6 +30,7 @@ A ticket is done when all of these hold:
 - `npx vitest run <file>`: one test file, for the inner loop.
 - `npm run format`: rewrites src, test and scripts with Prettier. `test/fixtures/` is never formatted.
 - `npm run license:check`: the licence allowlist over the production tree (CI's supply-chain job; it needs no network).
+- `PATH=/opt/node26/bin:$PATH <command>`: how every command runs in a Claude cloud session, where `gh issue` and `gh pr` are refused (use `gh api`). The README's "Building in a Claude cloud session" sets the environment up and lists the tickets that stay on a local checkout.
 
 ## Toolchain
 
