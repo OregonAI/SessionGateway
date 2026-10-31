@@ -14,8 +14,14 @@ import type { Timestamp } from "#/packages/time/pacific.ts";
 
 const numbersInOrder = new Intl.Collator("en", { numeric: true });
 
+/**
+ * How many sub-units a derived link through them names. A Department can have many (the Department of Agriculture has 24
+ * in the registry, 22 of them implementing chapter 192), and the answer is bounded (#16 F6).
+ */
+const THROUGH_SHOWN = 2;
+
 /** The fields of an Agency Link's evidence that belong to its kind. Only the fields of its kind are present. */
-const evidenceFields = {
+export const evidenceFieldsOutput = {
   unit: z
     .string()
     .optional()
@@ -64,30 +70,22 @@ const evidenceFields = {
     .array(z.string())
     .optional()
     .describe(
-      "For \"derived\", when the Agency has sub-units: the slugs of the sub-units whose rules implement the chapter, through which the Agency has this link. Absent when the chapter's rules are the Agency's own, or the Agency is itself the sub-unit.",
+      `For "derived", when the Agency has sub-units: the slugs of the first ${THROUGH_SHOWN} sub-units whose rules implement the chapter, through which the Agency has this link (through_total says how many). Absent when the chapter's rules are the Agency's own, or the Agency is itself the sub-unit.`,
+    ),
+  through_total: z
+    .number()
+    .int()
+    .optional()
+    .describe(
+      'For "derived", with through: how many sub-units implement the chapter, of which through lists the first few.',
     ),
 };
 
-/** What one Agency Link's evidence says, whatever it sits on, with the document it was read from. */
-export const evidenceOutput = z.object({
-  kind: z
-    .enum(agencyEvidenceKinds)
-    .describe(
-      'Why the link exists: "derived" (a Statute Link that amends, repeals or adds to a section or chapter whose rules the Agency implements), "fiscal-impact-statement" (the Agency is a Government Unit Affected in a Fiscal Impact Statement), "named-in-text" (the Agency\'s name or an alias is in the text of a Version or Proposed Amendment) or "testimony" (the Organization of a Testimony is the Agency\'s name or an alias).',
-    ),
-  document_id: z
-    .string()
-    .describe(
-      "The document the evidence was read from: the Fiscal Impact Statement, the Version, the posting of the Proposed Amendment or the Testimony. Give it to get_document.",
-    ),
-  source_url: z.string().describe("Where the Legislature publishes that document."),
-  ...evidenceFields,
-});
-
-export type EvidenceOutput = z.infer<typeof evidenceOutput>;
+/** The evidence fields of one Agency Link. */
+export type EvidenceFields = z.infer<z.ZodObject<typeof evidenceFieldsOutput>>;
 
 /** The fields of the evidence that are its kind's own. */
-function kindFields(evidence: AgencyEvidence): Partial<EvidenceOutput> {
+export function evidenceFieldsOf(evidence: AgencyEvidence): EvidenceFields {
   switch (evidence.kind) {
     case "fiscal-impact-statement":
       return { unit: evidence.unit };
@@ -104,21 +102,13 @@ function kindFields(evidence: AgencyEvidence): Partial<EvidenceOutput> {
           measure_section: evidence.link.measureSection,
         },
         links_in_chapter: evidence.linksInChapter,
-        ...(evidence.through === undefined ? {} : { through: evidence.through }),
+        ...(evidence.through === undefined
+          ? {}
+          : { through: evidence.through.slice(0, THROUGH_SHOWN), through_total: evidence.through.length }),
       };
     default:
       return evidence satisfies never;
   }
-}
-
-/** One Agency Link's evidence as an agent sees it. */
-export function evidenceShown(link: StoredAgencyLink): EvidenceOutput {
-  return {
-    kind: link.evidence.kind,
-    document_id: link.document.id,
-    source_url: link.document.sourceUrl,
-    ...kindFields(link.evidence),
-  };
 }
 
 /** The order links are listed in: by kind (derived first), then the node, then the document the evidence was read from. */
@@ -185,7 +175,7 @@ const exampleOutput = z.object({
       "The document the evidence was read from: the Fiscal Impact Statement, the Version, the posting of the Proposed Amendment or the Testimony. Give it to get_document. Its source_url is in documents.",
     ),
   ...nodeFields,
-  ...evidenceFields,
+  ...evidenceFieldsOutput,
 });
 
 const kindEvidenceOutput = z.object({
@@ -309,7 +299,7 @@ export function agencyLinksOf(
         if (ofKind.length === 0) return [];
         const examples = ofKind.slice(0, AGENCY_LINK_EXAMPLES).map((link) => {
           named.set(link.document.id, link.document.sourceUrl);
-          return { document_id: link.document.id, ...nodeOutput(link.node), ...kindFields(link.evidence) };
+          return { document_id: link.document.id, ...nodeOutput(link.node), ...evidenceFieldsOf(link.evidence) };
         });
         return [{ kind, count: ofKind.length, examples }];
       }),

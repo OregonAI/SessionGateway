@@ -15,26 +15,33 @@ import {
 } from "#/packages/domain/oregonai.ts";
 import { compareMeasureSections, statuteLinkKinds } from "#/packages/domain/statute-links.ts";
 import { compareTimestamps, readTimestamp, type Timestamp } from "#/packages/time/pacific.ts";
-import { compareLinks, evidenceOutput, evidenceShown, gatherRepeats, type GatheredLink } from "./agency-links.ts";
+import {
+  compareLinks,
+  evidenceFieldsOf,
+  evidenceFieldsOutput,
+  gatherRepeats,
+  type EvidenceFields,
+  type GatheredLink,
+} from "./agency-links.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 import { noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 
 /**
- * How many items one page lists, across the groups (the ticket asks for pages of 50, as `testimony` has). Measured
- * 2026-10-30 through the tool over the whole fixture: an item is 650 to 900 characters of JSON with its evidence (the
- * Bureau of Labor and Industries' 12 items are 10,648 characters, the Department of Human Services' 20 are 13,366), so a
- * full page is about 33,000 to 45,000 characters, between one and a half and two parts of `get_document`
- * (20,000 each) and more than a page of `testimony` (about 25,000). The Session is some 100 times the fixture, so an
- * Agency with thousands of items is likely and the answer has to be paged.
+ * How many items one page lists, across the groups. A full page, with every item at its evidence cap, is to stay at or
+ * under about 25,000 characters (#16 F6), which is what a page of `testimony` is and a little over one part of
+ * `get_document` (20,000). The size of an item is its own fields (about 450 characters) and its evidence: at the cap of
+ * MAX_EVIDENCE examples, the largest kinds of item that rows can be made up to give are measured in
+ * test/tools/find-measures-pull.test.ts ("stays inside a page's size") and in ADR-0028. The Session is some 100 times the
+ * fixture, so an Agency with thousands of items is likely and the answer has to be paged.
  */
-export const FIND_MEASURES_PAGE_SIZE = 50;
+export const FIND_MEASURES_PAGE_SIZE = 12;
 const PAGE_SIZE = FIND_MEASURES_PAGE_SIZE;
 
 /**
- * How many pieces of evidence an item lists. A Measure can have dozens of Testimony from one Agency, and a long Version
- * reaches many chapters; the item says how many there are in `evidence_total`.
+ * How many examples of evidence an item lists, the newest first. A Measure can have dozens of Testimony from one Agency,
+ * and a long Version reaches many chapters; each kind says how many there are in `count` and how many the cut left out.
  */
-export const FIND_MEASURES_MAX_EVIDENCE = 10;
+export const FIND_MEASURES_MAX_EVIDENCE = 3;
 const MAX_EVIDENCE = FIND_MEASURES_MAX_EVIDENCE;
 
 export const findMeasuresInput = z.object({
@@ -73,31 +80,58 @@ export const findMeasuresInput = z.object({
 const groupKinds = [...agencyEvidenceKinds, "statute-link"] as const;
 type GroupKind = (typeof groupKinds)[number];
 
+/** The kinds of evidence an item has: an Agency Link's, or for an ORS section or chapter what a Statute Link does to its target. */
+const evidenceKinds = [...agencyEvidenceKinds, ...statuteLinkKinds] as const;
+type EvidenceKind = (typeof evidenceKinds)[number];
+
 /**
- * An item's evidence: an Agency Link's (agency-links.ts), or for an ORS section or chapter a Statute Link to it, with the
- * kind of the link, the target it points at and the measure sections it is read in.
+ * One piece of evidence, as an example: an Agency Link's (agency-links.ts), or for an ORS section or chapter a Statute Link
+ * to it, with the target it points at and the measure sections it is read in. The document it was read from is named by its
+ * id; its source_url is in `documents`.
  */
-const findEvidenceOutput = evidenceOutput.extend({
-  kind: z
-    .enum(groupKinds)
+const exampleOutput = z.object({
+  document_id: z
+    .string()
     .describe(
-      'Why the item is here. For an Agency: "derived", "fiscal-impact-statement", "named-in-text" or "testimony" (see the groups). For an ORS section or chapter: "statute-link".',
+      "The document the evidence was read from: the Fiscal Impact Statement, the Version, the posting of the Proposed Amendment or the Testimony. Give it to get_document. Its source_url is in documents.",
     ),
-  link_kind: z
-    .enum(statuteLinkKinds)
-    .optional()
-    .describe('For "statute-link": what the link does to its target: amends, repeals, adds-to or cites.'),
+  ...evidenceFieldsOutput,
   target_id: z
     .string()
     .optional()
     .describe(
-      'For "statute-link": the ORS section (ors-653.616) or chapter (ors-chapter-657b) the link points at. OregonAI has no page for a chapter.',
+      "For a Statute Link to an ORS section or chapter: the ORS section (ors-653.616) or chapter (ors-chapter-657b) the link points at. OregonAI has no page for a chapter.",
     ),
   measure_sections: z
     .array(z.string().nullable())
     .optional()
     .describe(
-      'For "statute-link": the measure sections the link is read in, as the text prints them, in order; null when the text has no numbered sections.',
+      "For a Statute Link to an ORS section or chapter: the measure sections the link is read in, as the text prints them, in order; null when the text has no numbered sections.",
+    ),
+  created_at: z
+    .string()
+    .optional()
+    .describe(
+      "When OLIS created the row of the document the evidence was read from, in Pacific time with its UTC offset; for a Proposed Amendment posted to more than one meeting, of the latest posting that holds it. Absent when the feed gives no time.",
+    ),
+});
+
+/** An item's evidence of one kind: how many pieces there are, and the newest of them as examples. */
+const evidenceGroupOutput = z.object({
+  kind: z
+    .enum(evidenceKinds)
+    .describe(
+      'What the evidence is. For an Agency: "derived", "fiscal-impact-statement", "named-in-text" or "testimony" (see the groups). For an ORS section or chapter: what the Statute Link does to its target, "amends", "repeals", "adds-to" or "cites".',
+    ),
+  count: z
+    .number()
+    .int()
+    .describe("How many pieces of evidence of this kind the item has (with since, only those posted at or after it)."),
+  left_out: z.number().int().describe("How many of them the cut left out: count less the length of examples."),
+  examples: z
+    .array(exampleOutput)
+    .describe(
+      `The newest pieces of the item's evidence, ${MAX_EVIDENCE} at the most across all its kinds. Where each piece is published is in documents.`,
     ),
 });
 
@@ -126,22 +160,12 @@ const itemOutput = z.object({
     .string()
     .nullable()
     .describe(
-      "When OLIS last posted it. It is posted_at, except for a Proposed Amendment posted to more than one meeting: the latest posting. since is compared with this.",
+      "When OLIS last posted it. It is posted_at, except for a Proposed Amendment posted to more than one meeting, or an item with evidence from more than one document: the latest posting. since is compared with this.",
     ),
-  evidence_total: z
-    .number()
-    .int()
-    .describe(
-      "How many pieces of evidence the item has (with since, only those posted at or after it), of which evidence lists the newest.",
-    ),
-  evidence_left_out: z
-    .number()
-    .int()
-    .describe("How many pieces of evidence the cut left out: evidence_total less the length of evidence."),
   evidence: z
-    .array(findEvidenceOutput)
+    .array(evidenceGroupOutput)
     .describe(
-      `The item's evidence, the newest first, at most ${MAX_EVIDENCE}. With since, only evidence posted at or after it.`,
+      "The item's evidence by kind, each kind with its count and its newest examples. With since, only evidence posted at or after it.",
     ),
 });
 
@@ -174,16 +198,27 @@ export const findMeasuresOutput = z.object({
     .describe(
       "The items by what ties them to the Agency, in a fixed order. An item is in a group for each way it is tied, so one Version can be in more than one.",
     ),
+  documents: z
+    .array(
+      z.object({
+        id: z.string().describe("The document's id: a document_id of the examples."),
+        source_url: z.string().describe("Where the Legislature publishes the document."),
+      }),
+    )
+    .describe("Each document the examples of this page name, once, with where the Legislature publishes it."),
   notes: z.array(z.string()).describe("What the answer has nothing for, in words. Empty when there is nothing to say."),
   as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
   notice: z.string().describe("A reminder that this is not the official record."),
 });
 
 export type FindMeasuresOutput = z.infer<typeof findMeasuresOutput>;
-/** An item as the tool builds it: the times are Timestamps, which the answer carries as text. */
-type Item = Omit<z.infer<typeof itemOutput>, "posted_at" | "last_posted_at"> & {
+type ItemOutput = z.infer<typeof itemOutput>;
+type ExampleOutput = z.infer<typeof exampleOutput>;
+/** An item as the tool builds it: the times are Timestamps, and it knows the documents its examples name. */
+type Item = Omit<ItemOutput, "posted_at" | "last_posted_at"> & {
   posted_at: Timestamp | null;
   last_posted_at: Timestamp | null;
+  documents: { id: string; sourceUrl: string }[];
 };
 
 /** Why a call cannot be met, or the answer. Expected outcomes are values; the MCP edge decides they are tool errors. */
@@ -204,8 +239,6 @@ const groupDescriptions: Record<GroupKind, string> = {
 
 const numbersInOrder = new Intl.Collator("en", { numeric: true });
 
-type Evidence = z.infer<typeof findEvidenceOutput>;
-
 /** What to call a node: "SB 69", "SB 69 A-Engrossed", "SB 69-2". */
 function titleOf(node: LinkedNode): string {
   const citation = citationOfMeasureId(measureIdOf(node.measure));
@@ -218,7 +251,12 @@ function titleOf(node: LinkedNode): string {
 }
 
 /** One piece of an item's evidence, with when OLIS created each document that holds it (none when the feed gave no time). */
-type Piece = { evidence: Evidence; createdAt: Timestamp[] };
+type Piece = {
+  kind: EvidenceKind;
+  document: { id: string; sourceUrl: string };
+  fields: EvidenceFields & Pick<ExampleOutput, "target_id" | "measure_sections">;
+  createdAt: Timestamp[];
+};
 
 /** What makes one node an item: the pieces of evidence, in their order. */
 type Candidate = { node: LinkedNode; pieces: Piece[] };
@@ -237,7 +275,12 @@ function candidatesOfLinks(links: readonly GatheredLink[]): Candidate[] {
   const byNode = new Map<string, Candidate>();
   for (const { link, createdAt } of links.toSorted((a, b) => compareLinks(a.link, b.link))) {
     const own = byNode.get(link.node.id) ?? { node: link.node, pieces: [] };
-    own.pieces.push({ evidence: evidenceShown(link), createdAt });
+    own.pieces.push({
+      kind: link.evidence.kind,
+      document: { id: link.document.id, sourceUrl: link.document.sourceUrl },
+      fields: evidenceFieldsOf(link.evidence),
+      createdAt,
+    });
     byNode.set(link.node.id, own);
   }
   return [...byNode.values()];
@@ -251,25 +294,21 @@ function candidatesOfLinks(links: readonly GatheredLink[]): Candidate[] {
  * another file does not date it (#16 F2).
  */
 function candidatesOfStatuteLinks(stored: readonly StoredStatuteLinked[]): Candidate[] {
-  type Entry = { evidence: Evidence; sections: (string | null)[]; createdAt: Map<string, Timestamp> };
+  type Entry = Piece & { sections: (string | null)[]; createdAtById: Map<string, Timestamp> };
   const byNode = new Map<string, { node: LinkedNode; entries: Map<string, Entry> }>();
   for (const found of stored.toSorted((a, b) => numbersInOrder.compare(a.document.id, b.document.id))) {
     const gathered = byNode.get(found.node.id) ?? { node: found.node, entries: new Map<string, Entry>() };
     const key = `${found.link.kind} ${found.link.target.id}`;
     const entry = gathered.entries.get(key) ?? {
-      evidence: {
-        kind: "statute-link",
-        document_id: found.document.id,
-        source_url: found.document.sourceUrl,
-        link_kind: found.link.kind,
-        target_id: found.link.target.id,
-        measure_sections: [],
-      },
+      kind: found.link.kind,
+      document: { id: found.document.id, sourceUrl: found.document.sourceUrl },
+      fields: { target_id: found.link.target.id },
+      createdAt: [],
       sections: [],
-      createdAt: new Map<string, Timestamp>(),
+      createdAtById: new Map<string, Timestamp>(),
     };
     if (!entry.sections.includes(found.link.measureSection)) entry.sections.push(found.link.measureSection);
-    if (found.document.createdAt !== null) entry.createdAt.set(found.document.id, found.document.createdAt);
+    if (found.document.createdAt !== null) entry.createdAtById.set(found.document.id, found.document.createdAt);
     gathered.entries.set(key, entry);
     byNode.set(found.node.id, gathered);
   }
@@ -278,21 +317,29 @@ function candidatesOfStatuteLinks(stored: readonly StoredStatuteLinked[]): Candi
     pieces: [...entries.values()]
       .toSorted(
         (a, b) =>
-          statuteLinkKinds.indexOf(a.evidence.link_kind ?? "cites") -
-            statuteLinkKinds.indexOf(b.evidence.link_kind ?? "cites") ||
-          numbersInOrder.compare(a.evidence.target_id ?? "", b.evidence.target_id ?? ""),
+          evidenceKinds.indexOf(a.kind) - evidenceKinds.indexOf(b.kind) ||
+          numbersInOrder.compare(a.fields.target_id ?? "", b.fields.target_id ?? ""),
       )
-      .map(({ evidence, sections, createdAt }) => ({
-        evidence: { ...evidence, measure_sections: sections.toSorted(compareMeasureSections) },
-        createdAt: [...createdAt.values()],
+      .map((entry): Piece => ({
+        kind: entry.kind,
+        document: entry.document,
+        fields: { ...entry.fields, measure_sections: entry.sections.toSorted(compareMeasureSections) },
+        createdAt: [...entry.createdAtById.values()],
       })),
   }));
 }
 
+/** A piece as an example: its document, its fields of its kind, and the latest time a document holding it was created. */
+function exampleOf(piece: Piece): ExampleOutput {
+  const latest = latestOf(piece.createdAt);
+  return { document_id: piece.document.id, ...piece.fields, ...(latest === undefined ? {} : { created_at: latest }) };
+}
+
 /**
- * The item a node makes: the evidence posted at or after `since` (all of it with no `since`), the newest first and cut to
- * MAX_EVIDENCE with the number left out said, dated by the documents that hold that evidence: `posted_at` the earliest
- * and `last_posted_at` the latest of their times. Undefined when no evidence is left, so the node is no item.
+ * The item a node makes: the evidence posted at or after `since` (all of it with no `since`), grouped by kind, each kind
+ * with its count; the newest MAX_EVIDENCE pieces are shown as examples across the kinds, and each kind says how many it
+ * left out. The item is dated by the documents that hold that evidence: `posted_at` the earliest and `last_posted_at` the
+ * latest of their times. Undefined when no evidence is left, so the node is no item.
  */
 function itemOf(candidate: Candidate, since: Timestamp | undefined): Item | undefined {
   const pieces = candidate.pieces.filter((piece) => {
@@ -318,9 +365,13 @@ function itemOf(candidate: Candidate, since: Timestamp | undefined): Item | unde
     source_url: candidate.node.sourceUrl,
     posted_at: ordered[0] ?? null,
     last_posted_at: ordered.at(-1) ?? null,
-    evidence_total: pieces.length,
-    evidence_left_out: pieces.length - shown.length,
-    evidence: shown.map((piece) => piece.evidence),
+    evidence: evidenceKinds.flatMap((kind) => {
+      const ofKind = pieces.filter((piece) => piece.kind === kind);
+      if (ofKind.length === 0) return [];
+      const examples = shown.filter((piece) => piece.kind === kind).map(exampleOf);
+      return [{ kind, count: ofKind.length, left_out: ofKind.length - examples.length, examples }];
+    }),
+    documents: shown.map((piece) => piece.document),
   };
 }
 
@@ -368,29 +419,37 @@ function itemListed(reader: IndexReader, session: SessionKey, item: Pick<Item, "
 }
 
 /**
- * Cuts the groups to one page of items counted across them in order, keeping each group's total. An item of the page
- * whose own row the feed no longer lists is flagged (`listed`).
+ * Cuts the groups to one page of items counted across them in order, keeping each group's total, with the documents the
+ * page's examples name once each. An item of the page whose own row the feed no longer lists is flagged (`listed`).
  */
 function pageOf(
   groups: readonly Group[],
   page: number,
-  listed: (item: Item) => boolean,
-): { groups: FindMeasuresOutput["groups"]; total: number } {
+  listed: (item: Pick<Item, "id" | "type">) => boolean,
+): { groups: FindMeasuresOutput["groups"]; documents: FindMeasuresOutput["documents"]; total: number } {
   const first = (page - 1) * PAGE_SIZE;
   let before = 0;
+  const documents = new Map<string, string>();
+  const paged = groups.map((group) => {
+    const start = Math.max(0, first - before);
+    const end = Math.max(0, first + PAGE_SIZE - before);
+    before += group.items.length;
+    return {
+      evidence_kind: group.kind,
+      description: groupDescriptions[group.kind],
+      total: group.items.length,
+      items: group.items.slice(start, end).map(({ documents: named, ...item }): ItemOutput => {
+        for (const document of named) documents.set(document.id, document.sourceUrl);
+        return { ...item, ...noLongerListedFlag(listed(item)) };
+      }),
+    };
+  });
   return {
     total: groups.reduce((sum, group) => sum + group.items.length, 0),
-    groups: groups.map((group) => {
-      const start = Math.max(0, first - before);
-      const end = Math.max(0, first + PAGE_SIZE - before);
-      before += group.items.length;
-      return {
-        evidence_kind: group.kind,
-        description: groupDescriptions[group.kind],
-        total: group.items.length,
-        items: group.items.slice(start, end).map((item) => ({ ...item, ...noLongerListedFlag(listed(item)) })),
-      };
-    }),
+    groups: paged,
+    documents: [...documents]
+      .toSorted(([a], [b]) => numbersInOrder.compare(a, b))
+      .map(([id, sourceUrl]) => ({ id, source_url: sourceUrl })),
   };
 }
 
@@ -492,6 +551,7 @@ export function findMeasures(
       last_page: lastPage,
       page_size: PAGE_SIZE,
       groups: paged.groups,
+      documents: paged.documents,
       notes,
       as_of: asOf,
       notice: NON_OFFICIAL_NOTICE,

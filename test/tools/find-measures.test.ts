@@ -24,16 +24,16 @@ afterAll(async () => {
   await system.stop();
 });
 
-type Evidence = {
-  kind: string;
+type Example = {
   document_id: string;
-  source_url: string;
-  link_kind?: string;
   target_id?: string;
   measure_sections?: (string | null)[];
   chapter_id?: string;
+  unit?: string;
   through?: string[];
+  through_total?: number;
 };
+type KindEvidence = { kind: string; count: number; left_out: number; examples: Example[] };
 type Item = {
   id: string;
   type: string;
@@ -42,8 +42,7 @@ type Item = {
   source_url: string;
   posted_at: string | null;
   last_posted_at: string | null;
-  evidence_total: number;
-  evidence: Evidence[];
+  evidence: KindEvidence[];
 };
 type Group = { evidence_kind: string; description: string; total: number; items: Item[] };
 type Found = {
@@ -53,6 +52,7 @@ type Found = {
   last_page: number;
   page_size: number;
   groups: Group[];
+  documents: { id: string; source_url: string }[];
   notes: string[];
   as_of: string;
   notice: string;
@@ -75,21 +75,34 @@ describe.for(eras)("find_measures for a %s client", (era) => {
     return outcome.structured as unknown as Found;
   }
 
+  /** Every item of one group, from every page of the answer. */
+  async function allItems(args: Record<string, unknown>, kind: string): Promise<Item[]> {
+    const first = await find(args);
+    const items = [...groupOf(first, kind).items];
+    for (let page = 2; page <= first.last_page; page += 1) {
+      items.push(...groupOf(await find({ ...args, page }), kind).items);
+    }
+    return items;
+  }
+
   const groupOf = (found: Found, kind: string): Group => {
     const group = found.groups.find((candidate) => candidate.evidence_kind === kind);
     if (group === undefined) throw new Error(`No group ${kind}`);
     return group;
   };
 
-  /** What each item's Statute Links to the target say, as [link kind, target, measure sections]. */
-  const linksOf = (item: Item | undefined, kinds: readonly string[]): [string, string, (string | null)[]][] =>
+  /** What an item's Statute Links of these kinds say, as [link kind, count, target, measure sections] for each example. */
+  const linksOf = (item: Item | undefined, kinds: readonly string[]): [string, number, string, (string | null)[]][] =>
     (item?.evidence ?? [])
-      .filter((evidence) => kinds.includes(evidence.link_kind ?? ""))
-      .map((evidence): [string, string, (string | null)[]] => [
-        evidence.link_kind ?? "",
-        evidence.target_id ?? "",
-        evidence.measure_sections ?? [],
-      ]);
+      .filter((group) => kinds.includes(group.kind))
+      .flatMap((group) =>
+        group.examples.map((example): [string, number, string, (string | null)[]] => [
+          group.kind,
+          group.count,
+          example.target_id ?? "",
+          example.measure_sections ?? [],
+        ]),
+      );
 
   // ORS 653.616 is amended by SECTION 8 of SB 69's A-Engrossed and Enrolled Versions and of its Proposed Amendments -1
   // and -2, and cited in their SECTION 9 ("for a purpose described in ORS 653.616 (1) to [(4)] (5)"): pdftotext of
@@ -113,8 +126,8 @@ describe.for(eras)("find_measures for a %s client", (era) => {
       ]);
       for (const item of items) {
         expect(linksOf(item, ["amends", "repeals", "adds-to", "cites"])).toEqual([
-          ["amends", "ors-653.616", ["8"]],
-          ["cites", "ors-653.616", ["9"]],
+          ["amends", 1, "ors-653.616", ["8"]],
+          ["cites", 1, "ors-653.616", ["9"]],
         ]);
       }
     });
@@ -143,11 +156,30 @@ describe.for(eras)("find_measures for a %s client", (era) => {
         "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/ProposedAmendment/26288",
         "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/ProposedAmendment/26287",
       ]);
-      expect(items.map((item) => item.evidence[0]?.document_id)).toEqual([
+      expect(items.map((item) => item.evidence[0]?.examples[0]?.document_id)).toEqual([
         "version-2025r1-sb69-enrolled",
         "version-2025r1-sb69-a-engrossed",
         "posting-2025r1-26286",
         "posting-2025r1-26284",
+      ]);
+      // Each document once, with where the Legislature publishes it: the amendments' first postings by the feed's number.
+      expect(found.documents).toEqual([
+        {
+          id: "posting-2025r1-26284",
+          source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/ProposedAmendment/26284",
+        },
+        {
+          id: "posting-2025r1-26286",
+          source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/ProposedAmendment/26286",
+        },
+        {
+          id: "version-2025r1-sb69-a-engrossed",
+          source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/A-Engrossed",
+        },
+        {
+          id: "version-2025r1-sb69-enrolled",
+          source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/Enrolled",
+        },
       ]);
     });
 
@@ -165,11 +197,12 @@ describe.for(eras)("find_measures for a %s client", (era) => {
   // Chapter 657B is not chapter 657: SB 69 also cites "ORS chapter 657" (SECTION 3's "duties under ORS chapter 657."),
   // and no other Version or amendment of the fixture names chapter 657 or a section in it.
   describe("by ORS chapter", () => {
+    // An item shows three examples at the most, the changes first: the three amended sections. The section added to the
+    // chapter (SECTION 1) is the one adds-to link, counted and left out.
     const changes = [
-      ["amends", "ors-657b.060", ["7"]],
-      ["amends", "ors-657b.070", ["3"]],
-      ["amends", "ors-657b.400", ["6"]],
-      ["adds-to", "ors-chapter-657b", ["1"]],
+      ["amends", 3, "ors-657b.060", ["7"]],
+      ["amends", 3, "ors-657b.070", ["3"]],
+      ["amends", 3, "ors-657b.400", ["6"]],
     ];
 
     it("returns the Versions and Proposed Amendments with a Statute Link to the chapter or to a section in it", async () => {
@@ -183,7 +216,17 @@ describe.for(eras)("find_measures for a %s client", (era) => {
         "amendment-2025r1-sb69-2",
         "amendment-2025r1-sb69-1",
       ]);
-      for (const item of items) expect(linksOf(item, ["amends", "repeals", "adds-to"])).toEqual(changes);
+      for (const item of items) {
+        expect(linksOf(item, ["amends", "repeals", "adds-to"])).toEqual(changes);
+        expect(
+          item.evidence
+            .filter((group) => group.kind !== "cites")
+            .map((group) => [group.kind, group.count, group.left_out]),
+        ).toEqual([
+          ["amends", 3, 0],
+          ["adds-to", 1, 1],
+        ]);
+      }
     });
 
     it("reads the chapter as a citation or as the id this service mints", async () => {
@@ -206,8 +249,8 @@ describe.for(eras)("find_measures for a %s client", (era) => {
       ]);
       for (const item of items) {
         expect(linksOf(item, ["amends"])).toEqual([
-          ["amends", "ors-653.616", ["8"]],
-          ["amends", "ors-653.626", ["9"]],
+          ["amends", 2, "ors-653.616", ["8"]],
+          ["amends", 2, "ors-653.626", ["9"]],
         ]);
       }
     });
@@ -223,9 +266,8 @@ describe.for(eras)("find_measures for a %s client", (era) => {
         "amendment-2025r1-sb69-1",
       ]);
       for (const item of items) {
-        expect(item.evidence.map((evidence) => [evidence.link_kind, evidence.target_id])).toEqual([
-          ["cites", "ors-chapter-657"],
-        ]);
+        expect(item.evidence.map((group) => [group.kind, group.count])).toEqual([["cites", 1]]);
+        expect(item.evidence[0]?.examples.map((example) => example.target_id)).toEqual(["ors-chapter-657"]);
       }
     });
   });
@@ -265,13 +307,11 @@ describe.for(eras)("find_measures for a %s client", (era) => {
         "amendment-2025r1-sb69-1",
         "version-2025r1-hb3027-introduced",
       ]);
-      expect(items[1]?.evidence.map((evidence) => evidence.chapter_id)).toEqual([
-        "ors-chapter-657b",
-        "ors-chapter-659a",
-        "ors-chapter-653",
-      ]);
-      expect(items[0]?.evidence.map((evidence) => evidence.chapter_id)).toEqual(["ors-chapter-345"]);
-      expect(items[5]?.evidence.map((evidence) => evidence.chapter_id)).toEqual(["ors-chapter-345"]);
+      const chaptersOf = (item: Item | undefined): (string | undefined)[] =>
+        item?.evidence.flatMap((group) => group.examples.map((example) => example.chapter_id)) ?? [];
+      expect(chaptersOf(items[1])).toEqual(["ors-chapter-657b", "ors-chapter-659a", "ors-chapter-653"]);
+      expect(chaptersOf(items[0])).toEqual(["ors-chapter-345"]);
+      expect(chaptersOf(items[5])).toEqual(["ors-chapter-345"]);
     });
 
     it("lists the Fiscal Impact Statement's item on the Version it is of, with the statement's own time", async () => {
@@ -284,7 +324,8 @@ describe.for(eras)("find_measures for a %s client", (era) => {
       expect(items[0]?.source_url).toBe(
         "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/A-Engrossed",
       );
-      expect(items[0]?.evidence[0]?.source_url).toBe(
+      expect(items[0]?.evidence[0]?.examples[0]?.document_id).toBe("analysis-2025r1-85414");
+      expect(found.documents.find((document) => document.id === "analysis-2025r1-85414")?.source_url).toBe(
         "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureAnalysisDocument/85414",
       );
     });
@@ -297,7 +338,9 @@ describe.for(eras)("find_measures for a %s client", (era) => {
         ["measure-2025r1-sb69", "measure", "SB 69", "2025-04-21T08:40:21.78-07:00", "2025-04-21T08:40:21.78-07:00"],
       ]);
       expect(items[0]?.source_url).toBe("https://olis.oregonlegislature.gov/liz/2025R1/Measures/Overview/SB69");
-      expect(items[0]?.evidence.map((evidence) => evidence.document_id)).toEqual(["testimony-2025r1-196915"]);
+      expect(items[0]?.evidence.flatMap((group) => group.examples.map((example) => example.document_id))).toEqual([
+        "testimony-2025r1-196915",
+      ]);
     });
 
     it("puts an Agency slug and nothing else in the answer's Agency ids", async () => {
@@ -348,9 +391,9 @@ describe.for(eras)("find_measures for a %s client", (era) => {
       const sb69 = items.filter((item) => item.measure_id === "measure-2025r1-sb69");
       expect(sb69).toHaveLength(4);
       for (const item of sb69) {
-        expect(item.evidence.map((evidence) => [evidence.chapter_id, evidence.through])).toEqual([
-          ["ors-chapter-659a", [apd]],
-        ]);
+        expect(
+          item.evidence.flatMap((group) => group.examples.map((example) => [example.chapter_id, example.through])),
+        ).toEqual([["ors-chapter-659a", [apd]]]);
       }
     });
 
@@ -360,7 +403,9 @@ describe.for(eras)("find_measures for a %s client", (era) => {
       const hb3795 = groupOf(found, "derived").items.filter((item) => item.measure_id === "measure-2025r1-hb3795");
       expect(hb3795).toHaveLength(5);
       for (const item of hb3795) {
-        for (const evidence of item.evidence) expect(evidence.through).toBeUndefined();
+        for (const group of item.evidence) {
+          for (const example of group.examples) expect(example.through).toBeUndefined();
+        }
       }
     });
 
@@ -376,9 +421,9 @@ describe.for(eras)("find_measures for a %s client", (era) => {
 
     // get_measure counts these six and gives three of them as examples (agency-links.test.ts); find_measures has all six.
     it("lists every node of HB 3795 whose text names the Department, the six that get_measure only counts", async () => {
-      const found = await find({ agency: dhs });
-
-      const named = groupOf(found, "named-in-text").items.filter((item) => item.measure_id === "measure-2025r1-hb3795");
+      const named = (await allItems({ agency: dhs }, "named-in-text")).filter(
+        (item) => item.measure_id === "measure-2025r1-hb3795",
+      );
       expect(named.map((item) => item.id)).toEqual([
         "version-2025r1-hb3795-enrolled",
         "version-2025r1-hb3795-b-engrossed",
@@ -399,7 +444,11 @@ describe.for(eras)("find_measures for a %s client", (era) => {
         "amendment-2025r1-sb69-2",
         "amendment-2025r1-sb69-1",
       ]);
-      for (const item of sb69) expect(item.evidence.every((evidence) => evidence.through === undefined)).toBe(true);
+      for (const item of sb69) {
+        expect(item.evidence.every((group) => group.examples.every((example) => example.through === undefined))).toBe(
+          true,
+        );
+      }
     });
   });
 
@@ -450,7 +499,7 @@ describe.for(eras)("find_measures for a %s client", (era) => {
       // The clock was 2026-08-01 17:00 UTC when the pull ran: 10:00 in Oregon, in daylight time.
       expect(found.as_of).toBe("2026-08-01T10:00:00-07:00");
       expect(found.notice).toContain("Not the official record");
-      expect([found.page, found.last_page, found.page_size]).toEqual([1, 1, 50]);
+      expect([found.page, found.last_page, found.page_size]).toEqual([1, 1, 12]);
     });
   });
 });

@@ -9,13 +9,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";
 
-type Evidence = {
-  kind: string;
+type Example = {
   document_id: string;
   unit?: string;
   terms?: string[];
   chapter_id?: string;
 };
+type KindEvidence = { kind: string; count: number; left_out: number; examples: Example[] };
 type Item = {
   id: string;
   type: string;
@@ -24,8 +24,7 @@ type Item = {
   source_url: string;
   posted_at: string | null;
   last_posted_at: string | null;
-  evidence_total: number;
-  evidence: Evidence[];
+  evidence: KindEvidence[];
 };
 type Group = { evidence_kind: string; description: string; total: number; items: Item[] };
 type Found = {
@@ -105,10 +104,13 @@ describe("find_measures for an Agency, with the clock on 2025-01-24", () => {
         ["amendment-2025r1-sb69-2", "proposed_amendment", "measure-2025r1-sb69", "SB 69-2"],
         ["amendment-2025r1-sb69-1", "proposed_amendment", "measure-2025r1-sb69", "SB 69-1"],
       ]);
-      expect(touching.items[0]?.evidence.map((evidence) => [evidence.kind, evidence.chapter_id])).toEqual([
-        ["derived", "ors-chapter-657b"],
-        ["derived", "ors-chapter-659a"],
-        ["derived", "ors-chapter-653"],
+      expect(touching.items[0]?.evidence.map((group) => [group.kind, group.count, group.left_out])).toEqual([
+        ["derived", 3, 0],
+      ]);
+      expect(touching.items[0]?.evidence[0]?.examples.map((example) => example.chapter_id)).toEqual([
+        "ors-chapter-657b",
+        "ors-chapter-659a",
+        "ors-chapter-653",
       ]);
     });
 
@@ -248,9 +250,11 @@ describe("find_measures for an Agency, with the clock on 2025-01-31", () => {
       expect(naming.items.map((item) => [item.id, item.type, item.posted_at, item.last_posted_at])).toEqual([
         ["measure-2025r1-sb69", "measure", "2025-01-30T10:43:53.29-08:00", "2025-01-30T10:43:53.29-08:00"],
       ]);
-      expect(naming.items[0]?.evidence.map((evidence) => [evidence.kind, evidence.document_id, evidence.unit])).toEqual(
-        [["fiscal-impact-statement", "analysis-2025r1-85414", "Bureau of Labor and Industries"]],
-      );
+      expect(
+        naming.items[0]?.evidence.flatMap((group) =>
+          group.examples.map((example) => [group.kind, example.document_id, example.unit]),
+        ),
+      ).toEqual([["fiscal-impact-statement", "analysis-2025r1-85414", "Bureau of Labor and Industries"]]);
       expect(groupOf(found, "derived").items).toEqual([]);
     });
   });
@@ -274,7 +278,9 @@ describe("find_measures for an Agency, with the clock on 2025-02-04", () => {
       expect(naming.items.map((item) => [item.id, item.type, item.posted_at])).toEqual([
         ["version-2025r1-sb69-a-engrossed", "version", "2025-01-30T10:43:53.29-08:00"],
       ]);
-      expect(naming.items[0]?.evidence.map((evidence) => evidence.document_id)).toEqual(["analysis-2025r1-85414"]);
+      expect(
+        naming.items[0]?.evidence.flatMap((group) => group.examples.map((example) => example.document_id)),
+      ).toEqual(["analysis-2025r1-85414"]);
     });
   });
 });
