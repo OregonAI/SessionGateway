@@ -5,10 +5,10 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { snapshotFixturePath } from "../support/oregonai-snapshot.ts";
-import { startSystem, type System, type SystemOptions } from "../support/system.ts";
+import { lazySystemTemplate, startSystem, type System, type SystemOptions } from "../support/system.ts";
 import { madeUpTestimonyRow } from "../support/testimony.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -69,12 +69,19 @@ describe.for(eras)("find_measures past one page, for a %s client", (era) => {
     ),
   ];
 
-  async function start(): Promise<System> {
-    const system = await startSystem({
+  // The four cases only read, so they copy one database (test/CLAUDE.md, "Database").
+  const template = lazySystemTemplate(
+    {
       clockAt: "2025-07-15T17:00:00Z",
       olis: { strayRows: { CommitteePublicTestimonies: rows } },
       serverEnv: { MCP_RATE_LIMIT: "1000" },
-    });
+    },
+    "past-one-page",
+  );
+  afterAll(() => template.remove());
+
+  async function start(): Promise<System> {
+    const system = await template.start();
     started.push(system);
     return system;
   }
@@ -212,8 +219,8 @@ describe.for(eras)(
       ModifiedDate: null,
     });
 
-    async function start(): Promise<System> {
-      const system = await startSystem({
+    const template = lazySystemTemplate(
+      {
         clockAt: "2025-01-24T20:00:00Z",
         documents: true,
         serverEnv: { MCP_RATE_LIMIT: "1000" },
@@ -229,7 +236,13 @@ describe.for(eras)(
             "/liz/2025R1/Downloads/ProposedAmendment/990102": "proposed-amendments/26286.pdf",
           },
         },
-      });
+      },
+      "postings-dated",
+    );
+    afterAll(() => template.remove());
+
+    async function start(): Promise<System> {
+      const system = await template.start();
       started.push(system);
       return system;
     }
@@ -299,12 +312,18 @@ describe.for(eras)("find_measures lists the newest evidence, for a %s client", (
     ),
   ];
 
-  async function itemsAfter(args: Record<string, unknown>): Promise<Item[]> {
-    const system = await startSystem({
+  const template = lazySystemTemplate(
+    {
       clockAt: "2025-07-15T17:00:00Z",
       olis: { strayRows: { CommitteePublicTestimonies: rows } },
       serverEnv: { MCP_RATE_LIMIT: "1000" },
-    });
+    },
+    "newest-evidence",
+  );
+  afterAll(() => template.remove());
+
+  async function itemsAfter(args: Record<string, unknown>): Promise<Item[]> {
+    const system = await template.start();
     started.push(system);
     const outcome = await find(system, era, { agency: "bureau-of-labor-and-industries", ...args });
     expect(outcome.isError, outcome.text).toBe(false);
@@ -395,8 +414,8 @@ describe.for(eras)("find_measures stays inside a page's size, for a %s client", 
     ModifiedDate: null,
   }));
 
-  async function start(): Promise<System> {
-    const system = await startSystem({
+  const template = lazySystemTemplate(
+    {
       clockAt: "2026-08-01T17:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "1000" },
@@ -409,7 +428,13 @@ describe.for(eras)("find_measures stays inside a page's size, for a %s client", 
           ]),
         ),
       },
-    });
+    },
+    "page-size",
+  );
+  afterAll(() => template.remove());
+
+  async function start(): Promise<System> {
+    const system = await template.start();
     started.push(system);
     return system;
   }
@@ -539,8 +564,8 @@ describe.for(eras)("find_measures counts a page across the groups, for a %s clie
     ModifiedDate: null,
   }));
 
-  it("puts each item on one page, and the group a page starts in after the groups before it", async () => {
-    const system = await startSystem({
+  const template = lazySystemTemplate(
+    {
       clockAt: "2026-08-01T17:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "1000" },
@@ -553,7 +578,13 @@ describe.for(eras)("find_measures counts a page across the groups, for a %s clie
           ]),
         ),
       },
-    });
+    },
+    "page-across-groups",
+  );
+  afterAll(() => template.remove());
+
+  it("puts each item on one page, and the group a page starts in after the groups before it", async () => {
+    const system = await template.start();
     started.push(system);
 
     const pages: Found[] = [];

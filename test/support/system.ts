@@ -1,7 +1,9 @@
 // The whole system for one seam-1 test: a fake OLIS at a simulated time, the ingest worker's full
 // pull into a database in a disposable directory, and the MCP handler reading that database. It
 // wires the production packages through their entry points, the way src/bin/ does.
-import { readFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { loadIngestConfig, loadServerConfig, type ServerConfig } from "#/packages/config/index.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
@@ -87,12 +89,91 @@ export type System = {
   stop(): Promise<void>;
 };
 
+/**
+ * A system built once, its database kept as a template (ticket #47). `start` gives a case a system of its own: a fresh
+ * fake OLIS at the same clock, and a full copy of the template's database files in a directory of its own, so no case
+ * can change another's data. A case that only reads takes the copy as it is; a case that changes state changes the
+ * fake or the clock and runs `pullAgain`, which then fetches and embeds only what the change adds.
+ */
+export type SystemTemplate = {
+  /** Starts a system on a copy of the template's database. `serverEnv` is the one option a case may add. */
+  start(extra?: { serverEnv?: Record<string, string> }): Promise<System>;
+  /** Removes the template's files. Call it once, after the last case. */
+  remove(): Promise<void>;
+};
+
+/**
+ * Runs `startSystem(options)` once, checkpoints the WAL into the database file, and keeps the files. The template is the
+ * state the full pull leaves, so use it only for cases whose subject is not the pull itself (test/CLAUDE.md, "Database").
+ */
+export async function buildSystemTemplate(options: SystemOptions): Promise<SystemTemplate> {
+  const first = await startSystem(options);
+  const directory = mkdtempSync(join(tmpdir(), "session-gateway-template-"));
+  try {
+    const source = new DatabaseSync(first.database.path, { timeout: 5000 });
+    try {
+      source.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    } finally {
+      source.close();
+    }
+    // After the checkpoint the database file holds everything, so the WAL and its shared-memory file are left out.
+    cpSync(dirname(first.database.path), directory, {
+      recursive: true,
+      filter: (path) => !path.endsWith("-wal") && !path.endsWith("-shm"),
+    });
+    await first.stop();
+  } catch (error) {
+    rmSync(directory, { recursive: true, force: true });
+    throw error;
+  }
+  return {
+    start: (extra = {}) =>
+      startSystem({ ...options, serverEnv: { ...options.serverEnv, ...extra.serverEnv } }, directory),
+    remove: () => {
+      rmSync(directory, { recursive: true, force: true });
+      return Promise.resolve();
+    },
+  };
+}
+
+/**
+ * A template that is built when the first case asks for a system, and only then: a file whose cases all pull for
+ * themselves never pays for it. Concurrent first asks share one build, and so do describes that give the same `key`
+ * (the same options, as the two clients of `describe.for(eras)` have). The test file calls `remove` in `afterAll`.
+ */
+export function lazySystemTemplate(options: SystemOptions, key?: string): SystemTemplate {
+  const known = key === undefined ? undefined : shared.get(key);
+  if (known !== undefined) {
+    known.holders += 1;
+    return known.template;
+  }
+  let built: Promise<SystemTemplate> | undefined;
+  const template: SystemTemplate = {
+    start: async (extra) => {
+      built ??= buildSystemTemplate(options);
+      return (await built).start(extra);
+    },
+    remove: async () => {
+      // A template with a key goes when the last describe that asked for it is done.
+      const entry = key === undefined ? undefined : shared.get(key);
+      if (entry !== undefined && (entry.holders -= 1) > 0) return;
+      await (await built)?.remove();
+    },
+  };
+  if (key !== undefined) shared.set(key, { template, holders: 1 });
+  return template;
+}
+
+/** The templates a file shares between its describes, by the key the file gives (a file's module is its own). */
+const shared = new Map<string, { template: SystemTemplate; holders: number }>();
+
 /** Starts the fake OLIS, runs the ingest worker's full pull and starts the server's handler. */
-export async function startSystem(options: SystemOptions): Promise<System> {
+export async function startSystem(options: SystemOptions, copyOf?: string): Promise<System> {
   assertNotPacific();
   const clock = createSimulatedClock(options.clockAt);
   const olis = await startFakeOlis({ clock, documents: options.documents ?? false, ...options.olis });
   const database = createTempDatabase();
+  if (copyOf !== undefined) cpSync(copyOf, dirname(database.path), { recursive: true });
   const embedder = options.embedder ?? (await createFakeEmbedder());
   const shutdown = new AbortController();
   const env = {
@@ -119,7 +200,7 @@ export async function startSystem(options: SystemOptions): Promise<System> {
       embedder: pullOptions.embedder ?? embedder,
     });
   try {
-    await pull();
+    if (copyOf === undefined) await pull();
     const serverConfig = loadServerConfig({ ...env, ...options.serverEnv });
     const handler = createSessionGatewayHandler(serverConfig, {
       clock,
