@@ -17,7 +17,10 @@ afterEach(async () => {
 
 type Item = {
   id: string;
+  posted_at: string | null;
+  last_posted_at: string | null;
   evidence_total: number;
+  evidence_left_out: number;
   evidence: { document_id: string; organization?: string }[];
 };
 type Group = { evidence_kind: string; total: number; items: Item[] };
@@ -268,3 +271,70 @@ describe.for(eras)(
     });
   },
 );
+
+// With `since`, an item lists only the evidence posted at or after it, and a cap keeps the newest first and says how many
+// it left out (#16 F4). MADE UP Testimony from the Bureau of Labor and Industries (rows of test/support/testimony.ts, each
+// with a CreatedDate of its own), on Measures the fixture lacks:
+//   SB 9300: 900301 to 900310 created 2025-03-01 at 09:00, 900311 created 2025-04-01 at 09:00 (the review's probe);
+//   SB 9400: 900401 to 900412, one an hour from 09:00 to 20:00 on 2025-03-02.
+// The clock is 2025-07-15, after all of them.
+describe.for(eras)("find_measures lists the newest evidence, for a %s client", (era) => {
+  const boli = "Bureau of Labor and Industries";
+  const row = (commTestId: number, sb: number, createdDate: string): Record<string, unknown> => ({
+    ...madeUpTestimonyRow({ commTestId, organization: boli, measure: { prefix: "SB", number: sb } }),
+    CreatedDate: createdDate,
+  });
+  const rows = [
+    ...Array.from({ length: 10 }, (_, index) => row(900301 + index, 9300, "2025-03-01T09:00:00")),
+    row(900311, 9300, "2025-04-01T09:00:00"),
+    ...Array.from({ length: 12 }, (_, index) =>
+      row(900401 + index, 9400, `2025-03-02T${String(9 + index).padStart(2, "0")}:00:00`),
+    ),
+  ];
+
+  async function itemsAfter(args: Record<string, unknown>): Promise<Item[]> {
+    const system = await startSystem({
+      clockAt: "2025-07-15T17:00:00Z",
+      olis: { strayRows: { CommitteePublicTestimonies: rows } },
+      serverEnv: { MCP_RATE_LIMIT: "1000" },
+    });
+    started.push(system);
+    const outcome = await find(system, era, { agency: "bureau-of-labor-and-industries", ...args });
+    expect(outcome.isError, outcome.text).toBe(false);
+    const found = outcome.structured as unknown as Found;
+    return found.groups.find((group) => group.evidence_kind === "testimony")?.items ?? [];
+  }
+  const ids = (item: Item | undefined): string[] => item?.evidence.map((evidence) => evidence.document_id) ?? [];
+  const testimonyIds = (first: number, last: number): string[] =>
+    Array.from({ length: last - first + 1 }, (_, index) => `testimony-2025r1-${first + index}`);
+
+  it("shows only the Testimony posted since the time asked for, and dates the item by it", async () => {
+    const items = await itemsAfter({ since: "2025-04-01" });
+
+    const item = items.find((candidate) => candidate.id === "measure-2025r1-sb9300");
+    expect(ids(item)).toEqual(["testimony-2025r1-900311"]);
+    expect([item?.evidence_total, item?.evidence_left_out]).toEqual([1, 0]);
+    expect([item?.posted_at, item?.last_posted_at]).toEqual(["2025-04-01T09:00:00-07:00", "2025-04-01T09:00:00-07:00"]);
+  });
+
+  it("keeps the newest evidence when it cuts, and says how many it left out", async () => {
+    const items = await itemsAfter({});
+
+    const item = items.find((candidate) => candidate.id === "measure-2025r1-sb9300");
+    expect(ids(item)).toEqual(["testimony-2025r1-900311", ...testimonyIds(900301, 900309)]);
+    expect([item?.evidence_total, item?.evidence_left_out]).toEqual([11, 1]);
+    const later = items.find((candidate) => candidate.id === "measure-2025r1-sb9400");
+    expect(ids(later)).toEqual(testimonyIds(900403, 900412).toReversed());
+    expect([later?.evidence_total, later?.evidence_left_out]).toEqual([12, 2]);
+  });
+
+  it("cuts only what was posted since the time asked for, newest first", async () => {
+    const items = await itemsAfter({ since: "2025-03-02T18:00:00" });
+
+    const item = items.find((candidate) => candidate.id === "measure-2025r1-sb9400");
+    expect(ids(item)).toEqual(testimonyIds(900410, 900412).toReversed());
+    expect([item?.evidence_total, item?.evidence_left_out]).toEqual([3, 0]);
+    expect([item?.posted_at, item?.last_posted_at]).toEqual(["2025-03-02T18:00:00-08:00", "2025-03-02T20:00:00-08:00"]);
+    expect(items.some((candidate) => candidate.id === "measure-2025r1-sb9300")).toBe(true);
+  });
+});
