@@ -11,12 +11,9 @@
 // and with the made-up section 23. Each link that adds to a section of chapter 345 is one of "links_in_chapter" of the
 // derived Agency Links (ADR-0027), so the Agency Links follow by their count: 22 before, 23 after. The made-up section is
 // not any true ORS section.
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
-import { snapshotFixturePath } from "../support/oregonai-snapshot.ts";
+import { createFixtureCopy, type FixtureCopy } from "../support/made-up-snapshot.ts";
 import { startSystem, type System } from "../support/system.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -47,24 +44,13 @@ const madeUpSection = "ors-345.250";
 const introduced = "version-2025r1-hb3027-introduced";
 const hecc = "higher-education-coordinating-commission";
 
-/** A copy of the committed snapshot in a folder of its own, and a function that rewrites it with the made-up section and version. */
-function snapshotCopy(): { path: string; changeIt: () => void } {
-  const directory = mkdtempSync(join(tmpdir(), "statute-snapshot-change-"));
-  cleanups.push(() => {
-    rmSync(directory, { recursive: true, force: true });
+/** A made-up copy of the committed snapshot (test/support/made-up-snapshot.ts) that gains the made-up section and a version. */
+function snapshotCopy(): FixtureCopy {
+  const copy = createFixtureCopy<Snapshot>((snapshot) => {
+    snapshot.orsSections = [...snapshot.orsSections, madeUpSection].sort();
   });
-  const path = join(directory, "snapshot.json");
-  const original = readFileSync(snapshotFixturePath, "utf8");
-  writeFileSync(path, original);
-  return {
-    path,
-    changeIt: () => {
-      const snapshot = JSON.parse(original) as Snapshot;
-      snapshot.version = { ...snapshot.version, commit: newCommit, commitDate: "2026-10-01T09:00:00-07:00" };
-      snapshot.orsSections = [...snapshot.orsSections, madeUpSection].sort();
-      writeFileSync(path, `${JSON.stringify(snapshot, null, 2)}\n`);
-    },
-  };
+  cleanups.push(copy.remove);
+  return copy;
 }
 
 async function startAt(snapshot: string): Promise<System> {

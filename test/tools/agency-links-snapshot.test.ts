@@ -11,12 +11,9 @@
 // "the Department of Human Services" (line 14), and in HB 3795's Introduced and A-Engrossed Versions. Before the alias a
 // Version's link of "named in the text" to the Department finds the one term, and after it the two, in the order they
 // come in the text. The Versions are stored and read already, so only a second reading can show the alias.
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
-import { snapshotFixturePath } from "../support/oregonai-snapshot.ts";
+import { createFixtureCopy, type FixtureCopy } from "../support/made-up-snapshot.ts";
 import { startSystem, type System } from "../support/system.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -40,26 +37,15 @@ const dhs = "department-of-human-services";
 const sb64Introduced = "version-2025r1-sb64-introduced";
 const newCommit = "0123456789abcdef0123456789abcdef01234567";
 
-/** A copy of the committed snapshot in a folder of its own, and a function that rewrites it with the made-up alias and version. */
-function snapshotCopy(): { path: string; changeIt: () => void } {
-  const directory = mkdtempSync(join(tmpdir(), "snapshot-change-"));
-  cleanups.push(() => {
-    rmSync(directory, { recursive: true, force: true });
+/** A made-up copy of the committed snapshot (test/support/made-up-snapshot.ts) that gains the made-up alias and a version. */
+function snapshotCopy(): FixtureCopy {
+  const copy = createFixtureCopy<Snapshot>((snapshot) => {
+    const row = snapshot.agencies.find((agency) => agency.slug === dhs);
+    if (row === undefined) throw new Error("The snapshot fixture has no row for the Department of Human Services");
+    row.aliases = [...row.aliases, "ODHS"];
   });
-  const path = join(directory, "snapshot.json");
-  const original = readFileSync(snapshotFixturePath, "utf8");
-  writeFileSync(path, original);
-  return {
-    path,
-    changeIt: () => {
-      const snapshot = JSON.parse(original) as Snapshot;
-      snapshot.version = { ...snapshot.version, commit: newCommit, commitDate: "2026-10-01T09:00:00-07:00" };
-      const row = snapshot.agencies.find((agency) => agency.slug === dhs);
-      if (row === undefined) throw new Error("The snapshot fixture has no row for the Department of Human Services");
-      row.aliases = [...row.aliases, "ODHS"];
-      writeFileSync(path, `${JSON.stringify(snapshot, null, 2)}\n`);
-    },
-  };
+  cleanups.push(copy.remove);
+  return copy;
 }
 
 async function startAt(snapshot: string): Promise<System> {
