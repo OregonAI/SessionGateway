@@ -45,6 +45,7 @@ const sectionIdPattern = new RegExp(String.raw`^ors-${chapterShape}\.${sectionDi
 const sectionPartsPattern = new RegExp(String.raw`^ors-(${chapterDigits})(${chapterLetter})\.(${sectionDigits})$`, "i");
 const chapterPattern = new RegExp(String.raw`^${chapterShape}$`, "i");
 const chapterIdPattern = new RegExp(String.raw`^ors-chapter-${chapterShape}$`, "i");
+const chapterPartsPattern = new RegExp(String.raw`^ors-chapter-(${chapterDigits})(${chapterLetter})$`, "i");
 
 /** Reads an id such as `ors-163a.040`, or undefined if the text is not one. */
 export function parseOrsSectionId(text: string): OrsSectionId | undefined {
@@ -89,6 +90,26 @@ export function compareOrsSectionIds(a: OrsSectionId, b: OrsSectionId): number {
   if (left.chapter !== right.chapter) return left.chapter - right.chapter;
   if (left.letter !== right.letter) return left.letter < right.letter ? -1 : 1;
   return left.section - right.section;
+}
+
+/** Where an ORS chapter sorts: its number, then its letter ("163" before "163A"). */
+export type OrsChapterParts = { chapter: number; letter: string };
+
+/** Takes a chapter id apart into the parts ORS order sorts by. */
+export function orsChapterPartsOf(id: OrsChapterId): OrsChapterParts {
+  const match = chapterPartsPattern.exec(id);
+  // An OrsChapterId is minted by orsChapterIdOf, parseOrsChapterId or orsChapterOf, which accept only this shape.
+  if (match?.[1] === undefined) throw new Error(`Not an ORS chapter id: ${id}`);
+  return { chapter: Number(match[1]), letter: match[2] ?? "" };
+}
+
+/** Orders ORS chapter ids as the ORS does: by number, then letter ("163" before "163A" before "163B"). */
+export function compareOrsChapterIds(a: OrsChapterId, b: OrsChapterId): number {
+  const left = orsChapterPartsOf(a);
+  const right = orsChapterPartsOf(b);
+  if (left.chapter !== right.chapter) return left.chapter - right.chapter;
+  if (left.letter !== right.letter) return left.letter < right.letter ? -1 : 1;
+  return 0;
 }
 
 /** Mints the id of the ORS section a citation such as "163A.040" names, or undefined if it is not one. */

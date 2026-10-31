@@ -1,7 +1,7 @@
 import { test } from "@fast-check/vitest";
 import fc from "fast-check";
 import { describe, expect } from "vitest";
-import { parseOrsSectionId } from "#/packages/domain/oregonai.ts";
+import { parseOrsChapterId, parseOrsSectionId } from "#/packages/domain/oregonai.ts";
 import { parseStatutesAffectedTable } from "../index.ts";
 import { orsSectionList } from "./section-ids.ts";
 
@@ -82,7 +82,7 @@ describe("the table's parser", () => {
         expect(parseOrsSectionId(entry.target.id)).toBe(entry.target.id);
         expect(entry.target.resolvableOnOregonAi).toBe(true);
       } else {
-        expect(entry.target.id).toMatch(/^ors-chapter-\d{1,3}[a-z]?$/);
+        expect(parseOrsChapterId(entry.target.id)).toBe(entry.target.id);
         expect(entry.target.resolvableOnOregonAi).toBe(false);
       }
     }

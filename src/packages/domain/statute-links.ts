@@ -10,7 +10,7 @@ import {
   type DocumentId,
 } from "./documents.ts";
 import type { MeasureId } from "./index.ts";
-import type { OrsChapterId, OrsSectionId } from "./oregonai.ts";
+import { parseOrsChapterId, parseOrsSectionId, type OrsChapterId, type OrsSectionId } from "./oregonai.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 
 /**
@@ -27,6 +27,29 @@ export type StatuteLinkKind = (typeof statuteLinkKinds)[number];
 export type StatuteTarget =
   | { type: "section"; id: OrsSectionId; resolvableOnOregonAi: true }
   | { type: "chapter"; id: OrsChapterId; resolvableOnOregonAi: false };
+
+/** The target of an ORS section, which OregonAI has a page for. The one place that says so. */
+export function sectionTarget(id: OrsSectionId): StatuteTarget {
+  return { type: "section", id, resolvableOnOregonAi: true };
+}
+
+/** The target of an ORS chapter, which OregonAI has no id for (ADR-0004). The one place that says so. */
+export function chapterTarget(id: OrsChapterId): StatuteTarget {
+  return { type: "chapter", id, resolvableOnOregonAi: false };
+}
+
+/**
+ * Reads a target the database stored, from its type and its id, or undefined when the id is not the form of that type.
+ * A stored link or table entry that does not read is a bug in whatever wrote it, which the caller reports.
+ */
+export function storedStatuteTarget(type: StatuteTarget["type"], id: string): StatuteTarget | undefined {
+  if (type === "section") {
+    const section = parseOrsSectionId(id);
+    return section === undefined ? undefined : sectionTarget(section);
+  }
+  const chapter = parseOrsChapterId(id);
+  return chapter === undefined ? undefined : chapterTarget(chapter);
+}
 
 /**
  * One typed link from a Version or Proposed Amendment to an ORS section or chapter. The document it

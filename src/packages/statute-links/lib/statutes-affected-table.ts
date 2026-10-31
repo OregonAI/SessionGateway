@@ -1,13 +1,19 @@
 import {
+  compareOrsChapterIds,
   orsChapterCitationSource,
   orsChapterIdOf,
   orsChapterOf,
   orsSectionCitationSource,
   orsSectionIdOf,
-  type OrsChapterId,
   type OrsSectionId,
 } from "#/packages/domain/oregonai.ts";
-import { tableActions, type StatuteTarget, type StatutesAffectedEntry } from "#/packages/domain/statute-links.ts";
+import {
+  chapterTarget,
+  sectionTarget,
+  tableActions,
+  type StatuteTarget,
+  type StatutesAffectedEntry,
+} from "#/packages/domain/statute-links.ts";
 import { createRangeExpander } from "./ranges.ts";
 
 // Legislative Counsel's Statutes Affected Table (artables{session}.pdf) lists, for the ORS, one row for each thing a
@@ -80,26 +86,6 @@ function linesOf(text: string): string[] {
   );
 }
 
-/** A chapter's place in ORS order: its number, then its letter ("163" before "163A"). */
-function chapterPlace(id: OrsChapterId): { number: number; letter: string } {
-  const parts = /^ors-chapter-(\d+)([a-z]?)$/.exec(id);
-  return { number: Number(parts?.[1] ?? 0), letter: parts?.[2] ?? "" };
-}
-
-function compareChapters(a: OrsChapterId, b: OrsChapterId): number {
-  const left = chapterPlace(a);
-  const right = chapterPlace(b);
-  return left.number - right.number || left.letter.localeCompare(right.letter);
-}
-
-function sectionTarget(id: OrsSectionId): StatuteTarget {
-  return { type: "section", id, resolvableOnOregonAi: true };
-}
-
-function chapterTarget(id: OrsChapterId): StatuteTarget {
-  return { type: "chapter", id, resolvableOnOregonAi: false };
-}
-
 /** What an ORS target in a row names, as the table prints it: a section ("659A.159") or a chapter ("657B"). */
 type Printed = { type: "section"; citation: string } | { type: "chapter"; citation: string };
 
@@ -163,8 +149,10 @@ export function readStatutesAffectedTable(
       const last = orsChapterIdOf(to.citation);
       if (first === undefined || last === undefined) return undefined;
       const ends = [first, last];
-      const between = chaptersListed.filter((id) => compareChapters(id, first) >= 0 && compareChapters(id, last) <= 0);
-      return [...new Set([...ends, ...between])].sort(compareChapters).map(chapterTarget);
+      const between = chaptersListed.filter(
+        (id) => compareOrsChapterIds(id, first) >= 0 && compareOrsChapterIds(id, last) <= 0,
+      );
+      return [...new Set([...ends, ...between])].sort(compareOrsChapterIds).map(chapterTarget);
     }
     return undefined;
   };

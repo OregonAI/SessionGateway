@@ -1,5 +1,11 @@
 import { orsChapterIdOf, orsSectionIdOf, type OrsSectionId } from "#/packages/domain/oregonai.ts";
-import type { StatuteLink, StatuteLinkKind, StatuteTarget } from "#/packages/domain/statute-links.ts";
+import {
+  chapterTarget,
+  sectionTarget,
+  type StatuteLink,
+  type StatuteLinkKind,
+  type StatuteTarget,
+} from "#/packages/domain/statute-links.ts";
 import { normalizeExtractedText } from "./normalize.ts";
 import { withoutOmittedMatter } from "./omitted-matter.ts";
 import type { RangeExpander } from "./ranges.ts";
@@ -47,16 +53,12 @@ function kindOf(text: string, reference: OrsReference): StatuteLinkKind {
   return "cites";
 }
 
-function sectionTarget(id: OrsSectionId): StatuteTarget {
-  return { type: "section", id, resolvableOnOregonAi: true };
-}
-
 /** The targets an item names: one for a section or a chapter, one per listed section for a range. */
 function targetsOf(item: OrsItem, expandRange: RangeExpander): StatuteTarget[] {
   switch (item.type) {
     case "chapter": {
       const id = orsChapterIdOf(item.chapter);
-      return id === undefined ? [] : [{ type: "chapter", id, resolvableOnOregonAi: false }];
+      return id === undefined ? [] : [chapterTarget(id)];
     }
     case "section": {
       const id = orsSectionIdOf(item.citation);
