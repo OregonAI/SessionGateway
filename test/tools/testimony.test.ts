@@ -6,7 +6,7 @@
 // testimony-large.test.ts.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 
 let system: System;
 
@@ -14,7 +14,7 @@ let system: System;
 // the default 120 calls a minute would refuse the last ones. The ceiling is raised here and is tested in
 // meetings-pull.test.ts.
 beforeAll(async () => {
-  system = await startSystem({
+  system = await startCopiedSystem({
     clockAt: "2025-07-15T17:00:00Z",
     documents: true,
     serverEnv: { MCP_RATE_LIMIT: "1000" },

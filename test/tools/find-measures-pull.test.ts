@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { snapshotFixturePath } from "../support/oregonai-snapshot.ts";
-import { startSystem, type System, type SystemOptions } from "../support/system.ts";
+import { startCopiedSystem, systemTemplate, type System, type SystemOptions } from "../support/system.ts";
 import { madeUpTestimonyRow } from "../support/testimony.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -69,12 +69,15 @@ describe.for(eras)("find_measures past one page, for a %s client", (era) => {
     ),
   ];
 
+  // The four cases only read, so they copy one database (test/CLAUDE.md, "Database").
+  const template = systemTemplate({
+    clockAt: "2025-07-15T17:00:00Z",
+    olis: { strayRows: { CommitteePublicTestimonies: rows } },
+    serverEnv: { MCP_RATE_LIMIT: "1000" },
+  });
+
   async function start(): Promise<System> {
-    const system = await startSystem({
-      clockAt: "2025-07-15T17:00:00Z",
-      olis: { strayRows: { CommitteePublicTestimonies: rows } },
-      serverEnv: { MCP_RATE_LIMIT: "1000" },
-    });
+    const system = await template.start();
     started.push(system);
     return system;
   }
@@ -148,7 +151,7 @@ describe.for(eras)("find_measures after the clock moves and the worker pulls aga
 
   async function startAt(clockAt: string): Promise<System> {
     const options: SystemOptions = { clockAt, documents: true, serverEnv: { MCP_RATE_LIMIT: "1000" } };
-    const system = await startSystem(options);
+    const system = await startCopiedSystem(options);
     started.push(system);
     return system;
   }
@@ -212,24 +215,26 @@ describe.for(eras)(
       ModifiedDate: null,
     });
 
-    async function start(): Promise<System> {
-      const system = await startSystem({
-        clockAt: "2025-01-24T20:00:00Z",
-        documents: true,
-        serverEnv: { MCP_RATE_LIMIT: "1000" },
-        olis: {
-          strayRows: {
-            CommitteeProposedAmendments: [
-              repostingRow(990101, "-1", "2025-01-24T08:00:00"),
-              repostingRow(990102, "-2", "2025-01-24T09:00:00"),
-            ],
-          },
-          strayDocuments: {
-            "/liz/2025R1/Downloads/ProposedAmendment/990101": "proposed-amendments/26923.pdf",
-            "/liz/2025R1/Downloads/ProposedAmendment/990102": "proposed-amendments/26286.pdf",
-          },
+    const template = systemTemplate({
+      clockAt: "2025-01-24T20:00:00Z",
+      documents: true,
+      serverEnv: { MCP_RATE_LIMIT: "1000" },
+      olis: {
+        strayRows: {
+          CommitteeProposedAmendments: [
+            repostingRow(990101, "-1", "2025-01-24T08:00:00"),
+            repostingRow(990102, "-2", "2025-01-24T09:00:00"),
+          ],
         },
-      });
+        strayDocuments: {
+          "/liz/2025R1/Downloads/ProposedAmendment/990101": "proposed-amendments/26923.pdf",
+          "/liz/2025R1/Downloads/ProposedAmendment/990102": "proposed-amendments/26286.pdf",
+        },
+      },
+    });
+
+    async function start(): Promise<System> {
+      const system = await template.start();
       started.push(system);
       return system;
     }
@@ -299,12 +304,14 @@ describe.for(eras)("find_measures lists the newest evidence, for a %s client", (
     ),
   ];
 
+  const template = systemTemplate({
+    clockAt: "2025-07-15T17:00:00Z",
+    olis: { strayRows: { CommitteePublicTestimonies: rows } },
+    serverEnv: { MCP_RATE_LIMIT: "1000" },
+  });
+
   async function itemsAfter(args: Record<string, unknown>): Promise<Item[]> {
-    const system = await startSystem({
-      clockAt: "2025-07-15T17:00:00Z",
-      olis: { strayRows: { CommitteePublicTestimonies: rows } },
-      serverEnv: { MCP_RATE_LIMIT: "1000" },
-    });
+    const system = await template.start();
     started.push(system);
     const outcome = await find(system, era, { agency: "bureau-of-labor-and-industries", ...args });
     expect(outcome.isError, outcome.text).toBe(false);
@@ -395,21 +402,23 @@ describe.for(eras)("find_measures stays inside a page's size, for a %s client", 
     ModifiedDate: null,
   }));
 
+  const template = systemTemplate({
+    clockAt: "2026-08-01T17:00:00Z",
+    documents: true,
+    serverEnv: { MCP_RATE_LIMIT: "1000" },
+    olis: {
+      strayRows: { CommitteePublicTestimonies: testimony, CommitteeProposedAmendments: amendments },
+      strayDocuments: Object.fromEntries(
+        amendments.map((row) => [
+          `/liz/2025R1/Downloads/ProposedAmendment/${String(row["ProposedAmendmentId"])}`,
+          "proposed-amendments/26286.pdf",
+        ]),
+      ),
+    },
+  });
+
   async function start(): Promise<System> {
-    const system = await startSystem({
-      clockAt: "2026-08-01T17:00:00Z",
-      documents: true,
-      serverEnv: { MCP_RATE_LIMIT: "1000" },
-      olis: {
-        strayRows: { CommitteePublicTestimonies: testimony, CommitteeProposedAmendments: amendments },
-        strayDocuments: Object.fromEntries(
-          amendments.map((row) => [
-            `/liz/2025R1/Downloads/ProposedAmendment/${String(row["ProposedAmendmentId"])}`,
-            "proposed-amendments/26286.pdf",
-          ]),
-        ),
-      },
-    });
+    const system = await template.start();
     started.push(system);
     return system;
   }
@@ -480,7 +489,7 @@ describe.for(eras)("find_measures stays inside a page's size, for a %s client", 
   it("keeps a full page of a Department's derived links through five long-named sub-units to about 25,000 characters", async () => {
     const snapshot = madeUpDepartmentSnapshot();
     try {
-      const system = await startSystem({
+      const system = await startCopiedSystem({
         clockAt: "2026-08-01T17:00:00Z",
         documents: true,
         snapshot: snapshot.path,
@@ -539,21 +548,23 @@ describe.for(eras)("find_measures counts a page across the groups, for a %s clie
     ModifiedDate: null,
   }));
 
+  const template = systemTemplate({
+    clockAt: "2026-08-01T17:00:00Z",
+    documents: true,
+    serverEnv: { MCP_RATE_LIMIT: "1000" },
+    olis: {
+      strayRows: { CommitteeProposedAmendments: amendments },
+      strayDocuments: Object.fromEntries(
+        amendments.map((row) => [
+          `/liz/2025R1/Downloads/ProposedAmendment/${String(row["ProposedAmendmentId"])}`,
+          "proposed-amendments/26286.pdf",
+        ]),
+      ),
+    },
+  });
+
   it("puts each item on one page, and the group a page starts in after the groups before it", async () => {
-    const system = await startSystem({
-      clockAt: "2026-08-01T17:00:00Z",
-      documents: true,
-      serverEnv: { MCP_RATE_LIMIT: "1000" },
-      olis: {
-        strayRows: { CommitteeProposedAmendments: amendments },
-        strayDocuments: Object.fromEntries(
-          amendments.map((row) => [
-            `/liz/2025R1/Downloads/ProposedAmendment/${String(row["ProposedAmendmentId"])}`,
-            "proposed-amendments/26286.pdf",
-          ]),
-        ),
-      },
-    });
+    const system = await template.start();
     started.push(system);
 
     const pages: Found[] = [];

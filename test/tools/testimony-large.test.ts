@@ -7,7 +7,7 @@
 // every case in this file because none of them changes it.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 import { madeUpTestimonyRow, testimonyDownloadPath } from "../support/testimony.ts";
 
 // Made-up row i (0 to 249) has CommTestId 910001 + i, and by i % 5: 0 is oppose, 1 is neutral, 2 to 4 are support.
@@ -28,7 +28,7 @@ const idOf = (commTestId: number): string => `testimony-2025r1-${commTestId}`;
 let system: System;
 
 beforeAll(async () => {
-  system = await startSystem({
+  system = await startCopiedSystem({
     clockAt: "2025-07-15T17:00:00Z",
     documents: true,
     olis: {

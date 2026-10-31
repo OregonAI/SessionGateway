@@ -5,14 +5,14 @@
 // get-document-pull.test.ts.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 
 let system: System;
 
 beforeAll(async () => {
   // 2026-08-01 10:00 in Oregon: every row of the fixture exists by then (the newest Exhibit row was
   // created on 2026-07-27), so the pull fetches all 278 documents.
-  system = await startSystem({ clockAt: "2026-08-01T17:00:00Z", documents: true });
+  system = await startCopiedSystem({ clockAt: "2026-08-01T17:00:00Z", documents: true });
 }, 60_000);
 
 afterAll(async () => {

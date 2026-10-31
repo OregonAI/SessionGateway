@@ -7,7 +7,7 @@
 // time, and from the documents as `pdftotext` prints them.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 
 type Example = {
   document_id: string;
@@ -49,7 +49,7 @@ function useSystemAt(clockAt: string): {
   let system: System;
   const clients = new Map<string, ConnectedClient>();
   beforeAll(async () => {
-    system = await startSystem({ clockAt, documents: true, serverEnv: { MCP_RATE_LIMIT: "1000" } });
+    system = await startCopiedSystem({ clockAt, documents: true, serverEnv: { MCP_RATE_LIMIT: "1000" } });
     for (const era of eras) clients.set(era, await connectClient(era, system.handler));
   }, 60_000);
   afterAll(async () => {

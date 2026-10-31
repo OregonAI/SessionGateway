@@ -21,7 +21,7 @@ import {
   triplesOf,
   type StatuteLinks,
 } from "../support/statute-links.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, startSystem, type System } from "../support/system.ts";
 
 // A case that builds its own system and serves the documents pulls up to the fixture's 278 files, about four
 // seconds on its own and more with the other files' workers running beside it (the default is five).
@@ -75,7 +75,7 @@ describe("the feed as it stood on 2025-02-01", () => {
   let system: System;
 
   beforeAll(async () => {
-    system = await startSystem({
+    system = await startCopiedSystem({
       clockAt: "2025-02-01T20:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "1000" },
@@ -161,6 +161,7 @@ describe("the feed as it stood on 2025-02-01", () => {
 });
 
 // The case moves the clock and pulls again, which changes the database, so each era gets a system of its own.
+// A real pull from an empty database: the case counts the requests of the first pull and of the second (test/CLAUDE.md).
 describe.for(eras)("when the next Version comes in with a later pull, for a %s client", (era) => {
   let system: System;
   let connected: ConnectedClient;
@@ -236,7 +237,7 @@ describe("rows the fixture lacks", () => {
   let system: System;
 
   beforeAll(async () => {
-    system = await startSystem({
+    system = await startCopiedSystem({
       clockAt: "2026-08-01T17:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "1000" },
@@ -319,7 +320,7 @@ describe.for(eras)("a Version with no place in the order of printing is the only
   let connected: ConnectedClient;
 
   beforeAll(async () => {
-    system = await startSystem({
+    system = await startCopiedSystem({
       clockAt: "2025-02-01T20:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "1000" },
@@ -383,7 +384,7 @@ describe.for(eras)("an amendment whose earliest posting writes its number with n
   });
 
   beforeAll(async () => {
-    system = await startSystem({
+    system = await startCopiedSystem({
       clockAt: "2026-08-01T17:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "1000" },
