@@ -1,6 +1,6 @@
 // The MCP server's handler: stateless Streamable HTTP, built on MCP SDK v2's createMcpHandler. It
 // serves 2026-07-28 clients and, through the SDK's stateless fallback, 2025-era clients too.
-import { createMcpHandler, McpServer, type McpHttpHandler } from "@modelcontextprotocol/server";
+import { createMcpHandler, McpServer, type CallToolResult, type McpHttpHandler } from "@modelcontextprotocol/server";
 import type { ServerConfig } from "#/packages/config/index.ts";
 import { openIndexReader, type IndexReader } from "#/packages/database/reader.ts";
 import { openSearchReader } from "#/packages/database/search.ts";
@@ -45,6 +45,7 @@ import {
   testimonyInput,
   testimonyOutput,
 } from "./lib/testimony.ts";
+import { stalenessWarning } from "./lib/staleness.ts";
 import { createRateLimiter, rateLimitMessage, type RateLimiter } from "./lib/rate-limit.ts";
 
 export type HandlerDeps = {
@@ -95,6 +96,19 @@ function buildServer(
   clock: Clock,
 ): McpServer {
   const server = new McpServer({ name: "session-gateway", version: "0.0.0" });
+  // Every answer carries the staleness warning, when there is one (ticket #17, ADR-0039): one more block of text after
+  // the tool's own, so no tool's output schema changes. The warning is worked out when the call is answered.
+  const warned = <Arguments extends unknown[]>(
+    callback: (...args: Arguments) => Promise<CallToolResult> | CallToolResult,
+  ): ((...args: Arguments) => Promise<CallToolResult>) => {
+    return async (...args: Arguments): Promise<CallToolResult> => {
+      const answer = await callback(...args);
+      const warning = stalenessWarning(reader, config, clock);
+      return warning === undefined
+        ? answer
+        : { ...answer, content: [...answer.content, { type: "text", text: warning }] };
+    };
+  };
   server.registerTool(
     "get_measure",
     {
@@ -105,7 +119,7 @@ function buildServer(
       outputSchema: getMeasureOutput,
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
-    async (input) => {
+    warned(async (input) => {
       const refused = refuseOverRateLimit(limiter, config);
       if (refused !== undefined) return refused;
       const result = await getMeasure(reader, liveStatus, config.session, input);
@@ -123,7 +137,7 @@ function buildServer(
         default:
           return result satisfies never;
       }
-    },
+    }),
   );
   server.registerTool(
     "compare_amendment",
@@ -135,7 +149,7 @@ function buildServer(
       outputSchema: compareAmendmentOutput,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    (input) => {
+    warned((input) => {
       const refused = refuseOverRateLimit(limiter, config);
       if (refused !== undefined) return refused;
       const result = compareAmendment(reader, config.session, input);
@@ -153,7 +167,7 @@ function buildServer(
         default:
           return result satisfies never;
       }
-    },
+    }),
   );
   server.registerTool(
     "get_document",
@@ -165,7 +179,7 @@ function buildServer(
       outputSchema: getDocumentOutput,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    (input) => {
+    warned((input) => {
       const refused = refuseOverRateLimit(limiter, config);
       if (refused !== undefined) return refused;
       const result = getDocument(reader, config.session, input);
@@ -200,7 +214,7 @@ function buildServer(
         default:
           return result satisfies never;
       }
-    },
+    }),
   );
   server.registerTool(
     "meetings",
@@ -211,7 +225,7 @@ function buildServer(
       outputSchema: meetingsOutput,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    (input) => {
+    warned((input) => {
       const refused = refuseOverRateLimit(limiter, config);
       if (refused !== undefined) return refused;
       const result = meetings(reader, config.session, clock.now(), input);
@@ -230,7 +244,7 @@ function buildServer(
         default:
           return result satisfies never;
       }
-    },
+    }),
   );
   server.registerTool(
     "testimony",
@@ -241,7 +255,7 @@ function buildServer(
       outputSchema: testimonyOutput,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    (input) => {
+    warned((input) => {
       const refused = refuseOverRateLimit(limiter, config);
       if (refused !== undefined) return refused;
       const result = testimony(reader, config.session, input);
@@ -264,7 +278,7 @@ function buildServer(
         default:
           return result satisfies never;
       }
-    },
+    }),
   );
   server.registerTool(
     "find_measures",
@@ -275,7 +289,7 @@ function buildServer(
       outputSchema: findMeasuresOutput,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    (input) => {
+    warned((input) => {
       const refused = refuseOverRateLimit(limiter, config);
       if (refused !== undefined) return refused;
       const result = findMeasures(reader, config.session, input);
@@ -295,7 +309,7 @@ function buildServer(
         default:
           return result satisfies never;
       }
-    },
+    }),
   );
   server.registerTool(
     "search",
@@ -307,7 +321,7 @@ function buildServer(
       outputSchema: searchOutput,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async (input) => {
+    warned(async (input) => {
       const refused = refuseOverRateLimit(limiter, config);
       if (refused !== undefined) return refused;
       const result = await search(searchDeps, config.session, input);
@@ -323,7 +337,7 @@ function buildServer(
         default:
           return result satisfies never;
       }
-    },
+    }),
   );
   server.registerTool(
     "session_overview",
@@ -335,12 +349,12 @@ function buildServer(
       outputSchema: sessionOverviewOutput,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    () => {
+    warned(() => {
       const refused = refuseOverRateLimit(limiter, config);
       if (refused !== undefined) return refused;
       const overview = sessionOverview(reader, config.session);
       return { content: [{ type: "text", text: JSON.stringify(overview) }], structuredContent: overview };
-    },
+    }),
   );
   return server;
 }

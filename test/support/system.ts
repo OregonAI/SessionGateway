@@ -8,7 +8,14 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { loadIngestConfig, loadServerConfig, type ServerConfig } from "#/packages/config/index.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
-import { runFullPull, type FullPullResult } from "#/packages/ingest/index.ts";
+import {
+  runFullPull,
+  runIncrement,
+  type FullPullResult,
+  type IncrementResult,
+  type IngestDeps,
+} from "#/packages/ingest/index.ts";
+import { runIngestLoop } from "#/packages/ingest/loop.ts";
 import { committedAliasFilePath, readLegislatorAliases } from "#/packages/legislators/aliases.ts";
 import { createSessionGatewayHandler, type SessionGatewayHandler } from "#/packages/mcp-server/handler.ts";
 import { createSimulatedClock, type SimulatedClock } from "./clock.ts";
@@ -66,6 +73,8 @@ export type SystemOptions = {
   embedder?: Embedder;
   /** Further environment variables for the server's configuration (MCP_PATH, MCP_PORT, ...). */
   serverEnv?: Record<string, string>;
+  /** The worker's rhythms (the INGEST_INCREMENTS and INGEST_FULL_PULL variables): unset, as a deployment leaves them. */
+  ingest?: { increments?: string; fullPull?: string };
   /** The alias file the worker reads, as the entry script would pass it. The committed one by default. */
   legislatorAliasesPath?: string;
 };
@@ -88,6 +97,17 @@ export type System = {
    * system's own for this pull, to make a pull fail part-way.
    */
   pullAgain(options?: { embedder?: Embedder }): Promise<FullPullResult>;
+  /**
+   * Runs the worker's increment at the clock's time now, into the same database: what a test calls after it moves
+   * the clock (and adds rows to the fake) to see what the next increment brings.
+   */
+  incrementAgain(): Promise<IncrementResult>;
+  /**
+   * Runs the worker's loop (`runIngestLoop`) from the clock's time now until the clock reaches `until`, an ISO-8601
+   * instant. The loop's sleep is the harness's: it moves the simulated clock by the time it was asked to wait, so a
+   * test runs a day of the worker's schedule at once and no timer runs. A run that fails throws out of this call.
+   */
+  runSchedule(until: string): Promise<void>;
   stop(): Promise<void>;
 };
 
@@ -243,21 +263,43 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
     SNAPSHOT_PATH: options.snapshot ?? snapshotFixturePath,
     // The entry scripts load the model from here. The harness is given its embedder, so nothing reads it.
     MODEL_PATH: modelPath(),
+    ...(options.ingest?.increments === undefined ? {} : { INGEST_INCREMENTS: options.ingest.increments }),
+    ...(options.ingest?.fullPull === undefined ? {} : { INGEST_FULL_PULL: options.ingest.fullPull }),
     ...(options.statutesAffectedTableUrl === undefined
       ? {}
       : { STATUTES_AFFECTED_TABLE_URL: options.statutesAffectedTableUrl(olis.origin) }),
   };
+  const workerDeps = (workerEmbedder: Embedder): IngestDeps => ({
+    fetch,
+    clock,
+    signal: AbortSignal.timeout(30_000),
+    // The worker does not wait between attempts to fetch a document: a test reads how many there were.
+    pause: () => Promise.resolve(),
+    ...(options.documentTimeoutMs === undefined ? {} : { documentTimeoutMs: options.documentTimeoutMs }),
+    legislatorAliases: readLegislatorAliases(options.legislatorAliasesPath ?? committedAliasFilePath),
+    embedder: workerEmbedder,
+  });
   const pull = (pullOptions: { embedder?: Embedder } = {}): Promise<FullPullResult> =>
-    runFullPull(loadIngestConfig(env), {
-      fetch,
-      clock,
-      signal: AbortSignal.timeout(30_000),
-      // The worker does not wait between attempts to fetch a document: a test reads how many there were.
-      pause: () => Promise.resolve(),
-      ...(options.documentTimeoutMs === undefined ? {} : { documentTimeoutMs: options.documentTimeoutMs }),
-      legislatorAliases: readLegislatorAliases(options.legislatorAliasesPath ?? committedAliasFilePath),
-      embedder: pullOptions.embedder ?? embedder,
+    runFullPull(loadIngestConfig(env), workerDeps(pullOptions.embedder ?? embedder));
+  const schedule = async (until: string): Promise<void> => {
+    const stop = new AbortController();
+    const end = new Date(until).getTime();
+    const failures: unknown[] = [];
+    await runIngestLoop(loadIngestConfig(env), {
+      ...workerDeps(embedder),
+      signal: stop.signal,
+      sleep: (milliseconds) => {
+        clock.advance(milliseconds);
+        if (clock.now().getTime() >= end) stop.abort();
+        return Promise.resolve();
+      },
+      onRunFailed: (_run, error) => {
+        failures.push(error);
+      },
     });
+    if (failures.length > 0) throw new Error("A run of the worker's loop failed", { cause: failures[0] });
+  };
+  const increment = (): Promise<IncrementResult> => runIncrement(loadIngestConfig(env), workerDeps(embedder));
   try {
     if (copyOf === undefined) await pull();
     const serverConfig = loadServerConfig({ ...env, ...options.serverEnv });
@@ -282,6 +324,8 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
         return report as Record<string, unknown>;
       },
       pullAgain: pull,
+      incrementAgain: increment,
+      runSchedule: schedule,
       stop: async () => {
         shutdown.abort();
         await handler.close();

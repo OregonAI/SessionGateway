@@ -1,3 +1,7 @@
+---
+status: accepted; the 15-minute increments and the nightly full pull are superseded in part by ADR-0039 (the two rhythms are configuration); the live lookups, the two-pull rule and the replaced files stand
+---
+
 # Read OLIS within its terms: live lookups, 15-minute increments, a nightly full pull
 
 The OData feed has no change tracking and no ETags, and `ModifiedDate` is null on whole entity sets (every MeasureDocument and MeasureAnalysisDocument row). Its Acceptable Use Agreement allows a full refresh only "once per day after business hours between 5:00 pm-6:00 am Pacific Time", but allows "incremental refreshes as often as needed" and "on-demand queries as needed". So:

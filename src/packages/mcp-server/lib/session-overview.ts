@@ -35,7 +35,17 @@ export const sessionOverviewOutput = z.object({
         .describe("The documents by what they are."),
     })
     .describe("What the index holds."),
-  as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
+  as_of: z
+    .string()
+    .describe(
+      "When the index was last refreshed, in Pacific time with its UTC offset: the start of the latest complete full pull or of a later increment.",
+    ),
+  last_increment: z
+    .string()
+    .nullable()
+    .describe(
+      "When the last increment started, in Pacific time with its UTC offset, or null while none has run. An increment reads the rows OLIS created or modified since the run before it; a change to an existing Version, analysis document or Measure document waits for the next full pull.",
+    ),
   snapshot: z
     .object({
       source: z.string().describe("The OregonAI corpus the data was copied from: executive-regulatory-frameworks."),
@@ -68,6 +78,7 @@ export function sessionOverview(reader: IndexReader, session: SessionKey): Sessi
       documents_by_kind: counts.documentsByKind,
     },
     as_of: asOf,
+    last_increment: reader.lastIncrement(session) ?? null,
     snapshot: { source: snapshot.source, commit: snapshot.commit, commit_date: snapshot.commitDate },
     notice: NON_OFFICIAL_NOTICE,
   };

@@ -6,7 +6,19 @@ import { parseSessionKey, type SessionKey } from "#/packages/domain/index.ts";
 
 export type Environment = Record<string, string | undefined>;
 
+/** How often the worker reads what OLIS changed between full pulls (ADR-0039). */
+export const incrementSettings = ["off", "daily", "15min"] as const;
+export type IncrementsSetting = (typeof incrementSettings)[number];
+
+/** How often the worker reads the whole Session again (ADR-0039). Under `weekly` and `monthly` the value names the day too. */
+export const fullPullSettings = ["nightly", "weekly", "monthly"] as const;
+export type FullPullSetting = (typeof fullPullSettings)[number];
+
 export type IngestConfig = {
+  /** The increments' rhythm: INGEST_INCREMENTS, `daily` unless set. */
+  increments: IncrementsSetting;
+  /** The full pull's rhythm: INGEST_FULL_PULL, `weekly` unless set. */
+  fullPull: FullPullSetting;
   /** The one Session this deployment serves (ADR-0003). */
   session: SessionKey;
   olisBaseUrl: string;
@@ -27,6 +39,9 @@ export type IngestConfig = {
 };
 
 export type ServerConfig = {
+  /** The worker's rhythms, which the server reads to say when the index is too old (ADR-0039). */
+  increments: IncrementsSetting;
+  fullPull: FullPullSetting;
   session: SessionKey;
   /** The OLIS service root, with a trailing slash: where the live lookup reads one Measure at request time. */
   olisBaseUrl: string;
@@ -69,7 +84,18 @@ const serviceRoot = z.url().transform((text) => {
   return url.href;
 });
 
+// The two rhythms of the ingest worker (ADR-0039). The server reads them too, because "too old" depends on them. The
+// message names the variable (zod's issue path) and the values it accepts, never the value it was given.
+const incrementsSetting = z
+  .enum(incrementSettings, { error: `must be one of ${incrementSettings.join(", ")}` })
+  .default("daily");
+const fullPullSetting = z
+  .enum(fullPullSettings, { error: `must be one of ${fullPullSettings.join(", ")}` })
+  .default("weekly");
+
 const ingestSchema = z.object({
+  INGEST_INCREMENTS: incrementsSetting,
+  INGEST_FULL_PULL: fullPullSetting,
   SESSION_KEY: sessionKey,
   OLIS_BASE_URL: serviceRoot,
   // Documents are on olis.oregonlegislature.gov, not on the feed's host. Only a test sets this.
@@ -118,6 +144,8 @@ const positiveWholeNumber = z
 const MAX_LIVE_TIMEOUT_MS = 30_000;
 
 const serverSchema = z.object({
+  INGEST_INCREMENTS: incrementsSetting,
+  INGEST_FULL_PULL: fullPullSetting,
   SESSION_KEY: sessionKey,
   // The server needs OLIS for the live status of get_measure (ticket #21): a deployment without it would
   // answer every call from the cache and say the lookup failed, so a missing variable stops the start-up.
@@ -167,6 +195,8 @@ function parseEnvironment<Schema extends z.ZodType>(schema: Schema, env: Environ
 export function loadIngestConfig(env: Environment): IngestConfig {
   const parsed = parseEnvironment(ingestSchema, env);
   return {
+    increments: parsed.INGEST_INCREMENTS,
+    fullPull: parsed.INGEST_FULL_PULL,
     session: parsed.SESSION_KEY,
     olisBaseUrl: parsed.OLIS_BASE_URL,
     olisDocumentOrigin: parsed.OLIS_DOCUMENT_ORIGIN,
@@ -181,6 +211,8 @@ export function loadIngestConfig(env: Environment): IngestConfig {
 export function loadServerConfig(env: Environment): ServerConfig {
   const parsed = parseEnvironment(serverSchema, env);
   return {
+    increments: parsed.INGEST_INCREMENTS,
+    fullPull: parsed.INGEST_FULL_PULL,
     session: parsed.SESSION_KEY,
     olisBaseUrl: parsed.OLIS_BASE_URL,
     olisLiveTimeoutMs: parsed.OLIS_LIVE_TIMEOUT_MS,
