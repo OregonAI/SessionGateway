@@ -31,9 +31,9 @@ export const NIGHT_STARTS_HOUR = 17;
 export const NIGHT_ENDS_HOUR = 6;
 export const WORKING_HOURS_END = 22;
 
-/** The Pacific wall clock a Timestamp reads, with its UTC offset left off. */
+/** The Pacific wall clock at the instant a Timestamp names, whatever offset it is written with. */
 export function wallClockOf(at: Timestamp): Temporal.PlainDateTime {
-  return Temporal.PlainDateTime.from(at.replace(/(?:Z|[+-]\d{2}:\d{2})$/, ""));
+  return Temporal.Instant.from(at).toZonedDateTimeISO("America/Los_Angeles").toPlainDateTime();
 }
 
 /** The date a night ends on, or undefined when the time is in working hours (6 am to 5 pm). */
