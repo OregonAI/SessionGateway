@@ -22,6 +22,12 @@ const schema = `
     session_key TEXT NOT NULL PRIMARY KEY,
     full_pull_as_of TEXT NOT NULL
   ) STRICT;
+  -- When the last increment started (ticket #17, ADR-0039). An increment is not a complete full pull: it never
+  -- touches index_state's full_pull_as_of or the listing tables.
+  CREATE TABLE IF NOT EXISTS increment_state (
+    session_key TEXT NOT NULL PRIMARY KEY,
+    as_of TEXT NOT NULL
+  ) STRICT;
   CREATE TABLE IF NOT EXISTS legislator (
     session_key TEXT NOT NULL,
     id TEXT NOT NULL,

@@ -73,7 +73,7 @@ import {
   type FloorVote,
   type LegislatorVote,
 } from "#/packages/domain/votes.ts";
-import type { Timestamp } from "#/packages/time/pacific.ts";
+import { compareTimestamps, type Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceFromJson, storedEvidenceKinds } from "./lib/agency-evidence.ts";
 import { openReadConnection } from "./lib/connection.ts";
 import { listedOrUnchecked } from "./lib/listing.ts";
@@ -118,6 +118,12 @@ export type IndexReader = {
   findLegislatorOfCode(session: SessionKey, code: string): Legislator | undefined;
   /** When the last completed full pull started, or undefined if none has completed. */
   asOf(session: SessionKey): Timestamp | undefined;
+  /** When the last complete full pull started, or undefined while there has been none. */
+  lastFullPull(session: SessionKey): Timestamp | undefined;
+  /** When the last increment started, or undefined while there has been none (ticket #17, ADR-0039). */
+  lastIncrement(session: SessionKey): Timestamp | undefined;
+  /** The Pacific dates (YYYY-MM-DD) of the Session's committee meetings the index holds: days the Session meets. */
+  meetingDays(session: SessionKey): string[];
   /** The version of the OregonAI snapshot the last completed full pull built the index with. */
   snapshotVersion(session: SessionKey): SnapshotVersion | undefined;
   /**
@@ -212,6 +218,8 @@ const measureRow = z.object({
   created_at: z.string(),
   modified_at: z.string().nullable(),
 });
+const incrementStateRow = z.object({ as_of: z.string() });
+const meetingDayRow = z.object({ day: z.string() });
 const stateRow = z.object({ full_pull_as_of: z.string() });
 const textRow = z.object({ text: z.string() });
 const historyRow = z.object({
@@ -497,6 +505,18 @@ export function openIndexReader(path: string): IndexReader {
      WHERE legislator_code.session_key = ? AND legislator_code.code = ?`,
   );
   const selectAsOf = database.prepare("SELECT full_pull_as_of FROM index_state WHERE session_key = ?");
+  const selectIncrementAsOf = database.prepare("SELECT as_of FROM increment_state WHERE session_key = ?");
+  const selectMeetingDays = database.prepare(
+    "SELECT DISTINCT substr(at, 1, 10) AS day FROM meeting WHERE session_key = ? ORDER BY day",
+  );
+  const fullPullOf = (session: SessionKey): Timestamp | undefined => {
+    const row = selectAsOf.get(session);
+    return row === undefined ? undefined : (stateRow.parse(row).full_pull_as_of as Timestamp);
+  };
+  const incrementOf = (session: SessionKey): Timestamp | undefined => {
+    const row = selectIncrementAsOf.get(session);
+    return row === undefined ? undefined : (incrementStateRow.parse(row).as_of as Timestamp);
+  };
   const selectSnapshot = database.prepare(
     "SELECT source, commit_sha, commit_date FROM snapshot_state WHERE session_key = ?",
   );
@@ -1356,8 +1376,16 @@ export function openIndexReader(path: string): IndexReader {
       return { id: stored.legislator_id as LegislatorId, name: stored.legislator_name };
     },
     asOf(session) {
-      const row = selectAsOf.get(session);
-      return row === undefined ? undefined : (stateRow.parse(row).full_pull_as_of as Timestamp);
+      // The index is as of its latest update: the last complete full pull, or a later increment (ADR-0039).
+      const full = fullPullOf(session);
+      const increment = incrementOf(session);
+      if (full === undefined || increment === undefined) return full;
+      return compareTimestamps(increment, full) > 0 ? increment : full;
+    },
+    lastFullPull: fullPullOf,
+    lastIncrement: incrementOf,
+    meetingDays(session) {
+      return selectMeetingDays.all(session).map((row) => meetingDayRow.parse(row).day);
     },
     snapshotVersion(session) {
       const row = selectSnapshot.get(session);

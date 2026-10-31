@@ -3,6 +3,7 @@
 import { z } from "zod";
 import type { PulledEntitySet } from "#/packages/domain/documents.ts";
 import type { MeasureKey, SessionKey } from "#/packages/domain/index.ts";
+import { pacificWallClock, type Timestamp } from "#/packages/time/pacific.ts";
 import type { OlisClientOptions } from "./options.ts";
 
 /** A page that takes longer than this is an outage, not a slow answer (olis-odata.md gotcha 15). */
@@ -157,6 +158,18 @@ function literal(text: string): string {
 }
 
 /**
+ * The term that keeps the rows OLIS created or modified after a time. The feed's dates are Pacific wall-clock times
+ * with no offset, so the time is written that way. A row with only one of the two dates (many sets have a null
+ * ModifiedDate) is picked up by the other.
+ */
+function changedSinceTerm(since: Timestamp): string {
+  const wallClock = pacificWallClock(new Date(Temporal.Instant.from(since).epochMilliseconds)).toString({
+    smallestUnit: "second",
+  });
+  return `(CreatedDate gt datetime'${wallClock}' or ModifiedDate gt datetime'${wallClock}')`;
+}
+
+/**
  * Reads the rows of one Session of an entity set, or with a `scope`, the rows of one Measure of it. The
  * feed is asked for one Session, but a row of another one is never taken for it: measure numbers restart
  * every Session, so SB 69 of one Session is not SB 69 of another, and a Legislator Code can name a
@@ -173,7 +186,12 @@ export async function readSessionRows<
   scope?: MeasureScope,
 ): Promise<Row[]> {
   if (scope === undefined) {
-    const rows = await readEntitySet(options, entitySet, `SessionKey eq ${literal(session)}`, rowSchema, signal);
+    const changed =
+      options.changedSince === undefined || entitySet === "Legislators" || entitySet === "Committees"
+        ? []
+        : [changedSinceTerm(options.changedSince)];
+    const filter = [`SessionKey eq ${literal(session)}`, ...changed].join(" and ");
+    const rows = await readEntitySet(options, entitySet, filter, rowSchema, signal);
     return rows.filter((row) => row.SessionKey === session);
   }
   const { measure } = scope;

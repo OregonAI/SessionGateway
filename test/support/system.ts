@@ -5,7 +5,13 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadIngestConfig, loadServerConfig, type ServerConfig } from "#/packages/config/index.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
-import { runFullPull, type FullPullResult } from "#/packages/ingest/index.ts";
+import {
+  runFullPull,
+  runIncrement,
+  type FullPullResult,
+  type IncrementResult,
+  type IngestDeps,
+} from "#/packages/ingest/index.ts";
 import { committedAliasFilePath, readLegislatorAliases } from "#/packages/legislators/aliases.ts";
 import { createSessionGatewayHandler, type SessionGatewayHandler } from "#/packages/mcp-server/handler.ts";
 import { createSimulatedClock, type SimulatedClock } from "./clock.ts";
@@ -84,6 +90,11 @@ export type System = {
    * system's own for this pull, to make a pull fail part-way.
    */
   pullAgain(options?: { embedder?: Embedder }): Promise<FullPullResult>;
+  /**
+   * Runs the worker's increment at the clock's time now, into the same database: what a test calls after it moves
+   * the clock (and adds rows to the fake) to see what the next increment brings.
+   */
+  incrementAgain(): Promise<IncrementResult>;
   stop(): Promise<void>;
 };
 
@@ -107,17 +118,19 @@ export async function startSystem(options: SystemOptions): Promise<System> {
       ? {}
       : { STATUTES_AFFECTED_TABLE_URL: options.statutesAffectedTableUrl(olis.origin) }),
   };
+  const workerDeps = (workerEmbedder: Embedder): IngestDeps => ({
+    fetch,
+    clock,
+    signal: AbortSignal.timeout(30_000),
+    // The worker does not wait between attempts to fetch a document: a test reads how many there were.
+    pause: () => Promise.resolve(),
+    ...(options.documentTimeoutMs === undefined ? {} : { documentTimeoutMs: options.documentTimeoutMs }),
+    legislatorAliases: readLegislatorAliases(options.legislatorAliasesPath ?? committedAliasFilePath),
+    embedder: workerEmbedder,
+  });
   const pull = (pullOptions: { embedder?: Embedder } = {}): Promise<FullPullResult> =>
-    runFullPull(loadIngestConfig(env), {
-      fetch,
-      clock,
-      signal: AbortSignal.timeout(30_000),
-      // The worker does not wait between attempts to fetch a document: a test reads how many there were.
-      pause: () => Promise.resolve(),
-      ...(options.documentTimeoutMs === undefined ? {} : { documentTimeoutMs: options.documentTimeoutMs }),
-      legislatorAliases: readLegislatorAliases(options.legislatorAliasesPath ?? committedAliasFilePath),
-      embedder: pullOptions.embedder ?? embedder,
-    });
+    runFullPull(loadIngestConfig(env), workerDeps(pullOptions.embedder ?? embedder));
+  const increment = (): Promise<IncrementResult> => runIncrement(loadIngestConfig(env), workerDeps(embedder));
   try {
     await pull();
     const serverConfig = loadServerConfig({ ...env, ...options.serverEnv });
@@ -142,6 +155,7 @@ export async function startSystem(options: SystemOptions): Promise<System> {
         return report as Record<string, unknown>;
       },
       pullAgain: pull,
+      incrementAgain: increment,
       stop: async () => {
         shutdown.abort();
         await handler.close();
