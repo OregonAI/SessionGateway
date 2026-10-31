@@ -18,6 +18,7 @@ import {
   statuteLinksShown,
   targetsOutput,
   versionEntryOutput,
+  versionsOutputOf,
   type StatuteLinksBySourceOutput,
 } from "./statute-links.ts";
 
@@ -86,7 +87,7 @@ export const tableOfMeasureOutput = z.object({
 
 /** get_measure's Statute Links by source, with the table's entries beside the parsed links of the Version each names. */
 export const statuteLinksBySourceWithTableOutput = statuteLinksBySourceOutput.extend({
-  versions: z.array(
+  versions: versionsOutputOf(
     versionEntryOutput.extend({
       statutes_affected_table: tableOfVersionOutput
         .optional()

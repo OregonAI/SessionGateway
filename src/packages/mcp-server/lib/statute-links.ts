@@ -302,12 +302,21 @@ const laterVersionRefOutput = z.object({
   source_url: z.string().describe("Where the Legislature publishes the Version."),
 });
 
-export const statuteLinksBySourceOutput = z.object({
-  versions: z
-    .array(versionEntryOutput)
+/**
+ * The `versions` field of the Statute Links by source, for a Version entry of whatever shape. One place says what the
+ * field is, so that a tool that adds to the entry (the Statutes Affected Table's block, ticket #22) extends the entry and
+ * keeps the field's description.
+ */
+export function versionsOutputOf<Entry extends z.ZodType>(entry: Entry): z.ZodArray<Entry> {
+  return z
+    .array(entry)
     .describe(
       "The Measure's Versions that this index holds, in the order they were printed (a Version with no place in that order, such as a minority report's, comes last), each with the Statute Links read from its text. A Printed Amendment is not a Version and is not read.",
-    ),
+    );
+}
+
+export const statuteLinksBySourceOutput = z.object({
+  versions: versionsOutputOf(versionEntryOutput),
   proposed_amendments: z
     .array(
       z.object({
