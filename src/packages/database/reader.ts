@@ -305,9 +305,16 @@ const postingRow = z.object({
   committee_code: z.string(),
   committee_name: z.string(),
   fetched: z.number(),
+  listed: z.number(),
   content_hash: z.string().nullable(),
 });
-const versionRow = z.object({ id: z.string(), label: z.string(), source_url: z.string(), content_hash: z.string() });
+const versionRow = z.object({
+  id: z.string(),
+  label: z.string(),
+  source_url: z.string(),
+  content_hash: z.string(),
+  listed: z.number(),
+});
 const parseRow = z.object({
   text_read: z.number(),
   amended_version_header: z.string().nullable(),
@@ -495,11 +502,12 @@ export function openIndexReader(path: string): IndexReader {
   const selectPostingsOfAmendment = database.prepare(
     `SELECT l.document_id, l.label, l.source_url, l.measure_id, l.meaning, l.meeting_id, m.at AS meeting_at,
             m.committee_code, c.name AS committee_name,
-            d.id IS NOT NULL AS fetched, d.content_hash
+            d.id IS NOT NULL AS fetched, ${listedOrUnchecked} AS listed, d.content_hash
      FROM meeting_document l
      JOIN meeting m ON m.id = l.meeting_id
      JOIN committee c ON c.session_key = m.session_key AND c.code = m.committee_code
      LEFT JOIN document d ON d.id = l.document_id
+     LEFT JOIN feed_row_state fr ON fr.document_id = l.document_id
      WHERE l.kind = 'proposed_amendment' AND l.node_id = ?
      ORDER BY m.at`,
   );
@@ -507,8 +515,10 @@ export function openIndexReader(path: string): IndexReader {
     "SELECT DISTINCT node_id FROM meeting_document WHERE kind = 'proposed_amendment' AND measure_id = ?",
   );
   const selectVersionsOfMeasure = database.prepare(
-    `SELECT d.id, d.label, d.source_url, d.content_hash
-     FROM document d JOIN document_relation r ON r.document_id = d.id
+    `SELECT d.id, d.label, d.source_url, d.content_hash, ${listedOrUnchecked} AS listed
+     FROM document d
+       JOIN document_relation r ON r.document_id = d.id
+       LEFT JOIN feed_row_state fr ON fr.document_id = d.id
      WHERE d.kind = 'version' AND r.relation = 'measure' AND r.to_id = ?`,
   );
   const selectStatuteParse = database.prepare(
@@ -614,6 +624,7 @@ export function openIndexReader(path: string): IndexReader {
         committeeName: stored.committee_name,
         meaning: stored.meaning,
         fetched: stored.fetched === 1,
+        listed: stored.listed === 1,
       } satisfies AmendmentPosting,
     }));
     // The same meeting's postings are told apart by the feed's number, compared as a number.
@@ -747,6 +758,7 @@ export function openIndexReader(path: string): IndexReader {
           label: stored.label,
           sourceUrl: stored.source_url,
           parse: statuteParseOf(stored.content_hash, "version"),
+          listed: stored.listed === 1,
         };
       });
     },

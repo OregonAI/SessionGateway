@@ -79,6 +79,8 @@ export type StoredVersion = {
   label: string;
   sourceUrl: string;
   parse: StatuteParse;
+  /** False once two complete full pulls in a row have not listed the Version (ADR-0030). It is still served by id. */
+  listed: boolean;
 };
 
 /** One file posted for a Proposed Amendment, with the postings it was posted as: postings of one amendment can share a file. */

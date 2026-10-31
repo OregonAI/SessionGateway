@@ -174,3 +174,59 @@ describe.for(eras)("get_document on a Testimony no pull fetched, for a %s client
     }
   });
 });
+
+// The Versions and postings that `get_measure` shows in statute_links_by_source carry ids that `get_document` resolves, and
+// `get_document` says of them that the feed no longer lists them; so `get_measure` flags them as it flags its other
+// lists. SB 69 on 10:00 on 2025-02-01 has one Version (Introduced) and two current amendments: -1, posted as 26284 (SLB,
+// 2025-01-21), 26285 (01-28) and 26287 (01-30), and -2, posted as 26286 and 26288. The feed stops listing the Introduced Version
+// (MeasureDocuments) and posting 26287, and two complete pulls go by. Compare_amendment shows the same postings.
+describe("get_measure's statute links, when the feed stops listing a Version and a posting", () => {
+  const days = ["2025-02-01T18:00:00Z", "2025-02-02T18:00:00Z", "2025-02-03T18:00:00Z"] as const;
+
+  it("flags the Version and the posting, and no other", async () => {
+    const system = await startSystem({ clockAt: days[0], documents: true });
+    try {
+      stopListing(
+        system.olis,
+        "MeasureDocuments",
+        (row) =>
+          row["MeasurePrefix"] === "SB" && row["MeasureNumber"] === 69 && row["VersionDescription"] === "Introduced",
+      );
+      stopListing(system.olis, "CommitteeProposedAmendments", (row) => row["ProposedAmendmentId"] === 26287);
+      for (const day of days.slice(1)) {
+        system.clock.set(day);
+        await system.pullAgain();
+      }
+
+      for (const era of eras) {
+        const connected = await connectClient(era, system.handler);
+        try {
+          const outcome = await callTool(connected, "get_measure", { measure: "SB 69" });
+          expect(outcome.isError, outcome.text).toBe(false);
+          const links = outcome.structured?.["statute_links_by_source"] as {
+            versions: Flagged[];
+            proposed_amendments: { id: string; postings: Flagged[] }[];
+          };
+          expect(links.versions.map((version) => [version.id, version.no_longer_listed])).toEqual([
+            ["version-2025r1-sb69-introduced", true],
+          ]);
+          expect(
+            links.proposed_amendments.flatMap((amendment) =>
+              amendment.postings.map((posting) => [amendment.id, posting.id, posting.no_longer_listed]),
+            ),
+          ).toEqual([
+            ["amendment-2025r1-sb69-1", "posting-2025r1-26284", undefined],
+            ["amendment-2025r1-sb69-1", "posting-2025r1-26285", undefined],
+            ["amendment-2025r1-sb69-1", "posting-2025r1-26287", true],
+            ["amendment-2025r1-sb69-2", "posting-2025r1-26286", undefined],
+            ["amendment-2025r1-sb69-2", "posting-2025r1-26288", undefined],
+          ]);
+        } finally {
+          await connected.close();
+        }
+      }
+    } finally {
+      await system.stop();
+    }
+  });
+});
