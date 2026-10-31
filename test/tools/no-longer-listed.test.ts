@@ -177,3 +177,69 @@ describe.for(eras)("a row two complete pulls in a row do not list, for a %s clie
     expect(await foundBy()).toEqual(["keyword", "embedding"]);
   });
 });
+
+// A pull that is short of the feed's counts is refused whole (full-pull-report.test.ts): it is not a pull that missed
+// the row, and it is not one that listed it. `withholdLastRows(1)` is a feed that counted its rows and paged one
+// fewer of each set, so the last Testimony row of the early Session, 117166 (American Farmland Trust's letter,
+// created 16:17), is the one it leaves out.
+describe.for(eras)("a pull that is short of the feed's counts, for a %s client", (era) => {
+  const otherLetter = "testimony-2025r1-117166";
+  const incomplete = /counted \d+.*read \d+/;
+
+  async function otherLetterFound(system: System): Promise<boolean> {
+    const connected = await connectClient(era, system.handler);
+    try {
+      const outcome = await callTool(connected, "search", {
+        query: "Natural Resources Conservation Service",
+        measure: "HB 3131",
+      });
+      return (outcome.structured?.["results"] as { id: string }[]).some((hit) => hit.id === otherLetter);
+    } finally {
+      await connected.close();
+    }
+  }
+
+  it("removes nothing, however many of them there are in a row", async () => {
+    const system = await start();
+    expect(await otherLetterFound(system)).toBe(true);
+
+    system.olis.withholdLastRows(1);
+    system.clock.set(secondPull);
+    await expect(system.pullAgain()).rejects.toThrow(incomplete);
+    system.clock.set(thirdPull);
+    await expect(system.pullAgain()).rejects.toThrow(incomplete);
+    system.olis.withholdLastRows(0);
+
+    expect(await otherLetterFound(system)).toBe(true);
+    const document = await getDocument(system, era, otherLetter);
+    expect(document.structured).toMatchObject({
+      no_longer_listed: false,
+      last_listed_at: "2025-01-17T17:00:00-08:00",
+      as_of: "2025-01-17T17:00:00-08:00",
+    });
+  });
+
+  // The refused pull is neither a pull that missed the row nor one that listed it: between the two complete pulls
+  // that missed 117165 it counts for nothing, and the second of them is still "two in a row" among complete pulls.
+  it("is not one of the two pulls that must miss a row in a row", async () => {
+    const system = await start();
+    stopListing(system.olis, "CommitteePublicTestimonies", isLetter);
+    await pullAt(system, secondPull);
+
+    system.olis.withholdLastRows(1);
+    system.clock.set(thirdPull);
+    await expect(system.pullAgain()).rejects.toThrow(incomplete);
+    system.olis.withholdLastRows(0);
+    expect(await idsFound(system, era)).toContain(letter);
+
+    await pullAt(system, fourthPull);
+
+    expect(await idsFound(system, era)).not.toContain(letter);
+    const document = await getDocument(system, era, letter);
+    expect(document.structured).toMatchObject({
+      no_longer_listed: true,
+      last_listed_at: "2025-01-17T17:00:00-08:00",
+      as_of: "2025-01-17T20:00:00-08:00",
+    });
+  });
+});
