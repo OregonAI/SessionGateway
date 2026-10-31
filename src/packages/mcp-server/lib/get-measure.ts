@@ -13,7 +13,7 @@ import type { CommitteeVote, FloorVote, LegislatorVote } from "#/packages/domain
 import { agencyLinksOf, agencyLinksOutput } from "./agency-links.ts";
 import { analysisDocumentsOf, analysisDocumentsOutput } from "./analysis.ts";
 import { measureListingOutput, measureListingShown } from "./listing.ts";
-import { statuteLinksBySourceOf } from "./statute-links.ts";
+import { statuteLinksBySourceOf, versionsWithSameAs } from "./statute-links.ts";
 import { statuteLinksBySourceWithTable, statuteLinksBySourceWithTableOutput } from "./statutes-affected-table.ts";
 import type { LiveLookup, LiveStatusReader } from "./live-status.ts";
 
@@ -131,7 +131,7 @@ export const getMeasureOutput = z.object({
     "The Measure's Statute Links by the Version or Proposed Amendment they were read from, each with its measure section.",
   ),
   agency_links: agencyLinksOutput.describe(
-    "The Agencies the Measure and its Versions and Proposed Amendments have an Agency Link to, each link with its evidence and the node it sits on, and the units its Fiscal Impact Statements list that are not Agencies.",
+    "The Agencies the Measure and its Versions and Proposed Amendments have an Agency Link to, each with its parent and its evidence grouped by kind (a count and a few examples, with the node each sits on), the documents the examples name once, and the units its Fiscal Impact Statements list that are not Agencies. Every link of an Agency, a page at a time, is find_measures with its agency.",
   ),
   source_url: z.string().describe("The Measure's page on OLIS."),
   location: z
@@ -291,6 +291,13 @@ export async function getMeasure(
   // The Measure is in the index, so OLIS is asked about it; a reference the index does not know never reaches OLIS.
   const live = await liveStatus.lookup(measure);
   const listing = reader.measureListing(measure);
+  const statuteLinksBySource = statuteLinksBySourceOf(measure, versions, reader.findMeasureAmendments(measure));
+  // The table's blocks are set beside the Versions first, so that same_as compares the whole entry an agent would see.
+  const withTable = statuteLinksBySourceWithTable(
+    statuteLinksBySource,
+    versions,
+    reader.statutesAffectedTableOf(measure),
+  );
   return {
     kind: "found",
     measure: {
@@ -303,12 +310,11 @@ export async function getMeasure(
         reader.analysisDocuments(measure),
         reader.analysisNotHeld(measure),
       ),
-      statute_links_by_source: statuteLinksBySourceWithTable(
-        statuteLinksBySourceOf(measure, versions, reader.findMeasureAmendments(measure)),
-        versions,
-        reader.statutesAffectedTableOf(measure),
-      ),
-      agency_links: agencyLinksOf(reader.findAgencyLinks(session, { measure }), reader.findUnresolvedUnits(measure)),
+      statute_links_by_source: { ...withTable, versions: versionsWithSameAs(withTable.versions) },
+      agency_links: agencyLinksOf(reader.findAgencyLinks(session, { measure }), reader.findUnresolvedUnits(measure), {
+        parents: reader.agencyParents(),
+        supersededAmendments: new Set(statuteLinksBySource.superseded_amendments.map((amendment) => amendment.id)),
+      }),
       source_url: olisPageUrlOf(measure),
       location: { current: measure.location.current, committee_code: measure.location.committeeCode },
       created_at: measure.createdAt,

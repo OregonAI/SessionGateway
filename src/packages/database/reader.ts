@@ -165,6 +165,8 @@ export type IndexReader = {
   measuresWithAgencyLink(session: SessionKey, agency: AgencyId): MeasureId[];
   /** The units a Measure's Fiscal Impact Statements list that are not Agencies, as each statement writes them. */
   findUnresolvedUnits(measure: MeasureKey): StoredUnresolvedUnit[];
+  /** The parent of each Agency that has one, from the snapshot the last full pull built with (ADR-0029). */
+  agencyParents(): ReadonlyMap<AgencyId, AgencyId>;
   /** What the index holds of the Session. */
   counts(session: SessionKey): IndexCounts;
   /** A committee by its code or its id, in either case. */
@@ -414,6 +416,7 @@ const statuteLinkedRow = statuteLinkRow.extend({
   measure_id: z.string(),
 });
 const measureOfAgencyRow = z.object({ measure_id: z.string() });
+const agencyParentRow = z.object({ agency_id: z.string(), parent_id: z.string() });
 const unresolvedUnitRow = z.object({
   unit: z.string(),
   document_id: z.string(),
@@ -976,6 +979,14 @@ export function openIndexReader(path: string): IndexReader {
       return selectMeasuresOfAgency
         .all(session, agency)
         .map((row) => measureOfAgencyRow.parse(row).measure_id as MeasureId);
+    },
+    agencyParents() {
+      const parents = new Map<AgencyId, AgencyId>();
+      for (const row of database.prepare("SELECT agency_id, parent_id FROM agency_parent").all()) {
+        const stored = agencyParentRow.parse(row);
+        parents.set(stored.agency_id as AgencyId, stored.parent_id as AgencyId);
+      }
+      return parents;
     },
     findUnresolvedUnits(measure) {
       return selectUnresolvedUnits.all(measureIdOf(measure)).map((row): StoredUnresolvedUnit => {

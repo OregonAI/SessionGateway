@@ -94,6 +94,12 @@ const schema = `
     commit_sha TEXT NOT NULL,
     commit_date TEXT NOT NULL
   ) STRICT;
+  -- The parent of each Agency that has one, from the snapshot the last pull built with (ADR-0029): the body the registry
+  -- places a sub-unit under. Replaced as a whole with the snapshot's version. The server shows it; it never reads the snapshot.
+  CREATE TABLE IF NOT EXISTS agency_parent (
+    agency_id TEXT NOT NULL PRIMARY KEY,
+    parent_id TEXT NOT NULL
+  ) STRICT;
   CREATE TABLE IF NOT EXISTS committee (
     session_key TEXT NOT NULL,
     code TEXT NOT NULL,

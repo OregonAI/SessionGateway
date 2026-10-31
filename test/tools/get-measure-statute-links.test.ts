@@ -31,9 +31,11 @@ type VersionEntry = {
   id: string;
   label: string;
   source_url: string;
-  text_read: boolean;
-  not_read_reason: string | null;
-  statute_links: StatuteLinks;
+  /** The id of the Version before it in print order, when this one reads the same and its reading is not repeated. */
+  same_as?: string;
+  text_read?: boolean;
+  not_read_reason?: string | null;
+  statute_links?: StatuteLinks;
 };
 type Superseded = {
   id: string;
@@ -75,10 +77,10 @@ describe.for(eras)("get_measure's Statute Links for a %s client", (era) => {
     it("shows each Version in print order, with the Version it was read from", async () => {
       const { versions } = await linksOf("SB 69");
 
-      expect(versions.map((version) => [version.id, version.label, version.text_read])).toEqual([
-        ["version-2025r1-sb69-introduced", "Introduced", true],
-        ["version-2025r1-sb69-a-engrossed", "A-Engrossed", true],
-        ["version-2025r1-sb69-enrolled", "Enrolled", true],
+      expect(versions.map((version) => [version.id, version.label])).toEqual([
+        ["version-2025r1-sb69-introduced", "Introduced"],
+        ["version-2025r1-sb69-a-engrossed", "A-Engrossed"],
+        ["version-2025r1-sb69-enrolled", "Enrolled"],
       ]);
       expect(versions.map((version) => version.source_url)).toEqual([
         "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/Introduced",
@@ -94,6 +96,7 @@ describe.for(eras)("get_measure's Statute Links for a %s client", (era) => {
       expect(introduced?.statute_links).toEqual(
         expectedLinks({ cites: { sections: [sectionTarget("ors-192.245", "1")] } }),
       );
+      expect(introduced?.text_read).toBe(true);
       const changes = [
         sectionTarget("ors-657b.070", "3"),
         sectionTarget("ors-659a.159", "4"),
@@ -104,14 +107,34 @@ describe.for(eras)("get_measure's Statute Links for a %s client", (era) => {
         sectionTarget("ors-653.626", "9"),
         sectionTarget("ors-659a.156", "10"),
       ];
-      for (const version of [aEngrossed, enrolled]) {
-        expect(version?.statute_links.amends).toEqual({ sections: changes, chapters: [] });
-        expect(version?.statute_links["adds-to"]).toEqual({
-          sections: [],
-          chapters: [chapterTarget("ors-chapter-657b", "1")],
-        });
-        expect(version?.statute_links.repeals).toEqual({ sections: [], chapters: [] });
-      }
+      expect(aEngrossed?.statute_links?.amends).toEqual({ sections: changes, chapters: [] });
+      expect(aEngrossed?.statute_links?.["adds-to"]).toEqual({
+        sections: [],
+        chapters: [chapterTarget("ors-chapter-657b", "1")],
+      });
+      expect(aEngrossed?.statute_links?.repeals).toEqual({ sections: [], chapters: [] });
+      // The Enrolled Version's links are the A-Engrossed Version's, to the last measure section (L1 of the fix pass of #16).
+      expect(enrolled?.same_as).toBe("version-2025r1-sb69-a-engrossed");
+    });
+
+    // L1: a Version whose reading is the one before it in print order says so and does not list it again. The Enrolled
+    // Version of SB 69 repeats the A-Engrossed Version's 292 links (8 amends, 1 adds-to and 283 cites) to the measure
+    // section, which was 15,145 characters of the answer (counted in the answer before this change). A Version that
+    // differs lists its own: the A-Engrossed Version is not the Introduced one.
+    it("does not list the Enrolled Version's links again: it says it is the A-Engrossed Version's", async () => {
+      const { versions } = await linksOf("SB 69");
+
+      const enrolled = versions.find((version) => version.id === "version-2025r1-sb69-enrolled");
+      expect(enrolled).toEqual({
+        id: "version-2025r1-sb69-enrolled",
+        label: "Enrolled",
+        source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/Enrolled",
+        same_as: "version-2025r1-sb69-a-engrossed",
+      });
+      const aEngrossed = versions.find((version) => version.id === "version-2025r1-sb69-a-engrossed");
+      expect(aEngrossed?.same_as).toBeUndefined();
+      expect(aEngrossed?.text_read).toBe(true);
+      expect(triplesOf(aEngrossed?.statute_links ?? expectedLinks({}))).toHaveLength(292);
     });
   });
 
@@ -126,6 +149,7 @@ describe.for(eras)("get_measure's Statute Links for a %s client", (era) => {
       const { versions } = await linksOf("SB 69");
 
       const links = versions[1]?.statute_links ?? expectedLinks({});
+      expect(versions[1]?.id).toBe("version-2025r1-sb69-a-engrossed");
       const byKind = (kind: "amends" | "repeals" | "adds-to" | "cites"): number =>
         triplesOf(links).filter(([linked]) => linked === kind).length;
       expect([byKind("amends"), byKind("repeals"), byKind("adds-to"), byKind("cites")]).toEqual([8, 0, 1, 283]);
@@ -184,7 +208,9 @@ describe.for(eras)("get_measure's Statute Links for a %s client", (era) => {
         },
       });
       expect(bEngrossed?.statute_links).toEqual(both);
-      expect(enrolled?.statute_links).toEqual(both);
+      // The Enrolled Version reads the same as the B-Engrossed one, so it says so (L1).
+      expect(enrolled?.same_as).toBe("version-2025r1-hb3795-b-engrossed");
+      expect(enrolled?.statute_links).toBeUndefined();
     });
   });
 

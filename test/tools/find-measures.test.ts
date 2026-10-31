@@ -374,6 +374,21 @@ describe.for(eras)("find_measures for a %s client", (era) => {
       ]);
     });
 
+    // get_measure counts these six and gives three of them as examples (agency-links.test.ts); find_measures has all six.
+    it("lists every node of HB 3795 whose text names the Department, the six that get_measure only counts", async () => {
+      const found = await find({ agency: dhs });
+
+      const named = groupOf(found, "named-in-text").items.filter((item) => item.measure_id === "measure-2025r1-hb3795");
+      expect(named.map((item) => item.id)).toEqual([
+        "version-2025r1-hb3795-enrolled",
+        "version-2025r1-hb3795-b-engrossed",
+        "amendment-2025r1-hb3795-a3",
+        "version-2025r1-hb3795-a-engrossed",
+        "amendment-2025r1-hb3795-1",
+        "version-2025r1-hb3795-introduced",
+      ]);
+    });
+
     it("lists the sub-unit's own items without a sub-unit named: the link is its own", async () => {
       const found = await find({ agency: apd });
 

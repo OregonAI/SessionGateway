@@ -372,6 +372,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       floorVotes: floorVoteRecords,
       committeeVotes: committeeVoteRecords,
       snapshot: snapshot.version,
+      agencyParents: [...snapshot.agencyParents].map(([agency, parent]) => ({ agency, parent })),
       committees,
       meetings,
       agendaItems,
