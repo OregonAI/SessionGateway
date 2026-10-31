@@ -37,9 +37,10 @@ import { createRangeExpander } from "./ranges.ts";
 
 const target = String.raw`(?:Ch\.\s+(?<chapter>${orsChapterCitationSource})|(?<section>${orsSectionCitationSource}))`;
 const seriesStart = new RegExp(String.raw`^${target}\s+to\)$`);
-// An engrossing level is one to three letters and perhaps a digit ("A", "BCC", "AMR2"); "E" last is the emergency clause.
+// After the Measure number come up to three tokens of one to three capitals and perhaps a digit: an engrossing level ("A",
+// "BCC", "AMR2"), an overturned veto ("OV", "OVP") and an "E" (readTail).
 const entryRow = new RegExp(
-  String.raw`^(?:${target}\s+(?<closesSeries>\)\s+)?)?(?<action>Add|A|R)\s+§(?<measureSection>\d+[a-z]?)\s+(?<prefix>[A-Z]{2,3})\s+(?<number>\d{1,5})(?<rest>(?:\s+[A-Z]{1,3}\d?){0,2})$`,
+  String.raw`^(?:${target}\s+(?<closesSeries>\)\s+)?)?(?<action>Add|A|R)\s+§(?<measureSection>\d+[a-z]?)\s+(?<prefix>[A-Z]{2,3})\s+(?<number>\d{1,5})(?<rest>(?:\s+[A-Z]{1,3}\d?){0,3})$`,
 );
 const pageHeader = /^(?:RS\d{2}-T-\d+\s+)?TABLES - \d{4} [A-Z ]+?(?:\s+RS\d{2}-T-\d+)?$/;
 const columnHeader = /^(?:\(\d\)\s*)+$/;
@@ -53,7 +54,14 @@ const footerDate = /^(?:1[0-2]|0?[1-9])\/(?:3[01]|[12]\d|0?[1-9])\/\d{4}$/;
 
 /** What the table's reading came to. */
 export type StatutesAffectedTableParse = {
+  /** The rows of this Session's Measures, in the table's order. */
   entries: StatutesAffectedEntry[];
+  /**
+   * The rows of a previous Session's Measures: a Measure repassed over the Governor's veto has its previous session's
+   * number and “OVP” after it (the legend, below). They are kept apart, because that number is not this Session's Measure
+   * of the same number, and nothing in this Session's index is that Measure.
+   */
+  previousSessionEntries: StatutesAffectedEntry[];
   /**
    * The lines of the ORS table's rows that were not read: a line that is not a row, a column head, a running header or
    * a title, once the column heads have begun. Empty for a table in the shape this reads. Nothing is guessed for them.
@@ -106,20 +114,37 @@ function printedOf(groups: Record<string, string | undefined>): Printed | undefi
   return undefined;
 }
 
+/** An overturned veto, as the table's legend words it. */
+type Veto = "OV" | "OVP";
+
+function isVeto(token: string): token is Veto {
+  return token === "OV" || token === "OVP";
+}
+
 /**
- * What follows the Measure number: nothing, an engrossing level, an "E", or a level and an "E". A lone "E" is the
- * emergency clause (a level of "E", the E-Engrossed Version, would need two). Undefined for anything else.
+ * What follows the Measure number, which the legend (page 1 of the table) describes: "The section number and current
+ * session measure number or previous session measure number if a measure was repassed over the Governor’s veto, followed
+ * by “OV” for a current session overturned veto or “OVP” for a previous session overturned veto", then "The engrossing
+ * level is printed next to the measure number", and "(4) An “E” if an emergency clause applies". So the tail holds an
+ * engrossing level, a veto mark and an "E", each at most once, any of them missing. The legend does not say whether the
+ * level or the veto mark comes first, so the tokens are told apart by what they say; the "E" of the last column is last.
+ * Undefined for anything else.
  */
-function readTail(rest: string): { level: string | null; emergency: boolean } | undefined {
+function readTail(rest: string): { level: string | null; emergency: boolean; veto: Veto | null } | undefined {
   const tokens = rest.split(/\s+/).filter((token) => token !== "");
-  const [first = null, second] = tokens;
-  switch (tokens.length) {
+  const vetoes = tokens.filter(isVeto);
+  if (tokens.length > 3 || vetoes.length > 1) return undefined;
+  const veto = vetoes[0] ?? null;
+  const [first = null, second] = tokens.filter((token) => !isVeto(token));
+  switch (tokens.length - vetoes.length) {
     case 0:
-      return { level: null, emergency: false };
+      return { level: null, emergency: false, veto };
     case 1:
-      return first === "E" ? { level: null, emergency: true } : { level: first, emergency: false };
+      return first === "E" ? { level: null, emergency: true, veto } : { level: first, emergency: false, veto };
     case 2:
-      return second === "E" ? { level: first, emergency: true } : undefined;
+      return second === "E" && first !== "E" && tokens.at(-1) === "E"
+        ? { level: first, emergency: true, veto }
+        : undefined;
     default:
       return undefined;
   }
@@ -139,6 +164,7 @@ export function readStatutesAffectedTable(
   const expandRange = createRangeExpander(orsSections);
   const chaptersListed = [...new Set(orsSections.map(orsChapterOf))];
   const entries: StatutesAffectedEntry[] = [];
+  const previousSessionEntries: StatutesAffectedEntry[] = [];
   const unreadLines: string[] = [];
   let inOrsTable = true;
   let columnHeadsBegun = false;
@@ -231,8 +257,10 @@ export function readStatutesAffectedTable(
       continue;
     }
     current = targets;
+    // A previous session's Measure repassed over the Governor's veto is not any Measure of this Session's index.
+    const kept = tail.veto === "OVP" ? previousSessionEntries : entries;
     for (const entryTarget of targets) {
-      entries.push({
+      kept.push({
         measure: { prefix: groups["prefix"] ?? "", number: Number(groups["number"]) },
         level: tail.level,
         action,
@@ -243,5 +271,5 @@ export function readStatutesAffectedTable(
     }
   }
   abandonOpenSeries();
-  return { entries, unreadLines };
+  return { entries, previousSessionEntries, unreadLines };
 }

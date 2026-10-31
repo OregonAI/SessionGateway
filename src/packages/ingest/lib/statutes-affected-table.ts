@@ -21,8 +21,12 @@ export type StatutesAffectedTableReport = {
     | "not_fetched" // any other failure to get the bytes
     | "not_read"; // got bytes that are not a table the parser reads
   held: boolean;
-  /** For "loaded": the entries read, and the lines of the ORS table the parser could not read. */
+  /**
+   * For "loaded": the entries read, the rows of a previous Session's Measures (repassed over the Governor's veto, “OVP”)
+   * kept apart from them, and the lines of the ORS table the parser could not read.
+   */
   entries?: number;
+  previous_session_entries?: number;
   unread_lines?: number;
   /** For "not_fetched" and "not_read": why. */
   reason?: string;
@@ -83,6 +87,7 @@ export async function loadStatutesAffectedTable(load: LoadArguments): Promise<St
     outcome: "loaded",
     held: true,
     entries: parsed.entries.length,
+    previous_session_entries: parsed.previousSessionEntries.length,
     unread_lines: parsed.unreadLines.length,
   };
 }
