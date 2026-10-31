@@ -35,12 +35,7 @@ import {
   type SessionKey,
 } from "#/packages/domain/index.ts";
 import { comparePrintOrder, type Legislator, type LegislatorId, type Sponsor } from "#/packages/domain/legislators.ts";
-import {
-  parseOrsChapterId,
-  parseOrsSectionId,
-  type AgencyId,
-  type SnapshotVersion,
-} from "#/packages/domain/oregonai.ts";
+import { parseOrsSectionId, type AgencyId, type SnapshotVersion } from "#/packages/domain/oregonai.ts";
 import {
   statuteLinkKinds,
   unreadStatuteParse,
@@ -49,10 +44,12 @@ import {
   type StatuteLink,
   type StatuteLinkSource,
   type StatuteParse,
+  type StatuteTarget,
   type StatutesAffectedEntry,
   type StatutesAffectedTableOfMeasure,
   type StoredAmendment,
   type StoredVersion,
+  storedStatuteTarget,
   tableActions,
 } from "#/packages/domain/statute-links.ts";
 import {
@@ -338,6 +335,12 @@ const linkRow = z.object({
   target_id: z.string(),
   measure_section: z.string().nullable(),
 });
+/** The target a stored row names. The store holds only ids that read, so one that does not is a bug in whatever wrote it. */
+function storedTargetOf(type: StatuteTarget["type"], id: string, what: string): StatuteTarget {
+  const target = storedStatuteTarget(type, id);
+  if (target === undefined) throw new Error(`The store holds ${what} ${id}, which is no ORS ${type} id`);
+  return target;
+}
 const orsSectionId = z.string().transform((text, context) => {
   const id = parseOrsSectionId(text);
   if (id === undefined) context.addIssue({ code: "custom", message: `not an ORS section id: ${text}` });
@@ -584,22 +587,9 @@ export function openIndexReader(path: string): IndexReader {
     const stored = parseRow.parse(row);
     const links = selectStatuteLinks.all(contentHash, readAs).map((linkRowOf): StatuteLink => {
       const link = linkRow.parse(linkRowOf);
-      if (link.target_type === "section") {
-        const id = parseOrsSectionId(link.target_id);
-        if (id === undefined)
-          throw new Error(`The store holds a Statute Link to ${link.target_id}, which is no ORS section id`);
-        return {
-          kind: link.kind,
-          target: { type: "section", id, resolvableOnOregonAi: true },
-          measureSection: link.measure_section,
-        };
-      }
-      const id = parseOrsChapterId(link.target_id);
-      if (id === undefined)
-        throw new Error(`The store holds a Statute Link to ${link.target_id}, which is no ORS chapter id`);
       return {
         kind: link.kind,
-        target: { type: "chapter", id, resolvableOnOregonAi: false },
+        target: storedTargetOf(link.target_type, link.target_id, "a Statute Link to"),
         measureSection: link.measure_section,
       };
     });
@@ -808,16 +798,10 @@ export function openIndexReader(path: string): IndexReader {
             measureSection: stored.measure_section,
             emergency: stored.emergency === 1,
           };
-          if (stored.target_type === "section") {
-            const id = parseOrsSectionId(stored.target_id);
-            if (id === undefined)
-              throw new Error(`The store holds a table entry for ${stored.target_id}, which is no ORS section id`);
-            return { ...common, target: { type: "section", id, resolvableOnOregonAi: true } };
-          }
-          const id = parseOrsChapterId(stored.target_id);
-          if (id === undefined)
-            throw new Error(`The store holds a table entry for ${stored.target_id}, which is no ORS chapter id`);
-          return { ...common, target: { type: "chapter", id, resolvableOnOregonAi: false } };
+          return {
+            ...common,
+            target: storedTargetOf(stored.target_type, stored.target_id, "a table entry for"),
+          };
         });
       return { sourceUrl: table.source_url, retrievedAt: table.retrieved_at as Timestamp, entries };
     },

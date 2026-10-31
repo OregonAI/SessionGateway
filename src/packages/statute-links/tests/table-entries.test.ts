@@ -223,6 +223,31 @@ Ch. 79 ) Add §93a SB 167
     ],
   },
   {
+    name: "a series of chapters ('Ch. 731 to)' and 'Ch. 750 ) Add §1 HB 2011') takes in the lettered chapters between them in ORS order: 743, then 743A, then 743B",
+    source:
+      "PDF.js text of documents/reports/artables2025R1.pdf, lines 8021-8023 (page 50); the section list is made up for the row",
+    text: `Ch. 731 to)
+Ch. 750 ) Add §1 HB 2011
+Add §1 HB 2029 A`,
+    orsSections: [
+      "ors-750.005",
+      "ors-743b.005",
+      "ors-743a.010",
+      "ors-743.001",
+      "ors-731.004",
+      "ors-751.010",
+      "ors-163a.040",
+    ],
+    entries: [
+      ...["ors-chapter-731", "ors-chapter-743", "ors-chapter-743a", "ors-chapter-743b", "ors-chapter-750"].map(
+        (id): Expected => [id, "Add", "1", "HB 2011", null],
+      ),
+      ...["ors-chapter-731", "ors-chapter-743", "ors-chapter-743a", "ors-chapter-743b", "ors-chapter-750"].map(
+        (id): Expected => [id, "Add", "1", "HB 2029", "A"],
+      ),
+    ],
+  },
+  {
     name: "a series whose first line ends a page and whose second line begins the next, with the page's date glued to the first",
     source:
       "PDF.js text of documents/reports/artables2025R1.pdf, lines 1057-1061 (the foot of page 7 and the head of page 8); the section list is made up for the row",
