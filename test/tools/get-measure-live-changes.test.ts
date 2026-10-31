@@ -271,7 +271,7 @@ describe("what the output schema tells an agent about the live block", () => {
         const schema = JSON.stringify(tools.find((tool) => tool.name === "get_measure")?.outputSchema);
         expect(schema).toContain("read the top-level field of the same name");
         expect(schema).toContain('When source is \\"cache\\", nothing was read from OLIS');
-        expect(schema).toContain("the top level\'s entries, then these");
+        expect(schema).toContain("the top level's entries, then these");
         expect(schema).toContain("an entry changed, missing or reordered, or fewer entries");
       } finally {
         await connected.close();
