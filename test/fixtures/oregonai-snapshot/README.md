@@ -21,8 +21,8 @@ Taken from the checkout at commit `58e1839d441addf3ac1e1748c91ce3de78d3f342` (20
   Agency a rule of which implements a section of a kept chapter, and the parent of each Agency kept
   (ADR-0029), so that no `parent` names a row the file lacks. The second kind is most of them: chapter
   192 (public records) alone has 57, because many agencies' rules implement it. Of the 114, 55 have a
-  parent (27 `part_of`, 26 `administered_by` and 2 `undetermined` relations), and all 55 parents were
-  already kept by the first two rules; the third rule matters when a fixture or a registry changes.
+  parent (27 `part_of`, 26 `administered_by` and 2 `undetermined` relations), and the parents of all 55
+  were already kept by the first two rules; the third rule matters when a fixture or a registry changes.
 - The chapter table's rows for the kept chapters: each of the 39 has one (39 of 439 rows in all).
 
 `snapshot.json` is about 120 KB; the whole snapshot is about 850 KB.
