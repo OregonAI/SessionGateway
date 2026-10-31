@@ -128,20 +128,20 @@ export const tableOfMeasureOutput = z.object({
           .string()
           .nullable()
           .describe(
-            'What the table prints after the Measure number: an engrossing level ("A", "B", "BCC"), or "E" when it prints an E alone, which may be an emergency clause or the E-Engrossed level. Null when it prints nothing.',
+            'What the table prints after the Measure number: an engrossing level ("A", "B", "BCC"), or "E" when it prints an E alone. An E alone is the emergency clause of a row at the Introduced Version, unless the feed lists an E-Engrossed Version of the Measure: then it may be that Version\'s level too, and the table does not say which. Null when it prints nothing.',
           ),
         version: z
           .string()
           .nullable()
           .describe(
-            'The Version that level names, such as "A-Engrossed". Null when the level names none, or when it is an E alone.',
+            'The Version that level names, such as "A-Engrossed". Null when the level names none, or when it is an E alone that may be the E-Engrossed level.',
           ),
         reason: z.string().describe("Why these entries are not set beside any Version's links."),
         entries: changeLinksOutput.describe("The entries at this level, as the table prints them."),
       }),
     )
     .describe(
-      "Entries of the table for this Measure that name a Version this index does not hold, a level that names no Version, or an E alone that may or may not be a level. They are listed as the table has them (cut like the lists of a Version's block), and compared with nothing.",
+      "Entries of the table for this Measure that name a Version this index does not hold, a level that names no Version, or an E alone for a Measure the feed lists an E-Engrossed Version of (the E may be that level). They are listed as the table has them (cut like the lists of a Version's block), and compared with nothing.",
     ),
   note: z.string().describe("What the table is and how its entries are set beside the parsed links."),
 });
@@ -306,21 +306,25 @@ function byPrintedLevel(entries: readonly StatutesAffectedEntry[]): Map<string |
   return groups;
 }
 
-/** Why entries are set beside no Version's links: the Version they name is not held, or the table does not name one. */
+/**
+ * Why entries are set beside no Version's links: the table does not name a Version (a level of more than one letter, or an
+ * E alone for a Measure the feed lists an E-Engrossed Version of), or the Version it names is not held.
+ */
 function reasonOf(entry: StatutesAffectedEntry, version: string | undefined): string {
-  if (entry.loneE) {
-    return "The table printed an “E” alone after the Measure number. Its legend gives “E” as the mark that an emergency clause applies and gives engrossing levels as letters beside the number, so this E is either the emergency clause of a row at the Introduced Version or the E-Engrossed Version's level, and the table's text does not say which. Nothing is guessed: these entries are set beside no Version's links.";
+  if (version !== undefined) {
+    return `This index does not hold the ${version} Version of the Measure, so there are no parsed links to set these entries beside.`;
   }
-  return version === undefined
-    ? `The table's level "${entry.level ?? ""}" names no Version in the order Versions are printed in, so its entries are set beside no Version's links.`
-    : `This index does not hold the ${version} Version of the Measure, so there are no parsed links to set these entries beside.`;
+  return entry.loneE
+    ? "The table printed an “E” alone after the Measure number. Its legend gives “E” as the mark that an emergency clause applies and gives engrossing levels as letters beside the number, and the feed lists an E-Engrossed Version of this Measure, so this E is either that Version's level or the emergency clause of a row at the Introduced Version, and the table's text does not say which. Nothing is guessed: these entries are set beside no Version's links."
+    : `The table's level "${entry.level ?? ""}" names no Version in the order Versions are printed in, so its entries are set beside no Version's links.`;
 }
 
 /**
  * Adds the Statutes Affected Table to a Measure's Statute Links by source. With no table the links are returned as
  * they were, so a deployment that does not load the table, or a table that is not published, changes nothing. The
- * table's entries go beside the Version each names (an entry's level names it: none is Introduced, "A" is A-Engrossed),
- * and entries that name a Version the index does not hold, or a level that names none, are listed apart.
+ * table's entries go beside the Version each names (an entry's level names it: none is Introduced, "A" is A-Engrossed; an
+ * E alone is the Introduced Version's emergency clause unless the feed lists an E-Engrossed Version of the Measure), and
+ * entries that name a Version the index does not hold, or a level that names none, are listed apart.
  */
 export function statuteLinksBySourceWithTable(
   shown: StatuteLinksBySourceOutput,
@@ -331,12 +335,12 @@ export function statuteLinksBySourceWithTable(
   const groups = byPrintedLevel(table.entries);
   const heldLabels = new Set(versions.map((version) => version.label));
   const named = (version: StoredVersion): StatutesAffectedEntry[] =>
-    table.entries.filter((entry) => versionDescriptionOfEntry(entry) === version.label);
+    table.entries.filter((entry) => versionDescriptionOfEntry(entry, table.listedVersions) === version.label);
   const otherEntries: z.infer<typeof tableOfMeasureOutput>["other_entries"] = [];
   for (const [level, entries] of groups) {
     const [first] = entries;
     if (first === undefined) continue;
-    const version = versionDescriptionOfEntry(first);
+    const version = versionDescriptionOfEntry(first, table.listedVersions);
     if (version !== undefined && heldLabels.has(version)) continue;
     otherEntries.push({
       level,

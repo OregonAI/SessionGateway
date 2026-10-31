@@ -14,7 +14,7 @@ import {
   type StoredDocument,
   type TestimonyDetails,
 } from "#/packages/domain/documents.ts";
-import type { HistoryAction, Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
+import type { HistoryAction, Measure, MeasureId, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
 import type { Legislator, LegislatorId, LegislatorRow, SponsorLevel } from "#/packages/domain/legislators.ts";
 import type { AgencyId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
 import type { Citation } from "#/packages/domain/citations.ts";
@@ -246,6 +246,11 @@ export type IndexWriter = {
   /** The content hash of the Statutes Affected Table the Session's index holds, or undefined while it holds none. */
   statutesAffectedTableHash(session: SessionKey): string | undefined;
   /**
+   * The Measures for which the feed lists a Version with this description ("E-Engrossed"), as the last full pull read
+   * the feed and whether or not the worker fetched the Version's file.
+   */
+  measuresListingVersion(session: SessionKey, description: string): Set<MeasureId>;
+  /**
    * Replaces the table the Session's index holds, its entries with it, in one transaction: a server that reads
    * during the pull sees the old table or the new one, never half of either. It also forgets the bytes last refused.
    */
@@ -270,6 +275,7 @@ const unreadFileRow = z.object({
 });
 const storedTextRow = z.object({ text: z.string(), has_text_layer: z.number() });
 const tableHashRow = z.object({ content_hash: z.string() });
+const measureIdRow = z.object({ measure_id: z.string() });
 const refusalRow = z.object({ content_hash: z.string(), reason: z.string() });
 const passageRow = z.object({
   start_offset: z.number(),
@@ -430,6 +436,10 @@ export function openIndexWriter(path: string): IndexWriter {
          VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (session_key, row_key) DO NOTHING`,
       );
+      const insertVersionListing = database.prepare(
+        "INSERT INTO version_listing (document_id, session_key, measure_id, label) VALUES (?, ?, ?, ?)",
+      );
+      const clearVersionListing = database.prepare("DELETE FROM version_listing WHERE session_key = ?");
       database.exec("BEGIN IMMEDIATE");
       try {
         for (const measure of pulled.measures) {
@@ -591,6 +601,14 @@ export function openIndexWriter(path: string): IndexWriter {
           const measure = link.relations.find((relation) => relation.relation === "measure");
           if (measure === undefined) throw new Error(`The analysis document ${link.id} names no Measure`);
           upsertAnalysisListing.run(link.id, session, measure.to);
+        }
+        // Which Versions the feed lists for each Measure, as this pull read them (a Printed Amendment is not a Version).
+        clearVersionListing.run(session);
+        for (const link of pulled.documentLinks) {
+          if (link.kind !== "version") continue;
+          const measure = link.relations.find((relation) => relation.relation === "measure");
+          if (measure === undefined) throw new Error(`The Version ${link.id} names no Measure`);
+          insertVersionListing.run(link.id, session, measure.to, link.label);
         }
         recordAsOf.run(session, asOf);
         recordSnapshot.run(session, pulled.snapshot.source, pulled.snapshot.commit, pulled.snapshot.commitDate);
@@ -882,6 +900,12 @@ export function openIndexWriter(path: string): IndexWriter {
         .prepare("SELECT content_hash FROM statutes_affected_table WHERE session_key = ?")
         .get(session);
       return row === undefined ? undefined : tableHashRow.parse(row).content_hash;
+    },
+    measuresListingVersion(session, description) {
+      const rows = database
+        .prepare("SELECT DISTINCT measure_id FROM version_listing WHERE session_key = ? AND label = ?")
+        .all(session, description);
+      return new Set(rows.map((row) => measureIdRow.parse(row).measure_id as MeasureId));
     },
     storeStatutesAffectedTable(session, record) {
       const insertEntry = database.prepare(

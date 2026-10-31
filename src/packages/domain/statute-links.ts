@@ -100,20 +100,35 @@ export type StatutesAffectedEntry = {
   target: StatuteTarget;
   /** The measure section as the table prints it after the section sign ("8", "93a"). */
   measureSection: string;
-  /** True when the row printed an "E" after its engrossing level, the last column's mark that an emergency clause applies. False when it printed an E alone (see `loneE`), which may be that mark and is not read as it. */
+  /** True when the row printed an "E" after its engrossing level, the last column's mark that an emergency clause applies. False when it printed an E alone (see `loneE`): that E may be the mark, and the entry does not say. */
   emergency: boolean;
   /**
    * True when the row printed an E alone after the Measure number (and any veto mark). The legend gives "E" both as the
    * mark of an emergency clause (column 4) and, by its examples, as a letter an engrossing level may be, and PDF.js's text
-   * has no columns, so the E is either an emergency clause on the Introduced Version or the E-Engrossed level. Nothing
-   * is guessed: `level` is null and `emergency` false then, neither is known, and the entry names no Version.
+   * has no columns, so the table's text does not say which it is: `level` is null and `emergency` false, whichever it is.
+   * Which Version the entry names is decided where the Versions the feed lists for the Measure are known
+   * (`versionDescriptionOfEntry`): the E is an emergency clause on the Introduced Version unless the feed lists an
+   * E-Engrossed Version, and only then is it unknown.
    */
   loneE: boolean;
 };
 
-/** The description of the Version an entry names: none when the row printed an E alone, which may be a level or may not. */
-export function versionDescriptionOfEntry(entry: Pick<StatutesAffectedEntry, "level" | "loneE">): string | undefined {
-  return entry.loneE ? undefined : versionDescriptionOfTableLevel(entry.level);
+/** The description of the E-Engrossed Version, the only Version whose level can be an E alone. */
+const eEngrossed = versionDescriptionOfLetter("E");
+
+/**
+ * The description of the Version an entry names, given the descriptions of the Versions the feed lists for its Measure
+ * (held or not). A row with a level or no letter names what `versionDescriptionOfTableLevel` says. A row that ends in an
+ * E alone is column (4), the emergency clause, of a row with no level when the feed lists no E-Engrossed Version, so it
+ * names the Introduced Version: an E can be a level only if that Version exists. When the feed lists one, the E may be its
+ * level or the clause, the table's text does not say which, and nothing is guessed: undefined (ADR-0013's rule).
+ */
+export function versionDescriptionOfEntry(
+  entry: Pick<StatutesAffectedEntry, "level" | "loneE">,
+  listedVersions: readonly string[],
+): string | undefined {
+  if (!entry.loneE) return versionDescriptionOfTableLevel(entry.level);
+  return listedVersions.includes(eEngrossed) ? undefined : versionDescriptionOfLetter(null);
 }
 
 /**
@@ -136,6 +151,12 @@ export type StatutesAffectedTableOfMeasure = {
   /** When the Index retrieved the bytes it holds, in Pacific time with its offset. Later pulls that find the same bytes leave it. */
   retrievedAt: Timestamp;
   entries: StatutesAffectedEntry[];
+  /**
+   * The descriptions of the Versions the feed lists for the Measure as the last full pull read it ("Introduced",
+   * "A-Engrossed"), whether or not the Index holds their files. It is what decides which Version an entry that ends in
+   * an E alone names (`versionDescriptionOfEntry`).
+   */
+  listedVersions: string[];
 };
 
 /**
