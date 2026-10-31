@@ -428,9 +428,10 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     for (const file of writer.unreadStatuteFiles(config.session)) {
       writer.storeStatuteParse(statuteParseOf(file, writer.storedText(file.documentId), snapshot.orsSections));
     }
-    // The Agency Links of every stored Fiscal Impact Statement, Version and posting not yet read, from the text the
-    // store holds and the Statute Links read from it just above (ADR-0027).
-    for (const document of writer.unreadAgencyDocuments(config.session)) {
+    // The Agency Links of every stored Fiscal Impact Statement, Version and posting not yet read with this snapshot, from
+    // the text the store holds and the Statute Links read from it just above (ADR-0027). A snapshot that has changed since
+    // a document was read makes it unread: the index reports the snapshot of this pull, so every link in it is made with it.
+    for (const document of writer.unreadAgencyDocuments(config.session, snapshot.version)) {
       writer.storeAgencyRead(
         agencyReadOf(
           document,
@@ -438,6 +439,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
           writer.statuteLinksOf(document.documentId),
           snapshot,
         ),
+        snapshot.version,
       );
     }
     const listingCounts = new Map(writer.listingCounts(config.session).map((count) => [count.entitySet, count]));

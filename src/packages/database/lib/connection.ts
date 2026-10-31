@@ -256,12 +256,14 @@ const schema = `
     created_at TEXT NOT NULL
   ) STRICT;
   -- Agency Links (ADR-0027), read by the ingest worker from the text it stored, after the Statute Links are. A
-  -- document is read once: agency_read says it was, whether or not it gave a link, so a pull does not read a
-  -- Version again for having none. The link names the document its evidence was read from; the node it sits on
+  -- document is read once for each snapshot: agency_read says with which commit of the OregonAI snapshot it was, whether
+  -- or not it gave a link, so a pull does not read a Version again for having none, and reads every document again when
+  -- the snapshot changes. The link names the document its evidence was read from; the node it sits on
   -- (a Version, a Proposed Amendment, the Measure) is found from that document when the server answers, as ADR-0013
   -- places an analysis document. Testimony's links are the testimony table's own agency_id.
   CREATE TABLE IF NOT EXISTS agency_read (
-    document_id TEXT NOT NULL PRIMARY KEY
+    document_id TEXT NOT NULL PRIMARY KEY,
+    snapshot_commit TEXT NOT NULL
   ) STRICT;
   CREATE TABLE IF NOT EXISTS agency_link (
     document_id TEXT NOT NULL,

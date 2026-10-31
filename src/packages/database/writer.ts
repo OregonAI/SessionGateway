@@ -281,13 +281,18 @@ export type IndexWriter = {
   refuseStatutesAffectedTable(session: SessionKey, refusal: { contentHash: string; reason: string }): void;
   /**
    * The Session's stored Fiscal Impact Statements, Versions and postings of Proposed Amendments that have not been
-   * read for Agency Links, each once. A Version and a posting are read after their Statute Links are (ADR-0027).
+   * read for Agency Links with this snapshot, each once: a document never read, and every document read with another
+   * commit of the snapshot, so that the index holds no link made with a snapshot it does not report (spec #1 story 56).
+   * A Version and a posting are read after their Statute Links are (ADR-0027).
    */
-  unreadAgencyDocuments(session: SessionKey): UnreadAgencyDocument[];
+  unreadAgencyDocuments(session: SessionKey, snapshot: SnapshotVersion): UnreadAgencyDocument[];
   /** The Statute Links read from the file a stored Version or posting has, in the order they were read. */
   statuteLinksOf(document: DocumentId): StatuteLink[];
-  /** Keeps what reading one document for Agency Links came to, in one transaction, and marks the document read. */
-  storeAgencyRead(record: AgencyReadRecord): void;
+  /**
+   * Keeps what reading one document for Agency Links came to with this snapshot, in one transaction, and marks the
+   * document read with it. The links an earlier reading of the document made are replaced.
+   */
+  storeAgencyRead(record: AgencyReadRecord, snapshot: SnapshotVersion): void;
   close(): void;
 };
 
@@ -989,16 +994,16 @@ export function openIndexWriter(path: string): IndexWriter {
         throw error;
       }
     },
-    unreadAgencyDocuments(session) {
+    unreadAgencyDocuments(session, snapshot) {
       const rows = database
         .prepare(
           `SELECT d.id, d.kind FROM document d
            WHERE d.session_key = ?
              AND (d.kind IN ('version', 'proposed_amendment') OR (d.kind = 'analysis' AND d.label = 'Fiscal Impact Statement'))
-             AND NOT EXISTS (SELECT 1 FROM agency_read r WHERE r.document_id = d.id)
+             AND NOT EXISTS (SELECT 1 FROM agency_read r WHERE r.document_id = d.id AND r.snapshot_commit = ?)
            ORDER BY d.id`,
         )
-        .all(session);
+        .all(session, snapshot.commit);
       return rows.map((row): UnreadAgencyDocument => {
         const unread = unreadAgencyRow.parse(row);
         return {
@@ -1017,15 +1022,22 @@ export function openIndexWriter(path: string): IndexWriter {
         .all(document);
       return rows.map((row) => statuteLinkOfRow(statuteLinkRow.parse(row)));
     },
-    storeAgencyRead(record) {
-      const insertRead = database.prepare("INSERT INTO agency_read (document_id) VALUES (?)");
+    storeAgencyRead(record, snapshot) {
+      const insertRead = database.prepare(
+        `INSERT INTO agency_read (document_id, snapshot_commit) VALUES (?, ?)
+         ON CONFLICT (document_id) DO UPDATE SET snapshot_commit = excluded.snapshot_commit`,
+      );
+      const deleteLinks = database.prepare("DELETE FROM agency_link WHERE document_id = ?");
+      const deleteUnits = database.prepare("DELETE FROM unresolved_unit WHERE document_id = ?");
       const insertLink = database.prepare(
         "INSERT INTO agency_link (document_id, ordinal, agency_id, kind, evidence) VALUES (?, ?, ?, ?, ?)",
       );
       const insertUnit = database.prepare("INSERT INTO unresolved_unit (document_id, ordinal, unit) VALUES (?, ?, ?)");
       database.exec("BEGIN IMMEDIATE");
       try {
-        insertRead.run(record.documentId);
+        deleteLinks.run(record.documentId);
+        deleteUnits.run(record.documentId);
+        insertRead.run(record.documentId, snapshot.commit);
         record.links.forEach((link, ordinal) => {
           insertLink.run(record.documentId, ordinal, link.agency, link.evidence.kind, evidenceToJson(link.evidence));
         });
