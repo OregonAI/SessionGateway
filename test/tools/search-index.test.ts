@@ -118,6 +118,10 @@ describe("a row OLIS changes after the pull", () => {
   const row: Record<string, unknown> = {
     SessionKey: "2025R1",
     CommTestId: 900006,
+    // The submitter and the position, which every row of the feed has and the OLIS client now reads (#14).
+    SubmitterFirstName: "Made",
+    SubmitterLastName: "Up",
+    PositionOnMeasureId: 3983,
     CommitteeCode: "SLB",
     MeetingDate: "2025-01-28T08:00:00",
     DocumentDescription: "Testimony",
