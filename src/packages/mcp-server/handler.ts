@@ -22,6 +22,14 @@ import {
   compareAmendmentOutput,
   unknownAmendmentMessage,
 } from "./lib/compare-amendment.ts";
+import {
+  findMeasures,
+  findMeasuresInput,
+  findMeasuresOutput,
+  FIND_MEASURES_MAX_EVIDENCE,
+  FIND_MEASURES_PAGE_SIZE,
+  noSuchPageMessage as noSuchFindMeasuresPageMessage,
+} from "./lib/find-measures.ts";
 import { getMeasure, getMeasureInput, getMeasureOutput, unknownMeasureMessage } from "./lib/get-measure.ts";
 import { createLiveStatusReader, type LiveLookupFailure, type LiveStatusReader } from "./lib/live-status.ts";
 import { filterFaultMessage } from "./lib/filters.ts";
@@ -252,6 +260,37 @@ function buildServer(
           return {
             isError: true,
             content: [{ type: "text", text: noSuchPageMessage(result.measureId, result.page, result.lastPage) }],
+          };
+        default:
+          return result satisfies never;
+      }
+    },
+  );
+  server.registerTool(
+    "find_measures",
+    {
+      title: "Find Measures that touch an Agency or a statute",
+      description: `Finds the Measures, Versions and Proposed Amendments tied to an Agency (agency: an OregonAI registry slug such as bureau-of-labor-and-industries), to an ORS section (ors_section: "ORS 653.616") or to an ORS chapter (ors_chapter: "ORS chapter 657B"), optionally only the ones posted at or after a time (since: a date, or a time that is Pacific unless it has an offset). For an Agency the items come in four groups: those that touch its statutes (a Statute Link that amends, repeals or adds to a section or chapter whose rules the Agency implements; a citation does not count), those that name it in a Fiscal Impact Statement, those that name it in their text, and Testimony. The groups are kept apart, and an item is in each group it is tied in. For a section or chapter the items are the Versions and Proposed Amendments with a Statute Link to it, of every kind (amends, repeals, adds-to, cites), with the kind shown. Each item has its id, its Measure, its source_url, when OLIS posted it (posted_at; last_posted_at is the latest posting of a Proposed Amendment, and since is compared with it) and its evidence, at most ${FIND_MEASURES_MAX_EVIDENCE} pieces with evidence_total for the rest. The most recently posted come first, ${FIND_MEASURES_PAGE_SIZE} items to a page across the groups: ask for the next with page. It is not the official record.`,
+      inputSchema: findMeasuresInput,
+      outputSchema: findMeasuresOutput,
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    (input) => {
+      const refused = refuseOverRateLimit(limiter, config);
+      if (refused !== undefined) return refused;
+      const result = findMeasures(reader, config.session, input);
+      switch (result.kind) {
+        case "found":
+          return {
+            content: [{ type: "text", text: JSON.stringify(result.found) }],
+            structuredContent: result.found,
+          };
+        case "bad_request":
+          return { isError: true, content: [{ type: "text", text: result.message }] };
+        case "no_such_page":
+          return {
+            isError: true,
+            content: [{ type: "text", text: noSuchFindMeasuresPageMessage(result.page, result.lastPage) }],
           };
         default:
           return result satisfies never;

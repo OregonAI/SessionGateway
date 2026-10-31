@@ -242,6 +242,13 @@ const schema = `
     content_hash TEXT NOT NULL,
     reason TEXT NOT NULL
   ) STRICT;
+  -- When OLIS created the feed's row for each document it links (the row's CreatedDate): the document's posted time
+  -- (ADR-0028). Written for every link before any file is fetched, as the listing of analysis documents is, and
+  -- refreshed at every pull, so a document whose file did not come still has its time.
+  CREATE TABLE IF NOT EXISTS document_created (
+    document_id TEXT NOT NULL PRIMARY KEY,
+    created_at TEXT NOT NULL
+  ) STRICT;
   -- Agency Links (ADR-0027), read by the ingest worker from the text it stored, after the Statute Links are. A
   -- document is read once: agency_read says it was, whether or not it gave a link, so a pull does not read a
   -- Version again for having none. The link names the document its evidence was read from; the node it sits on

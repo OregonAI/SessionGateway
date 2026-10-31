@@ -439,6 +439,10 @@ export function openIndexWriter(path: string): IndexWriter {
            committee_id = excluded.committee_id, committee_code = excluded.committee_code,
            meeting_at = excluded.meeting_at, agency_id = excluded.agency_id`,
       );
+      const upsertCreated = database.prepare(
+        `INSERT INTO document_created (document_id, created_at) VALUES (?, ?)
+         ON CONFLICT (document_id) DO UPDATE SET created_at = excluded.created_at`,
+      );
       const upsertAnalysisListing = database.prepare(
         `INSERT INTO analysis_listing (document_id, session_key, measure_id) VALUES (?, ?, ?)
          ON CONFLICT (document_id) DO UPDATE SET measure_id = excluded.measure_id`,
@@ -620,6 +624,10 @@ export function openIndexWriter(path: string): IndexWriter {
             link.testimony.meetingAt,
             agencyId,
           );
+        }
+        // When OLIS created the row of each document the feed links.
+        for (const link of pulled.documentLinks) {
+          if (link.createdAt !== undefined) upsertCreated.run(link.id, link.createdAt);
         }
         // Which analysis documents the feed lists for each Measure, as this pull read it. The rows are kept, not
         // replaced: a row this pull does not list is still counted until two complete pulls in a row have missed it,
