@@ -18,16 +18,18 @@ import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { madeUpPdf } from "../support/made-up-pdf.ts";
-import { type StatuteLinks } from "../support/statute-links.ts";
+import { noLinks, type StatuteLinks } from "../support/statute-links.ts";
 import {
   chapterTarget,
+  confirmed,
   expectedChanges,
+  expectedParsedChanges,
   madeUpTable,
-  noChanges,
   publishedTableUrl,
   sectionTarget,
   tablePath,
   tableUrlOn,
+  unconfirmed,
   type TableOfMeasure,
   type TableOfVersion,
 } from "../support/statutes-affected-table.ts";
@@ -236,9 +238,9 @@ describe("a table that cannot be had", () => {
     const table = linksOf(await rig.ask("SB 69")).statutes_affected_table;
     expect(table?.retrieved_at).toBe(nextDayPacific);
     expect(table?.lists_measure).toBe(true);
-    expect(aEngrossed(linksOf(await rig.ask("SB 69"))).statutes_affected_table?.confirmed.amends.sections).toEqual(
-      sb69Amends,
-    );
+    expect(
+      aEngrossed(linksOf(await rig.ask("SB 69"))).statutes_affected_table?.parsed_changes?.amends.sections,
+    ).toEqual(sb69Amends.map(confirmed));
     expect(tableReport(rig.system)).toMatchObject({ outcome: "loaded", held: true, unread_lines: 0 });
   });
 });
@@ -301,7 +303,7 @@ describe("a table that was loaded", () => {
 
   it("shows both sides of every disagreement unchanged, a link both sources have as confirmed, and the entries that name no Version apart (a made-up table)", async () => {
     const before = aEngrossed(first);
-    expect(before.statutes_affected_table?.confirmed.amends.sections).toHaveLength(8);
+    expect(before.statutes_affected_table?.parsed_changes?.amends.sections).toHaveLength(8);
 
     rig.system.olis.serveDocument(tablePath, madeUpTable(madeUpRows));
     rig.system.clock.set("2026-08-04T17:00:00Z");
@@ -312,22 +314,23 @@ describe("a table that was loaded", () => {
     expect(after.statutes_affected_table).toEqual({
       compared: true,
       not_compared_reason: null,
-      // The table's rows for the A-Engrossed Version, by what they do and listed by measure section.
-      entries: expectedChanges({
+      // The Version's parsed links that change the law, once each, and whether the table has an entry for each. The table
+      // confirms 653.626 in §9 and ORS chapter 657B in §1 (as the real table says it); it has no entry for the other seven
+      // (653.616 in §8 among them, which it says is repealed, and 657B.070 in §3, which it says is §2).
+      parsed_changes: expectedParsedChanges({
         amends: {
           sections: [
-            sectionTarget("ors-657b.070", "2"),
-            sectionTarget("ors-659a.150", "4"),
-            sectionTarget("ors-653.626", "9"),
+            unconfirmed(sectionTarget("ors-657b.070", "3")),
+            unconfirmed(sectionTarget("ors-659a.159", "4")),
+            unconfirmed(sectionTarget("ors-659a.165", "5")),
+            unconfirmed(sectionTarget("ors-657b.400", "6")),
+            unconfirmed(sectionTarget("ors-657b.060", "7")),
+            unconfirmed(sectionTarget("ors-653.616", "8")),
+            confirmed(sectionTarget("ors-653.626", "9")),
+            unconfirmed(sectionTarget("ors-659a.156", "10")),
           ],
         },
-        repeals: { sections: [sectionTarget("ors-653.616", "8")] },
-        "adds-to": { chapters: [chapterTarget("ors-chapter-657b", "1")] },
-      }),
-      // Both sources have these two.
-      confirmed: expectedChanges({
-        amends: { sections: [sectionTarget("ors-653.626", "9")] },
-        "adds-to": { chapters: [chapterTarget("ors-chapter-657b", "1")] },
+        "adds-to": { chapters: [confirmed(chapterTarget("ors-chapter-657b", "1"))] },
       }),
       // The table says 653.616 is repealed in §8, 657B.070 is amended in §2 and 659A.150 is amended in §4; the text does not.
       only_in_table: expectedChanges({
@@ -349,6 +352,7 @@ describe("a table that was loaded", () => {
           ],
         },
       }),
+      entries_not_compared: null,
     });
     // The parsed links of the Version are what they were before the table changed: nothing the table says overwrites them.
     expect(after.statute_links).toEqual(before.statute_links);
@@ -375,6 +379,102 @@ describe("a table that was loaded", () => {
       expect(links.versions.find((entry) => entry.label === label)?.statutes_affected_table).toBeUndefined();
     }
     expect(tableReport(rig.system)).toMatchObject({ outcome: "loaded", held: true, entries: 7, unread_lines: 0 });
+  });
+
+  // MADE UP: a table that disagrees with the text of SB 69's A-Engrossed Version in three ways, so that a table which
+  // overwrote the Version's links would show in them: it says 653.616 is repealed (the text amends it), 653.626 is
+  // amended in §2 (the text says §9), and an ORS chapter 654 is added to (the text adds to chapter 657B). The expected
+  // links are read from the deployment that names no table, which has the same Version and never saw one.
+  it("leaves the A-Engrossed Version's parsed links as the text has them when the table says otherwise: the table is beside them, never over them (a made-up table)", async () => {
+    rig.system.olis.serveDocument(
+      tablePath,
+      madeUpTable(["653.616 R §8 SB 69 A", "653.626 A §2 SB 69 A", "Ch. 654 Add §1 SB 69 A"]),
+    );
+    rig.system.clock.set("2026-08-05T17:00:00Z");
+    await rig.system.pullAgain();
+
+    const shown = aEngrossed(linksOf(await rig.ask("SB 69")));
+    const onMain = aEngrossed(linksOf(unsetAnswer));
+
+    expect(shown.statute_links).toEqual(onMain.statute_links);
+    expect(shown.statute_links.amends.sections).toEqual(sb69Amends);
+    expect(shown.statute_links.repeals).toEqual(noLinks.repeals);
+    expect(shown.statute_links["adds-to"].chapters).toEqual([chapterTarget("ors-chapter-657b", "1")]);
+    // What the table says is beside them, as the table says it.
+    expect(shown.statutes_affected_table?.only_in_table).toEqual(
+      expectedChanges({
+        amends: { sections: [sectionTarget("ors-653.626", "2")] },
+        repeals: { sections: [sectionTarget("ors-653.616", "8")] },
+        "adds-to": { chapters: [chapterTarget("ors-chapter-654", "1")] },
+      }),
+    );
+  });
+
+  // MADE UP: twenty-five rows for SB 69's A-Engrossed Version, for ORS sections its text does not amend (100.001 to
+  // 100.025, all in §2). A list shows twenty targets, and says how many it left out.
+  it("cuts a long list of the table's entries the text lacks at twenty targets, and says how many it left out (a made-up table)", async () => {
+    rig.system.olis.serveDocument(
+      tablePath,
+      madeUpTable([
+        "100.001 A §2 SB 69 A",
+        "100.002 A §2 SB 69 A",
+        "100.003 A §2 SB 69 A",
+        "100.004 A §2 SB 69 A",
+        "100.005 A §2 SB 69 A",
+        "100.006 A §2 SB 69 A",
+        "100.007 A §2 SB 69 A",
+        "100.008 A §2 SB 69 A",
+        "100.009 A §2 SB 69 A",
+        "100.010 A §2 SB 69 A",
+        "100.011 A §2 SB 69 A",
+        "100.012 A §2 SB 69 A",
+        "100.013 A §2 SB 69 A",
+        "100.014 A §2 SB 69 A",
+        "100.015 A §2 SB 69 A",
+        "100.016 A §2 SB 69 A",
+        "100.017 A §2 SB 69 A",
+        "100.018 A §2 SB 69 A",
+        "100.019 A §2 SB 69 A",
+        "100.020 A §2 SB 69 A",
+        "100.021 A §2 SB 69 A",
+        "100.022 A §2 SB 69 A",
+        "100.023 A §2 SB 69 A",
+        "100.024 A §2 SB 69 A",
+        "100.025 A §2 SB 69 A",
+      ]),
+    );
+    rig.system.clock.set("2026-08-06T17:00:00Z");
+    await rig.system.pullAgain();
+
+    const shown = aEngrossed(linksOf(await rig.ask("SB 69"))).statutes_affected_table;
+
+    expect(shown?.only_in_table?.amends.sections.map((target) => target.target_id)).toEqual([
+      "ors-100.001",
+      "ors-100.002",
+      "ors-100.003",
+      "ors-100.004",
+      "ors-100.005",
+      "ors-100.006",
+      "ors-100.007",
+      "ors-100.008",
+      "ors-100.009",
+      "ors-100.010",
+      "ors-100.011",
+      "ors-100.012",
+      "ors-100.013",
+      "ors-100.014",
+      "ors-100.015",
+      "ors-100.016",
+      "ors-100.017",
+      "ors-100.018",
+      "ors-100.019",
+      "ors-100.020",
+    ]);
+    expect(shown?.only_in_table?.amends.sections_not_shown).toBe(5);
+    expect(shown?.only_in_table?.amends.chapters_not_shown).toBeUndefined();
+    // The eight sections its text amends are listed whole, with the table's nine rows for them gone: nothing is cut there.
+    expect(shown?.only_in_parsed_links?.amends.sections).toHaveLength(8);
+    expect(shown?.only_in_parsed_links?.amends.sections_not_shown).toBeUndefined();
   });
 
   it("replaced the table it held: the made-up table has no row for HB 3795, which the real one has", async () => {
@@ -429,12 +529,13 @@ describe("Versions this index could not read, and one made up to repeal", () => 
     expect(scan?.statutes_affected_table).toEqual({
       compared: false,
       not_compared_reason: holding("did not read"),
-      entries: expectedChanges({
+      parsed_changes: null,
+      only_in_table: null,
+      only_in_parsed_links: null,
+      // With nothing parsed to set them beside, the table's entries for the Version are listed here and nowhere else.
+      entries_not_compared: expectedChanges({
         amends: { sections: [sectionTarget("ors-657b.090", "6"), sectionTarget("ors-653.616", "8")] },
       }),
-      confirmed: noChanges,
-      only_in_table: noChanges,
-      only_in_parsed_links: noChanges,
     });
     // The index holds the Version, so there is nothing left over for the entries to be listed apart.
     expect(links.statutes_affected_table?.other_entries).toEqual([]);
@@ -468,16 +569,13 @@ describe("Versions this index could not read, and one made up to repeal", () => 
     expect(made?.statutes_affected_table).toEqual({
       compared: true,
       not_compared_reason: null,
-      entries: expectedChanges({
-        amends: { sections: [sectionTarget("ors-653.626", "2")] },
-        repeals: { sections: [sectionTarget("ors-653.616", "1"), sectionTarget("ors-653.646", "3")] },
-      }),
-      confirmed: expectedChanges({
-        amends: { sections: [sectionTarget("ors-653.626", "2")] },
-        repeals: { sections: [sectionTarget("ors-653.616", "1")] },
+      parsed_changes: expectedParsedChanges({
+        amends: { sections: [confirmed(sectionTarget("ors-653.626", "2"))] },
+        repeals: { sections: [confirmed(sectionTarget("ors-653.616", "1"))] },
       }),
       only_in_table: expectedChanges({ repeals: { sections: [sectionTarget("ors-653.646", "3")] } }),
-      only_in_parsed_links: noChanges,
+      only_in_parsed_links: null,
+      entries_not_compared: null,
     });
   });
 });

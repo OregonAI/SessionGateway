@@ -3,7 +3,13 @@
 // example of. The builders write an expected value as a literal, as test/support/statute-links.ts does for links.
 import { statuteChangeKinds, type StatuteLinkKind } from "#/packages/domain/statute-links.ts";
 import { madeUpPdf } from "./made-up-pdf.ts";
-import { chapterTarget, sectionTarget, type LinksOfKind } from "./statute-links.ts";
+import {
+  chapterTarget,
+  sectionTarget,
+  type ChapterTarget,
+  type LinksOfKind,
+  type SectionTarget,
+} from "./statute-links.ts";
 
 /** Where Legislative Counsel publishes the 2025R1 table, and the path the fixture's manifest and the fake OLIS serve it at. */
 export const publishedTableUrl = "https://www.oregonlegislature.gov/AutoPubs/artables2025R1.pdf";
@@ -18,28 +24,57 @@ export { chapterTarget, sectionTarget };
 
 /** The kinds the table can say. Citations are not among them: the table does not list citations. */
 export type ChangeKind = Exclude<StatuteLinkKind, "cites">;
-export type ChangeLinks = Record<ChangeKind, LinksOfKind>;
+
+/**
+ * Targets of one kind, as a list of the table block shows it: each target once with its measure sections, and a count of
+ * the sections or chapters left out when the list was cut (present only when one was).
+ */
+export type CappedLinksOfKind = LinksOfKind & { sections_not_shown?: number; chapters_not_shown?: number };
+export type ChangeLinks = Record<ChangeKind, CappedLinksOfKind>;
 
 /** Targets under these kinds, and none under the others. */
-export function expectedChanges(by: Partial<Record<ChangeKind, Partial<LinksOfKind>>>): ChangeLinks {
+export function expectedChanges(by: Partial<Record<ChangeKind, Partial<CappedLinksOfKind>>>): ChangeLinks {
   return Object.fromEntries(
-    statuteChangeKinds.map((kind) => [
-      kind,
-      { sections: by[kind]?.sections ?? [], chapters: by[kind]?.chapters ?? [] },
-    ]),
+    statuteChangeKinds.map((kind) => [kind, { sections: [], chapters: [], ...by[kind] }]),
   ) as ChangeLinks;
 }
 
-export const noChanges: ChangeLinks = expectedChanges({});
+/** A parsed link that changes the law, with whether the table has an entry for it. */
+export type Flagged<Target> = Target & { confirmed_by_table: boolean };
+export type FlaggedLinksOfKind = {
+  sections: Flagged<SectionTarget>[];
+  chapters: Flagged<ChapterTarget>[];
+  sections_not_shown?: number;
+  chapters_not_shown?: number;
+};
+export type ParsedChanges = Record<ChangeKind, FlaggedLinksOfKind>;
+
+/** A target the table confirms, and one it does not. */
+export const confirmed = <Target extends SectionTarget | ChapterTarget>(target: Target): Flagged<Target> => ({
+  ...target,
+  confirmed_by_table: true,
+});
+export const unconfirmed = <Target extends SectionTarget | ChapterTarget>(target: Target): Flagged<Target> => ({
+  ...target,
+  confirmed_by_table: false,
+});
+
+/** The parsed links that change the law, with these flagged targets under these kinds, and none under the others. */
+export function expectedParsedChanges(by: Partial<Record<ChangeKind, Partial<FlaggedLinksOfKind>>>): ParsedChanges {
+  return Object.fromEntries(
+    statuteChangeKinds.map((kind) => [kind, { sections: [], chapters: [], ...by[kind] }]),
+  ) as ParsedChanges;
+}
 
 /** What get_measure shows of the table for one Version (statute_links_by_source.versions[].statutes_affected_table). */
 export type TableOfVersion = {
   compared: boolean;
   not_compared_reason: string | null;
-  entries: ChangeLinks;
-  confirmed: ChangeLinks;
-  only_in_table: ChangeLinks;
-  only_in_parsed_links: ChangeLinks;
+  /** Each of these four is null when it has nothing in it. */
+  parsed_changes: ParsedChanges | null;
+  only_in_table: ChangeLinks | null;
+  only_in_parsed_links: ChangeLinks | null;
+  entries_not_compared: ChangeLinks | null;
 };
 
 /** What get_measure shows of the table for the Measure (statute_links_by_source.statutes_affected_table). */
