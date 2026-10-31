@@ -243,7 +243,7 @@ One row of the Statutes Affected Table's ORS section, read into the Measure, its
 _Avoid_: table link, table row, when an entry is meant
 
 **Confirmed link**:
-A Statute Link that amends, repeals or adds to, which the parsed text and a Table entry both have: the same ORS target, the same kind (the table's "A" is amends, "R" repeals, "Add" adds to) and the same measure section. A disagreement is the other two cases, a Table entry with no such parsed link and a parsed link with no such entry, each shown as its source has it. Citations are never compared.
+A Statute Link that amends, repeals or adds to, which the parsed text and a Table entry both have (`confirmed_by_table` in `get_measure`): the same ORS target, the same kind (the table's "A" is amends, "R" repeals, "Add" adds to) and the same measure section. A disagreement is the other two cases, a Table entry with no such parsed link and a parsed link with no such entry, each shown as its source has it. Citations are never compared.
 
 **Agency**:
 A state government unit as the OregonAI agency registry names it.
