@@ -6,6 +6,7 @@ import {
   type DocumentFacts,
   type SearchFilter,
   type SearchIndexReader,
+  type UnlistedHolding,
 } from "#/packages/database/search.ts";
 import { findCitations, type Citation } from "#/packages/domain/citations.ts";
 import { documentKinds, type AmendmentId, type DocumentId } from "#/packages/domain/documents.ts";
@@ -369,25 +370,51 @@ export async function search(
         found_by: foundByOrder.filter((how) => candidate.foundBy.has(how)),
       };
     });
-  const notes = citations.filter((citation) => !indexHolds(deps, session, citation)).map(unplacedCitationNote);
+  const notes = citations.flatMap((citation) => notesAbout(holdingOf(deps, session, citation), citation));
   return { kind: "found", search: { query: input.query, results, notes, as_of: asOf, notice: NON_OFFICIAL_NOTICE } };
 }
 
 /**
- * Whether the index holds the item a citation names, whatever the filters say: the Measure, the Proposed
- * Amendment (a stored posting of it), or a document whose text names the ORS section.
+ * What the index holds of the item a citation names, whatever the filters say: the Measure, the Proposed Amendment
+ * (a stored posting of it), or a document whose text names the ORS section. An item the index holds and the feed no
+ * longer lists is held, but search leaves it out (ADR-0030): it is a case of its own, with its own note, and not an
+ * item the index lacks.
  */
-function indexHolds(deps: SearchDeps, session: SessionKey, citation: Citation): boolean {
+type Holding = { kind: "listed" } | { kind: "absent" } | { kind: "unlisted"; note: string };
+
+function holdingOf(deps: SearchDeps, session: SessionKey, citation: Citation): Holding {
   const unfiltered: SearchFilter = { session, withTestimony: true };
   switch (citation.kind) {
     case "measure":
-      return deps.reader.findMeasure(citation.measure) !== undefined;
-    case "amendment":
-      return deps.searchIndex.postingOf(citation.id, unfiltered) !== undefined;
-    case "ors":
-      return deps.searchIndex.citing(citation.id, unfiltered, 1).length > 0;
+      return deps.reader.findMeasure(citation.measure) === undefined ? { kind: "absent" } : { kind: "listed" };
+    case "amendment": {
+      if (deps.searchIndex.postingOf(citation.id, unfiltered) !== undefined) return { kind: "listed" };
+      const held = deps.searchIndex.unlistedPostings(citation.id, session);
+      return held === undefined
+        ? { kind: "absent" }
+        : { kind: "unlisted", note: unlistedAmendmentNote(citation, held) };
+    }
+    case "ors": {
+      if (deps.searchIndex.citing(citation.id, unfiltered, 1).length > 0) return { kind: "listed" };
+      const held = deps.searchIndex.unlistedCiting(citation.id, session);
+      return held === undefined ? { kind: "absent" } : { kind: "unlisted", note: unlistedOrsNote(citation, held) };
+    }
     default:
       return citation satisfies never;
+  }
+}
+
+/** The notes a citation earns: none when the item is held and listed. */
+function notesAbout(holding: Holding, citation: Citation): string[] {
+  switch (holding.kind) {
+    case "listed":
+      return [];
+    case "absent":
+      return [unplacedCitationNote(citation)];
+    case "unlisted":
+      return [holding.note];
+    default:
+      return holding satisfies never;
   }
 }
 
@@ -403,6 +430,25 @@ function unplacedCitationNote(citation: Citation): string {
     default:
       return citation satisfies never;
   }
+}
+
+/**
+ * What the result says of a Proposed Amendment the index holds and the feed no longer lists: its id, that
+ * `get_document` still serves it, and when the feed last listed it. It never says the index has no such item.
+ */
+function unlistedAmendmentNote(citation: Extract<Citation, { kind: "amendment" }>, held: UnlistedHolding): string {
+  return `The Proposed Amendment "${citation.text}" (${citation.id}) is in the index, but the Legislature's feed no longer lists it, so search leaves it out and no hit is an exact match for it. get_document still serves it; the feed last listed it ${held.latest.lastListedAt}.`;
+}
+
+/**
+ * What the result says of an ORS section that only documents the feed no longer lists name: the section's id, how
+ * many such documents the index holds, that `get_document` serves them, and when the feed last listed the latest.
+ */
+function unlistedOrsNote(citation: Extract<Citation, { kind: "ors" }>, held: UnlistedHolding): string {
+  const only = held.count === 1;
+  const documents = only ? "1 document that names it and is" : `${held.count} documents that name it and are`;
+  const latest = only ? "it" : `the latest of them, ${held.latest.documentId},`;
+  return `No document the feed lists names "${citation.text}" (${citation.id}), so no hit is an exact match for it. The index still holds ${documents} no longer listed: get_document serves ${only ? "it" : "them"}, and ${latest} was last listed ${held.latest.lastListedAt}.`;
 }
 
 /**

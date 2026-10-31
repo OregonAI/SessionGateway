@@ -75,6 +75,15 @@ export type CitedDocument = {
   citedAt?: number;
 };
 
+/**
+ * What the index holds of an item a citation names when the feed no longer lists any document of it (ADR-0030): how
+ * many such documents there are, and the one the feed listed most recently. `get_document` serves them all.
+ */
+export type UnlistedHolding = {
+  count: number;
+  latest: { documentId: DocumentId; nodeId: DocumentId | AmendmentId; lastListedAt: Timestamp };
+};
+
 /** How much text after the start of a mention is shown, so that a mention a passage ends in the middle of is whole. */
 const CITATION_TAIL = 100;
 
@@ -106,8 +115,9 @@ export type SearchIndexReader = {
    */
   versionsOf(measure: MeasureId, filter: SearchFilter): CitedDocument[];
   /**
-   * The Proposed Amendment's latest posting that passes the filter (the posting `get_document` serves
-   * for the amendment), or undefined when none does.
+   * The Proposed Amendment's latest posting that passes the filter and that the feed lists, or undefined when none
+   * does. It is the posting search offers for the amendment; `get_document` serves the node's latest posting that
+   * the index holds, listed or not (ADR-0011, ADR-0030).
    */
   postingOf(amendment: AmendmentId, filter: SearchFilter): CitedDocument | undefined;
   /**
@@ -116,6 +126,16 @@ export type SearchIndexReader = {
    * first mention, or the passage it starts in when a boundary cuts it in two.
    */
   citing(citationId: string, filter: SearchFilter, limit: number): CitedDocument[];
+  /**
+   * The postings of a Proposed Amendment that the index holds and the feed no longer lists, or undefined when there is
+   * none. For a note that says an amendment is held and not listed: `postingOf` leaves such a posting out.
+   */
+  unlistedPostings(amendment: AmendmentId, session: SessionKey): UnlistedHolding | undefined;
+  /**
+   * The documents whose text names a citation (an id: `ors-468.130`) that the index holds and the feed no longer
+   * lists, Testimony included, or undefined when there is none. `citing` leaves such documents out.
+   */
+  unlistedCiting(citationId: string, session: SessionKey): UnlistedHolding | undefined;
   /**
    * A number that moves whenever the worker stores or refreshes something the meaning side holds in memory: a
    * document's vectors, or how a document is filed (its kind, Measure, committee, date, keyword-only flag). Read
@@ -141,6 +161,12 @@ const citedRow = z.object({
   cited_at: z.number().nullable().optional(),
 });
 const countRow = z.object({ n: z.number() });
+const unlistedRow = z.object({
+  document_id: z.string(),
+  node_id: z.string(),
+  last_listed_at: z.string(),
+  n: z.number(),
+});
 const generationRow = z.object({ generation: z.number() });
 const vectorRow = z.object({
   passage_id: z.number(),
@@ -242,6 +268,18 @@ export function openSearchReader(path: string): SearchIndexReader {
       ...(stored.cited_at === null || stored.cited_at === undefined ? {} : { citedAt: stored.cited_at }),
     };
   };
+  const unlistedHoldingOf = (row: unknown): UnlistedHolding | undefined => {
+    if (row === undefined) return undefined;
+    const stored = unlistedRow.parse(row);
+    return {
+      count: stored.n,
+      latest: {
+        documentId: stored.document_id as DocumentId,
+        nodeId: stored.node_id as DocumentId | AmendmentId,
+        lastListedAt: stored.last_listed_at as Timestamp,
+      },
+    };
+  };
   return {
     keyword(match, filter, limit, keywordOnly = false) {
       const terms = filterTerms(filter);
@@ -336,6 +374,33 @@ export function openSearchReader(path: string): SearchIndexReader {
         )
         .get(amendment, ...terms.values);
       return row === undefined ? undefined : citedOf(row);
+    },
+    unlistedPostings(amendment, session) {
+      const row = database
+        .prepare(
+          `SELECT sd.document_id, sd.node_id, fr.last_listed_at, COUNT(*) OVER () AS n
+           FROM search_document sd
+             JOIN feed_row_state fr ON fr.document_id = sd.document_id AND fr.listed = 0
+           WHERE sd.node_id = ? AND sd.session_key = ?
+           ORDER BY fr.last_listed_pull DESC, sd.document_id DESC
+           LIMIT 1`,
+        )
+        .get(amendment, session);
+      return unlistedHoldingOf(row);
+    },
+    unlistedCiting(citationId, session) {
+      const row = database
+        .prepare(
+          `SELECT sd.document_id, sd.node_id, fr.last_listed_at, COUNT(*) OVER () AS n
+           FROM document_citation dc
+             JOIN search_document sd ON sd.document_id = dc.document_id
+             JOIN feed_row_state fr ON fr.document_id = sd.document_id AND fr.listed = 0
+           WHERE dc.citation_id = ? AND sd.session_key = ?
+           ORDER BY fr.last_listed_pull DESC, sd.document_id DESC
+           LIMIT 1`,
+        )
+        .get(citationId, session);
+      return unlistedHoldingOf(row);
     },
     details(match) {
       const row = selectDetails.get(match.passageId, match.documentId);
