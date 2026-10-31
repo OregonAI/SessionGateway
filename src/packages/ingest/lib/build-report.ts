@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import type { DocumentId, PulledEntitySet } from "#/packages/domain/documents.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
+import type { StatutesAffectedTableReport } from "./statutes-affected-table.ts";
 
 /**
  * What a full pull made of one entity set it read: the rows the feed counted for it and the rows that came. A set is
@@ -62,6 +63,11 @@ export type BuildReport = {
     /** Passages of documents found by meaning that were not embedded, because identical text already had a vector. */
     reused: number;
   };
+  /**
+   * What this pull did about the Statutes Affected Table (ADR-0034). Left out while the deployment does not name the
+   * table, so a report of a deployment without it is as it was.
+   */
+  statutes_affected_table?: StatutesAffectedTableReport;
 };
 
 /**

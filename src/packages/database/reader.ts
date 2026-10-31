@@ -49,8 +49,11 @@ import {
   type StatuteLink,
   type StatuteLinkSource,
   type StatuteParse,
+  type StatutesAffectedEntry,
+  type StatutesAffectedTableOfMeasure,
   type StoredAmendment,
   type StoredVersion,
+  tableActions,
 } from "#/packages/domain/statute-links.ts";
 import {
   groupCommitteeVotes,
@@ -129,6 +132,12 @@ export type IndexReader = {
   findMeasureAmendments(key: MeasureKey): StoredAmendment[];
   /** The Versions of a Measure the store holds (not its Printed Amendments), in no particular order, each with what was read of its text. */
   findMeasureVersions(key: MeasureKey): StoredVersion[];
+  /**
+   * Legislative Counsel's Statutes Affected Table, for one Measure: where it came from, when the index retrieved it, and
+   * the entries it has for the Measure (none when it lists none). Undefined while the index holds no table, which is
+   * when the deployment does not load it or it is not published yet.
+   */
+  statutesAffectedTableOf(key: MeasureKey): StatutesAffectedTableOfMeasure | undefined;
   /** What the index holds of the Session. */
   counts(session: SessionKey): IndexCounts;
   /** A committee by its code or its id, in either case. */
@@ -342,6 +351,15 @@ const relatingClauseEdits = z.array(
     insertedSections: z.array(orsSectionId),
   }),
 );
+const tableRow = z.object({ source_url: z.string(), retrieved_at: z.string() });
+const tableEntryRow = z.object({
+  level: z.string().nullable(),
+  action: z.enum(tableActions),
+  target_type: z.enum(["section", "chapter"]),
+  target_id: z.string(),
+  measure_section: z.string(),
+  emergency: z.number(),
+});
 const countRow = z.object({ n: z.number() });
 const kindCountRow = z.object({ kind: z.string(), n: z.number() });
 const listingRow = z.object({ listed: z.number().nullable(), last_listed_at: z.string().nullable() });
@@ -531,6 +549,13 @@ export function openIndexReader(path: string): IndexReader {
   );
   const selectStatuteLinks = database.prepare(
     "SELECT kind, target_type, target_id, measure_section FROM statute_link WHERE content_hash = ? AND parsed_as = ? ORDER BY ordinal",
+  );
+  const selectTable = database.prepare(
+    "SELECT source_url, retrieved_at FROM statutes_affected_table WHERE session_key = ?",
+  );
+  const selectTableEntries = database.prepare(
+    `SELECT level, action, target_type, target_id, measure_section, emergency FROM statutes_affected_entry
+     WHERE session_key = ? AND prefix = ? AND number = ? ORDER BY ordinal`,
   );
   const numbersInOrder = new Intl.Collator("en", { numeric: true });
   function documentOf(row: unknown): DocumentView["document"] {
@@ -766,6 +791,35 @@ export function openIndexReader(path: string): IndexReader {
           listed: stored.listed === 1,
         };
       });
+    },
+    statutesAffectedTableOf(key) {
+      const row = selectTable.get(key.session);
+      if (row === undefined) return undefined;
+      const table = tableRow.parse(row);
+      const entries = selectTableEntries
+        .all(key.session, key.prefix, key.number)
+        .map((entryOf): StatutesAffectedEntry => {
+          const stored = tableEntryRow.parse(entryOf);
+          const measure = { prefix: key.prefix, number: key.number };
+          const common = {
+            measure,
+            level: stored.level,
+            action: stored.action,
+            measureSection: stored.measure_section,
+            emergency: stored.emergency === 1,
+          };
+          if (stored.target_type === "section") {
+            const id = parseOrsSectionId(stored.target_id);
+            if (id === undefined)
+              throw new Error(`The store holds a table entry for ${stored.target_id}, which is no ORS section id`);
+            return { ...common, target: { type: "section", id, resolvableOnOregonAi: true } };
+          }
+          const id = parseOrsChapterId(stored.target_id);
+          if (id === undefined)
+            throw new Error(`The store holds a table entry for ${stored.target_id}, which is no ORS chapter id`);
+          return { ...common, target: { type: "chapter", id, resolvableOnOregonAi: false } };
+        });
+      return { sourceUrl: table.source_url, retrievedAt: table.retrieved_at as Timestamp, entries };
     },
     findCommittee(session, reference) {
       const row = selectCommittee.get(session, reference.trim(), reference.trim());

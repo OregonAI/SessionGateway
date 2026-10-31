@@ -11,6 +11,7 @@ import {
 } from "./documents.ts";
 import type { MeasureId } from "./index.ts";
 import type { OrsChapterId, OrsSectionId } from "./oregonai.ts";
+import type { Timestamp } from "#/packages/time/pacific.ts";
 
 /**
  * What a Statute Link does to its target (GLOSSARY.md, "Statute Link"), in the order spec #1 (story 24) lists them:
@@ -89,6 +90,18 @@ export function versionDescriptionOfTableLevel(level: string | null): string | u
   if (level === null) return versionDescriptionOfLetter(null);
   return /^[A-Z]$/.test(level) ? versionDescriptionOfLetter(level) : undefined;
 }
+
+/**
+ * Legislative Counsel's table as the Index holds it, for one Measure: where the Index got it, when, and the entries
+ * the table has for the Measure, in the table's order. Empty when the table lists none.
+ */
+export type StatutesAffectedTableOfMeasure = {
+  /** The address the worker fetched the table from, as the deployment names it. */
+  sourceUrl: string;
+  /** When the Index retrieved the bytes it holds, in Pacific time with its offset. Later pulls that find the same bytes leave it. */
+  retrievedAt: Timestamp;
+  entries: StatutesAffectedEntry[];
+};
 
 /**
  * One edit a Proposed Amendment makes to the Measure's relating clause, the text that says what the Measure

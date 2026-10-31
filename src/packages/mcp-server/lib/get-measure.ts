@@ -12,7 +12,8 @@ import type { AgendaItem } from "#/packages/domain/schedule.ts";
 import type { CommitteeVote, FloorVote, LegislatorVote } from "#/packages/domain/votes.ts";
 import { analysisDocumentsOf, analysisDocumentsOutput } from "./analysis.ts";
 import { measureListingOutput, measureListingShown } from "./listing.ts";
-import { statuteLinksBySourceOf, statuteLinksBySourceOutput } from "./statute-links.ts";
+import { statuteLinksBySourceOf } from "./statute-links.ts";
+import { statuteLinksBySourceWithTable, statuteLinksBySourceWithTableOutput } from "./statutes-affected-table.ts";
 import type { LiveLookup, LiveStatusReader } from "./live-status.ts";
 
 /** The notice every result carries (ADR-0002, spec #1 "What every result must carry"). */
@@ -125,7 +126,7 @@ export const getMeasureOutput = z.object({
       "The Measure's digest and summary exactly as OLIS publishes it (the feed's MeasureSummary), with its tabs, newlines and markup: <b> marks new text and [<i>...</i>] marks text deleted from the prior Version. Null when OLIS publishes none.",
     ),
   analysis_documents: analysisDocumentsOutput,
-  statute_links_by_source: statuteLinksBySourceOutput.describe(
+  statute_links_by_source: statuteLinksBySourceWithTableOutput.describe(
     "The Measure's Statute Links by the Version or Proposed Amendment they were read from, each with its measure section.",
   ),
   source_url: z.string().describe("The Measure's page on OLIS."),
@@ -279,6 +280,7 @@ export async function getMeasure(
   if (asOf === undefined) {
     throw new Error(`The index holds Measures of ${session} but no completed full pull to date them by`);
   }
+  const versions = reader.findMeasureVersions(measure);
   const history = reader.findHistory(measure);
   const floorVotes = reader.findFloorVotes(measure);
   const committeeVotes = reader.findCommitteeVotes(measure);
@@ -297,10 +299,10 @@ export async function getMeasure(
         reader.analysisDocuments(measure),
         reader.analysisNotHeld(measure),
       ),
-      statute_links_by_source: statuteLinksBySourceOf(
-        measure,
-        reader.findMeasureVersions(measure),
-        reader.findMeasureAmendments(measure),
+      statute_links_by_source: statuteLinksBySourceWithTable(
+        statuteLinksBySourceOf(measure, versions, reader.findMeasureAmendments(measure)),
+        versions,
+        reader.statutesAffectedTableOf(measure),
       ),
       source_url: olisPageUrlOf(measure),
       location: { current: measure.location.current, committee_code: measure.location.committeeCode },

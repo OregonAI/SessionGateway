@@ -50,6 +50,7 @@ import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
 import { buildReportPath, writeBuildReport, type BuildReport, type SetReport } from "./lib/build-report.ts";
+import { loadStatutesAffectedTable } from "./lib/statutes-affected-table.ts";
 
 export type IngestDeps = {
   fetch: typeof fetch;
@@ -432,6 +433,20 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
         .filter((entry) => entry.references.some((reference) => reference.source === "CommitteeMembers"))
         .map((entry) => entry.code),
     );
+    // Legislative Counsel's Statutes Affected Table, when the deployment names it: a second source for the Statute
+    // Links, fetched in each pull and read again only when its bytes change (ADR-0034).
+    const statutesAffectedTable =
+      config.statutesAffectedTableUrl === null
+        ? undefined
+        : await loadStatutesAffectedTable({
+            url: config.statutesAffectedTableUrl,
+            olis,
+            writer,
+            session: config.session,
+            orsSections: snapshot.orsSections,
+            now: () => formatPacific(deps.clock.now()),
+            signal: deps.signal,
+          });
     writeBuildReport(buildReportPath(config.databasePath), {
       session: config.session,
       as_of: asOf,
@@ -456,6 +471,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
         embedded: passageCounts.embedded,
         reused: passageCounts.reused,
       },
+      ...(statutesAffectedTable === undefined ? {} : { statutes_affected_table: statutesAffectedTable }),
     });
   } finally {
     writer.close();

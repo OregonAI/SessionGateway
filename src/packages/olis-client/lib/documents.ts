@@ -348,8 +348,12 @@ export async function readDocumentLinks(
   return [...versions, ...analyses, ...postings, ...exhibits, ...testimony];
 }
 
-/** The bytes of one document, or why they could not be had. */
-export type Download = { kind: "fetched"; bytes: Uint8Array } | { kind: "failed"; reason: string };
+/**
+ * The bytes of one file, or why they could not be had. `status` is the HTTP status of the last answer when the last
+ * attempt got one (404 for a file that is not there), and null when it got none.
+ */
+export type Download =
+  { kind: "fetched"; bytes: Uint8Array } | { kind: "failed"; reason: string; status: number | null };
 
 /**
  * OLIS downloads are slow and occasionally time out; every one of the six that did in the research
@@ -363,16 +367,16 @@ function isTransientStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
 }
 
-export async function downloadDocument(
+/** Fetches one file, trying again after a transient failure. `who` names the server in a failure's reason. */
+async function downloadFrom(
   options: OlisClientOptions,
-  link: DocumentLink,
+  documents: NonNullable<OlisClientOptions["documents"]>,
+  url: URL,
+  who: string,
   signal: AbortSignal,
 ): Promise<Download> {
-  const documents = options.documents;
-  // Only the worker fetches documents; the server's client reads one Measure live and is made without them.
-  if (documents === undefined) throw new Error(`This OLIS client was made without document options: ${link.id}`);
-  const url = downloadUrlOf(link.sourceUrl, documents.origin);
   let reason = "";
+  let status: number | null = null;
   for (let attempt = 0; attempt <= PAUSES_BEFORE_RETRY_MS.length; attempt += 1) {
     const pause = PAUSES_BEFORE_RETRY_MS[attempt - 1];
     if (pause !== undefined) await documents.pause(pause, signal);
@@ -381,13 +385,36 @@ export async function downloadDocument(
         signal: AbortSignal.any([signal, AbortSignal.timeout(documents.timeoutMs)]),
       });
       if (response.ok) return { kind: "fetched", bytes: new Uint8Array(await response.arrayBuffer()) };
-      reason = `OLIS answered ${response.status} to ${url.pathname}`;
-      if (!isTransientStatus(response.status)) return { kind: "failed", reason };
+      status = response.status;
+      reason = `${who} answered ${response.status} to ${url.pathname}`;
+      if (!isTransientStatus(response.status)) return { kind: "failed", reason, status };
     } catch (error) {
       // A shutdown ends the pull; a request that timed out or broke off is tried again.
       if (signal.aborted) throw error;
-      reason = `OLIS did not answer ${url.pathname}: ${error instanceof Error ? error.message : String(error)}`;
+      status = null;
+      reason = `${who} did not answer ${url.pathname}: ${error instanceof Error ? error.message : String(error)}`;
     }
   }
-  return { kind: "failed", reason: `${reason} (${PAUSES_BEFORE_RETRY_MS.length + 1} attempts)` };
+  return { kind: "failed", reason: `${reason} (${PAUSES_BEFORE_RETRY_MS.length + 1} attempts)`, status };
+}
+
+export async function downloadDocument(
+  options: OlisClientOptions,
+  link: DocumentLink,
+  signal: AbortSignal,
+): Promise<Download> {
+  const documents = options.documents;
+  // Only the worker fetches documents; the server's client reads one Measure live and is made without them.
+  if (documents === undefined) throw new Error(`This OLIS client was made without document options: ${link.id}`);
+  return downloadFrom(options, documents, downloadUrlOf(link.sourceUrl, documents.origin), "OLIS", signal);
+}
+
+/**
+ * Fetches a file that is not an OLIS document, from the address the deployment names (the Statutes Affected Table,
+ * which Legislative Counsel publishes on its own site), with the retries a document gets.
+ */
+export async function downloadFile(options: OlisClientOptions, url: URL, signal: AbortSignal): Promise<Download> {
+  const documents = options.documents;
+  if (documents === undefined) throw new Error(`This OLIS client was made without document options: ${url.href}`);
+  return downloadFrom(options, documents, url, `The server at ${url.host}`, signal);
 }

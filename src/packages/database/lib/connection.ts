@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { statuteLinkKinds } from "#/packages/domain/statute-links.ts";
+import { statuteLinkKinds, tableActions } from "#/packages/domain/statute-links.ts";
 
 // The only file in the project that imports node:sqlite (src/CLAUDE.md, "Shape"): the API is
 // Stability 1.2, so keeping it here keeps a swap to better-sqlite3 local.
@@ -208,6 +208,31 @@ const schema = `
     measure_section TEXT,
     PRIMARY KEY (content_hash, parsed_as, ordinal)
   ) STRICT;
+  -- Legislative Counsel's Statutes Affected Table (ticket #22, ADR-0033, ADR-0034): the copy the worker last read, kept like
+  -- a document (where it came from, when, its content hash and its text), and its ORS entries. The worker fetches the
+  -- table in each full pull and replaces both tables only when the bytes it fetched differ from these.
+  CREATE TABLE IF NOT EXISTS statutes_affected_table (
+    session_key TEXT NOT NULL PRIMARY KEY,
+    source_url TEXT NOT NULL,
+    retrieved_at TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    page_count INTEGER NOT NULL,
+    text TEXT NOT NULL
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS statutes_affected_entry (
+    session_key TEXT NOT NULL,
+    ordinal INTEGER NOT NULL,
+    prefix TEXT NOT NULL,
+    number INTEGER NOT NULL,
+    level TEXT,
+    action TEXT NOT NULL CHECK (action IN (${tableActions.map((action) => `'${action}'`).join(", ")})),
+    target_type TEXT NOT NULL CHECK (target_type IN ('section', 'chapter')),
+    target_id TEXT NOT NULL,
+    measure_section TEXT NOT NULL,
+    emergency INTEGER NOT NULL,
+    PRIMARY KEY (session_key, ordinal)
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS statutes_affected_entry_measure ON statutes_affected_entry (session_key, prefix, number);
   -- The analysis documents the feed has listed for each Measure (ADR-0013). Rows are kept, never replaced: the
   -- count of the ones the store does not hold reads the listing state (feed_row_state) of each (ADR-0030).
   CREATE TABLE IF NOT EXISTS analysis_listing (
