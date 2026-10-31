@@ -1,3 +1,7 @@
+---
+status: accepted; the sentence of Consequences that says analysis_listing is replaced at every full pull is superseded by ADR-0030
+---
+
 # An analysis document is placed on the Version its label names, and one that the label cannot place is listed as unmapped, never guessed
 
 The feed's `MeasureAnalysisDocuments.Version` is a label, not a Version: it holds nine values in 2025R1, and OLIS does not define them. `get_document` lists the Version an analysis document is of (ADR-0011) and `get_measure` groups a Measure's analysis documents by Version, so one function reads the label for both: `placeAnalysis` in `domain/analysis.ts`. The worker calls it to write the `version` edge, and `get_measure` calls it over the stored edges to group the documents, so the two tools cannot disagree. This takes over the reading of the labels that ADR-0011 ("Version edges") left to this ticket, and narrows it for a row the feed flags `IsMinority`.

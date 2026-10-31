@@ -1,4 +1,7 @@
-// Seam 1 (test/CLAUDE.md): `get_document` on a row the feed no longer lists (ADR-0005, ADR-0030), for each of the two
+// Seam 1 (test/CLAUDE.md): rows the feed no longer lists, whose files this index never fetched (ADR-0005, ADR-0030):
+// `get_document` on them, and the count of the analysis documents `get_measure` says it has not fetched.
+//
+// `get_document` on a row the feed no longer lists, for each of the two
 // things the index can hold of it. If it fetched the file while the feed listed the row, the file is served, flagged. If it
 // never did, there is nothing to serve and no later pull will fetch the file, since the feed does not list the row any
 // more: `get_document` answers with a tool error that says exactly that, and not that the id is unknown or that the
@@ -154,5 +157,46 @@ describe("the output schemas of testimony and meetings", () => {
         await connected.close();
       }
     }
+  });
+});
+
+// `get_measure` counts the analysis documents the feed lists for a Measure and this index has not fetched. The count follows
+// the two-pull rule like everything else: one complete pull that misses a row changes nothing, and a row that two complete
+// pulls in a row have missed stops counting. HB 3131 at 10:00 on 2025-02-12 has two analysis rows, 85719 and 85869
+// (feed/MeasureAnalysisDocuments.json); the files are off, so neither is fetched.
+// The next row, 85989, is created on 02-13 at 16:33, after the pulls here.
+describe("the not-held count of a Measure's analysis documents", () => {
+  const hours = ["2025-02-12T18:00:00Z", "2025-02-12T19:00:00Z", "2025-02-12T20:00:00Z"] as const;
+
+  async function notHeld(system: System, era: Era): Promise<unknown> {
+    const connected = await connectClient(era, system.handler);
+    try {
+      const outcome = await callTool(connected, "get_measure", { measure: "HB 3131" });
+      expect(outcome.isError, outcome.text).toBe(false);
+      return (outcome.structured?.["analysis_documents"] as { not_held: number }).not_held;
+    } finally {
+      await connected.close();
+    }
+  }
+
+  it("is unchanged by one pull that misses a row, and drops the row once two in a row have", async () => {
+    const system = await startSystem({ clockAt: hours[0], documents: false });
+    started.push(system);
+    await everyClient(async (era) => {
+      expect(await notHeld(system, era)).toBe(2);
+    });
+
+    stopListing(system.olis, "MeasureAnalysisDocuments", (row) => row["MeasureAnalysisId"] === "85869");
+    system.clock.set(hours[1]);
+    await system.pullAgain();
+    await everyClient(async (era) => {
+      expect(await notHeld(system, era)).toBe(2);
+    });
+
+    system.clock.set(hours[2]);
+    await system.pullAgain();
+    await everyClient(async (era) => {
+      expect(await notHeld(system, era)).toBe(1);
+    });
   });
 });
