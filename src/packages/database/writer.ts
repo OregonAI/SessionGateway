@@ -17,6 +17,7 @@ import {
 import type { HistoryAction, Measure, MeasureId, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
 import type { Legislator, LegislatorId, LegislatorRow, SponsorLevel } from "#/packages/domain/legislators.ts";
 import type { AgencyId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
+import type { AgencyLink } from "#/packages/domain/agency-links.ts";
 import type { Citation } from "#/packages/domain/citations.ts";
 import type { Passage, SearchEntry } from "#/packages/domain/search.ts";
 import type {
@@ -27,8 +28,10 @@ import type {
 } from "#/packages/domain/statute-links.ts";
 import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
+import { evidenceToJson } from "./lib/agency-evidence.ts";
 import { openWriteConnection } from "./lib/connection.ts";
 import { listedRowsOf } from "./lib/listing.ts";
+import { statuteLinkOfRow, statuteLinkRow } from "./lib/statute-link-rows.ts";
 
 type SponsorRecordFields = {
   id: number;
@@ -136,6 +139,21 @@ export type StatutesAffectedTableRecord = {
   /** The extracted text, as the pdf-text package gives it. */
   text: string;
   entries: readonly StatutesAffectedEntry[];
+};
+
+/** What an Agency Link is read from: a Fiscal Impact Statement's text, or a Version's or a posting's. */
+export type AgencyReadAs = "fiscal_impact_statement" | "version" | "proposed_amendment";
+
+/** A stored document whose Agency Links have not been read yet (ADR-0027). */
+export type UnreadAgencyDocument = { documentId: DocumentId; readAs: AgencyReadAs };
+
+/** What reading one stored document for Agency Links came to, ready to store. */
+export type AgencyReadRecord = {
+  documentId: DocumentId;
+  /** Links of the kinds the store keeps itself: not Testimony's, which the Testimony row carries. */
+  links: readonly AgencyLink[];
+  /** The units a Fiscal Impact Statement lists that are not Agencies, as it writes them. */
+  unresolvedUnits: readonly string[];
 };
 
 /** The columns of the sponsor table that only some kinds of row fill; the others stay NULL. */
@@ -259,6 +277,15 @@ export type IndexWriter = {
   refusedStatutesAffectedTable(session: SessionKey): { contentHash: string; reason: string } | undefined;
   /** Remembers the sha256 of bytes refused as no table, so that the next pull that is given them does not read them again. */
   refuseStatutesAffectedTable(session: SessionKey, refusal: { contentHash: string; reason: string }): void;
+  /**
+   * The Session's stored Fiscal Impact Statements, Versions and postings of Proposed Amendments that have not been
+   * read for Agency Links, each once. A Version and a posting are read after their Statute Links are (ADR-0027).
+   */
+  unreadAgencyDocuments(session: SessionKey): UnreadAgencyDocument[];
+  /** The Statute Links read from the file a stored Version or posting has, in the order they were read. */
+  statuteLinksOf(document: DocumentId): StatuteLink[];
+  /** Keeps what reading one document for Agency Links came to, in one transaction, and marks the document read. */
+  storeAgencyRead(record: AgencyReadRecord): void;
   close(): void;
 };
 
@@ -277,6 +304,7 @@ const storedTextRow = z.object({ text: z.string(), has_text_layer: z.number() })
 const tableHashRow = z.object({ content_hash: z.string() });
 const measureIdRow = z.object({ measure_id: z.string() });
 const refusalRow = z.object({ content_hash: z.string(), reason: z.string() });
+const unreadAgencyRow = z.object({ id: z.string(), kind: z.enum(["version", "proposed_amendment", "analysis"]) });
 const passageRow = z.object({
   start_offset: z.number(),
   end_offset: z.number(),
@@ -940,6 +968,55 @@ export function openIndexWriter(path: string): IndexWriter {
             entry.emergency ? 1 : 0,
             entry.loneE ? 1 : 0,
           );
+        });
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    unreadAgencyDocuments(session) {
+      const rows = database
+        .prepare(
+          `SELECT d.id, d.kind FROM document d
+           WHERE d.session_key = ?
+             AND d.kind = 'analysis' AND d.label = 'Fiscal Impact Statement'
+             AND NOT EXISTS (SELECT 1 FROM agency_read r WHERE r.document_id = d.id)
+           ORDER BY d.id`,
+        )
+        .all(session);
+      return rows.map((row): UnreadAgencyDocument => {
+        const unread = unreadAgencyRow.parse(row);
+        return {
+          documentId: unread.id as DocumentId,
+          readAs: unread.kind === "analysis" ? "fiscal_impact_statement" : unread.kind,
+        };
+      });
+    },
+    statuteLinksOf(document) {
+      const rows = database
+        .prepare(
+          `SELECT l.kind, l.target_type, l.target_id, l.measure_section
+           FROM document d JOIN statute_link l ON l.content_hash = d.content_hash AND l.parsed_as = d.kind
+           WHERE d.id = ? ORDER BY l.ordinal`,
+        )
+        .all(document);
+      return rows.map((row) => statuteLinkOfRow(statuteLinkRow.parse(row)));
+    },
+    storeAgencyRead(record) {
+      const insertRead = database.prepare("INSERT INTO agency_read (document_id) VALUES (?)");
+      const insertLink = database.prepare(
+        "INSERT INTO agency_link (document_id, ordinal, agency_id, kind, evidence) VALUES (?, ?, ?, ?, ?)",
+      );
+      const insertUnit = database.prepare("INSERT INTO unresolved_unit (document_id, ordinal, unit) VALUES (?, ?, ?)");
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        insertRead.run(record.documentId);
+        record.links.forEach((link, ordinal) => {
+          insertLink.run(record.documentId, ordinal, link.agency, link.evidence.kind, evidenceToJson(link.evidence));
+        });
+        record.unresolvedUnits.forEach((unit, ordinal) => {
+          insertUnit.run(record.documentId, ordinal, unit);
         });
         database.exec("COMMIT");
       } catch (error) {

@@ -1,5 +1,11 @@
 // The MCP server's side of the database: read-only.
 import { z } from "zod";
+import type {
+  AgencyEvidence,
+  LinkedNode,
+  StoredAgencyLink,
+  StoredUnresolvedUnit,
+} from "#/packages/domain/agency-links.ts";
 import type { StoredAnalysis } from "#/packages/domain/analysis.ts";
 import {
   documentKinds,
@@ -28,6 +34,8 @@ import {
 } from "#/packages/domain/documents.ts";
 import {
   measureIdOf,
+  olisPageUrlOf,
+  parseMeasureReference,
   type HistoryAction,
   type Measure,
   type MeasureId,
@@ -37,19 +45,15 @@ import {
 import { comparePrintOrder, type Legislator, type LegislatorId, type Sponsor } from "#/packages/domain/legislators.ts";
 import { parseOrsSectionId, type AgencyId, type SnapshotVersion } from "#/packages/domain/oregonai.ts";
 import {
-  statuteLinkKinds,
   unreadStatuteParse,
   type AmendmentFile,
   type RelatingClauseEdit,
-  type StatuteLink,
   type StatuteLinkSource,
   type StatuteParse,
-  type StatuteTarget,
   type StatutesAffectedEntry,
   type StatutesAffectedTableOfMeasure,
   type StoredAmendment,
   type StoredVersion,
-  storedStatuteTarget,
   tableActions,
 } from "#/packages/domain/statute-links.ts";
 import {
@@ -60,8 +64,10 @@ import {
   type LegislatorVote,
 } from "#/packages/domain/votes.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
+import { evidenceFromJson, storedEvidenceKinds } from "./lib/agency-evidence.ts";
 import { openReadConnection } from "./lib/connection.ts";
 import { listedOrUnchecked } from "./lib/listing.ts";
+import { statuteLinkOfRow, statuteLinkRow, storedTargetOf } from "./lib/statute-link-rows.ts";
 
 /** What a meetings query asks for. Every field given must hold. */
 export type MeetingFilter = {
@@ -136,6 +142,14 @@ export type IndexReader = {
    * not load it or it is not published yet.
    */
   statutesAffectedTableOf(key: MeasureKey): StatutesAffectedTableOfMeasure | undefined;
+  /**
+   * The Agency Links the store holds, of one Agency, of one Measure's nodes, or both: those read at ingest from
+   * Fiscal Impact Statements, Versions and Proposed Amendments, and Testimony's. Each says the document its evidence was
+   * read from and the node it sits on (ADR-0027). In no particular order.
+   */
+  findAgencyLinks(session: SessionKey, filter: { agency?: AgencyId; measure?: MeasureKey }): StoredAgencyLink[];
+  /** The units a Measure's Fiscal Impact Statements list that are not Agencies, as each statement writes them. */
+  findUnresolvedUnits(measure: MeasureKey): StoredUnresolvedUnit[];
   /** What the index holds of the Session. */
   counts(session: SessionKey): IndexCounts;
   /** A committee by its code or its id, in either case. */
@@ -330,18 +344,6 @@ const parseRow = z.object({
   header_measure_number: z.number().nullable(),
   relating_clause_edits: z.string(),
 });
-const linkRow = z.object({
-  kind: z.enum(statuteLinkKinds),
-  target_type: z.enum(["section", "chapter"]),
-  target_id: z.string(),
-  measure_section: z.string().nullable(),
-});
-/** The target a stored row names. The store holds only ids that read, so one that does not is a bug in whatever wrote it. */
-function storedTargetOf(type: StatuteTarget["type"], id: string, what: string): StatuteTarget {
-  const target = storedStatuteTarget(type, id);
-  if (target === undefined) throw new Error(`The store holds ${what} ${id}, which is no ORS ${type} id`);
-  return target;
-}
 const orsSectionId = z.string().transform((text, context) => {
   const id = parseOrsSectionId(text);
   if (id === undefined) context.addIssue({ code: "custom", message: `not an ORS section id: ${text}` });
@@ -366,6 +368,24 @@ const tableEntryRow = z.object({
   emergency: z.number(),
   lone_e: z.number(),
 });
+const agencyLinkRow = z.object({
+  agency_id: z.string(),
+  link_kind: z.enum(storedEvidenceKinds),
+  evidence: z.string(),
+  document_id: z.string(),
+  document_source_url: z.string(),
+  document_kind: z.enum(["version", "proposed_amendment", "analysis"]),
+  measure_id: z.string(),
+  version_id: z.string().nullable(),
+});
+const unresolvedUnitRow = z.object({
+  unit: z.string(),
+  document_id: z.string(),
+  document_source_url: z.string(),
+  measure_id: z.string(),
+  version_id: z.string().nullable(),
+});
+const versionNodeRow = z.object({ label: z.string(), source_url: z.string() });
 const countRow = z.object({ n: z.number() });
 const kindCountRow = z.object({ kind: z.string(), n: z.number() });
 const listingRow = z.object({ listed: z.number().nullable(), last_listed_at: z.string().nullable() });
@@ -566,6 +586,31 @@ export function openIndexReader(path: string): IndexReader {
     `SELECT level, action, target_type, target_id, measure_section, emergency, lone_e FROM statutes_affected_entry
      WHERE session_key = ? AND prefix = ? AND number = ? ORDER BY ordinal`,
   );
+  // The stored Agency Links of one Agency and/or one Measure, with the document each was read from and the Measure
+  // that document belongs to. An analysis document also gives the Version the feed places it on (ADR-0013), if any.
+  const selectAgencyLinks = database.prepare(
+    `SELECT a.agency_id, a.kind AS link_kind, a.evidence, d.id AS document_id, d.source_url AS document_source_url,
+            d.kind AS document_kind, mr.to_id AS measure_id, vr.to_id AS version_id
+     FROM agency_link a
+       JOIN document d ON d.id = a.document_id
+       JOIN document_relation mr ON mr.document_id = d.id AND mr.relation = 'measure'
+       LEFT JOIN document_relation vr ON vr.document_id = d.id AND vr.relation = 'version'
+     WHERE d.session_key = ?1 AND (?2 IS NULL OR a.agency_id = ?2) AND (?3 IS NULL OR mr.to_id = ?3)
+     ORDER BY a.agency_id, d.id, a.ordinal`,
+  );
+  const selectUnresolvedUnits = database.prepare(
+    `SELECT u.unit, d.id AS document_id, d.source_url AS document_source_url, mr.to_id AS measure_id,
+            vr.to_id AS version_id
+     FROM unresolved_unit u
+       JOIN document d ON d.id = u.document_id
+       JOIN document_relation mr ON mr.document_id = d.id AND mr.relation = 'measure'
+       LEFT JOIN document_relation vr ON vr.document_id = d.id AND vr.relation = 'version'
+     WHERE mr.to_id = ?
+     ORDER BY d.id, u.ordinal`,
+  );
+  const selectVersionNode = database.prepare(
+    "SELECT label, source_url FROM document WHERE id = ? AND kind = 'version'",
+  );
   const numbersInOrder = new Intl.Collator("en", { numeric: true });
   function documentOf(row: unknown): DocumentView["document"] {
     const stored = documentRow.parse(row);
@@ -591,14 +636,9 @@ export function openIndexReader(path: string): IndexReader {
     const row = selectStatuteParse.get(contentHash, readAs);
     if (row === undefined) return unreadStatuteParse();
     const stored = parseRow.parse(row);
-    const links = selectStatuteLinks.all(contentHash, readAs).map((linkRowOf): StatuteLink => {
-      const link = linkRow.parse(linkRowOf);
-      return {
-        kind: link.kind,
-        target: storedTargetOf(link.target_type, link.target_id, "a Statute Link to"),
-        measureSection: link.measure_section,
-      };
-    });
+    const links = selectStatuteLinks
+      .all(contentHash, readAs)
+      .map((found) => statuteLinkOfRow(statuteLinkRow.parse(found)));
     const edits: RelatingClauseEdit[] = relatingClauseEdits.parse(JSON.parse(stored.relating_clause_edits));
     const header: AmendmentHeader | null =
       stored.amended_version_header === null ||
@@ -628,6 +668,40 @@ export function openIndexReader(path: string): IndexReader {
       return { listed: false, lastListedAt: stored.last_listed_at as Timestamp };
     }
     return { listed: true, lastListedAt: stored.last_listed_at as Timestamp | null };
+  }
+  function measureNodeOf(key: MeasureKey): LinkedNode {
+    return {
+      type: "measure",
+      id: measureIdOf(key),
+      measure: key,
+      label: null,
+      sourceUrl: olisPageUrlOf(key),
+      createdAt: [],
+    };
+  }
+  /** The Measure a stored id names. The ids in the store were minted from a Measure of this Session. */
+  function measureKeyOf(measureId: string, session: SessionKey): MeasureKey {
+    const key = parseMeasureReference(measureId, session);
+    if (key === undefined) throw new Error(`The store holds ${measureId}, which is no Measure of ${session}`);
+    return key;
+  }
+  /**
+   * Where a Fiscal Impact Statement sits: the Version the feed places it on (ADR-0013) when the store holds that
+   * Version's file, and otherwise the Measure. A Version whose file did not come cannot be named or linked to.
+   */
+  function statementNodeOf(key: MeasureKey, versionId: string | null): LinkedNode {
+    if (versionId === null) return measureNodeOf(key);
+    const version = selectVersionNode.get(versionId);
+    if (version === undefined) return measureNodeOf(key);
+    const stored = versionNodeRow.parse(version);
+    return {
+      type: "version",
+      id: versionId as DocumentId,
+      measure: key,
+      label: stored.label,
+      sourceUrl: stored.source_url,
+      createdAt: [],
+    };
   }
   function relationsOf(documentId: DocumentId): RelatedNode[] {
     return selectRelations.all(documentId).map((row) => {
@@ -708,6 +782,31 @@ export function openIndexReader(path: string): IndexReader {
     },
     analysisNotHeld(key) {
       return countRow.parse(countNotHeld.get(measureIdOf(key))).n;
+    },
+    findAgencyLinks(session, filter) {
+      const stored = selectAgencyLinks
+        .all(session, filter.agency ?? null, filter.measure === undefined ? null : measureIdOf(filter.measure))
+        .map((row) => agencyLinkRow.parse(row));
+      return stored.map((found): StoredAgencyLink => {
+        const key = measureKeyOf(found.measure_id, session);
+        const evidence: AgencyEvidence = evidenceFromJson(found.link_kind, found.evidence);
+        return {
+          agency: found.agency_id as AgencyId,
+          evidence,
+          document: { id: found.document_id as DocumentId, sourceUrl: found.document_source_url, createdAt: null },
+          node: statementNodeOf(key, found.version_id),
+        };
+      });
+    },
+    findUnresolvedUnits(measure) {
+      return selectUnresolvedUnits.all(measureIdOf(measure)).map((row): StoredUnresolvedUnit => {
+        const found = unresolvedUnitRow.parse(row);
+        return {
+          unit: found.unit,
+          statement: { id: found.document_id as DocumentId, sourceUrl: found.document_source_url },
+          node: statementNodeOf(measure, found.version_id),
+        };
+      });
     },
     counts(session) {
       const documentsByKind = Object.fromEntries(documentKinds.map((kind) => [kind, 0])) as Record<

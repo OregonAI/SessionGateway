@@ -1,0 +1,98 @@
+// Seam 1: the Agency Links `get_measure` shows (ticket #16, spec #1 stories 31 to 35), with the whole system behind
+// it. One database of the whole fixture serves every case in this file because none of them changes it; the cases
+// that need the feed as it stood earlier, or a row the fixture lacks, are in the files beside it.
+//
+// Expected values are literals from the fixture's feed rows (test/fixtures/olis-2025R1/feed/), the documents as
+// `pdftotext` prints them (test/fixtures/olis-2025R1/documents/), and the registry slugs of the snapshot fixture
+// (test/fixtures/oregonai-snapshot/snapshot.json).
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
+import { startSystem, type System } from "../support/system.ts";
+
+let system: System;
+
+beforeAll(async () => {
+  // 2026-08-01 10:00 in Oregon: every row of the fixture exists by then, so the pull fetches all 278 documents.
+  system = await startSystem({
+    clockAt: "2026-08-01T17:00:00Z",
+    documents: true,
+    serverEnv: { MCP_RATE_LIMIT: "1000" },
+  });
+}, 60_000);
+
+afterAll(async () => {
+  await system.stop();
+});
+
+type Evidence = {
+  kind: string;
+  node_id: string;
+  node_type: string;
+  document_id: string;
+  source_url: string;
+  unit?: string;
+  terms?: string[];
+  organization?: string;
+  chapter_id?: string;
+  statute_link?: { kind: string; target_id: string; measure_section: string | null };
+  links_in_chapter?: number;
+};
+type AgencyEntry = { agency_id: string; evidence: Evidence[] };
+type UnresolvedUnit = { unit: string; statement_id: string; source_url: string; node_id: string; node_type: string };
+type AgencyLinks = { agencies: AgencyEntry[]; unresolved_units: UnresolvedUnit[]; note: string };
+
+describe.for(eras)("get_measure's Agency Links for a %s client", (era) => {
+  let connected: ConnectedClient;
+
+  beforeAll(async () => {
+    connected = await connectClient(era, system.handler);
+  });
+
+  afterAll(async () => {
+    await connected.close();
+  });
+
+  async function agencyLinksOf(measure: string): Promise<AgencyLinks> {
+    const outcome = await callTool(connected, "get_measure", { measure });
+    expect(outcome.isError).toBe(false);
+    return outcome.structured?.["agency_links"] as AgencyLinks;
+  }
+
+  /** The evidence of one kind, as [agency, document, node, node type] rows in the order the tool lists them. */
+  function evidenceOf(links: AgencyLinks, kind: string): [string, string, string, string][] {
+    return links.agencies.flatMap((agency) =>
+      agency.evidence
+        .filter((evidence) => evidence.kind === kind)
+        .map((evidence): [string, string, string, string] => [
+          agency.agency_id,
+          evidence.document_id,
+          evidence.node_id,
+          evidence.node_type,
+        ]),
+    );
+  }
+
+  // SB 69's Fiscal Impact Statement is analysis 85414 (feed/MeasureAnalysisDocuments.json: DocumentType "Fiscal Impact
+  // Statement", Version "A"), and its "Government Unit(s) Affected:" line reads "Bureau of Labor and Industries,
+  // Employment Department, Judicial Department, Department of Justice" (pdftotext of
+  // measure-analysis-documents/85414.pdf, and test/fixtures/olis-2025R1/measures.txt). Its label "A" is the
+  // A-Engrossed Version, which the feed lists for SB 69 (feed/MeasureDocuments.json), so the link sits on that Version
+  // (ADR-0013). The slugs are the snapshot fixture's.
+  describe("named in a Fiscal Impact Statement", () => {
+    it("links SB 69's A-Engrossed Version to the four Agencies its Fiscal Impact Statement names, each with the unit as written", async () => {
+      const links = await agencyLinksOf("SB 69");
+
+      expect(evidenceOf(links, "fiscal-impact-statement")).toEqual([
+        ["bureau-of-labor-and-industries", "analysis-2025r1-85414", "version-2025r1-sb69-a-engrossed", "version"],
+        ["department-of-justice", "analysis-2025r1-85414", "version-2025r1-sb69-a-engrossed", "version"],
+        ["employment-department", "analysis-2025r1-85414", "version-2025r1-sb69-a-engrossed", "version"],
+        ["judicial-department", "analysis-2025r1-85414", "version-2025r1-sb69-a-engrossed", "version"],
+      ]);
+      const boli = links.agencies.find((agency) => agency.agency_id === "bureau-of-labor-and-industries");
+      expect(boli?.evidence.find((evidence) => evidence.kind === "fiscal-impact-statement")).toMatchObject({
+        unit: "Bureau of Labor and Industries",
+        source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureAnalysisDocument/85414",
+      });
+    });
+  });
+});

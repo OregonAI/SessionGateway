@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { statuteLinkKinds, tableActions } from "#/packages/domain/statute-links.ts";
+import { storedEvidenceKinds } from "./agency-evidence.ts";
 
 // The only file in the project that imports node:sqlite (src/CLAUDE.md, "Shape"): the API is
 // Stability 1.2, so keeping it here keeps a swap to better-sqlite3 local.
@@ -240,6 +241,30 @@ const schema = `
     session_key TEXT NOT NULL PRIMARY KEY,
     content_hash TEXT NOT NULL,
     reason TEXT NOT NULL
+  ) STRICT;
+  -- Agency Links (ADR-0027), read by the ingest worker from the text it stored, after the Statute Links are. A
+  -- document is read once: agency_read says it was, whether or not it gave a link, so a pull does not read a
+  -- Version again for having none. The link names the document its evidence was read from; the node it sits on
+  -- (a Version, a Proposed Amendment, the Measure) is found from that document when the server answers, as ADR-0013
+  -- places an analysis document. Testimony's links are the testimony table's own agency_id.
+  CREATE TABLE IF NOT EXISTS agency_read (
+    document_id TEXT NOT NULL PRIMARY KEY
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS agency_link (
+    document_id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL,
+    agency_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN (${storedEvidenceKinds.map((kind) => `'${kind}'`).join(", ")})),
+    evidence TEXT NOT NULL,
+    PRIMARY KEY (document_id, ordinal)
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS agency_link_agency ON agency_link (agency_id);
+  -- The units a Fiscal Impact Statement lists that are not Agencies, as the statement writes them.
+  CREATE TABLE IF NOT EXISTS unresolved_unit (
+    document_id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL,
+    unit TEXT NOT NULL,
+    PRIMARY KEY (document_id, ordinal)
   ) STRICT;
   -- The analysis documents the feed has listed for each Measure (ADR-0013). Rows are kept, never replaced: the
   -- count of the ones the store does not hold reads the listing state (feed_row_state) of each (ADR-0030).

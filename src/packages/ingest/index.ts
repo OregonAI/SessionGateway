@@ -49,6 +49,7 @@ import { splitPassages } from "#/packages/search/passages.ts";
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
+import { agencyReadOf } from "./lib/agency-links.ts";
 import { buildReportPath, writeBuildReport, type BuildReport, type SetReport } from "./lib/build-report.ts";
 import { loadStatutesAffectedTable } from "./lib/statutes-affected-table.ts";
 
@@ -425,6 +426,11 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     // files are not fetched again. Postings that share a file are read once (ADR-0015).
     for (const file of writer.unreadStatuteFiles(config.session)) {
       writer.storeStatuteParse(statuteParseOf(file, writer.storedText(file.documentId), snapshot.orsSections));
+    }
+    // The Agency Links of every stored Fiscal Impact Statement not yet read, from the text the store holds
+    // (ADR-0027).
+    for (const document of writer.unreadAgencyDocuments(config.session)) {
+      writer.storeAgencyRead(agencyReadOf(document, writer.storedText(document.documentId), snapshot));
     }
     const listingCounts = new Map(writer.listingCounts(config.session).map((count) => [count.entitySet, count]));
     const unresolvedMemberCodes = new Set(
