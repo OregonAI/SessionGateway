@@ -5,6 +5,7 @@
 // Each case builds its own system, because the feed it needs is the thing under test; the documents are off, since
 // nothing here reads one.
 import { afterEach, describe, expect, it } from "vitest";
+import { callTool, connectClient } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";
 
 const started: System[] = [];
@@ -20,6 +21,18 @@ async function start(): Promise<System> {
   const system = await startSystem({ clockAt });
   started.push(system);
   return system;
+}
+
+/** The as-of time an agent reads from `get_measure`: the last complete pull's. */
+async function asOfSeenByAgents(system: System): Promise<unknown> {
+  const connected = await connectClient("2026-07-28", system.handler);
+  try {
+    const outcome = await callTool(connected, "get_measure", { measure: "HB 3131" });
+    expect(outcome.isError, outcome.text).toBe(false);
+    return outcome.structured?.["as_of"];
+  } finally {
+    await connected.close();
+  }
 }
 
 type SetReport = {
@@ -78,6 +91,39 @@ describe("a full pull that is short of the feed's counts", () => {
       );
     }
   });
+});
+
+// The pull reads every set before it decides, so a set that is short anywhere refuses it, and the report names that set
+// and no other. These are the sets after the first one (Measures) the worker reads: CommitteePublicTestimonies, one of
+// the last, and Legislators, the second. A worker that looked at the first set alone would store both pulls.
+describe("a full pull that is short in one set other than the first", () => {
+  it.for(["CommitteePublicTestimonies", "Legislators"] as const)(
+    "is refused for %s alone, and the index stays as the last complete pull left it",
+    async (shortSet) => {
+      const system = await start();
+      const before = await asOfSeenByAgents(system);
+      system.olis.withholdLastRows(1, shortSet);
+      system.clock.set("2026-08-02T17:00:00Z");
+
+      await expect(system.pullAgain()).rejects.toThrow(
+        new RegExp(
+          `Short read of ${shortSet}: OLIS counted ${fixtureRows[shortSet]}.*read ${fixtureRows[shortSet] - 1}`,
+        ),
+      );
+
+      const sets = setsOf(system.buildReport());
+      for (const [name, counted] of Object.entries(fixtureRows)) {
+        expect(sets[name], name).toEqual({
+          entity_set: name,
+          counted,
+          read: name === shortSet ? counted - 1 : counted,
+          complete: name !== shortSet,
+        });
+      }
+      expect(system.buildReport()["pull"]).toMatchObject({ complete: false });
+      expect(await asOfSeenByAgents(system)).toBe(before);
+    },
+  );
 });
 
 describe("a full pull that matches the feed's counts", () => {

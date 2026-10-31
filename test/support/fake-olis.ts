@@ -109,8 +109,11 @@ export type FakeOlis = {
    * in order. A test reads how often a file was fetched from here, never from the database.
    */
   documentRequests(): readonly string[];
-  /** From now on, leave the last `count` rows of each set out of the pages (see `withholdLastRows`). */
-  withholdLastRows(count: number): void;
+  /**
+   * From now on, leave the last `count` rows of each set out of the pages (see `withholdLastRows`), or of the one set
+   * named, so that a feed is short in a set other than the first the worker reads.
+   */
+  withholdLastRows(count: number, entitySet?: string): void;
   /** From now on, answer (or not) the way `behavior` says. Answering is the default. */
   behave(behavior: FakeOlisBehavior): void;
   /**
@@ -279,6 +282,8 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
   const servesDocuments = options.documents === true;
   const pageSize = options.pageSize ?? 5000;
   let withheldRows = options.withholdLastRows ?? 0;
+  /** The one set that is short, or undefined when every set is. */
+  let withheldSet: string | undefined;
   let behavior: FakeOlisBehavior = { kind: "answer" };
   let received: FakeOlisRequest[] = [];
   const supportedQueryOptions = new Set(["$filter", "$inlinecount", "$skiptoken"]);
@@ -399,7 +404,8 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
       return;
     }
 
-    const delivered = rows.slice(0, rows.length - withheldRows);
+    const withheld = withheldSet === undefined || withheldSet === entitySet ? withheldRows : 0;
+    const delivered = rows.slice(0, rows.length - withheld);
     const skip = Number(url.searchParams.get("$skiptoken") ?? 0);
     const body: Record<string, unknown> = {};
     if (url.searchParams.get("$inlinecount") === "allpages") body["odata.count"] = String(rows.length);
@@ -424,8 +430,9 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
     baseUrl: `http://127.0.0.1:${port}/odata/odataservice.svc/`,
     origin: `http://127.0.0.1:${port}`,
     documentRequests: () => [...documentRequests],
-    withholdLastRows: (count) => {
+    withholdLastRows: (count, entitySet) => {
       withheldRows = count;
+      withheldSet = entitySet;
     },
     behave: (next) => {
       behavior = next;
