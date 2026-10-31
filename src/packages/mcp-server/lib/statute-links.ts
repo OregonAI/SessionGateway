@@ -277,7 +277,7 @@ export const versionEntryOutput = z.object({
     .string()
     .optional()
     .describe(
-      "Present when this Version's reading (text_read, not_read_reason and statute_links) is exactly that of the Version before it in print order, whose id this is. The reading is then left out, and is that Version's. The Version's own Statutes Affected Table block and no_longer_listed are shown either way, whatever the Version before it has. Only a Version that was read can have the links of another.",
+      "Present when this Version's reading (text_read, not_read_reason and statute_links) is exactly that of the Version before it in print order, whose id this is. The reading is then left out, and is that Version's: shown in its entry, or, when that Version says same_links_as too, in the entry its same_links_as names. The Version's own Statutes Affected Table block and no_longer_listed are shown either way, whatever the Version before it has. Only a Version that was read can have the links of another.",
     ),
   text_read: parseResultFields.text_read.optional(),
   not_read_reason: parseResultFields.not_read_reason.optional(),
@@ -454,16 +454,24 @@ export function statuteLinksBySourceOf(
 }
 
 /** The fields of a Version's entry that say what was read of its text: what `same_links_as` compares and leaves out. */
-type Reading = Pick<VersionEntry, "text_read" | "not_read_reason" | "statute_links">;
+const readingFields = ["text_read", "not_read_reason", "statute_links"] as const;
+type Reading = Pick<VersionEntry, (typeof readingFields)[number]>;
 
 /** A Version's entry without its reading, which is the Version before it's: everything else is the Version's own. */
 type SameLinksAsEntry<Entry extends VersionEntry> = Omit<Entry, keyof Reading> & { same_links_as: string };
 
-const readingFields: ReadonlySet<string> = new Set<keyof Reading>(["text_read", "not_read_reason", "statute_links"]);
-
 /** What was read of a Version's text, as one string to compare. */
 function readingOf(entry: VersionEntry): string {
-  return JSON.stringify([entry.text_read, entry.not_read_reason, entry.statute_links]);
+  return JSON.stringify(readingFields.map((field) => entry[field]));
+}
+
+/** A Version's entry with its reading left out. */
+function withoutReading<Entry extends VersionEntry>(entry: Entry): Omit<Entry, keyof Reading> {
+  const reading: ReadonlySet<string> = new Set(readingFields);
+  return Object.fromEntries(Object.entries(entry).filter(([field]) => !reading.has(field))) as Omit<
+    Entry,
+    keyof Reading
+  >;
 }
 
 /**
@@ -480,7 +488,6 @@ export function versionsWithSameLinksAs<Entry extends VersionEntry>(
   return entries.map((entry, index) => {
     const before = entries[index - 1];
     if (before === undefined || entry.text_read !== true || readingOf(entry) !== readingOf(before)) return entry;
-    const own = Object.fromEntries(Object.entries(entry).filter(([field]) => !readingFields.has(field)));
-    return { ...(own as Omit<Entry, keyof Reading>), same_links_as: before.id };
+    return { ...withoutReading(entry), same_links_as: before.id };
   });
 }

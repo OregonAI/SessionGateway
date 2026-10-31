@@ -133,3 +133,75 @@ describe("same_links_as beside a made-up Statutes Affected Table", () => {
     expect(triplesOf(aEngrossed.statute_links ?? expectedLinks({}))).toHaveLength(292);
   });
 });
+
+// MADE UP: a row for a B-Engrossed Version of SB 69 (the feed has none), served with the fixture's A-Engrossed file, so its
+// links are the A-Engrossed Version's; and a made-up table whose one row names it ("SB 69 B"). The B-Engrossed Version then
+// says same_links_as the A-Engrossed one beside a table block of its own, which the A-Engrossed Version does not have, and
+// the Enrolled Version, whose links are the same again, says same_links_as the B-Engrossed one (ADR-0036).
+describe("same_links_as beside a table block of the Version's own", () => {
+  const madeUpRow = {
+    SessionKey: "2025R1",
+    MeasurePrefix: "SB",
+    MeasureNumber: 69,
+    VersionDescription: "B-Engrossed",
+    DocumentUrl: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/B-Engrossed",
+    CreatedDate: "2025-04-01T10:00:00",
+    ModifiedDate: null,
+  };
+  let own: System;
+  const ownClients: ConnectedClient[] = [];
+
+  beforeAll(async () => {
+    own = await startSystem({
+      clockAt: "2026-08-01T17:00:00Z",
+      documents: true,
+      serverEnv: { MCP_RATE_LIMIT: "1000" },
+      statutesAffectedTableUrl: tableUrlOn,
+      olis: {
+        documentFailures: { [publishedTableUrl]: [404] },
+        strayRows: { MeasureDocuments: [madeUpRow] },
+        strayDocuments: {
+          "/liz/2025R1/Downloads/MeasureDocument/SB69/B-Engrossed": "measure-documents/SB69/A-Engrossed.pdf",
+        },
+      },
+    });
+    for (const era of eras) ownClients.push(await connectClient(era, own.handler));
+    own.olis.serveDocument(tablePath, madeUpTable(["653.616 A §8 SB 69 B"]));
+    own.clock.set("2026-08-02T17:00:00Z");
+    await own.pullAgain();
+  });
+
+  afterAll(async () => {
+    for (const client of ownClients) await client.close();
+    await own.stop();
+  });
+
+  it("keeps the B-Engrossed Version's own block beside same_links_as, and repeats neither in the Enrolled Version", async () => {
+    const answers: LinksBySource[] = [];
+    for (const client of ownClients) {
+      const outcome = await callTool(client, "get_measure", { measure: "SB 69" });
+      expect(outcome.isError, outcome.text).toBe(false);
+      answers.push(outcome.structured?.["statute_links_by_source"] as LinksBySource);
+    }
+    expect(answers[1]).toEqual(answers[0]);
+    const versions = answers[0]?.versions ?? [];
+
+    expect(versions.map((version) => [version.label, version.same_links_as])).toEqual([
+      ["Introduced", undefined],
+      ["A-Engrossed", undefined],
+      ["B-Engrossed", "version-2025r1-sb69-a-engrossed"],
+      ["Enrolled", "version-2025r1-sb69-b-engrossed"],
+    ]);
+    const bEngrossed = versionOf(versions, "B-Engrossed");
+    expect(bEngrossed.text_read).toBeUndefined();
+    expect(bEngrossed.statute_links).toBeUndefined();
+    // The block is set beside the links the B-Engrossed Version has, which are the A-Engrossed Version's: the row confirms
+    // the amendment of ORS 653.616 in SECTION 8.
+    expect(bEngrossed.statutes_affected_table?.compared).toBe(true);
+    expect(bEngrossed.statutes_affected_table?.parsed_changes?.amends.sections).toContainEqual(
+      confirmed(sectionTarget("ors-653.616", "8")),
+    );
+    expect(versionOf(versions, "A-Engrossed").statutes_affected_table).toBeUndefined();
+    expect(versionOf(versions, "Enrolled").statutes_affected_table).toBeUndefined();
+  });
+});
