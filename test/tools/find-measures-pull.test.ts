@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { snapshotFixturePath } from "../support/oregonai-snapshot.ts";
-import { systemTemplate, startSystem, type System, type SystemOptions } from "../support/system.ts";
+import { startCopiedSystem, systemTemplate, type System, type SystemOptions } from "../support/system.ts";
 import { madeUpTestimonyRow } from "../support/testimony.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -151,7 +151,7 @@ describe.for(eras)("find_measures after the clock moves and the worker pulls aga
 
   async function startAt(clockAt: string): Promise<System> {
     const options: SystemOptions = { clockAt, documents: true, serverEnv: { MCP_RATE_LIMIT: "1000" } };
-    const system = await startSystem(options);
+    const system = await startCopiedSystem(options);
     started.push(system);
     return system;
   }
@@ -489,7 +489,7 @@ describe.for(eras)("find_measures stays inside a page's size, for a %s client", 
   it("keeps a full page of a Department's derived links through five long-named sub-units to about 25,000 characters", async () => {
     const snapshot = madeUpDepartmentSnapshot();
     try {
-      const system = await startSystem({
+      const system = await startCopiedSystem({
         clockAt: "2026-08-01T17:00:00Z",
         documents: true,
         snapshot: snapshot.path,
