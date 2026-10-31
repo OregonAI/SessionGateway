@@ -167,15 +167,21 @@ function nodeOutput(node: LinkedNode): { node_id: string; node_type: LinkedNode[
 }
 
 /**
- * The links with a repeated one left out: a Proposed Amendment posted to several meetings has a posting for each, and
- * postings that say the same name an Agency in the same way once. The link kept is the one from the first document, in
- * the order of the feed's numbers, so which posting an agent is given does not depend on the order of the rows.
+ * The links with a repeated one left out. A Proposed Amendment posted to several meetings has a posting for each, and
+ * postings that say the same name an Agency in the same way once; the link kept is the one from the first posting, in
+ * the order of the feed's numbers, so which posting an agent is given does not depend on the order of the rows. Any other
+ * document is its own evidence: two Testimony from one Agency on a Measure, or two statements that list it, are two links.
  */
 export function withoutRepeats(links: readonly StoredAgencyLink[]): StoredAgencyLink[] {
   const seen = new Set<string>();
   const kept: StoredAgencyLink[] = [];
   for (const link of links.toSorted((a, b) => numbersInOrder.compare(a.document.id, b.document.id))) {
-    const key = JSON.stringify([link.agency, link.node.id, link.evidence]);
+    const key = JSON.stringify([
+      link.agency,
+      link.node.id,
+      link.evidence,
+      link.node.type === "proposed_amendment" ? null : link.document.id,
+    ]);
     if (seen.has(key)) continue;
     seen.add(key);
     kept.push(link);
