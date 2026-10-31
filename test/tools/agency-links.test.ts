@@ -220,7 +220,12 @@ describe.for(eras)("get_measure's Agency Links for a %s client", (era) => {
       );
     });
 
-    it("links every Agency the Chapter table gives those chapters, and no other, to SB 69's A-Engrossed Version", async () => {
+    // The registry places three of the six sub-units under a Department of their own (the snapshot's `parent`: DAS's Chief
+    // Human Resources Office under the Department of Administrative Services, DHS's Aging and People with Disabilities
+    // under the Department of Human Services, OHA's Public Employees Benefit Board under the Oregon Health Authority), and
+    // the Chapter table lists none of the three Departments for these chapters, so each gets a link through its sub-unit
+    // (ADR-0029, #16 F3). This test said "and no other" of the table's seven Agencies before that.
+    it("links every Agency the Chapter table gives those chapters, and the parents of those that are sub-units, to SB 69's A-Engrossed Version", async () => {
       const links = await agencyLinksOf("SB 69");
 
       const onAEngrossed = links.agencies
@@ -232,10 +237,13 @@ describe.for(eras)("get_measure's Agency Links for a %s client", (era) => {
         .map((agency) => agency.agency_id);
       expect(onAEngrossed).toEqual([
         "bureau-of-labor-and-industries",
+        "department-of-administrative-services",
         "department-of-administrative-services-chief-human-resources-office",
         "department-of-corrections",
+        "department-of-human-services",
         "department-of-human-services-aging-and-people-with-disabilities-and-developmental-disabilities",
         "employment-department",
+        "oregon-health-authority",
         "oregon-health-authority-public-employees-benefit-board",
         "oregon-state-treasury",
       ]);

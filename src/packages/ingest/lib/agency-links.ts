@@ -36,7 +36,7 @@ export function agencyReadOf(
         documentId: document.documentId,
         links: [
           ...textAgencyLinks(stored.text, snapshot.agencies),
-          ...derivedAgencyLinks(statuteLinks, snapshot.chapterAgencies),
+          ...derivedAgencyLinks(statuteLinks, snapshot.chapterAgencies, snapshot.agencyParents),
         ],
         unresolvedUnits: [],
       };

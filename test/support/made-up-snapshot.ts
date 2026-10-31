@@ -33,6 +33,7 @@ function fileText(version: MadeUpSnapshotVersion): string {
           aliases: [],
           oarChapter: "999",
           dasAgencyNumber: null,
+          parent: null,
         },
       ],
       orsSections: ["ors-999.001", "ors-999.002"],

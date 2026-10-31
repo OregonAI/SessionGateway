@@ -32,6 +32,7 @@ type Evidence = {
   target_id?: string;
   measure_sections?: (string | null)[];
   chapter_id?: string;
+  through?: string[];
 };
 type Item = {
   id: string;
@@ -313,6 +314,77 @@ describe.for(eras)("find_measures for a %s client", (era) => {
       expect(found.notes).toEqual([
         "The index holds no Agency Link to no-such-agency. Check the slug against the OregonAI agency registry.",
       ]);
+    });
+  });
+
+  // An Agency's sub-units are rows of their own in the registry, and the Chapter table gives a chapter the sub-unit that
+  // implements it, not the Department (ADR-0012). A Fiscal Impact Statement that names "Department of Human Services"
+  // resolves to the Department, so the two halves of spec #1's question (a) must meet at the parent (#16 F3). The snapshot
+  // fixture's chapter 659A row lists DHS's Aging and People with Disabilities and Developmental Disabilities (a sub-unit
+  // whose registry relation places it under department-of-human-services) and not the Department itself, and SB 69's
+  // A-Engrossed and Enrolled Versions and its amendments -1 and -2 amend sections of chapter 659A (659A.159, 659A.165 and
+  // 659A.156: pdftotext of measure-documents/SB69/A-Engrossed.pdf). Chapters 409 and 418 list the Department itself and
+  // three of its sub-units, and HB 3795's Versions and amendments amend 409.711 and 418.808. HB 3795's Fiscal Impact
+  // Statements 'A' and 'B' and SB 64's Introduced one name the Department (measures.txt).
+  describe("an Agency with sub-units", () => {
+    const dhs = "department-of-human-services";
+    const apd = "department-of-human-services-aging-and-people-with-disabilities-and-developmental-disabilities";
+
+    it("lists SB 69 among the Department's statutes, through the sub-unit whose rules implement chapter 659A", async () => {
+      const found = await find({ agency: dhs });
+
+      const { items } = groupOf(found, "derived");
+      expect(items.map((item) => item.id)).toEqual([
+        "version-2025r1-hb3795-enrolled",
+        "version-2025r1-hb3795-b-engrossed",
+        "amendment-2025r1-hb3795-a3",
+        "version-2025r1-sb69-enrolled",
+        "version-2025r1-hb3795-a-engrossed",
+        "amendment-2025r1-hb3795-1",
+        "version-2025r1-sb69-a-engrossed",
+        "amendment-2025r1-sb69-2",
+        "amendment-2025r1-sb69-1",
+      ]);
+      const sb69 = items.filter((item) => item.measure_id === "measure-2025r1-sb69");
+      expect(sb69).toHaveLength(4);
+      for (const item of sb69) {
+        expect(item.evidence.map((evidence) => [evidence.chapter_id, evidence.through])).toEqual([
+          ["ors-chapter-659a", [apd]],
+        ]);
+      }
+    });
+
+    it("lists HB 3795 as before, on the chapters the Department's own rules implement, with no sub-unit named", async () => {
+      const found = await find({ agency: dhs });
+
+      const hb3795 = groupOf(found, "derived").items.filter((item) => item.measure_id === "measure-2025r1-hb3795");
+      expect(hb3795).toHaveLength(5);
+      for (const item of hb3795) {
+        for (const evidence of item.evidence) expect(evidence.through).toBeUndefined();
+      }
+    });
+
+    it("keeps the Fiscal Impact Statement group as it was: the statements that name the Department", async () => {
+      const found = await find({ agency: dhs });
+
+      expect(groupOf(found, "fiscal-impact-statement").items.map((item) => item.id)).toEqual([
+        "version-2025r1-hb3795-b-engrossed",
+        "version-2025r1-hb3795-a-engrossed",
+        "version-2025r1-sb64-introduced",
+      ]);
+    });
+
+    it("lists the sub-unit's own items without a sub-unit named: the link is its own", async () => {
+      const found = await find({ agency: apd });
+
+      const sb69 = groupOf(found, "derived").items.filter((item) => item.measure_id === "measure-2025r1-sb69");
+      expect(sb69.map((item) => item.id)).toEqual([
+        "version-2025r1-sb69-enrolled",
+        "version-2025r1-sb69-a-engrossed",
+        "amendment-2025r1-sb69-2",
+        "amendment-2025r1-sb69-1",
+      ]);
+      for (const item of sb69) expect(item.evidence.every((evidence) => evidence.through === undefined)).toBe(true);
     });
   });
 

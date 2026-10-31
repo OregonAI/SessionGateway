@@ -46,6 +46,9 @@ const registrySchema = z.object({
       aliases: z.array(z.string().min(1)).optional(),
       oar_chapter: z.string().nullable(),
       das_agency_number: z.string().nullable().optional(),
+      // ERF writes `relations` on every row: where the body is placed under another (a target slug, the source that
+      // places it, a kind). A row without the key has not said, which is not the same as having no parent.
+      relations: z.array(z.object({ target: z.string() })),
     }),
   ),
 });
@@ -70,11 +73,14 @@ function sample(items: Iterable<string>, count = 5): string {
   return [...items].slice(0, count).join(", ");
 }
 
+/** What reading a checkout gives: the snapshot, and what the build tells the operator about the data. */
+export type ErfSnapshot = { file: SnapshotFile; warnings: string[] };
+
 /**
- * The snapshot of the checkout at this path, as the JSON file holds it. Throws, naming the problem, if
- * the checkout is not what a commit can describe or its files disagree with each other.
+ * The snapshot of the checkout at this path, as the JSON file holds it, with the findings the build reports. Throws,
+ * naming the problem, if the checkout is not what a commit can describe or its files disagree with each other.
  */
-export function readErfSnapshot(checkout: string): SnapshotFile {
+export function readErfSnapshot(checkout: string): ErfSnapshot {
   // `git -C <path>` finds the nearest repository above the path. A folder that holds ERF's files but is
   // not itself the checkout (an export unpacked into another project's ignored cache folder, say) would
   // be given that other repository's commit, and `git status` does not list ignored files to say so.
@@ -177,6 +183,28 @@ export function readErfSnapshot(checkout: string): SnapshotFile {
     );
   }
 
+  // The parent of a body is the target of its relation. The registry may place one body under several (the OAR index,
+  // DAS and a statute can disagree, and ERF keeps the disagreement rather than reconcile it): the snapshot gives such a
+  // body no parent, and the build says so. A target the registry lacks stops the build, as a rule of a chapter the
+  // registry lacks does: the Agency Link that went through it would name an Agency that does not exist.
+  const slugs = new Set(registry.map((row) => row.slug));
+  const warnings: string[] = [];
+  const parentOf = new Map<string, string | null>();
+  for (const row of registry) {
+    const targets = [...new Set(row.relations.map((relation) => relation.target))];
+    for (const target of targets) {
+      if (!slugs.has(target)) {
+        throw new Error(`The registry places ${row.slug} under ${target}, which is not a row of the registry`);
+      }
+    }
+    if (targets.length > 1) {
+      warnings.push(
+        `${row.slug} is placed under more than one body (${targets.join(", ")}): the snapshot gives it no parent`,
+      );
+    }
+    parentOf.set(row.slug, targets.length === 1 ? (targets[0] ?? null) : null);
+  }
+
   const file: SnapshotFile = {
     formatVersion: 1,
     version: { source: "executive-regulatory-frameworks", commit, commitDate },
@@ -187,6 +215,7 @@ export function readErfSnapshot(checkout: string): SnapshotFile {
         aliases: row.aliases ?? [],
         oarChapter: row.oar_chapter,
         dasAgencyNumber: row.das_agency_number ?? null,
+        parent: parentOf.get(row.slug) ?? null,
       }))
       .sort((a, b) => compareCodeUnits(a.slug, b.slug)),
     orsSections: sections.sort(compareCodeUnits),
@@ -197,5 +226,5 @@ export function readErfSnapshot(checkout: string): SnapshotFile {
     ),
   };
   parseSnapshot(file);
-  return file;
+  return { file, warnings };
 }

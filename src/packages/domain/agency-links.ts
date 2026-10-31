@@ -40,6 +40,12 @@ export type AgencyEvidence =
       link: StatuteLink;
       /** How many of the document's Statute Links that change the law reach the chapter, the one above included. */
       linksInChapter: number;
+      /**
+       * Present when the Agency is the parent of the sub-units whose rules implement the chapter and the table does not
+       * list it for the chapter itself: the link came through these sub-units (ADR-0029). Absent for an Agency the table
+       * lists for the chapter, a sub-unit among them.
+       */
+      through?: AgencyId[];
     };
 
 /** A connection to one Agency, with the evidence that makes it. */

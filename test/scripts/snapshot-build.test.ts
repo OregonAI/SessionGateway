@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   createMadeUpErf,
   createMadeUpErfWithoutItsRepository,
+  madeUpAgenciesYaml,
   madeUpGraph,
   type MadeUpErf,
   type MadeUpGraph,
@@ -83,6 +84,7 @@ describe("the snapshot build script", () => {
           aliases: [],
           oarChapter: null,
           dasAgencyNumber: null,
+          parent: null,
         },
         {
           slug: "made-up-environment-agency",
@@ -90,6 +92,7 @@ describe("the snapshot build script", () => {
           aliases: [],
           oarChapter: "340",
           dasAgencyNumber: "340",
+          parent: null,
         },
         {
           slug: "made-up-human-services",
@@ -97,6 +100,7 @@ describe("the snapshot build script", () => {
           aliases: ["MUHS", "Made-Up Department of Human Services"],
           oarChapter: "407",
           dasAgencyNumber: "100",
+          parent: null,
         },
         {
           slug: "made-up-human-services-child-welfare",
@@ -104,6 +108,8 @@ describe("the snapshot build script", () => {
           aliases: [],
           oarChapter: "413",
           dasAgencyNumber: null,
+          // The registry row's `relations` has one entry, a part_of relation with target made-up-human-services.
+          parent: "made-up-human-services",
         },
       ],
       orsSections: ["ors-409.711", "ors-468.130", "ors-468.140", "ors-468a.010"],
@@ -113,6 +119,96 @@ describe("the snapshot build script", () => {
         "ors-chapter-409": ["made-up-human-services", "made-up-human-services-child-welfare"],
         "ors-chapter-468": ["made-up-environment-agency"],
       },
+    });
+  });
+
+  // The registry's `relations` places a body under another (ADR 0004 of ERF): a target slug, the source that places it, a
+  // kind. Ticket #16 F3: the snapshot carries each Agency's parent, so that a Statute Link that reaches a sub-unit's chapter
+  // can be traced to the Agency a Fiscal Impact Statement names (ADR-0012, Consequences).
+  describe("an Agency's parent", () => {
+    const board = (relations: string): string => `- slug: made-up-licensing-board
+  name: Made-Up Licensing Board
+  name_basis: enabling-authority
+  oar_name: null
+  oar_chapter: null
+  raw_index_name: Made-Up Licensing Board
+  source_url: null
+  parent_chapter: null
+  relations:
+${relations}
+`;
+    const parentsOf = (out: string): Record<string, unknown> =>
+      Object.fromEntries(
+        (readJson(out) as { agencies: { slug: string; parent: unknown }[] }).agencies.map((agency) => [
+          agency.slug,
+          agency.parent,
+        ]),
+      );
+
+    it("is the target of the row's one relation, whatever its kind", () => {
+      const erf = madeUpErf({
+        agenciesYaml:
+          madeUpAgenciesYaml +
+          board(`  - target: made-up-environment-agency
+    source: statute
+    kind: administered_by
+    basis: reviewed-enabling-authority`),
+      });
+      const out = outputFile();
+
+      const finished = build(["--erf", erf.path, "--out", out]);
+
+      expect(finished.status, finished.stderr).toBe(0);
+      expect(parentsOf(out)).toEqual({
+        "made-up-advisory-council": null,
+        "made-up-environment-agency": null,
+        "made-up-human-services": null,
+        "made-up-human-services-child-welfare": "made-up-human-services",
+        "made-up-licensing-board": "made-up-environment-agency",
+      });
+    });
+
+    it("is none, and the build says so, when the registry places the row under more than one body", () => {
+      const erf = madeUpErf({
+        agenciesYaml:
+          madeUpAgenciesYaml +
+          board(`  - target: made-up-human-services
+    source: oar-index
+    kind: part_of
+    basis: reviewed-absence
+  - target: made-up-environment-agency
+    source: statute
+    kind: administered_by
+    basis: reviewed-enabling-authority`),
+      });
+      const out = outputFile();
+
+      const finished = build(["--erf", erf.path, "--out", out]);
+
+      expect(finished.status, finished.stderr).toBe(0);
+      expect(parentsOf(out)["made-up-licensing-board"]).toBeNull();
+      expect(finished.stderr).toContain(
+        "made-up-licensing-board is placed under more than one body (made-up-human-services, made-up-environment-agency): the snapshot gives it no parent",
+      );
+    });
+
+    it("stops and names the row when a relation's target is not in the registry", () => {
+      const erf = madeUpErf({
+        agenciesYaml:
+          madeUpAgenciesYaml +
+          board(`  - target: made-up-no-such-agency
+    source: oar-index
+    kind: part_of
+    basis: reviewed-absence`),
+      });
+      const out = outputFile();
+
+      const finished = build(["--erf", erf.path, "--out", out]);
+
+      expect(finished.status).toBe(1);
+      expect(finished.stderr).toContain("made-up-licensing-board");
+      expect(finished.stderr).toContain("made-up-no-such-agency");
+      expect(existsSync(out)).toBe(false);
     });
   });
 
@@ -253,12 +349,15 @@ describe("the snapshot build script with --trim-to the 2025R1 fixture", () => {
 - slug: made-up-employment
   name: Employment Department
   oar_chapter: '471'
+  relations: []
 - slug: made-up-human-services
   name: Made-Up Human Services
   oar_chapter: '407'
+  relations: []
 - slug: made-up-decoy-board
   name: Made-Up Decoy Board
   oar_chapter: '998'
+  relations: []
 `;
     return madeUpErf({ graph, agenciesYaml });
   }
@@ -282,6 +381,7 @@ describe("the snapshot build script with --trim-to the 2025R1 fixture", () => {
         aliases: [],
         oarChapter: "471",
         dasAgencyNumber: null,
+        parent: null,
       },
       {
         slug: "made-up-human-services",
@@ -289,6 +389,7 @@ describe("the snapshot build script with --trim-to the 2025R1 fixture", () => {
         aliases: [],
         oarChapter: "407",
         dasAgencyNumber: null,
+        parent: null,
       },
     ]);
     expect(trimmed["orsSections"]).toEqual([
@@ -301,7 +402,7 @@ describe("the snapshot build script with --trim-to the 2025R1 fixture", () => {
     expect(trimmed["chapterAgencies"]).toEqual({ "ors-chapter-409": ["made-up-human-services"] });
     // The version is the checkout's, untouched by the trim.
     expect(trimmed["version"]).toMatchObject({
-      commit: "166ba8585cda9ae94437cdb4532e9ba815ffaba0",
+      commit: "e39a81bd8421de16f9e9956df4b6cab73a16a54c",
       commitDate: "2026-07-02T03:04:05-07:00",
     });
 
@@ -324,7 +425,7 @@ describe("the snapshot build script with --trim-to the 2025R1 fixture", () => {
     expect(recorded["kept"]).toEqual({ agencies: 2, orsSections: 5, chaptersWithAgencies: 1 });
     expect(recorded["of"]).toEqual({ agencies: 3, orsSections: 6, chaptersWithAgencies: 2 });
     // The SHA-256 of the output file, as `sha256sum` prints it for it.
-    expect(recorded["snapshotSha256"]).toBe("6a682be3815e8bebdbc8af5d8e2e590aa44e29b8314f198ce1ad3dd38c396415");
+    expect(recorded["snapshotSha256"]).toBe("854152c49b5349bd7d14437530b4aed8eb8e0b1efb4b0816a4b442ea8971206e");
   }, 30_000);
 
   it("keeps a chapter that the fixture cites only in a table, where no ORS stands before the section number", () => {
@@ -356,6 +457,7 @@ describe("the snapshot build script with --trim-to the 2025R1 fixture", () => {
 - slug: made-up-revenue
   name: Made-Up Revenue Office
   oar_chapter: '150'
+  relations: []
 `;
     const erf = madeUpErf({ graph, agenciesYaml });
     const out = outputFile();
@@ -368,5 +470,66 @@ describe("the snapshot build script with --trim-to the 2025R1 fixture", () => {
     expect(trimmed["orsSections"]).toEqual(["ors-318.031"]);
     expect(trimmed["chapterAgencies"]).toEqual({ "ors-chapter-318": ["made-up-revenue"] });
     expect((readJson(record) as Record<string, unknown>)["orsChaptersCited"]).toContain("ors-chapter-318");
+  }, 30_000);
+
+  it("keeps the parent of an Agency it keeps, though nothing in the fixture names the parent and no rule of its own implements a kept chapter", () => {
+    // The fixture cites ORS 409.711 (HB 3795), so chapter 409 is kept, and made-up-sub-office's rule implements it.
+    // Its parent, made-up-parent-office, has no rule and no text of the fixture names it: without it the sub-unit's
+    // `parent` would name an Agency the snapshot does not hold.
+    const graph: MadeUpGraph = {
+      note: "MADE UP for a test.",
+      nodes: [
+        {
+          id: "ors-409.711",
+          title: "Made up ors-409.711",
+          doc_type: "statute",
+          status: "current",
+          path: "statutes/ors-409.711.md",
+        },
+        {
+          id: "oar-408-001-0001",
+          title: "Made up oar-408-001-0001",
+          doc_type: "rule",
+          status: "current",
+          path: "rules/408/001/oar-408-001-0001.md",
+        },
+      ],
+      edges: [{ from: "oar-408-001-0001", to: "ors-409.711", type: "implements" }],
+    };
+    const agenciesYaml = `organizations:
+- slug: made-up-parent-office
+  name: Made-Up Parent Office
+  oar_chapter: '999'
+  relations: []
+- slug: made-up-sub-office
+  name: Made-Up Sub Office
+  oar_chapter: '408'
+  relations:
+  - target: made-up-parent-office
+    source: oar-index
+    kind: part_of
+    basis: reviewed-absence
+- slug: made-up-other-office
+  name: Made-Up Other Office
+  oar_chapter: '997'
+  relations: []
+`;
+    const erf = madeUpErf({ graph, agenciesYaml });
+    const out = outputFile();
+    const record = join(dirname(out), "trim.json");
+
+    const finished = build(["--erf", erf.path, "--out", out, "--trim-to", fixture, "--trim-record", record]);
+
+    expect(finished.status, finished.stderr).toBe(0);
+    const trimmed = readJson(out) as { agencies: { slug: string; parent: string | null }[] };
+    expect(trimmed.agencies.map((agency) => [agency.slug, agency.parent])).toEqual([
+      ["made-up-parent-office", null],
+      ["made-up-sub-office", "made-up-parent-office"],
+    ]);
+    expect((readJson(record) as Record<string, unknown>)["kept"]).toEqual({
+      agencies: 2,
+      orsSections: 1,
+      chaptersWithAgencies: 1,
+    });
   }, 30_000);
 });

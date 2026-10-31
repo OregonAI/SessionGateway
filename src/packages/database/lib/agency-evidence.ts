@@ -2,7 +2,7 @@
 // turns the evidence into JSON and the reader parses it back, so the two forms are written once, here.
 import { z } from "zod";
 import type { AgencyEvidence, AgencyEvidenceKind } from "#/packages/domain/agency-links.ts";
-import { parseOrsChapterId } from "#/packages/domain/oregonai.ts";
+import { parseOrsChapterId, type AgencyId } from "#/packages/domain/oregonai.ts";
 import { statuteLinkOfRow, statuteLinkRow } from "./statute-link-rows.ts";
 
 /** The kinds of evidence that are kept in `agency_link`. Testimony's is the `testimony` table's own `agency_id`. */
@@ -20,6 +20,7 @@ const derivedJson = z.object({
   }),
   link: statuteLinkRow,
   links_in_chapter: z.number().int(),
+  through: z.array(z.string()).optional(),
 });
 const fiscalJson = z.object({ unit: z.string() });
 const textJson = z.object({ terms: z.array(z.string()) });
@@ -41,6 +42,7 @@ export function evidenceToJson(evidence: AgencyEvidence): string {
           measure_section: evidence.link.measureSection,
         },
         links_in_chapter: evidence.linksInChapter,
+        ...(evidence.through === undefined ? {} : { through: evidence.through }),
       });
     case "testimony":
       throw new Error("Testimony evidence is kept in the testimony table, not in agency_link");
@@ -64,6 +66,7 @@ export function evidenceFromJson(kind: (typeof storedEvidenceKinds)[number], jso
         chapter: stored.chapter,
         link: statuteLinkOfRow(stored.link),
         linksInChapter: stored.links_in_chapter,
+        ...(stored.through === undefined ? {} : { through: stored.through as AgencyId[] }),
       };
     }
     default:
