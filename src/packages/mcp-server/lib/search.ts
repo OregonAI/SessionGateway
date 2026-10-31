@@ -11,7 +11,6 @@ import {
 import { findCitations, type Citation } from "#/packages/domain/citations.ts";
 import { documentKinds, type AmendmentId, type DocumentId } from "#/packages/domain/documents.ts";
 import { measureIdOf, type SessionKey } from "#/packages/domain/index.ts";
-import type { AgencyId } from "#/packages/domain/oregonai.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
 import { reciprocalRankFusion } from "#/packages/search/ranking.ts";
 import {
@@ -23,7 +22,7 @@ import {
   termsOf,
 } from "#/packages/search/text.ts";
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
-import { checkFilters, type FilterFault } from "./filters.ts";
+import { checkFilters, parseAgencyArgument, type FilterFault, type NotAnAgencyId } from "./filters.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 import type { VectorCache } from "./vector-cache.ts";
 
@@ -148,7 +147,7 @@ export type SearchDeps = {
 };
 
 /** An unknown Measure is an expected outcome, so it is a value; the MCP edge decides it is a tool error. */
-export type SearchResult = { kind: "found"; search: SearchOutput } | FilterFault;
+export type SearchResult = { kind: "found"; search: SearchOutput } | FilterFault | NotAnAgencyId;
 
 type FoundBy = "citation" | "keyword" | "embedding";
 /** The order `found_by` lists how a hit was found in. */
@@ -349,10 +348,10 @@ export async function search(
   const citations = findCitations(input.query, session);
   const resolved = filterOf(deps, session, input, citations);
   if (resolved.kind !== "filter") return resolved;
+  const agency = input.agency === undefined ? undefined : parseAgencyArgument(input.agency);
+  if (typeof agency === "object") return agency;
   const agencyMeasures =
-    input.agency === undefined
-      ? undefined
-      : new Set(deps.reader.measuresWithAgencyLink(session, input.agency.trim() as AgencyId));
+    agency === undefined ? undefined : new Set(deps.reader.measuresWithAgencyLink(session, agency));
   const filter: SearchFilter = agencyMeasures === undefined ? resolved.filter : { ...resolved.filter, agencyMeasures };
 
   // A citation's own words and numbers are the citation's, not keywords: "3" of "SB 69-3" matches the margin
