@@ -286,6 +286,10 @@ const schema = `
   CREATE INDEX IF NOT EXISTS statute_link_target ON statute_link (target_id);
   CREATE INDEX IF NOT EXISTS document_content ON document (content_hash, kind);
   CREATE INDEX IF NOT EXISTS testimony_agency ON testimony (agency_id);
+  -- Every Proposed Amendment a tool meets is looked up by the node id of its postings (its number, and the meeting of its
+  -- earliest posting); without this a lookup scans every row of meeting_document, 16,115 in the full 2025R1 cache of which
+  -- 3,134 are postings of Proposed Amendments (docs/research/olis-odata.md).
+  CREATE INDEX IF NOT EXISTS meeting_document_node ON meeting_document (node_id);
   -- The analysis documents the feed has listed for each Measure (ADR-0013). Rows are kept, never replaced: the
   -- count of the ones the store does not hold reads the listing state (feed_row_state) of each (ADR-0030).
   CREATE TABLE IF NOT EXISTS analysis_listing (
