@@ -133,11 +133,18 @@ export function readStatutesAffectedTable(
   let columnHeadsBegun = false;
   // The row a series began on, waiting for the line that closes it.
   let openSeries: { printed: Printed; line: string } | undefined;
-  // The targets of the last row with an ORS target: what a continuation row is for.
+  // The targets of the last row with an ORS target that was read: what a continuation row is for. Undefined while they
+  // are not known: before the first row, and after a line that was left unread, because the ORS number that line printed
+  // is the one its continuation rows belong to, and a continuation row is never filed under the row before it.
   let current: StatuteTarget[] | undefined;
 
+  const leaveUnread = (line: string): void => {
+    unreadLines.push(line);
+    current = undefined;
+  };
+
   const abandonOpenSeries = (): void => {
-    if (openSeries !== undefined) unreadLines.push(openSeries.line);
+    if (openSeries !== undefined) leaveUnread(openSeries.line);
     openSeries = undefined;
   };
 
@@ -191,7 +198,7 @@ export function readStatutesAffectedTable(
     const groups = row?.groups;
     if (groups === undefined) {
       abandonOpenSeries();
-      if (columnHeadsBegun) unreadLines.push(line);
+      if (columnHeadsBegun) leaveUnread(line);
       continue;
     }
     const printed = printedOf(groups);
@@ -209,7 +216,7 @@ export function readStatutesAffectedTable(
     const action = tableActions.find((candidate) => candidate === groups["action"]);
     const tail = readTail(groups["rest"] ?? "");
     if (targets === undefined || action === undefined || tail === undefined) {
-      unreadLines.push(line);
+      leaveUnread(line);
       continue;
     }
     current = targets;

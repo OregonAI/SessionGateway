@@ -101,3 +101,22 @@ export function madeUpTable(rows: readonly string[]): Uint8Array {
     ],
   ]);
 }
+
+/**
+ * A made-up table of several pages, each given as its rows. Every page has its running header (and the first its title),
+ * the column heads, and the rows, one to a line; the footer date is written on the end of the page's last row with no
+ * line end, as PDF.js writes the real table's pages ("HB 2464" and "8/19/2025" arrive as "HB 24648/19/2025"). The date
+ * is given as the table prints it, month and day without a leading zero. The rows and the date are made up.
+ */
+export function madeUpTablePages(pages: readonly (readonly string[])[], footerDate: string): Uint8Array {
+  const columnHeads = "(1) (2) (3) (4) (1) (2) (3) (4)";
+  return madeUpPdf(
+    pages.map((rows, index) => [
+      ...(index === 0
+        ? ["TABLES - 2025 REGULAR SESSION RS25-T-1", "ORS SECTIONS AMENDED, REPEALED OR “ADDED TO”"]
+        : [`RS25-T-${String(index + 1)} TABLES - 2025 REGULAR SESSION`]),
+      columnHeads,
+      ...rows.map((row, at) => (at === rows.length - 1 ? `${row}${footerDate}` : row)),
+    ]),
+  );
+}
