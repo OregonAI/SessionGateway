@@ -11,10 +11,10 @@
 // "the Department of Human Services" (line 14), and in HB 3795's Introduced and A-Engrossed Versions. Before the alias a
 // Version's link of "named in the text" to the Department finds the one term, and after it the two, in the order they
 // come in the text. The Versions are stored and read already, so only a second reading can show the alias.
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { createFixtureCopy, type FixtureCopy } from "../support/made-up-snapshot.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { lazySystemTemplate, type System } from "../support/system.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -44,13 +44,17 @@ function snapshotCopy(): FixtureCopy {
   return copy;
 }
 
+// Every case begins with the pull of the committed snapshot, so they copy one database of it; the pull the case then
+// runs, after `changeIt()`, is the subject and is a real one (test/CLAUDE.md, "Database").
+const template = lazySystemTemplate({
+  clockAt: "2026-08-01T17:00:00Z",
+  documents: true,
+  serverEnv: { MCP_RATE_LIMIT: "1000" },
+});
+afterAll(() => template.remove());
+
 async function startAt(snapshot: string): Promise<System> {
-  const system = await startSystem({
-    clockAt: "2026-08-01T17:00:00Z",
-    documents: true,
-    snapshot,
-    serverEnv: { MCP_RATE_LIMIT: "1000" },
-  });
+  const system = await template.start({ snapshot });
   cleanups.push(() => system.stop());
   return system;
 }

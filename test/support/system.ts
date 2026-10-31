@@ -96,8 +96,11 @@ export type System = {
  * fake or the clock and runs `pullAgain`, which then fetches and embeds only what the change adds.
  */
 export type SystemTemplate = {
-  /** Starts a system on a copy of the template's database. `serverEnv` is the one option a case may add. */
-  start(extra?: { serverEnv?: Record<string, string> }): Promise<System>;
+  /**
+   * Starts a system on a copy of the template's database. A case may add `serverEnv`, and give `snapshot`, the path of
+   * a copy of the snapshot the template was built with that the case then changes (the database holds no path).
+   */
+  start(extra?: { serverEnv?: Record<string, string>; snapshot?: string }): Promise<System>;
   /** Removes the template's files. Call it once, after the last case. */
   remove(): Promise<void>;
 };
@@ -128,7 +131,14 @@ export async function buildSystemTemplate(options: SystemOptions): Promise<Syste
   }
   return {
     start: (extra = {}) =>
-      startSystem({ ...options, serverEnv: { ...options.serverEnv, ...extra.serverEnv } }, directory),
+      startSystem(
+        {
+          ...options,
+          serverEnv: { ...options.serverEnv, ...extra.serverEnv },
+          ...(extra.snapshot === undefined ? {} : { snapshot: extra.snapshot }),
+        },
+        directory,
+      ),
     remove: () => {
       rmSync(directory, { recursive: true, force: true });
       return Promise.resolve();
