@@ -116,7 +116,10 @@ export type IndexReader = {
    * is not one the pull could resolve. The live lookup resolves the codes in OLIS's current votes this way.
    */
   findLegislatorOfCode(session: SessionKey, code: string): Legislator | undefined;
-  /** When the last completed full pull started, or undefined if none has completed. */
+  /**
+   * The index's as-of time: the start of the latest complete full pull or of a later increment (ADR-0039), or undefined
+   * until a full pull has completed.
+   */
   asOf(session: SessionKey): Timestamp | undefined;
   /** When the last complete full pull started, or undefined while there has been none. */
   lastFullPull(session: SessionKey): Timestamp | undefined;
