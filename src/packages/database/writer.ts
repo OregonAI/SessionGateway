@@ -30,6 +30,7 @@ import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceToJson } from "./lib/agency-evidence.ts";
 import { openWriteConnection } from "./lib/connection.ts";
+import { readFullPullAsOf, readFullPullAttempt, readIncrementAsOf, readMeetingDays } from "./lib/run-state.ts";
 import { listedRowsOf } from "./lib/listing.ts";
 import { statuteLinkOfRow, statuteLinkRow } from "./lib/statute-link-rows.ts";
 
@@ -214,8 +215,17 @@ export type IndexWriter = {
    * listing of Versions, none removed.
    */
   recordIncrement(session: SessionKey, asOf: Timestamp, pulled: FullPullRecord): void;
-  /** When the Session's last complete full pull and last increment started, or undefined while there has been none. */
-  lastRuns(session: SessionKey): { fullPull: Timestamp | undefined; increment: Timestamp | undefined };
+  /**
+   * When the Session's last complete full pull, last increment and last begun full pull (complete or refused) started,
+   * or undefined while there has been none.
+   */
+  lastRuns(session: SessionKey): {
+    fullPull: Timestamp | undefined;
+    increment: Timestamp | undefined;
+    fullPullAttempt: Timestamp | undefined;
+  };
+  /** Records that a full pull was begun at this time, before it reads, so a pull that is refused still counts for its day. */
+  recordFullPullAttempt(session: SessionKey, startedAt: Timestamp): void;
   /** The Pacific dates (YYYY-MM-DD) of the Session's committee meetings the index holds: days the Session meets. */
   meetingDays(session: SessionKey): string[];
   /**
@@ -322,8 +332,6 @@ export type IndexWriter = {
 };
 
 const idRow = z.object({ id: z.string() });
-const atRow = z.object({ at: z.string() });
-const dayRow = z.object({ day: z.string() });
 const pullNumberRow = z.object({ number: z.number() });
 const countRow = z.object({ n: z.number() });
 const memberRow = z.object({ committee_code: z.string(), legislator_code: z.string() });
@@ -712,18 +720,22 @@ export function openIndexWriter(path: string): IndexWriter {
       recordRows(session, asOf, pulled, "increment");
     },
     lastRuns(session) {
-      const full = database.prepare("SELECT full_pull_as_of AS at FROM index_state WHERE session_key = ?").get(session);
-      const increment = database.prepare("SELECT as_of AS at FROM increment_state WHERE session_key = ?").get(session);
       return {
-        fullPull: full === undefined ? undefined : (atRow.parse(full).at as Timestamp),
-        increment: increment === undefined ? undefined : (atRow.parse(increment).at as Timestamp),
+        fullPull: readFullPullAsOf(database, session),
+        increment: readIncrementAsOf(database, session),
+        fullPullAttempt: readFullPullAttempt(database, session),
       };
     },
+    recordFullPullAttempt(session, startedAt) {
+      database
+        .prepare(
+          `INSERT INTO full_pull_attempt (session_key, as_of) VALUES (?, ?)
+           ON CONFLICT (session_key) DO UPDATE SET as_of = excluded.as_of`,
+        )
+        .run(session, startedAt);
+    },
     meetingDays(session) {
-      const rows = database
-        .prepare("SELECT DISTINCT substr(at, 1, 10) AS day FROM meeting WHERE session_key = ? ORDER BY day")
-        .all(session);
-      return rows.map((row) => dayRow.parse(row).day);
+      return readMeetingDays(database, session);
     },
     recordSnapshotRead(session, snapshot, agencyParents) {
       const recordSnapshot = database.prepare(

@@ -77,6 +77,7 @@ import { compareTimestamps, type Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceFromJson, storedEvidenceKinds } from "./lib/agency-evidence.ts";
 import { openReadConnection } from "./lib/connection.ts";
 import { listedOrUnchecked } from "./lib/listing.ts";
+import { readFullPullAsOf, readIncrementAsOf, readMeetingDays } from "./lib/run-state.ts";
 import { statuteLinkOfRow, statuteLinkRow, storedTargetOf } from "./lib/statute-link-rows.ts";
 
 /** What a meetings query asks for. Every field given must hold. */
@@ -221,9 +222,6 @@ const measureRow = z.object({
   created_at: z.string(),
   modified_at: z.string().nullable(),
 });
-const incrementStateRow = z.object({ as_of: z.string() });
-const meetingDayRow = z.object({ day: z.string() });
-const stateRow = z.object({ full_pull_as_of: z.string() });
 const textRow = z.object({ text: z.string() });
 const historyRow = z.object({
   history_id: z.number(),
@@ -507,19 +505,8 @@ export function openIndexReader(path: string): IndexReader {
        ON legislator.session_key = legislator_code.session_key AND legislator.id = legislator_code.legislator_id
      WHERE legislator_code.session_key = ? AND legislator_code.code = ?`,
   );
-  const selectAsOf = database.prepare("SELECT full_pull_as_of FROM index_state WHERE session_key = ?");
-  const selectIncrementAsOf = database.prepare("SELECT as_of FROM increment_state WHERE session_key = ?");
-  const selectMeetingDays = database.prepare(
-    "SELECT DISTINCT substr(at, 1, 10) AS day FROM meeting WHERE session_key = ? ORDER BY day",
-  );
-  const fullPullOf = (session: SessionKey): Timestamp | undefined => {
-    const row = selectAsOf.get(session);
-    return row === undefined ? undefined : (stateRow.parse(row).full_pull_as_of as Timestamp);
-  };
-  const incrementOf = (session: SessionKey): Timestamp | undefined => {
-    const row = selectIncrementAsOf.get(session);
-    return row === undefined ? undefined : (incrementStateRow.parse(row).as_of as Timestamp);
-  };
+  const fullPullOf = (session: SessionKey): Timestamp | undefined => readFullPullAsOf(database, session);
+  const incrementOf = (session: SessionKey): Timestamp | undefined => readIncrementAsOf(database, session);
   const selectSnapshot = database.prepare(
     "SELECT source, commit_sha, commit_date FROM snapshot_state WHERE session_key = ?",
   );
@@ -1388,7 +1375,7 @@ export function openIndexReader(path: string): IndexReader {
     lastFullPull: fullPullOf,
     lastIncrement: incrementOf,
     meetingDays(session) {
-      return selectMeetingDays.all(session).map((row) => meetingDayRow.parse(row).day);
+      return readMeetingDays(database, session);
     },
     snapshotVersion(session) {
       const row = selectSnapshot.get(session);

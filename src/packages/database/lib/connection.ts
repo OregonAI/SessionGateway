@@ -28,6 +28,12 @@ const schema = `
     session_key TEXT NOT NULL PRIMARY KEY,
     as_of TEXT NOT NULL
   ) STRICT;
+  -- When the last full pull was begun, complete or not (ticket #17, ADR-0039): a pull OLIS gave short stores nothing,
+  -- but it was a full pull the Acceptable Use Agreement counts for the day, so a restarted worker does not make another.
+  CREATE TABLE IF NOT EXISTS full_pull_attempt (
+    session_key TEXT NOT NULL PRIMARY KEY,
+    as_of TEXT NOT NULL
+  ) STRICT;
   CREATE TABLE IF NOT EXISTS legislator (
     session_key TEXT NOT NULL,
     id TEXT NOT NULL,

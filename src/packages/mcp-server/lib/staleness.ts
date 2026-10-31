@@ -3,7 +3,7 @@
 // shares; this reads what it needs from the index and words the result.
 import type { ServerConfig } from "#/packages/config/index.ts";
 import type { IndexReader } from "#/packages/database/reader.ts";
-import { stalenessAt, type Staleness } from "#/packages/ingest/schedule.ts";
+import { sessionScheduleOf, stalenessAt, type Staleness } from "#/packages/ingest/schedule.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific } from "#/packages/time/pacific.ts";
 
@@ -15,7 +15,7 @@ export function stalenessWarning(reader: IndexReader, config: ServerConfig, cloc
   const staleness = stalenessAt({
     now: formatPacific(clock.now()),
     settings: { increments: config.increments, fullPull: config.fullPull },
-    schedule: { meetingDays: new Set(reader.meetingDays(config.session)), inProgress: false },
+    schedule: sessionScheduleOf(reader.meetingDays(config.session)),
     latestUpdate,
     lastFullPull,
   });

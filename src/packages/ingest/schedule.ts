@@ -22,6 +22,15 @@ export type SessionSchedule = {
 };
 
 /**
+ * What the Session has scheduled, from the days the index holds a committee meeting on (ADR-0039). ConveneTimes and the
+ * Session's BeginDate and EndDate are not read yet, so no Session is "in progress" here. The worker and the server both
+ * build the schedule this way, so the day the Session meets means the same to the schedule and to the staleness rule.
+ */
+export function sessionScheduleOf(meetingDays: readonly string[]): SessionSchedule {
+  return { meetingDays: new Set(meetingDays), inProgress: false };
+}
+
+/**
  * What is due at a time. A `slot` names the occurrence, so a caller that asks again within it (a worker that wakes
  * every minute, or restarts) knows it has run: one night, one full pull, one quarter hour.
  */

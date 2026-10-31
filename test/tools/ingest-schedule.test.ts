@@ -102,6 +102,24 @@ describe("the default rhythm: an increment a night, the full pull on Sunday", ()
   });
 });
 
+describe("a full pull that OLIS gave short", () => {
+  it("is the night's one full pull: a worker restarted in the same night does not read the Session again", async () => {
+    // The night that ends on Sunday 2025-01-19 is the weekly full-pull night. The feed counts its rows and pages one
+    // fewer, so the pull is refused and stores nothing (full-pull-report.test.ts).
+    const system = await start({ clockAt: "2025-01-18T22:00:00Z" });
+    system.olis.withholdLastRows(1);
+
+    // The worker runs from Saturday 3:30 pm to Sunday 2 am: the full pull starts at midnight and is refused.
+    await expect(system.runSchedule("2025-01-19T10:00:00Z")).rejects.toThrow("A run of the worker's loop failed");
+    const afterFirst = runsOf(system.olis);
+    expect(afterFirst.fullPulls).toBe(1);
+
+    // The worker restarts at 2 am and runs until 4 am. The Acceptable Use Agreement allows one full pull a day.
+    await expect(system.runSchedule("2025-01-19T12:00:00Z")).resolves.toBeUndefined();
+    expect(runsOf(system.olis)).toEqual(afterFirst);
+  });
+});
+
 describe("a meeting day", () => {
   // Wednesday 2025-01-22: HALNRW met at 8 am (feed/CommitteeMeetings.json), so the Session meets that day. The span
   // runs from 5 am that Wednesday to 5:30 am on Thursday.

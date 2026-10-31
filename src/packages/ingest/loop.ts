@@ -5,7 +5,7 @@ import type { IngestConfig } from "#/packages/config/index.ts";
 import { openIndexWriter } from "#/packages/database/writer.ts";
 import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
 import { runFullPull, runIncrement, type FullPullResult, type IngestDeps } from "./index.ts";
-import { whatRunsAt, type Due, type SessionSchedule } from "./schedule.ts";
+import { sessionScheduleOf, whatRunsAt, type Due, type SessionSchedule } from "./schedule.ts";
 
 export type LoopDeps = IngestDeps & {
   /** Waits this long, or until the signal aborts. Created in the entry script, like the clock. */
@@ -25,16 +25,26 @@ type RunKind = "increment" | "full_pull";
 function readState(config: IngestConfig): {
   schedule: SessionSchedule;
   lastRun: Record<RunKind, Timestamp | undefined>;
+  /** The last full pull begun, complete or refused: what the day's one full pull is counted from. */
+  lastFullPullBegun: Timestamp | undefined;
 } {
   const writer = openIndexWriter(config.databasePath);
   try {
     const runs = writer.lastRuns(config.session);
     return {
-      // The Session's ConveneTimes and its BeginDate and EndDate are not read yet (ADR-0039): a day the Session meets
-      // is a day with a committee meeting.
-      schedule: { meetingDays: new Set(writer.meetingDays(config.session)), inProgress: false },
+      schedule: sessionScheduleOf(writer.meetingDays(config.session)),
       lastRun: { increment: runs.increment, full_pull: runs.fullPull },
+      lastFullPullBegun: runs.fullPullAttempt,
     };
+  } finally {
+    writer.close();
+  }
+}
+
+function recordFullPullBegun(config: IngestConfig, startedAt: Timestamp): void {
+  const writer = openIndexWriter(config.databasePath);
+  try {
+    writer.recordFullPullAttempt(config.session, startedAt);
   } finally {
     writer.close();
   }
@@ -47,8 +57,13 @@ export async function runIngestLoop(config: IngestConfig, deps: LoopDeps): Promi
   // night's full pull a second time on the same date (the Acceptable Use Agreement allows one a day).
   const ran: Record<RunKind, string | undefined> = { increment: undefined, full_pull: undefined };
   const start = readState(config);
+  // A full pull counts from when it was begun, so one that was refused for a short read still holds its night.
+  const startedAt: Record<RunKind, Timestamp | undefined> = {
+    increment: start.lastRun.increment,
+    full_pull: start.lastFullPullBegun ?? start.lastRun.full_pull,
+  };
   for (const kind of ["increment", "full_pull"] as const) {
-    const at = start.lastRun[kind];
+    const at = startedAt[kind];
     if (at === undefined) continue;
     const then = whatRunsAt(at, settings, start.schedule);
     if (then.kind === kind) ran[kind] = then.slot;
@@ -64,6 +79,7 @@ export async function runIngestLoop(config: IngestConfig, deps: LoopDeps): Promi
       ran[due.kind] = due.slot;
       try {
         if (due.kind === "full_pull") {
+          recordFullPullBegun(config, formatPacific(now));
           const result = await runFullPull(config, deps);
           await deps.afterFullPull?.(result);
         } else {
