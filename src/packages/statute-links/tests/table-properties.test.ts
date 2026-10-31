@@ -27,6 +27,10 @@ const pieces = [
   "2.150 A §20 SB 98 B E\n",
   "A §9 HB 2614 BCC E\n",
   "A §21 SB 678 E\n",
+  "653.616 A §8 SB 69 B OV E\n",
+  "A §1 HB 2001 OVP\n",
+  "A §2 SB 121 OV\n",
+  "A §3 SB 121 E OV\n",
   "475C.525 ) Add §2 BM 119\n",
   "7B A §115 SB 166 A\n",
   "2013 c. 4 §8 R §14 HB 2931 A\n",
@@ -72,12 +76,13 @@ describe("the table's parser", () => {
         ...sections.map(({ chapter, section }) => `ors-${String(chapter)}.${String(section).padStart(3, "0")}`),
       ),
     });
-    for (const entry of parsed.entries) {
+    for (const entry of [...parsed.entries, ...parsed.previousSessionEntries]) {
       expect(entry.measure.prefix).toMatch(/^[A-Z]{2,3}$/);
       expect(Number.isSafeInteger(entry.measure.number)).toBe(true);
       expect(entry.measureSection).toMatch(/^\d+[a-z]?$/);
       expect(["A", "R", "Add"]).toContain(entry.action);
       expect(entry.level === null || /^[A-Z]{1,3}\d?$/.test(entry.level)).toBe(true);
+      expect(["OV", "OVP"]).not.toContain(entry.level);
       if (entry.target.type === "section") {
         expect(parseOrsSectionId(entry.target.id)).toBe(entry.target.id);
         expect(entry.target.resolvableOnOregonAi).toBe(true);

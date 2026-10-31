@@ -724,4 +724,36 @@ describe("a made-up table in shapes the 2025R1 table never shows", () => {
     expect(tableEntriesOf(read["SB 69"], "Introduced")).toEqual([["amends", "ors-659a.159", "4"]]);
     expect(tableReport(rig.system)).toMatchObject({ outcome: "loaded", entries: 4, unread_lines: 0 });
   });
+
+  // The table's own legend (page 1 of the fixture file, lines 11-13 of its PDF.js text): "(b) The section number and
+  // current session measure number or previous session measure number if a measure was repassed over the Governor’s
+  // veto, followed by “OV” for a current session overturned veto or “OVP” for a previous session overturned veto".
+  // The 2025R1 table prints no such row (every "OV" in its text is in the legend), so the rows are MADE UP.
+  it("reads a current-session overturned veto ('OV') as the Measure's row, and keeps a previous session's ('OVP') apart: it is never filed under this Session's Measure of that number", async () => {
+    const read = await serve(
+      madeUpTable(["653.616 A §8 SB 69 A OV", "653.626 A §9 SB 69 A OV E", "659A.159 A §4 SB 69 OVP", "A §1 SB 121 A"]),
+      ["SB 69", "SB 121"],
+    );
+
+    // OV: this Session's SB 69, at the level beside it (A-Engrossed), and an "E" after it is the emergency clause.
+    expect(tableEntriesOf(read["SB 69"], "A-Engrossed")).toEqual([
+      ["amends", "ors-653.616", "8"],
+      ["amends", "ors-653.626", "9"],
+    ]);
+    // OVP: the previous Session's SB 69 is not this Session's SB 69, whatever its level: the Introduced Version has no row.
+    expect(
+      read["SB 69"]?.versions.find((entry) => entry.label === "Introduced")?.statutes_affected_table,
+    ).toBeUndefined();
+    // The text of this Session's SB 69 amends 659A.159 in §4, and the table, which has no row for this Session's SB 69 there, does not confirm it.
+    const sb69 = aEngrossed(read["SB 69"] as LinksBySource).statutes_affected_table;
+    expect(sb69?.only_in_parsed_links?.amends.sections.map((target) => target.target_id)).toContain("ors-659a.159");
+    // The row that omits its ORS number after the OVP row belongs to 659A.159 all the same, and is read.
+    expect(lists(read["SB 121"])).toBe(true);
+    expect(tableReport(rig.system)).toMatchObject({
+      outcome: "loaded",
+      entries: 3,
+      previous_session_entries: 1,
+      unread_lines: 0,
+    });
+  });
 });
