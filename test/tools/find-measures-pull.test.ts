@@ -4,7 +4,7 @@
 // the fixture as it stands are in find-measures.test.ts and find-measures-since.test.ts.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startSystem, type System, type SystemOptions } from "../support/system.ts";
 import { madeUpTestimonyRow } from "../support/testimony.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -126,5 +126,48 @@ describe.for(eras)("find_measures past one page, for a %s client", (era) => {
 
     expect(outcome.isError).toBe(true);
     expect(outcome.text).toBe("The answer has 2 pages, so there is no page 3. Ask for a page from 1 to 2.");
+  });
+});
+
+// Spec #1's seam-1 pattern: run the worker, call the tools, move the clock, run the worker again and call them again.
+// SB 69's Fiscal Impact Statement 85414 (label "A", created 2025-01-30) names the Bureau of Labor and Industries. On
+// 2025-01-31 the feed lists no A-Engrossed Version, which OLIS created on 2025-02-03, so the statement is on the Measure;
+// once a pull sees the Version, the statement is on it, and the Version's own links are read from its text.
+describe.for(eras)("find_measures after the clock moves and the worker pulls again, for a %s client", (era) => {
+  const boli = "bureau-of-labor-and-industries";
+
+  async function startAt(clockAt: string): Promise<System> {
+    const options: SystemOptions = { clockAt, documents: true, serverEnv: { MCP_RATE_LIMIT: "1000" } };
+    const system = await startSystem(options);
+    started.push(system);
+    return system;
+  }
+
+  it("moves the statement's link from the Measure to the Version the pull then lists, and reads the Version's links", async () => {
+    const system = await startAt("2025-01-31T20:00:00Z");
+
+    const before = (await find(system, era, { agency: boli, since: "2025-01-30" })).structured as unknown as Found;
+    system.clock.set("2025-02-04T20:00:00Z");
+    await system.pullAgain();
+    const after = (await find(system, era, { agency: boli, since: "2025-01-30" })).structured as unknown as Found;
+
+    const idsOf = (found: Found, kind: string): string[] =>
+      found.groups.find((group) => group.evidence_kind === kind)?.items.map((item) => item.id) ?? [];
+    expect([idsOf(before, "fiscal-impact-statement"), idsOf(before, "derived")]).toEqual([["measure-2025r1-sb69"], []]);
+    expect([idsOf(after, "fiscal-impact-statement"), idsOf(after, "derived")]).toEqual([
+      ["version-2025r1-sb69-a-engrossed"],
+      ["version-2025r1-sb69-a-engrossed"],
+    ]);
+  });
+
+  it("changes nothing when the worker pulls the same feed again", async () => {
+    const system = await startAt("2025-02-04T20:00:00Z");
+
+    const before = await find(system, era, { agency: boli });
+    await system.pullAgain();
+    const after = await find(system, era, { agency: boli });
+
+    expect(before.isError).toBe(false);
+    expect(after.text).toBe(before.text);
   });
 });
