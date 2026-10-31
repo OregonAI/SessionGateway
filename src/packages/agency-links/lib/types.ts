@@ -1,4 +1,9 @@
 import type { AgencyId } from "#/packages/domain/oregonai.ts";
+import type { AgencyLink } from "#/packages/domain/agency-links.ts";
+
+// The Agency Link and its evidence are the domain's words: the database and the server name them too
+// (domain/agency-links.ts). The extractor re-exports them, so its callers import them from here.
+export type { AgencyEvidence, AgencyLink } from "#/packages/domain/agency-links.ts";
 
 /** One row of the OregonAI agency registry, as the build-time snapshot carries it (ADR-0004). */
 export type RegistryAgency = {
@@ -8,31 +13,6 @@ export type RegistryAgency = {
   name: string;
   /** Other names the registry lists for it. */
   aliases: readonly string[];
-};
-
-/** Why an Agency Link exists (GLOSSARY.md, "Agency Link"). The fourth kind, derived through a Statute Link, comes with the chapter-to-agency table. */
-export type AgencyEvidence =
-  | {
-      kind: "fiscal-impact-statement";
-      /** The unit as the statement lists it. */
-      unit: string;
-    }
-  | {
-      kind: "named-in-text";
-      /** The registry names and aliases found in the text, each once, in the order they first appear. */
-      terms: string[];
-    }
-  | {
-      kind: "testimony";
-      /** The Testimony row's `Organization`, as it is written there but for stray spaces at either end. */
-      organization: string;
-    };
-
-/** A connection to one Agency, with the evidence that makes it. */
-export type AgencyLink = {
-  /** The Agency's registry slug. */
-  agency: AgencyId;
-  evidence: AgencyEvidence;
 };
 
 /** What a Fiscal Impact Statement's "Government Unit(s) Affected" line gives. */

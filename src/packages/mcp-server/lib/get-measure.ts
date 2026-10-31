@@ -10,6 +10,7 @@ import {
 } from "#/packages/domain/index.ts";
 import type { AgendaItem } from "#/packages/domain/schedule.ts";
 import type { CommitteeVote, FloorVote, LegislatorVote } from "#/packages/domain/votes.ts";
+import { agencyLinksOf, agencyLinksOutput } from "./agency-links.ts";
 import { analysisDocumentsOf, analysisDocumentsOutput } from "./analysis.ts";
 import { measureListingOutput, measureListingShown } from "./listing.ts";
 import { statuteLinksBySourceOf } from "./statute-links.ts";
@@ -128,6 +129,9 @@ export const getMeasureOutput = z.object({
   analysis_documents: analysisDocumentsOutput,
   statute_links_by_source: statuteLinksBySourceWithTableOutput.describe(
     "The Measure's Statute Links by the Version or Proposed Amendment they were read from, each with its measure section.",
+  ),
+  agency_links: agencyLinksOutput.describe(
+    "The Agencies the Measure and its Versions and Proposed Amendments have an Agency Link to, each link with its evidence and the node it sits on, and the units its Fiscal Impact Statements list that are not Agencies.",
   ),
   source_url: z.string().describe("The Measure's page on OLIS."),
   location: z
@@ -304,6 +308,7 @@ export async function getMeasure(
         versions,
         reader.statutesAffectedTableOf(measure),
       ),
+      agency_links: agencyLinksOf(reader.findAgencyLinks(session, { measure }), reader.findUnresolvedUnits(measure)),
       source_url: olisPageUrlOf(measure),
       location: { current: measure.location.current, committee_code: measure.location.committeeCode },
       created_at: measure.createdAt,
