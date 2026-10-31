@@ -32,8 +32,8 @@ const fourthPull = "2025-01-18T04:00:00Z";
 const letter = "testimony-2025r1-117165";
 const isLetter = (row: Record<string, unknown>): boolean => row["CommTestId"] === 117165;
 
-async function start(): Promise<System> {
-  const system = await startSystem({ clockAt: firstPull, documents: true });
+async function start(clockAt: string = firstPull): Promise<System> {
+  const system = await startSystem({ clockAt, documents: true });
   started.push(system);
   return system;
 }
@@ -272,6 +272,66 @@ describe("a pull that is short of the feed's counts", () => {
         last_listed_at: "2025-01-17T17:00:00-08:00",
         as_of: "2025-01-17T20:00:00-08:00",
       });
+    });
+  });
+});
+
+// SB 69's -2 is one node with two postings (ADR-0011): ProposedAmendmentId 26286, posted to SLB's meeting of 2025-01-28
+// and Proposed, and 26288, posted to the meeting of 2025-01-30 and Adopted (feed/CommitteeProposedAmendments.json).
+// The amendment is listed while the feed lists any of its postings; `get_document` serves the node's latest posting as
+// ADR-0011 says, and search offers the latest posting that is listed.
+describe("a Proposed Amendment whose postings the feed stops listing", () => {
+  const node = "amendment-2025r1-sb69-2";
+  // 10:00 on 2025-02-01, 02-02 and 02-03 in Oregon: after both postings.
+  const days = ["2025-02-01T18:00:00Z", "2025-02-02T18:00:00Z", "2025-02-03T18:00:00Z", "2025-02-04T18:00:00Z"];
+  const isPosting = (id: number) => (row: Record<string, unknown>) => row["ProposedAmendmentId"] === id;
+
+  async function hitFor(system: System, era: Era): Promise<{ id: string; document_id: string } | undefined> {
+    const connected = await connectClient(era, system.handler);
+    try {
+      const outcome = await callTool(connected, "search", { query: "SB 69-2" });
+      return (outcome.structured?.["results"] as { id: string; document_id: string }[]).find((hit) => hit.id === node);
+    } finally {
+      await connected.close();
+    }
+  }
+
+  it("is listed while any posting is, and is offered by its latest posting that is listed", async () => {
+    const system = await start(days[0]);
+    stopListing(system.olis, "CommitteeProposedAmendments", isPosting(26288));
+    await pullAt(system, days[1] ?? "");
+    await pullAt(system, days[2] ?? "");
+
+    await everyClient(async (era) => {
+      expect((await getDocument(system, era, node)).structured).toMatchObject({
+        id: node,
+        document_id: "posting-2025r1-26288",
+        no_longer_listed: false,
+        last_listed_at: "2025-02-03T10:00:00-08:00",
+      });
+      expect((await getDocument(system, era, "posting-2025r1-26288")).structured).toMatchObject({
+        no_longer_listed: true,
+        last_listed_at: "2025-02-01T10:00:00-08:00",
+      });
+      expect(await hitFor(system, era)).toMatchObject({ id: node, document_id: "posting-2025r1-26286" });
+    });
+  });
+
+  it("is no longer listed when none of its postings is, and is served all the same", async () => {
+    const system = await start(days[0]);
+    stopListing(system.olis, "CommitteeProposedAmendments", isPosting(26288));
+    stopListing(system.olis, "CommitteeProposedAmendments", isPosting(26286));
+    await pullAt(system, days[1] ?? "");
+    await pullAt(system, days[2] ?? "");
+
+    await everyClient(async (era) => {
+      expect((await getDocument(system, era, node)).structured).toMatchObject({
+        id: node,
+        document_id: "posting-2025r1-26288",
+        no_longer_listed: true,
+        last_listed_at: "2025-02-01T10:00:00-08:00",
+      });
+      expect(await hitFor(system, era)).toBeUndefined();
     });
   });
 });
