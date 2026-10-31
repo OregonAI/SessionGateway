@@ -1,10 +1,12 @@
+import type { PulledEntitySet } from "#/packages/domain/documents.ts";
+
 /**
  * How many rows the feed counted for one whole entity set of a Session, and how many came. A set is complete when
  * they are the same; the pull is complete when every set it reads is (ADR-0005).
  */
 export type SetCount = {
   /** The feed's own name for the set, such as "Measures". */
-  entitySet: string;
+  entitySet: PulledEntitySet;
   /** The feed's count: `/$count`, or `$inlinecount` when that is the one the rows miss. */
   counted: number;
   /** The rows the pages held. */

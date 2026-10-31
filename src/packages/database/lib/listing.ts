@@ -6,6 +6,7 @@ import type {
   DocumentId,
   DocumentKind,
   DocumentLink,
+  ListedSet,
   CommitteeMember,
   Committee,
   Meeting,
@@ -22,14 +23,14 @@ import type { LegislatorRow } from "#/packages/domain/legislators.ts";
 export const listedOrUnchecked = "COALESCE(fr.listed, 1)";
 
 /** One row of the feed the index keeps: the entity set it came from, its key there, and the document it links, if any. */
-export type ListedRow = { entitySet: string; key: string; documentId: DocumentId | null };
+export type ListedRow = { entitySet: ListedSet; key: string; documentId: DocumentId | null };
 
 /**
  * The entity set of the feed row that links a document of this kind. An agenda is linked by a column of a
  * CommitteeMeetings row, not by a row of its own, so it is named for the column: the meeting stays listed when
  * OLIS stops linking its agenda, and the agenda does not.
  */
-export function entitySetOfDocument(kind: DocumentKind): string {
+export function entitySetOfDocument(kind: DocumentKind): ListedSet {
   switch (kind) {
     case "version":
     case "printed_amendment":
@@ -68,7 +69,7 @@ export type ListedSources = {
 /** Every row the pull listed, once for each key. */
 export function listedRowsOf(pulled: ListedSources): ListedRow[] {
   const rows: ListedRow[] = [];
-  const add = (entitySet: string, key: string, documentId: DocumentId | null = null): void => {
+  const add = (entitySet: ListedSet, key: string, documentId: DocumentId | null = null): void => {
     rows.push({ entitySet, key, documentId });
   };
   for (const measure of pulled.measures) add("Measures", measureIdOf(measure));
