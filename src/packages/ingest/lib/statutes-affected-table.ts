@@ -52,8 +52,6 @@ type LoadArguments = {
   session: SessionKey;
   /** The snapshot's ORS section list, which a series in the table is expanded against. */
   orsSections: readonly OrsSectionId[];
-  /** The commit of that snapshot: a held table read with another commit is read again, though its bytes are the same (ADR-0035). */
-  snapshotCommit: string;
   /** The time of the fetch, for the copy's retrieval time. */
   now: () => Timestamp;
   signal: AbortSignal;
@@ -76,10 +74,7 @@ export async function loadStatutesAffectedTable(load: LoadArguments): Promise<St
       : { ...report, outcome: "not_fetched", held, reason: download.reason };
   }
   const contentHash = createHash("sha256").update(download.bytes).digest("hex");
-  if (
-    contentHash === load.writer.statutesAffectedTableHash(load.session) &&
-    load.snapshotCommit === load.writer.statutesAffectedTableSnapshot(load.session)
-  ) {
+  if (contentHash === load.writer.statutesAffectedTableHash(load.session)) {
     return { ...report, outcome: "unchanged", held: true };
   }
   const refused = load.writer.refusedStatutesAffectedTable(load.session);
@@ -104,7 +99,6 @@ export async function loadStatutesAffectedTable(load: LoadArguments): Promise<St
     pageCount: extraction.pdf.pageCount,
     text: extraction.pdf.text,
     entries: parsed.entries,
-    snapshotCommit: load.snapshotCommit,
   });
   const loneE = parsed.entries.filter((entry) => entry.loneE);
   const listingEEngrossed = load.writer.measuresListingVersion(load.session, versionDescriptionOfLetter("E"));
