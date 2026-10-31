@@ -1,5 +1,5 @@
 // `find_measures` (ticket #16, spec #1 acceptance question (a), stories 30 to 32): the Measures, Versions and Proposed
-// Amendments that an Agency Link or a Statute Link ties to an Agency, optionally only the ones posted since a time.
+// Amendments that an Agency Link or a Statute Link ties to an Agency, optionally only the ones whose evidence OLIS created since a time.
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
 import { agencyEvidenceKinds, type LinkedNode, type StoredStatuteLinked } from "#/packages/domain/agency-links.ts";
@@ -67,7 +67,7 @@ export const findMeasuresInput = z.object({
     .string()
     .optional()
     .describe(
-      'Only items posted at or after this time: a date ("2025-01-23", midnight Pacific) or a time ("2025-01-23T16:00:00"), read as Pacific time when it has no UTC offset, or with one ("2025-01-24T00:00:00Z").',
+      'Only items with evidence whose created_at (when OLIS created the row of its document, the feed\'s CreatedDate) is at or after this time. A date ("2025-01-23", midnight Pacific), or an ISO 8601 time with "T" or a space between the date and the time: with no UTC offset it is Pacific time ("2025-01-23T16:00:00"), with an offset or "Z" it is that instant ("2025-01-24 00:00:00+00:00", "2025-01-24T00:00:00Z"), and with a zone in brackets and no offset it is that zone\'s clock ("2025-01-23T19:00:00[America/New_York]").',
     ),
   page: z
     .number()
@@ -112,7 +112,7 @@ const exampleOutput = z.object({
     .string()
     .optional()
     .describe(
-      "When OLIS created the row of the document the evidence was read from, in Pacific time with its UTC offset; for a Proposed Amendment posted to more than one meeting, of the latest posting that holds it. Absent when the feed gives no time.",
+      "When OLIS created the row of the document the evidence was read from, in Pacific time with its UTC offset; for a Proposed Amendment posted to more than one meeting, of the latest posting whose file holds it. Absent when the feed gives no time.",
     ),
 });
 
@@ -126,7 +126,7 @@ const evidenceGroupOutput = z.object({
   count: z
     .number()
     .int()
-    .describe("How many pieces of evidence of this kind the item has (with since, only those posted at or after it)."),
+    .describe("How many pieces of evidence of this kind the item has (with since, only those created at or after it)."),
   left_out: z.number().int().describe("How many of them the cut left out: count less the length of examples."),
   examples: z
     .array(exampleOutput)
@@ -150,22 +150,22 @@ const itemOutput = z.object({
       "Where the Legislature publishes it: the Measure's OLIS page, the Version's file, or the file get_document serves for the Proposed Amendment (its latest posting).",
     ),
   no_longer_listed: noLongerListedOutput,
-  posted_at: z
+  created_at: z
     .string()
     .nullable()
     .describe(
-      "When OLIS first posted what makes the item match, in Pacific time with its UTC offset: the row of the Version, the earliest posting of the Proposed Amendment, the row of the Fiscal Impact Statement or of the Testimony. Null when the feed gives no time.",
+      "When OLIS first created what makes the item match, in Pacific time with its UTC offset: the row of the Version, the earliest posting of the Proposed Amendment that holds it, the row of the Fiscal Impact Statement or of the Testimony. Null when the feed gives no time.",
     ),
-  last_posted_at: z
+  last_created_at: z
     .string()
     .nullable()
     .describe(
-      "When OLIS last posted it. It is posted_at, except for a Proposed Amendment posted to more than one meeting, or an item with evidence from more than one document: the latest posting. since is compared with this.",
+      "When OLIS last created what makes the item match. It is created_at, except for a Proposed Amendment posted to more than one meeting, or an item with evidence from more than one document: the latest. since is compared with the created_at of each piece of evidence, so an item is here when this is at or after since.",
     ),
   evidence: z
     .array(evidenceGroupOutput)
     .describe(
-      "The item's evidence by kind, each kind with its count and its newest examples. With since, only evidence posted at or after it.",
+      "The item's evidence by kind, each kind with its count and its newest examples. With since, only evidence created at or after it.",
     ),
 });
 
@@ -177,7 +177,7 @@ const groupOutput = z.object({
     ),
   description: z.string().describe("The group in words."),
   total: z.number().int().describe("How many items the group has, on every page."),
-  items: z.array(itemOutput).describe("The group's items that are on this page, the most recently posted first."),
+  items: z.array(itemOutput).describe("The group's items that are on this page, the most recently created first."),
 });
 
 export const findMeasuresOutput = z.object({
@@ -215,9 +215,9 @@ export type FindMeasuresOutput = z.infer<typeof findMeasuresOutput>;
 type ItemOutput = z.infer<typeof itemOutput>;
 type ExampleOutput = z.infer<typeof exampleOutput>;
 /** An item as the tool builds it: the times are Timestamps, and it knows the documents its examples name. */
-type Item = Omit<ItemOutput, "posted_at" | "last_posted_at"> & {
-  posted_at: Timestamp | null;
-  last_posted_at: Timestamp | null;
+type Item = Omit<ItemOutput, "created_at" | "last_created_at"> & {
+  created_at: Timestamp | null;
+  last_created_at: Timestamp | null;
   documents: { id: string; sourceUrl: string }[];
 };
 
@@ -336,9 +336,9 @@ function exampleOf(piece: Piece): ExampleOutput {
 }
 
 /**
- * The item a node makes: the evidence posted at or after `since` (all of it with no `since`), grouped by kind, each kind
+ * The item a node makes: the evidence created at or after `since` (all of it with no `since`), grouped by kind, each kind
  * with its count; the newest MAX_EVIDENCE pieces are shown as examples across the kinds, and each kind says how many it
- * left out. The item is dated by the documents that hold that evidence: `posted_at` the earliest and `last_posted_at` the
+ * left out. The item is dated by the documents that hold that evidence: `created_at` the earliest and `last_created_at` the
  * latest of their times. Undefined when no evidence is left, so the node is no item.
  */
 function itemOf(candidate: Candidate, since: Timestamp | undefined): Item | undefined {
@@ -363,8 +363,8 @@ function itemOf(candidate: Candidate, since: Timestamp | undefined): Item | unde
     title: titleOf(candidate.node),
     measure_id: measureIdOf(candidate.node.measure),
     source_url: candidate.node.sourceUrl,
-    posted_at: ordered[0] ?? null,
-    last_posted_at: ordered.at(-1) ?? null,
+    created_at: ordered[0] ?? null,
+    last_created_at: ordered.at(-1) ?? null,
     evidence: evidenceKinds.flatMap((kind) => {
       const ofKind = pieces.filter((piece) => piece.kind === kind);
       if (ofKind.length === 0) return [];
@@ -375,18 +375,18 @@ function itemOf(candidate: Candidate, since: Timestamp | undefined): Item | unde
   };
 }
 
-/** The most recently posted first (an item with no time last), then by id as the feed numbers it. */
+/** The most recently created first (an item with no time last), then by id as the feed numbers it. */
 function compareItems(a: Item, b: Item): number {
-  if (a.last_posted_at === null || b.last_posted_at === null) {
-    if (a.last_posted_at !== b.last_posted_at) return a.last_posted_at === null ? 1 : -1;
+  if (a.last_created_at === null || b.last_created_at === null) {
+    if (a.last_created_at !== b.last_created_at) return a.last_created_at === null ? 1 : -1;
     return numbersInOrder.compare(a.id, b.id);
   }
-  return compareTimestamps(b.last_posted_at, a.last_posted_at) || numbersInOrder.compare(a.id, b.id);
+  return compareTimestamps(b.last_created_at, a.last_created_at) || numbersInOrder.compare(a.id, b.id);
 }
 
 type Group = { kind: GroupKind; items: Item[] };
 
-/** The items of a group that have evidence posted at or after `since`, newest first. With no `since`, all of them. */
+/** The items of a group that have evidence created at or after `since`, newest first. With no `since`, all of them. */
 function groupOfCandidates(kind: GroupKind, candidates: readonly Candidate[], since: Timestamp | undefined): Group {
   return {
     kind,

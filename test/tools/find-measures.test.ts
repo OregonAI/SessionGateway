@@ -40,8 +40,8 @@ type Item = {
   title: string;
   measure_id: string;
   source_url: string;
-  posted_at: string | null;
-  last_posted_at: string | null;
+  created_at: string | null;
+  last_created_at: string | null;
   evidence: KindEvidence[];
 };
 type Group = { evidence_kind: string; description: string; total: number; items: Item[] };
@@ -318,7 +318,7 @@ describe.for(eras)("find_measures for a %s client", (era) => {
       const found = await find({ agency: boli });
 
       const { items } = groupOf(found, "fiscal-impact-statement");
-      expect(items.map((item) => [item.id, item.type, item.posted_at])).toEqual([
+      expect(items.map((item) => [item.id, item.type, item.created_at])).toEqual([
         ["version-2025r1-sb69-a-engrossed", "version", "2025-01-30T10:43:53.29-08:00"],
       ]);
       expect(items[0]?.source_url).toBe(
@@ -334,7 +334,7 @@ describe.for(eras)("find_measures for a %s client", (era) => {
       const found = await find({ agency: boli });
 
       const { items } = groupOf(found, "testimony");
-      expect(items.map((item) => [item.id, item.type, item.title, item.posted_at, item.last_posted_at])).toEqual([
+      expect(items.map((item) => [item.id, item.type, item.title, item.created_at, item.last_created_at])).toEqual([
         ["measure-2025r1-sb69", "measure", "SB 69", "2025-04-21T08:40:21.78-07:00", "2025-04-21T08:40:21.78-07:00"],
       ]);
       expect(items[0]?.source_url).toBe("https://olis.oregonlegislature.gov/liz/2025R1/Measures/Overview/SB69");
@@ -489,6 +489,20 @@ describe.for(eras)("find_measures for a %s client", (era) => {
 
       expect(outcome.isError).toBe(true);
       expect(outcome.text).toBe("The answer has 1 page, so there is no page 2. Ask for a page from 1 to 1.");
+    });
+  });
+
+  // F16: the feed's CreatedDate is the "created" time, and "posted" is the meeting a posting was posted to. `since` filters on
+  // created_at, and an agent reads that in the tool list.
+  describe("the tool list", () => {
+    it("says that since is compared with created_at, the time OLIS created the row of the evidence's document", async () => {
+      const { tools } = await connected.client.listTools();
+
+      const tool = tools.find((candidate) => candidate.name === "find_measures");
+      expect(tool?.description).toContain("created_at");
+      const properties = (tool?.inputSchema as { properties: Record<string, { description?: string }> }).properties;
+      expect(properties["since"]?.description).toContain("created_at");
+      expect(properties["since"]?.description).not.toContain("posted_at");
     });
   });
 

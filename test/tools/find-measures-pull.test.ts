@@ -29,8 +29,8 @@ type Example = {
 type KindEvidence = { kind: string; count: number; left_out: number; examples: Example[] };
 type Item = {
   id: string;
-  posted_at: string | null;
-  last_posted_at: string | null;
+  created_at: string | null;
+  last_created_at: string | null;
   evidence: KindEvidence[];
 };
 type Group = { evidence_kind: string; total: number; items: Item[] };
@@ -234,11 +234,11 @@ describe.for(eras)(
       return system;
     }
 
-    type Dated = { id: string; posted_at: string | null; last_posted_at: string | null };
+    type Dated = { id: string; created_at: string | null; last_created_at: string | null };
     const datedOf = (found: Found, kind: string): [string, string | null][] =>
       (found.groups.find((group) => group.evidence_kind === kind)?.items as Dated[] | undefined)?.map((item) => [
         item.id,
-        item.last_posted_at,
+        item.last_created_at,
       ]) ?? [];
 
     it("lists SB 69-2, whose reposted file reads the same, and not SB 69-1, whose reposted file holds none of the evidence", async () => {
@@ -320,13 +320,16 @@ describe.for(eras)("find_measures lists the newest evidence, for a %s client", (
   const testimonyIds = (first: number, last: number): string[] =>
     Array.from({ length: last - first + 1 }, (_, index) => `testimony-2025r1-${first + index}`);
 
-  it("shows only the Testimony posted since the time asked for, and dates the item by it", async () => {
+  it("shows only the Testimony created since the time asked for, and dates the item by it", async () => {
     const items = await itemsAfter({ since: "2025-04-01" });
 
     const item = items.find((candidate) => candidate.id === "measure-2025r1-sb9300");
     expect(ids(item)).toEqual(["testimony-2025r1-900311"]);
     expect(countOf(item)).toEqual([1, 0]);
-    expect([item?.posted_at, item?.last_posted_at]).toEqual(["2025-04-01T09:00:00-07:00", "2025-04-01T09:00:00-07:00"]);
+    expect([item?.created_at, item?.last_created_at]).toEqual([
+      "2025-04-01T09:00:00-07:00",
+      "2025-04-01T09:00:00-07:00",
+    ]);
   });
 
   it("keeps the newest evidence when it cuts, and says how many it left out", async () => {
@@ -340,13 +343,16 @@ describe.for(eras)("find_measures lists the newest evidence, for a %s client", (
     expect(countOf(later)).toEqual([12, 9]);
   });
 
-  it("cuts only what was posted since the time asked for, newest first", async () => {
+  it("cuts only what was created since the time asked for, newest first", async () => {
     const items = await itemsAfter({ since: "2025-03-02T18:00:00" });
 
     const item = items.find((candidate) => candidate.id === "measure-2025r1-sb9400");
     expect(ids(item)).toEqual(testimonyIds(900410, 900412).toReversed());
     expect(countOf(item)).toEqual([3, 0]);
-    expect([item?.posted_at, item?.last_posted_at]).toEqual(["2025-03-02T18:00:00-08:00", "2025-03-02T20:00:00-08:00"]);
+    expect([item?.created_at, item?.last_created_at]).toEqual([
+      "2025-03-02T18:00:00-08:00",
+      "2025-03-02T20:00:00-08:00",
+    ]);
     expect(items.some((candidate) => candidate.id === "measure-2025r1-sb9300")).toBe(true);
   });
 });

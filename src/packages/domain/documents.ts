@@ -402,7 +402,7 @@ export type DocumentLink = {
   /** The feed's own name for it: the version description, the analysis type, the amendment number... */
   label: string;
   sourceUrl: string;
-  /** When it was posted to a meeting, for a posting. */
+  /** When the meeting it was posted to starts, for a posting. */
   postedAt: Timestamp | null;
   /**
    * The date search files it under: the start of the meeting a document is posted to or for (an agenda, an
@@ -412,8 +412,9 @@ export type DocumentLink = {
   date: Timestamp | null;
   /**
    * When OLIS created the feed's row for the document (its `CreatedDate`), in Pacific time with its offset: the
-   * document's posted time (ADR-0028). Absent for a kind whose row the client does not read it from (agendas,
-   * Exhibits and Recording Logs) and when the row gives none.
+   * document's created time (GLOSSARY.md, ADR-0028). Not `postedAt`, which is the meeting a posting was posted to.
+   * Absent for a kind whose row the client does not read it from (agendas, Exhibits and Recording Logs) and when the
+   * row gives none.
    */
   createdAt?: Timestamp;
   /** For an analysis document: the feed's own `Version` label, "" when the feed gives none. */
