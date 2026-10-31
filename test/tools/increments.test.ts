@@ -64,4 +64,92 @@ describe("an increment", () => {
       expect(await idsFound(system, era)).toContain(letter);
     });
   });
+
+  describe("a row with one of the two dates, and the two-hour overlap", () => {
+    // MADE UP: four Testimony rows for HB 3131's meeting of HALNRW on 2025-01-22, added to the fake after the pull
+    // (14:00), and read at 18:00. Each is served the file of one of the real letters. The increment asks for rows
+    // created or modified after 12:00, two hours before the pull.
+    const olisRoot = "https://olis.oregonlegislature.gov/liz/2025R1";
+    const download = (commTestId: number): string => `/liz/2025R1/Downloads/PublicTestimonyDocument/${commTestId}`;
+
+    function row(
+      commTestId: number,
+      dates: { CreatedDate: string | null; ModifiedDate: string | null },
+    ): Record<string, unknown> {
+      return {
+        SessionKey: "2025R1",
+        CommTestId: commTestId,
+        SubmitterFirstName: "Made",
+        SubmitterLastName: `Up ${commTestId}`,
+        PositionOnMeasureId: 3983,
+        CommitteeCode: "HALNRW",
+        MeetingDate: "2025-01-22T08:00:00",
+        DocumentDescription: "Testimony",
+        MeasurePrefix: "HB",
+        MeasureNumber: 3131,
+        DocumentUrl: olisRoot,
+        ...dates,
+      };
+    }
+
+    async function startWithFiles(): Promise<System> {
+      const system = await startSystem({
+        clockAt: beforeTheLetters,
+        documents: true,
+        olis: {
+          strayDocuments: {
+            [download(900101)]: "testimony/117166.pdf",
+            [download(900102)]: "testimony/117167.pdf",
+            [download(900103)]: "testimony/117166.pdf",
+            [download(900104)]: "testimony/117167.pdf",
+          },
+        },
+      });
+      started.push(system);
+      return system;
+    }
+
+    async function isHeld(system: System, era: Era, commTestId: number): Promise<boolean> {
+      const connected = await connectClient(era, system.handler);
+      try {
+        const outcome = await callTool(connected, "get_document", { id: `testimony-2025r1-${commTestId}` });
+        return !outcome.isError;
+      } finally {
+        await connected.close();
+      }
+    }
+
+    it("picks up a row that has only a CreatedDate and a row that has only a ModifiedDate", async () => {
+      const system = await startWithFiles();
+      system.olis.addRows("CommitteePublicTestimonies", [
+        row(900101, { CreatedDate: "2025-01-17T16:30:00", ModifiedDate: null }),
+        row(900102, { CreatedDate: null, ModifiedDate: "2025-01-17T16:45:00" }),
+      ]);
+      system.clock.set(afterTheLetters);
+
+      await system.incrementAgain();
+
+      await everyClient(async (era) => {
+        expect(await isHeld(system, era, 900101)).toBe(true);
+        expect(await isHeld(system, era, 900102)).toBe(true);
+      });
+    });
+
+    it("reads back two hours before the last run, and no further", async () => {
+      const system = await startWithFiles();
+      system.olis.addRows("CommitteePublicTestimonies", [
+        // 13:00 is inside the overlap (after 12:00); 09:00 is before it.
+        row(900103, { CreatedDate: "2025-01-17T13:00:00", ModifiedDate: null }),
+        row(900104, { CreatedDate: "2025-01-17T09:00:00", ModifiedDate: null }),
+      ]);
+      system.clock.set(afterTheLetters);
+
+      await system.incrementAgain();
+
+      await everyClient(async (era) => {
+        expect(await isHeld(system, era, 900103)).toBe(true);
+        expect(await isHeld(system, era, 900104)).toBe(false);
+      });
+    });
+  });
 });
