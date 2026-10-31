@@ -234,6 +234,13 @@ const schema = `
     PRIMARY KEY (session_key, ordinal)
   ) STRICT;
   CREATE INDEX IF NOT EXISTS statutes_affected_entry_measure ON statutes_affected_entry (session_key, prefix, number);
+  -- The bytes the worker last refused as no table (not a PDF, no text layer, or no ORS row in it), by their hash, so that a
+  -- server that keeps giving the same file is not asked to be extracted again at every pull (ADR-0034).
+  CREATE TABLE IF NOT EXISTS statutes_affected_refusal (
+    session_key TEXT NOT NULL PRIMARY KEY,
+    content_hash TEXT NOT NULL,
+    reason TEXT NOT NULL
+  ) STRICT;
   -- The analysis documents the feed has listed for each Measure (ADR-0013). Rows are kept, never replaced: the
   -- count of the ones the store does not hold reads the listing state (feed_row_state) of each (ADR-0030).
   CREATE TABLE IF NOT EXISTS analysis_listing (

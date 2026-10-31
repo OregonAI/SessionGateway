@@ -231,6 +231,23 @@ describe("a table that cannot be had", () => {
     expect(String(tableReport(rig.system)?.["reason"])).toContain("no row of an ORS table");
   });
 
+  it("does not read the same refused bytes again at the next pull, whether they are a PDF with no table in it or no PDF at all", async () => {
+    // The Version's file is still what the server gives at the table's address (the case before): the pull finds the bytes
+    // it refused and says so, without extracting them again, as it does not read a table it holds again.
+    await rig.system.pullAgain();
+    expect(tableReport(rig.system)).toMatchObject({ outcome: "refused_unchanged", held: false });
+    expect(String(tableReport(rig.system)?.["reason"])).toContain("no row of an ORS table");
+    expect(await rig.ask("SB 69")).toEqual(unsetAnswer);
+
+    // Bytes that are no PDF are refused at their first pull and not looked at again at the second.
+    rig.system.olis.serveDocument(tablePath, new TextEncoder().encode("this is a placeholder, not a table"));
+    await rig.system.pullAgain();
+    expect(tableReport(rig.system)).toMatchObject({ outcome: "not_read", held: false });
+    await rig.system.pullAgain();
+    expect(tableReport(rig.system)).toMatchObject({ outcome: "refused_unchanged", held: false });
+    expect(await rig.ask("SB 69")).toEqual(unsetAnswer);
+  });
+
   it("shows the table from the pull after it is there", async () => {
     rig.system.olis.serveDocument(tablePath, fixture("reports/artables2025R1.pdf"));
     rig.system.clock.set(nextDay);
