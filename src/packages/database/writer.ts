@@ -171,6 +171,11 @@ export type IndexWriter = {
    * is never given to this method.
    */
   recordFullPull(session: SessionKey, asOf: Timestamp, pulled: FullPullRecord): void;
+  /**
+   * For each entity set the index keeps rows of, how many are listed (fewer than two complete pulls in a row have
+   * missed them) and how many are no longer listed (ADR-0030). For the build report.
+   */
+  listingCounts(session: SessionKey): { entitySet: string; listed: number; noLongerListed: number }[];
   /** The ids of the documents already stored for the Session: a stored document is never fetched again. */
   storedDocumentIds(session: SessionKey): Set<DocumentId>;
   /**
@@ -220,6 +225,7 @@ export type IndexWriter = {
 const idRow = z.object({ id: z.string() });
 const pullNumberRow = z.object({ number: z.number() });
 const countRow = z.object({ n: z.number() });
+const listingCountRow = z.object({ entity_set: z.string(), listed: z.number(), no_longer_listed: z.number() });
 const scanRow = z.object({ id: z.string(), source_url: z.string() });
 const unreadFileRow = z.object({
   id: z.string(),
@@ -370,6 +376,12 @@ export function openIndexWriter(path: string): IndexWriter {
         "SELECT COUNT(*) AS n FROM feed_row WHERE session_key = ? AND document_id IS NOT NULL AND last_listed_pull = ?",
       );
       const bumpGeneration = database.prepare("UPDATE search_generation SET generation = generation + 1");
+      const upsertCommitteeMember = database.prepare(
+        `INSERT INTO committee_member (session_key, row_key, committee_code, legislator_code, title, created_at,
+                                       modified_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (session_key, row_key) DO NOTHING`,
+      );
       database.exec("BEGIN IMMEDIATE");
       try {
         for (const measure of pulled.measures) {
@@ -472,6 +484,19 @@ export function openIndexWriter(path: string): IndexWriter {
             item.executiveAppointee,
           );
         }
+        // Every CommitteeMembers row, by the whole row (the set's declared key is not unique). Two rows with one
+        // whole-row key are the same row, and a row the feed changes is a new one; the old one stops being listed.
+        for (const member of pulled.committeeMembers) {
+          upsertCommitteeMember.run(
+            session,
+            member.key,
+            member.committeeCode,
+            member.legislatorCode,
+            member.title,
+            member.createdAt,
+            member.modifiedAt,
+          );
+        }
         // What each meeting lists. A link to any other kind of document, or to no meeting, is not listed.
         for (const link of pulled.documentLinks) {
           const listing = meetingListingOf(link);
@@ -540,6 +565,18 @@ export function openIndexWriter(path: string): IndexWriter {
         database.exec("ROLLBACK");
         throw error;
       }
+    },
+    listingCounts(session) {
+      const rows = database
+        .prepare(
+          `SELECT entity_set, SUM(listed) AS listed, COUNT(*) - SUM(listed) AS no_longer_listed
+           FROM feed_row_state WHERE session_key = ? GROUP BY entity_set ORDER BY entity_set`,
+        )
+        .all(session);
+      return rows.map((row) => {
+        const stored = listingCountRow.parse(row);
+        return { entitySet: stored.entity_set, listed: stored.listed, noLongerListed: stored.no_longer_listed };
+      });
     },
     storedDocumentIds(session) {
       const rows = database.prepare("SELECT id FROM document WHERE session_key = ?").all(session);

@@ -123,6 +123,12 @@ export async function readEntitySet<Row>(
   }
 
   if (inlineCounted === undefined) throw new Error(`OLIS did not report an $inlinecount for ${entitySet}`);
+  if (options.onSetRead !== undefined && countCheck === "count-endpoint-and-inlinecount") {
+    // The count the rows miss, if they miss one: the pull decides what a short set means.
+    const figure = counted !== undefined && rows.length !== counted ? counted : inlineCounted;
+    options.onSetRead({ entitySet, counted: figure, read: rows.length });
+    return rows;
+  }
   if (rows.length !== (counted ?? inlineCounted) || rows.length !== inlineCounted) {
     const counts =
       counted === undefined

@@ -146,6 +146,33 @@ function loadDocumentPaths(): Map<string, URL> {
   return paths;
 }
 
+/**
+ * The 20 entity sets of the real service (`$metadata`, docs/research/olis-odata.md section 2). The service has every
+ * one of them, so a set the fixture holds no file for is a set with no rows and not one that answers 404.
+ */
+const entitySetNames = [
+  "LegislativeSessions",
+  "Measures",
+  "MeasureDocuments",
+  "MeasureAnalysisDocuments",
+  "MeasureHistoryActions",
+  "MeasureVotes",
+  "MeasureSponsors",
+  "Committees",
+  "CommitteeMembers",
+  "CommitteeStaffMembers",
+  "CommitteeMeetings",
+  "CommitteeAgendaItems",
+  "CommitteeProposedAmendments",
+  "CommitteeVotes",
+  "CommitteeMeetingDocuments",
+  "CommitteePublicTestimonies",
+  "FloorSessionAgendaItems",
+  "FloorLetters",
+  "Legislators",
+  "ConveneTimes",
+];
+
 function loadFeed(): Map<string, Row[]> {
   const sets = new Map<string, Row[]>();
   for (const file of readdirSync(feedDirectory)) {
@@ -153,6 +180,9 @@ function loadFeed(): Map<string, Row[]> {
     const rows: unknown = JSON.parse(readFileSync(new URL(file, feedDirectory), "utf8"));
     if (!Array.isArray(rows)) throw new Error(`${file} is not a JSON array`);
     sets.set(file.slice(0, -".json".length), rows as Row[]);
+  }
+  for (const name of entitySetNames) {
+    if (!sets.has(name)) sets.set(name, []);
   }
   return sets;
 }
@@ -258,8 +288,10 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
     const terms = filter === null ? [] : parseFilter(filter);
     if ("error" in terms) return terms;
     const known = feed.get(entitySet) ?? [];
+    // A set with no row at all cannot say which properties its type has, so a filter on one is not refused.
+    const sample = [...known, ...(options.strayRows?.[entitySet] ?? [])];
     for (const term of terms) {
-      if (!known.some((row) => term.property in row)) {
+      if (sample.length > 0 && !sample.some((row) => term.property in row)) {
         return { error: `Could not find a property named '${term.property}' on type '${entitySet}'.` };
       }
     }

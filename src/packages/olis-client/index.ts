@@ -1,9 +1,10 @@
 // The OLIS client: the only code that sees the feed's own shapes (src/CLAUDE.md, "Shape"). It reads
 // the OData v3 feed and hands everything else domain types named as GLOSSARY.md names them.
 import type { HistoryAction, Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
-import type { AgendaItem, Committee, DocumentLink, Meeting } from "#/packages/domain/documents.ts";
+import type { AgendaItem, Committee, CommitteeMember, DocumentLink, Meeting } from "#/packages/domain/documents.ts";
 import type { LegislatorRow, Sponsorship } from "#/packages/domain/legislators.ts";
 import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
+import { readCommitteeMembers } from "./lib/committee-members.ts";
 import { readCommitteeVoteRows } from "./lib/committee-votes.ts";
 import { downloadDocument, readDocumentLinks, type Download } from "./lib/documents.ts";
 import { readFloorVoteRows } from "./lib/floor-votes.ts";
@@ -12,10 +13,10 @@ import { readLegislatorRows } from "./lib/legislators.ts";
 import { readMeasureLive, type MeasureLiveRead } from "./lib/live.ts";
 import { readMeasureRows } from "./lib/measures.ts";
 import { readAgendaItems, readCommittees, readMeetings } from "./lib/meetings.ts";
-import type { OlisClientOptions } from "./lib/options.ts";
+import type { OlisClientOptions, SetCount } from "./lib/options.ts";
 import { readSponsorshipRows } from "./lib/sponsors.ts";
 
-export type { Download, OlisClientOptions, MeasureLiveRead };
+export type { Download, OlisClientOptions, MeasureLiveRead, SetCount };
 
 export type OlisClient = {
   /** Every Measure of the Session, as the feed lists them. */
@@ -42,6 +43,11 @@ export type OlisClient = {
   readMeetings(session: SessionKey, signal: AbortSignal): Promise<Meeting[]>;
   /** Every agenda item of every committee meeting of the Session. */
   readAgendaItems(session: SessionKey, signal: AbortSignal): Promise<AgendaItem[]>;
+  /**
+   * Every CommitteeMembers row of the Session, one entry for each row. The set's declared key is not unique, so
+   * each entry's `key` is the whole row, and no two rows are taken for one (olis-odata.md section 8, gotcha 5).
+   */
+  readCommitteeMembers(session: SessionKey, signal: AbortSignal): Promise<CommitteeMember[]>;
   /** Every document the feed links for the Session, apart from agendas (a meeting's), not yet fetched. */
   readDocumentLinks(session: SessionKey, signal: AbortSignal): Promise<DocumentLink[]>;
   /** Fetches one document from OLIS. */
@@ -60,6 +66,7 @@ export function createOlisClient(options: OlisClientOptions): OlisClient {
     readCommittees: (session, signal) => readCommittees(options, session, signal),
     readMeetings: (session, signal) => readMeetings(options, session, signal),
     readAgendaItems: (session, signal) => readAgendaItems(options, session, signal),
+    readCommitteeMembers: (session, signal) => readCommitteeMembers(options, session, signal),
     readDocumentLinks: (session, signal) => readDocumentLinks(options, session, signal),
     downloadDocument: (link, signal) => downloadDocument(options, link, signal),
   };
