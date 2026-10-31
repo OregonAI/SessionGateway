@@ -3,9 +3,10 @@
 // systems of their own: a deployment that does not name the table; a table that cannot be had (404, a failing server, a
 // file that is not a table, refused again without a second reading) until it can; a table that is loaded, fetched again,
 // withdrawn and then changed; a Version whose text could not be read; and made-up tables in shapes the real one never
-// shows (the last describe: a line the parser cannot read, a footer date in November, overturned vetoes, an E alone). A system pulls the fixture's 278 documents, about four seconds, so a system
-// serves several cases, which run in the order written and each take the table on from the one before. They are
-// read from the top: a case that comes later relies on what the earlier ones did.
+// shows (the last describe: a line the parser cannot read, a footer date in November, overturned vetoes, an E alone for a
+// Measure with and without an E-Engrossed Version in the feed). A system pulls the fixture's 278 documents, about four
+// seconds, so a system serves several cases, which run in the order written and each take the table on from the one
+// before. They are read from the top: a case that comes later relies on what the earlier ones did.
 //
 // The fixture's table agrees with the parsed links of every Version it names (get-measure-statutes-affected-table.test.ts;
 // every Measure of the fixture was looked at for a disagreement, and none has one), so the cases that need a
@@ -105,6 +106,9 @@ const aEngrossed = (links: LinksBySource): VersionEntry => {
   if (found === undefined) throw new Error("SB 69 has no A-Engrossed Version");
   return found;
 };
+/** The path a made-up Version's file is served at: where the fixture's rows put the Versions of a Measure. */
+const versionPathOf = (prefix: string, number: number, description: string): string =>
+  `/liz/2025R1/Downloads/MeasureDocument/${prefix}${String(number)}/${description}`;
 const tableRequests = (system: System): number =>
   system.olis.documentRequests().filter((path) => path === tablePath).length;
 
@@ -509,15 +513,16 @@ describe("a table that was loaded", () => {
 // that the index holds the Version and has read nothing of it. C-Engrossed's file is not served until the second case, and
 // is a PDF the test builds: no Version of the fixture repeals an ORS section, and a repeal is the table's "R". A made-up
 // table, served from the pull after, names each Version.
-const versionRow = (description: string): Record<string, unknown> => ({
+const versionRowOf = (prefix: string, number: number, description: string): Record<string, unknown> => ({
   SessionKey: "2025R1",
-  MeasurePrefix: "SB",
-  MeasureNumber: 69,
+  MeasurePrefix: prefix,
+  MeasureNumber: number,
   VersionDescription: description,
-  DocumentUrl: `https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/${description}`,
+  DocumentUrl: `https://olis.oregonlegislature.gov${versionPathOf(prefix, number, description)}`,
   CreatedDate: "2025-03-01T10:00:00",
   ModifiedDate: null,
 });
+const versionRow = (description: string): Record<string, unknown> => versionRowOf("SB", 69, description);
 
 describe("Versions this index could not read, and one made up to repeal", () => {
   let rig: Rig;
@@ -779,38 +784,117 @@ describe("a made-up table in shapes the 2025R1 table never shows", () => {
   // if the measure has been engrossed (such as “C” to indicate the C-engrossed version ...)" and "(4) An “E” if an
   // emergency clause applies to the amendment, repeal or addition." Column (4) is not in PDF.js's text, so an E alone
   // after the Measure number is the emergency clause of a row at the Introduced Version, or the level of an E-Engrossed
-  // Version. The 2025R1 table has no level past C, so it never needs the second reading, and 836 lines of its ORS pages
-  // end in an E alone (a regex count over pages 1 to 56 of the PDF.js text), none of them for a Measure of the fixture. The
-  // rows are MADE UP.
-  it("sets no Version beside the entries of a row that ends in an E alone: it is the emergency clause or the E-Engrossed level, and the table does not say which", async () => {
-    const read = await serve(madeUpTable(["653.616 A §8 SB 69 E", "A §1 SB 121 E", "653.626 A §9 SB 69 A E"]), [
+  // Version, and the feed says which Versions a Measure has (ADR-0033). The 2025R1 feed lists no E-Engrossed Version of
+  // any Measure (none of its 6,178 MeasureDocuments rows; its latest level is C), so every one of the 819 entries of the
+  // table that end in an E alone (180 Measures, none of them a Measure of the fixture, measured 2026-10-30 in the cached
+  // feed and the fixture's copy of the table) is the emergency clause. The fixture has no such row, so these rows are
+  // MADE UP, and so are the E-Engrossed Versions of the two cases after the first.
+  const eAloneRows = ["244.120 A §1 SB 983 E", "244.350 R §2 SB 983 E", "653.626 A §9 SB 69 A E"];
+  const eAloneTable = madeUpTable(eAloneRows);
+  const otherEntriesOfEAlone = [
+    {
+      level: "E",
+      version: null,
+      reason: holding("lists an E-Engrossed Version"),
+      entries: expectedChanges({
+        amends: { sections: [sectionTarget("ors-244.120", "1")] },
+        repeals: { sections: [sectionTarget("ors-244.350", "2")] },
+      }),
+    },
+  ];
+  const versionOf = (links: LinksBySource | undefined, label: string): VersionEntry | undefined =>
+    links?.versions.find((entry) => entry.label === label);
+
+  it("reads an E alone as the emergency clause of the Introduced Version when the feed lists no E-Engrossed Version of the Measure, and compares the entry with the Introduced Version's links", async () => {
+    // SB 983's Introduced Version amends ORS 244.120 in SECTION 1 (and so does its A-Engrossed Version). The row for 244.120
+    // ends in an E alone, which can only be the emergency clause: SB 983 has no E-Engrossed Version. The text repeals no
+    // section, so the repeal of 244.350 is the table's alone. "SB 69 A E" is a level and an emergency clause after it.
+    const read = await serve(eAloneTable, ["SB 983", "SB 69"]);
+
+    expect(versionOf(read["SB 983"], "Introduced")?.statutes_affected_table).toEqual({
+      compared: true,
+      not_compared_reason: null,
+      parsed_changes: expectedParsedChanges({ amends: { sections: [confirmed(sectionTarget("ors-244.120", "1"))] } }),
+      only_in_table: expectedChanges({ repeals: { sections: [sectionTarget("ors-244.350", "2")] } }),
+      only_in_parsed_links: null,
+      entries_not_compared: null,
+    });
+    // No entry names the A-Engrossed Version, whatever its text amends: the E alone names the Introduced Version only.
+    expect(versionOf(read["SB 983"], "A-Engrossed")?.statutes_affected_table).toBeUndefined();
+    expect(read["SB 983"]?.statutes_affected_table?.other_entries).toEqual([]);
+    // A level and an E after it are known as before: the A-Engrossed Version.
+    expect(tableEntriesOf(read["SB 69"], "A-Engrossed")).toEqual([["amends", "ors-653.626", "9"]]);
+    expect(versionOf(read["SB 69"], "Introduced")?.statutes_affected_table).toBeUndefined();
+    expect(tableReport(rig.system)).toMatchObject({
+      outcome: "loaded",
+      entries: 3,
+      lone_e_entries: 2,
+      lone_e_with_e_engrossed_version: 0,
+      unread_lines: 0,
+    });
+  });
+
+  it("leaves the same entries unknown once the feed lists an E-Engrossed Version of the Measure: the E may be that Version's level, and the table is not read again", async () => {
+    // MADE UP: a row for SB 983's E-Engrossed Version, served with a PDF the test builds. The table's bytes are the ones
+    // of the case before, so what changes the answer is the Version the feed lists.
+    rig.system.olis.addRows("MeasureDocuments", [versionRowOf("SB", 983, "E-Engrossed")]);
+    rig.system.olis.serveDocument(
+      versionPathOf("SB", 983, "E-Engrossed"),
+      madeUpPdf([
+        [
+          "E-ENGROSSED SENATE BILL 983 (MADE UP)",
+          "SECTION 1. ORS 244.120 is amended to read:",
+          "244.120. A made-up text.",
+        ],
+      ]),
+    );
+    const read = await serve(eAloneTable, ["SB 983"]);
+
+    expect(versionOf(read["SB 983"], "E-Engrossed")?.label).toBe("E-Engrossed");
+    for (const label of ["Introduced", "A-Engrossed", "E-Engrossed"]) {
+      expect(versionOf(read["SB 983"], label)?.statutes_affected_table).toBeUndefined();
+    }
+    expect(read["SB 983"]?.statutes_affected_table?.other_entries).toEqual(otherEntriesOfEAlone);
+    expect(tableReport(rig.system)).toMatchObject({ outcome: "unchanged", held: true });
+  });
+
+  it("leaves them unknown too when the feed lists the E-Engrossed Version and its file never came: the listing says the Version exists, whether or not the index holds it", async () => {
+    // MADE UP: a row for HB 3131's E-Engrossed Version, whose file is not served, so the worker lists it as not fetched.
+    // SB 69 has no E-Engrossed Version, so its E alone is read at the Introduced Version, whose text amends nothing.
+    rig.system.olis.addRows("MeasureDocuments", [versionRowOf("HB", 3131, "E-Engrossed")]);
+    const read = await serve(madeUpTable([...eAloneRows, "653.616 A §8 SB 69 E", "659A.159 A §4 HB 3131 E"]), [
+      "SB 983",
       "SB 69",
-      "SB 121",
+      "HB 3131",
     ]);
 
-    // The E alone is not read as an emergency clause at the Introduced Version: that Version has no table beside it.
-    expect(
-      read["SB 69"]?.versions.find((entry) => entry.label === "Introduced")?.statutes_affected_table,
-    ).toBeUndefined();
-    // A level and an E after it are known: the A-Engrossed Version, and an emergency clause.
-    expect(tableEntriesOf(read["SB 69"], "A-Engrossed")).toEqual([["amends", "ors-653.626", "9"]]);
-    // The entries of the E alone are shown, apart, with what the table leaves unsaid.
-    expect(read["SB 69"]?.statutes_affected_table?.other_entries).toEqual([
+    expect(versionOf(read["HB 3131"], "E-Engrossed")).toBeUndefined();
+    expect(versionOf(read["HB 3131"], "Introduced")?.statutes_affected_table).toBeUndefined();
+    expect(read["HB 3131"]?.statutes_affected_table?.other_entries).toEqual([
       {
         level: "E",
         version: null,
-        reason: holding("the E-Engrossed Version's level"),
-        entries: expectedChanges({ amends: { sections: [sectionTarget("ors-653.616", "8")] } }),
+        reason: holding("lists an E-Engrossed Version"),
+        entries: expectedChanges({ amends: { sections: [sectionTarget("ors-659a.159", "4")] } }),
       },
     ]);
-    expect(read["SB 121"]?.statutes_affected_table?.other_entries).toEqual([
-      {
-        level: "E",
-        version: null,
-        reason: holding("emergency clause"),
-        entries: expectedChanges({ amends: { sections: [sectionTarget("ors-653.616", "1")] } }),
-      },
-    ]);
-    expect(tableReport(rig.system)).toMatchObject({ outcome: "loaded", entries: 3, unread_lines: 0 });
+    expect(read["SB 983"]?.statutes_affected_table?.other_entries).toEqual(otherEntriesOfEAlone);
+    expect(versionOf(read["SB 69"], "Introduced")?.statutes_affected_table).toEqual({
+      compared: true,
+      not_compared_reason: null,
+      parsed_changes: null,
+      only_in_table: expectedChanges({ amends: { sections: [sectionTarget("ors-653.616", "8")] } }),
+      only_in_parsed_links: null,
+      entries_not_compared: null,
+    });
+    expect(read["SB 69"]?.statutes_affected_table?.other_entries).toEqual([]);
+    // Four entries end in an E alone (SB 983's two, SB 69's and HB 3131's); the feed lists an E-Engrossed Version for three.
+    expect(tableReport(rig.system)).toMatchObject({
+      outcome: "loaded",
+      entries: 5,
+      lone_e_entries: 4,
+      lone_e_with_e_engrossed_version: 3,
+      unread_lines: 0,
+    });
   });
 });

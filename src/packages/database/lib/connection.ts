@@ -291,6 +291,17 @@ const schema = `
       JOIN feed_pull p ON p.session_key = r.session_key AND p.number = r.last_listed_pull
       JOIN (SELECT session_key, MAX(number) AS number FROM feed_pull GROUP BY session_key) latest
         ON latest.session_key = r.session_key;
+  -- The Versions the feed lists for each Measure (a Printed Amendment is not one), as the last full pull read them and whether
+  -- or not their files were fetched: a Version whose file did not come has no row in "document". The Statutes Affected Table's
+  -- entries that end in an E alone are read by what is listed here (ADR-0033): an E-Engrossed Version that exists, held or
+  -- not, is a reason the E may be its level.
+  CREATE TABLE IF NOT EXISTS version_listing (
+    document_id TEXT NOT NULL PRIMARY KEY,
+    session_key TEXT NOT NULL,
+    measure_id TEXT NOT NULL,
+    label TEXT NOT NULL
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS version_listing_measure ON version_listing (measure_id);
   -- Search (ADR-0025). What search files each stored document under, written in the same transaction as
   -- the document. node_id is the id a hit carries: the document's, or a posting's Proposed Amendment.
   CREATE TABLE IF NOT EXISTS search_document (

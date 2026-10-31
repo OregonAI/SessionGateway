@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { IndexWriter } from "#/packages/database/writer.ts";
-import type { SessionKey } from "#/packages/domain/index.ts";
+import { versionDescriptionOfLetter } from "#/packages/domain/documents.ts";
+import { measureIdOf, type SessionKey } from "#/packages/domain/index.ts";
 import type { OrsSectionId } from "#/packages/domain/oregonai.ts";
 import type { OlisClient } from "#/packages/olis-client/index.ts";
 import { extractPdfText } from "#/packages/pdf-text/index.ts";
@@ -29,6 +30,16 @@ export type StatutesAffectedTableReport = {
   entries?: number;
   previous_session_entries?: number;
   unread_lines?: number;
+  /**
+   * For "loaded": how many of the entries end in an E alone after the Measure number, which is the emergency clause or an
+   * E-Engrossed level and the table's text does not say which (ADR-0033), and how many of those name a Measure of which the
+   * feed lists an E-Engrossed Version in this pull. The rest are read as the emergency clause of the Introduced Version when
+   * get_measure shows their Measure (an entry of a Measure the index does not hold is shown nowhere). The Versions the feed
+   * lists change between pulls and the table need not, so the second count is of the pull that loaded the table; get_measure
+   * reads the Versions as of the last pull.
+   */
+  lone_e_entries?: number;
+  lone_e_with_e_engrossed_version?: number;
   /** For "not_fetched", "not_read" and "refused_unchanged": why. */
   reason?: string;
 };
@@ -89,6 +100,8 @@ export async function loadStatutesAffectedTable(load: LoadArguments): Promise<St
     text: extraction.pdf.text,
     entries: parsed.entries,
   });
+  const loneE = parsed.entries.filter((entry) => entry.loneE);
+  const listingEEngrossed = load.writer.measuresListingVersion(load.session, versionDescriptionOfLetter("E"));
   return {
     ...report,
     outcome: "loaded",
@@ -96,6 +109,10 @@ export async function loadStatutesAffectedTable(load: LoadArguments): Promise<St
     entries: parsed.entries.length,
     previous_session_entries: parsed.previousSessionEntries.length,
     unread_lines: parsed.unreadLines.length,
+    lone_e_entries: loneE.length,
+    lone_e_with_e_engrossed_version: loneE.filter((entry) =>
+      listingEEngrossed.has(measureIdOf({ session: load.session, ...entry.measure })),
+    ).length,
   };
 }
 

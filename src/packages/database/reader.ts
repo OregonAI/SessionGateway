@@ -130,9 +130,10 @@ export type IndexReader = {
   /** The Versions of a Measure the store holds (not its Printed Amendments), in no particular order, each with what was read of its text. */
   findMeasureVersions(key: MeasureKey): StoredVersion[];
   /**
-   * Legislative Counsel's Statutes Affected Table, for one Measure: where it came from, when the index retrieved it, and
-   * the entries it has for the Measure (none when it lists none). Undefined while the index holds no table, which is
-   * when the deployment does not load it or it is not published yet.
+   * Legislative Counsel's Statutes Affected Table, for one Measure: where it came from, when the index retrieved it, the
+   * entries it has for the Measure (none when it lists none), and the Versions the feed lists for the Measure, which say
+   * what an entry that ends in an E alone is. Undefined while the index holds no table, which is when the deployment does
+   * not load it or it is not published yet.
    */
   statutesAffectedTableOf(key: MeasureKey): StatutesAffectedTableOfMeasure | undefined;
   /** What the index holds of the Session. */
@@ -355,6 +356,7 @@ const relatingClauseEdits = z.array(
   }),
 );
 const tableRow = z.object({ source_url: z.string(), retrieved_at: z.string() });
+const listedVersionRow = z.object({ label: z.string() });
 const tableEntryRow = z.object({
   level: z.string().nullable(),
   action: z.enum(tableActions),
@@ -553,6 +555,9 @@ export function openIndexReader(path: string): IndexReader {
   );
   const selectStatuteLinks = database.prepare(
     "SELECT kind, target_type, target_id, measure_section FROM statute_link WHERE content_hash = ? AND parsed_as = ? ORDER BY ordinal",
+  );
+  const selectListedVersions = database.prepare(
+    "SELECT DISTINCT label FROM version_listing WHERE measure_id = ? ORDER BY label",
   );
   const selectTable = database.prepare(
     "SELECT source_url, retrieved_at FROM statutes_affected_table WHERE session_key = ?",
@@ -805,7 +810,10 @@ export function openIndexReader(path: string): IndexReader {
             target: storedTargetOf(stored.target_type, stored.target_id, "a table entry for"),
           };
         });
-      return { sourceUrl: table.source_url, retrievedAt: table.retrieved_at as Timestamp, entries };
+      const listedVersions = selectListedVersions
+        .all(measureIdOf(key))
+        .map((listed) => listedVersionRow.parse(listed).label);
+      return { sourceUrl: table.source_url, retrievedAt: table.retrieved_at as Timestamp, entries, listedVersions };
     },
     findCommittee(session, reference) {
       const row = selectCommittee.get(session, reference.trim(), reference.trim());
