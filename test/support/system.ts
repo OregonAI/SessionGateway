@@ -12,6 +12,7 @@ import {
   type IncrementResult,
   type IngestDeps,
 } from "#/packages/ingest/index.ts";
+import { runIngestLoop } from "#/packages/ingest/loop.ts";
 import { committedAliasFilePath, readLegislatorAliases } from "#/packages/legislators/aliases.ts";
 import { createSessionGatewayHandler, type SessionGatewayHandler } from "#/packages/mcp-server/handler.ts";
 import { createSimulatedClock, type SimulatedClock } from "./clock.ts";
@@ -68,6 +69,8 @@ export type SystemOptions = {
   embedder?: Embedder;
   /** Further environment variables for the server's configuration (MCP_PATH, MCP_PORT, ...). */
   serverEnv?: Record<string, string>;
+  /** The worker's rhythms (the INGEST_INCREMENTS and INGEST_FULL_PULL variables): unset, as a deployment leaves them. */
+  ingest?: { increments?: string; fullPull?: string };
   /** The alias file the worker reads, as the entry script would pass it. The committed one by default. */
   legislatorAliasesPath?: string;
 };
@@ -95,6 +98,12 @@ export type System = {
    * the clock (and adds rows to the fake) to see what the next increment brings.
    */
   incrementAgain(): Promise<IncrementResult>;
+  /**
+   * Runs the worker's loop (`runIngestLoop`) from the clock's time now until the clock reaches `until`, an ISO-8601
+   * instant. The loop's sleep is the harness's: it moves the simulated clock by the time it was asked to wait, so a
+   * test runs a day of the worker's schedule at once and no timer runs. A run that fails throws out of this call.
+   */
+  runSchedule(until: string): Promise<void>;
   stop(): Promise<void>;
 };
 
@@ -114,6 +123,8 @@ export async function startSystem(options: SystemOptions): Promise<System> {
     SNAPSHOT_PATH: options.snapshot ?? snapshotFixturePath,
     // The entry scripts load the model from here. The harness is given its embedder, so nothing reads it.
     MODEL_PATH: modelPath(),
+    ...(options.ingest?.increments === undefined ? {} : { INGEST_INCREMENTS: options.ingest.increments }),
+    ...(options.ingest?.fullPull === undefined ? {} : { INGEST_FULL_PULL: options.ingest.fullPull }),
     ...(options.statutesAffectedTableUrl === undefined
       ? {}
       : { STATUTES_AFFECTED_TABLE_URL: options.statutesAffectedTableUrl(olis.origin) }),
@@ -130,6 +141,24 @@ export async function startSystem(options: SystemOptions): Promise<System> {
   });
   const pull = (pullOptions: { embedder?: Embedder } = {}): Promise<FullPullResult> =>
     runFullPull(loadIngestConfig(env), workerDeps(pullOptions.embedder ?? embedder));
+  const schedule = async (until: string): Promise<void> => {
+    const stop = new AbortController();
+    const end = new Date(until).getTime();
+    const failures: unknown[] = [];
+    await runIngestLoop(loadIngestConfig(env), {
+      ...workerDeps(embedder),
+      signal: stop.signal,
+      sleep: (milliseconds) => {
+        clock.advance(milliseconds);
+        if (clock.now().getTime() >= end) stop.abort();
+        return Promise.resolve();
+      },
+      onRunFailed: (_run, error) => {
+        failures.push(error);
+      },
+    });
+    if (failures.length > 0) throw new Error("A run of the worker's loop failed", { cause: failures[0] });
+  };
   const increment = (): Promise<IncrementResult> => runIncrement(loadIngestConfig(env), workerDeps(embedder));
   try {
     await pull();
@@ -156,6 +185,7 @@ export async function startSystem(options: SystemOptions): Promise<System> {
       },
       pullAgain: pull,
       incrementAgain: increment,
+      runSchedule: schedule,
       stop: async () => {
         shutdown.abort();
         await handler.close();
