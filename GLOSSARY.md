@@ -250,8 +250,12 @@ A state government unit as the OregonAI agency registry names it.
 _Avoid_: department, issuing body
 
 **Agency Link**:
-A connection from a Measure, Version or Proposed Amendment to an Agency, of one kind: named in a Fiscal Impact Statement, named in the text, submitted Testimony, or derived through a Statute Link.
+A connection from a Measure, Version or Proposed Amendment to an Agency, of one kind: named in a Fiscal Impact Statement, named in the text, submitted Testimony, or derived through a Statute Link. Only a Statute Link that amends, repeals or adds to derives one, never a citation (ADR-0027). A Fiscal Impact Statement's link sits on the Version the statement is of, or on the Measure when the feed places it on none.
 _Avoid_: affected agency, unqualified
+
+**Posted time**:
+When OLIS created the feed's row for a document (its `CreatedDate`), in Pacific time with its offset. A Proposed Amendment posted to several meetings has a posting, and a row, for each: its posted time is the earliest, and `find_measures` reads `since` against the latest (ADR-0028).
+_Avoid_: posting date, publication date
 
 **Agency registry**:
 The OregonAI list of Agencies (slug, name, aliases and more), copied into the build-time snapshot (ADR-0004). The Agency Link extractor takes it as a parameter.

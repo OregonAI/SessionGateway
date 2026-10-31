@@ -25,11 +25,12 @@ import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 import { noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 
 /**
- * How many items one page lists, across the groups. An item is about 600 characters with its evidence, so a page is
- * about 30,000 characters, the size of one page of `testimony` (which lists 50 rows) and a part and a half of
- * `get_document`. The Agency with the most Agency Links in the 2025R1 fixture is the Department of Human Services, with
- * 30 or so; the Session is some 100 times the fixture, so an Agency with a thousand items is likely, and the answer must
- * not be one that overflows an agent's context.
+ * How many items one page lists, across the groups (the ticket asks for pages of 50, as `testimony` has). Measured
+ * 2026-10-30 through the tool over the whole fixture: an item is 650 to 900 characters of JSON with its evidence (the
+ * Bureau of Labor and Industries' 12 items are 10,648 characters, the Department of Human Services' 20 are 13,366), so a
+ * full page is about 33,000 to 45,000 characters, between one and a half and two parts of `get_document`
+ * (20,000 each) and more than a page of `testimony` (about 25,000). The Session is some 100 times the fixture, so an
+ * Agency with thousands of items is likely and the answer has to be paged.
  */
 export const FIND_MEASURES_PAGE_SIZE = 50;
 const PAGE_SIZE = FIND_MEASURES_PAGE_SIZE;
