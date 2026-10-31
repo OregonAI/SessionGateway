@@ -380,6 +380,13 @@ const agencyLinkRow = z.object({
   measure_id: z.string(),
   version_id: z.string().nullable(),
 });
+const testimonyLinkRow = z.object({
+  agency_id: z.string(),
+  organization: z.string().nullable(),
+  document_id: z.string(),
+  document_source_url: z.string(),
+  measure_id: z.string(),
+});
 const unresolvedUnitRow = z.object({
   unit: z.string(),
   document_id: z.string(),
@@ -602,6 +609,14 @@ export function openIndexReader(path: string): IndexReader {
      WHERE d.session_key = ?1 AND (?2 IS NULL OR a.agency_id = ?2) AND (?3 IS NULL OR mr.to_id = ?3)
      ORDER BY a.agency_id, d.id, a.ordinal`,
   );
+  // Testimony whose Organization names an Agency: the worker matched it when it stored the row (ADR-0016, ADR-0027).
+  const selectTestimonyLinks = database.prepare(
+    `SELECT t.agency_id, t.organization, t.document_id, t.source_url AS document_source_url, t.measure_id
+     FROM testimony t
+     WHERE t.session_key = ?1 AND t.agency_id IS NOT NULL AND t.measure_id IS NOT NULL
+       AND (?2 IS NULL OR t.agency_id = ?2) AND (?3 IS NULL OR t.measure_id = ?3)
+     ORDER BY t.agency_id, t.comm_test_id`,
+  );
   const selectUnresolvedUnits = database.prepare(
     `SELECT u.unit, d.id AS document_id, d.source_url AS document_source_url, mr.to_id AS measure_id,
             vr.to_id AS version_id
@@ -823,7 +838,7 @@ export function openIndexReader(path: string): IndexReader {
       const stored = selectAgencyLinks
         .all(session, filter.agency ?? null, filter.measure === undefined ? null : measureIdOf(filter.measure))
         .map((row) => agencyLinkRow.parse(row));
-      return stored.map((found): StoredAgencyLink => {
+      const read = stored.map((found): StoredAgencyLink => {
         const key = measureKeyOf(found.measure_id, session);
         const evidence: AgencyEvidence = evidenceFromJson(found.link_kind, found.evidence);
         return {
@@ -833,6 +848,20 @@ export function openIndexReader(path: string): IndexReader {
           node: nodeOfDocument(found, key),
         };
       });
+      const testimony = selectTestimonyLinks
+        .all(session, filter.agency ?? null, filter.measure === undefined ? null : measureIdOf(filter.measure))
+        .map((row) => testimonyLinkRow.parse(row))
+        .map((found): StoredAgencyLink => {
+          const key = measureKeyOf(found.measure_id, session);
+          return {
+            agency: found.agency_id as AgencyId,
+            // The Agency Link extractor matches the Organization with stray spaces trimmed (agency-links, matchOrganization).
+            evidence: { kind: "testimony", organization: (found.organization ?? "").trim() },
+            document: { id: found.document_id as DocumentId, sourceUrl: found.document_source_url, createdAt: null },
+            node: measureNodeOf(key),
+          };
+        });
+      return [...read, ...testimony];
     },
     findUnresolvedUnits(measure) {
       return selectUnresolvedUnits.all(measureIdOf(measure)).map((row): StoredUnresolvedUnit => {
