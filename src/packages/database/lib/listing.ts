@@ -14,6 +14,13 @@ import type {
 import { measureIdOf, type HistoryAction, type Measure } from "#/packages/domain/index.ts";
 import type { LegislatorRow } from "#/packages/domain/legislators.ts";
 
+/**
+ * The SQL term for whether the feed lists a row, over a LEFT JOIN of `feed_row_state` aliased `fr`. The join finds no
+ * row for one that no complete full pull has listed (the index was built before the listing was kept, or an
+ * increment stored it): such a row is read as listed, not yet checked (ADR-0030).
+ */
+export const listedOrUnchecked = "COALESCE(fr.listed, 1)";
+
 /** One row of the feed the index keeps: the entity set it came from, its key there, and the document it links, if any. */
 export type ListedRow = { entitySet: string; key: string; documentId: DocumentId | null };
 

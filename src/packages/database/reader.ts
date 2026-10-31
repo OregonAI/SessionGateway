@@ -60,6 +60,7 @@ import {
 } from "#/packages/domain/votes.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openReadConnection } from "./lib/connection.ts";
+import { listedOrUnchecked } from "./lib/listing.ts";
 
 /** What a meetings query asks for. Every field given must hold. */
 export type MeetingFilter = {
@@ -142,13 +143,13 @@ export type IndexReader = {
   findTestimony(key: MeasureKey): TestimonyEntry[];
   /**
    * Whether the feed lists a Testimony with this id, whether or not its file is fetched, and when it last did;
-   * undefined when the feed has never listed one. A Testimony that is listed and whose file the store lacks is one
+   * undefined when the index holds no Testimony row with this id. A Testimony that is listed and whose file the store lacks is one
    * `findDocument` does not resolve yet: the next pull fetches it. One that is no longer listed is not fetched by
    * any pull, and the store holds the file only if it fetched it while the feed listed it.
    */
   testimonyListing(id: DocumentId | AmendmentId): Listing | undefined;
-  /** Whether the feed still lists a Measure, and when it last did; undefined when the index has never listed it. */
-  measureListing(key: MeasureKey): Listing | undefined;
+  /** Whether the feed still lists a Measure the index holds, and when it last did. */
+  measureListing(key: MeasureKey): Listing;
   close(): void;
 };
 
@@ -329,7 +330,7 @@ const relatingClauseEdits = z.array(
 );
 const countRow = z.object({ n: z.number() });
 const kindCountRow = z.object({ kind: z.string(), n: z.number() });
-const listingRow = z.object({ listed: z.number(), last_listed_at: z.string() });
+const listingRow = z.object({ listed: z.number().nullable(), last_listed_at: z.string().nullable() });
 const relationRow = z.object({
   relation: z.string(),
   to_id: z.string(),
@@ -411,7 +412,7 @@ export function openIndexReader(path: string): IndexReader {
     "SELECT relation, to_id, meaning FROM document_relation WHERE document_id = ? ORDER BY rowid",
   );
   const selectAnalyses = database.prepare(
-    `SELECT d.id, d.label, d.source_url, d.analysis_version_label, d.analysis_is_minority, fr.listed
+    `SELECT d.id, d.label, d.source_url, d.analysis_version_label, d.analysis_is_minority, ${listedOrUnchecked} AS listed
        FROM document d
          JOIN document_relation r ON r.document_id = d.id
          LEFT JOIN feed_row_state fr ON fr.document_id = d.id
@@ -427,7 +428,7 @@ export function openIndexReader(path: string): IndexReader {
     "SELECT code, id, name FROM committee WHERE session_key = ? AND (upper(code) = upper(?) OR id = lower(?))",
   );
   const selectMeetings = database.prepare(
-    `SELECT m.id, m.committee_id, m.committee_code, c.name AS committee_name, m.at, m.status, fr.listed
+    `SELECT m.id, m.committee_id, m.committee_code, c.name AS committee_name, m.at, m.status, ${listedOrUnchecked} AS listed
      FROM meeting m
        JOIN committee c ON c.session_key = m.session_key AND c.code = m.committee_code
        LEFT JOIN feed_row_state fr ON fr.session_key = m.session_key AND fr.entity_set = 'CommitteeMeetings'
@@ -441,7 +442,7 @@ export function openIndexReader(path: string): IndexReader {
      ORDER BY m.at, m.committee_code`,
   );
   const selectAgendaItems = database.prepare(
-    `SELECT a.*, fr.listed
+    `SELECT a.*, ${listedOrUnchecked} AS listed
      FROM agenda_item a
        LEFT JOIN feed_row_state fr ON fr.session_key = a.session_key AND fr.entity_set = 'CommitteeAgendaItems'
                                   AND fr.row_key = CAST(a.id AS TEXT)
@@ -450,7 +451,7 @@ export function openIndexReader(path: string): IndexReader {
   // What the feed lists for a meeting, and whether the document table holds each file yet.
   const selectMeetingDocuments = database.prepare(
     `SELECT l.document_id AS id, l.node_id, l.kind, l.label, l.source_url, l.title, l.measure_id, l.meaning,
-            EXISTS (SELECT 1 FROM document d WHERE d.id = l.document_id) AS fetched, fr.listed
+            EXISTS (SELECT 1 FROM document d WHERE d.id = l.document_id) AS fetched, ${listedOrUnchecked} AS listed
      FROM meeting_document l
        LEFT JOIN feed_row_state fr ON fr.document_id = l.document_id
      WHERE l.meeting_id = ?`,
@@ -459,7 +460,7 @@ export function openIndexReader(path: string): IndexReader {
   const selectTestimony = database.prepare(
     `SELECT t.document_id AS id, t.comm_test_id, t.source_url, t.document_description, t.position_id, t.submitter,
             t.behalf_of, t.organization, t.committee_id, t.committee_code, t.meeting_at, t.agency_id,
-            d.id IS NOT NULL AS fetched, fr.listed, d.has_text_layer, d.text_hash
+            d.id IS NOT NULL AS fetched, ${listedOrUnchecked} AS listed, d.has_text_layer, d.text_hash
      FROM testimony t
        LEFT JOIN document d ON d.id = t.document_id
        LEFT JOIN feed_row_state fr ON fr.document_id = t.document_id
@@ -467,7 +468,7 @@ export function openIndexReader(path: string): IndexReader {
   );
   const selectTestimonyListing = database.prepare(
     `SELECT fr.listed, fr.last_listed_at FROM testimony t
-       JOIN feed_row_state fr ON fr.document_id = t.document_id
+       LEFT JOIN feed_row_state fr ON fr.document_id = t.document_id
       WHERE t.document_id = ?`,
   );
   const selectMeasureListing = database.prepare(
@@ -562,10 +563,18 @@ export function openIndexReader(path: string): IndexReader {
       relatingClauseEdits: edits,
     };
   }
-  function listingOf(row: unknown, what: string): Listing {
-    if (row === undefined) throw new Error(`The index has no feed row for ${what}`);
-    const stored = listingRow.parse(row);
-    return { listed: stored.listed === 1, lastListedAt: stored.last_listed_at as Timestamp };
+  /**
+   * The listing a query of `feed_row_state` found. No row, or a row whose state is NULL (a LEFT JOIN that found
+   * none), is a row no complete pull has listed: it reads as listed, not yet checked (ADR-0030).
+   */
+  function listingOf(row: unknown): Listing {
+    const stored = row === undefined ? { listed: null, last_listed_at: null } : listingRow.parse(row);
+    if (stored.listed === 0) {
+      if (stored.last_listed_at === null)
+        throw new Error("A row that is no longer listed has no time it was last listed");
+      return { listed: false, lastListedAt: stored.last_listed_at as Timestamp };
+    }
+    return { listed: true, lastListedAt: stored.last_listed_at as Timestamp | null };
   }
   function relationsOf(documentId: DocumentId): RelatedNode[] {
     return selectRelations.all(documentId).map((row) => {
@@ -678,7 +687,7 @@ export function openIndexReader(path: string): IndexReader {
         return {
           document,
           related: relationsOf(document.id),
-          listing: listingOf(selectDocumentListing.get(document.id), `the stored document ${document.id}`),
+          listing: listingOf(selectDocumentListing.get(document.id)),
         };
       }
       // Not a document: a Proposed Amendment, which has a posting (and a file) for each meeting.
@@ -700,7 +709,7 @@ export function openIndexReader(path: string): IndexReader {
       return {
         document: latest,
         related,
-        listing: listingOf(selectPostingsListing.get(id), `the postings of the Proposed Amendment ${id}`),
+        listing: listingOf(selectPostingsListing.get(id)),
       };
     },
     findAmendment(id) {
@@ -831,11 +840,10 @@ export function openIndexReader(path: string): IndexReader {
     },
     testimonyListing(id) {
       const row = selectTestimonyListing.get(id);
-      return row === undefined ? undefined : listingOf(row, `the Testimony ${id}`);
+      return row === undefined ? undefined : listingOf(row);
     },
     measureListing(key) {
-      const row = selectMeasureListing.get(key.session, measureIdOf(key));
-      return row === undefined ? undefined : listingOf(row, `the Measure ${measureIdOf(key)}`);
+      return listingOf(selectMeasureListing.get(key.session, measureIdOf(key)));
     },
     findTestimony(key) {
       return selectTestimony.all(measureIdOf(key)).map((row): TestimonyEntry => {

@@ -169,10 +169,11 @@ const detailsRow = z.object({
 /**
  * The WHERE term that leaves out a document the feed no longer lists (ADR-0005, ADR-0030), over `search_document`
  * aliased `sd`. Every query of the index and the load of the vectors have it, so that a document that two complete
- * pulls in a row have not listed is in no result and in no scan, and `get_document` still serves it.
+ * pulls in a row have not listed is in no result and in no scan, and `get_document` still serves it. A document
+ * with no row in `feed_row_state` is one no complete pull has listed: it reads as listed, not yet checked.
  */
 const listedDocument =
-  "EXISTS (SELECT 1 FROM feed_row_state fr WHERE fr.document_id = sd.document_id AND fr.listed = 1)";
+  "NOT EXISTS (SELECT 1 FROM feed_row_state fr WHERE fr.document_id = sd.document_id AND fr.listed = 0)";
 
 /** The WHERE terms of a filter over `search_document` (aliased `sd`), and the values they take. */
 function filterTerms(filter: SearchFilter): { sql: string; values: string[] } {
