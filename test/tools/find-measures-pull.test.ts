@@ -516,3 +516,82 @@ describe.for(eras)("find_measures stays inside a page's size, for a %s client", 
     }
   });
 });
+
+// A page counts its items across the groups in their fixed order, so a page can end one group and start the next (#16 F9).
+// The paging cases above fill only the last group. Here the Bureau of Labor and Industries has items in all four groups
+// and a page boundary falls inside two of them. 20 MADE UP Proposed Amendments of SB 69 (SB 69-3 to -22: rows 990301 to
+// 990320, created 2026-01-01 at 08:00, each served with the file of SB 69-2, 26286.pdf) add to the fixture's 12 items of
+// the Bureau (6 derived, 1 Fiscal Impact Statement, 4 named in the text, 1 Testimony) 20 derived and 20 named in the text:
+// 26, 1, 24 and 1 items, 52 in all, which are 5 pages of 12, 12, 12, 12 and 4.
+describe.for(eras)("find_measures counts a page across the groups, for a %s client", (era) => {
+  const amendments = Array.from({ length: 20 }, (_, index) => ({
+    ProposedAmendmentId: 990301 + index,
+    CommitteeAgendaItemId: 202165,
+    SessionKey: "2025R1",
+    CommitteeCode: "SLB",
+    MeetingDate: "2025-01-30T08:00:00",
+    MeasurePrefix: "SB",
+    MeasureNumber: 69,
+    AmendmentNumber: `-${3 + index}`,
+    Meaning: "Proposed",
+    ProposedAmendmentUrl: `https://olis.oregonlegislature.gov/liz/2025R1/Downloads/ProposedAmendment/${990301 + index}`,
+    CreatedDate: "2026-01-01T08:00:00",
+    ModifiedDate: null,
+  }));
+
+  it("puts each item on one page, and the group a page starts in after the groups before it", async () => {
+    const system = await startSystem({
+      clockAt: "2026-08-01T17:00:00Z",
+      documents: true,
+      serverEnv: { MCP_RATE_LIMIT: "1000" },
+      olis: {
+        strayRows: { CommitteeProposedAmendments: amendments },
+        strayDocuments: Object.fromEntries(
+          amendments.map((row) => [
+            `/liz/2025R1/Downloads/ProposedAmendment/${String(row["ProposedAmendmentId"])}`,
+            "proposed-amendments/26286.pdf",
+          ]),
+        ),
+      },
+    });
+    started.push(system);
+
+    const pages: Found[] = [];
+    for (const page of [1, 2, 3, 4, 5]) {
+      const outcome = await find(system, era, { agency: "bureau-of-labor-and-industries", page });
+      expect(outcome.isError, outcome.text).toBe(false);
+      pages.push(outcome.structured as unknown as Found);
+    }
+
+    const kinds = ["derived", "fiscal-impact-statement", "named-in-text", "testimony"];
+    const countsOn = (found: Found): number[] =>
+      kinds.map((kind) => found.groups.find((group) => group.evidence_kind === kind)?.items.length ?? 0);
+    expect(pages.map((found) => [found.total, found.last_page])).toEqual([
+      [52, 5],
+      [52, 5],
+      [52, 5],
+      [52, 5],
+      [52, 5],
+    ]);
+    expect(pages.map(countsOn)).toEqual([
+      [12, 0, 0, 0],
+      [12, 0, 0, 0],
+      [2, 1, 9, 0],
+      [0, 0, 12, 0],
+      [0, 0, 3, 1],
+    ]);
+    // Every group's items are listed once across the pages, and the group totals are the same on every page.
+    for (const [index, kind] of kinds.entries()) {
+      const listed = pages.flatMap((found) => found.groups.find((group) => group.evidence_kind === kind)?.items ?? []);
+      expect(new Set(listed.map((item) => item.id)).size).toBe(listed.length);
+      expect(listed).toHaveLength([26, 1, 24, 1][index] ?? -1);
+      for (const found of pages) {
+        expect(found.groups.find((group) => group.evidence_kind === kind)?.total).toBe([26, 1, 24, 1][index]);
+      }
+    }
+    // The page that ends the derived group starts the Fiscal Impact Statement group with SB 69's A-Engrossed Version.
+    expect(pages[2]?.groups.find((group) => group.evidence_kind === "fiscal-impact-statement")?.items[0]?.id).toBe(
+      "version-2025r1-sb69-a-engrossed",
+    );
+  });
+});
