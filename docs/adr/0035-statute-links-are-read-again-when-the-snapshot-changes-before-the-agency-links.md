@@ -1,5 +1,5 @@
 ---
-status: accepted; supersedes the sentence of ADR-0015's Consequences that a deployment which changes its snapshot rebuilds the database, and closes the open question ADR-0027's Consequences leave on Statute Links
+status: accepted; supersedes the sentence of ADR-0015's Consequences that a deployment which changes its snapshot rebuilds the database, and closes the open question ADR-0027's Consequences leave on Statute Links; ADR-0047 extends its guard to Testimony's Agency in an Increment
 ---
 
 # Statute Links are read again from the stored text when the snapshot changes, in the step that reads the Agency Links again and before it

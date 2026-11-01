@@ -1,5 +1,5 @@
 ---
-status: accepted; the Consequence that Statute Links are not read again when the snapshot changes is superseded by ADR-0035, and the part that makes `same_as` compare the whole Version entry by ADR-0036
+status: accepted; the Consequence that Statute Links are not read again when the snapshot changes is superseded by ADR-0035, and the part that makes `same_as` compare the whole Version entry by ADR-0036; ADR-0047 says what an Increment does with Testimony's Agency when the snapshot has changed
 ---
 
 # Agency Links are read from the stored text at ingest, one document at a time, and only a Statute Link that amends, repeals or adds to derives one
