@@ -3,10 +3,11 @@
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import type { SessionSpan } from "#/packages/domain/documents.ts";
-import type { SessionKey } from "#/packages/domain/index.ts";
+import { parseSessionKey, type SessionKey } from "#/packages/domain/index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 
 const fullPullRow = z.object({ full_pull_as_of: z.string() });
+const sessionRow = z.object({ session_key: z.string() });
 const startedRow = z.object({ as_of: z.string() });
 const dayRow = z.object({ day: z.string() });
 const sessionDatesRow = z.object({ begin_date: z.string(), end_date: z.string().nullable() });
@@ -15,6 +16,19 @@ const sessionDatesRow = z.object({ begin_date: z.string(), end_date: z.string().
 export function readFullPullAsOf(database: DatabaseSync, session: SessionKey): Timestamp | undefined {
   const row = database.prepare("SELECT full_pull_as_of FROM index_state WHERE session_key = ?").get(session);
   return row === undefined ? undefined : (fullPullRow.parse(row).full_pull_as_of as Timestamp);
+}
+
+/** The Sessions the index holds a completed full pull of, in key order: 2025R1 before 2025S1. */
+export function readSessionsHeld(database: DatabaseSync): SessionKey[] {
+  return database
+    .prepare("SELECT session_key FROM index_state ORDER BY session_key")
+    .all()
+    .map((row) => {
+      const key = sessionRow.parse(row).session_key;
+      const session = parseSessionKey(key);
+      if (session === undefined) throw new Error(`The index holds a Session key that is not an OLIS key: "${key}"`);
+      return session;
+    });
 }
 
 /** When the last increment started, or undefined while there has been none. */

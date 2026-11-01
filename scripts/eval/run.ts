@@ -1,10 +1,11 @@
-// `npm run eval -- --database <path> [--session 2025R1] [--since <iso>]`: runs a Session's acceptance questions against
+// `npm run eval -- --database <path> [--session <key>] [--since <iso>]`: runs a Session's acceptance questions against
 // any built database, prints the report and exits 1 when any question fails (ticket #23, spec #1 story 58). It exits 2
 // when it cannot run at all (no database, a bad option, a question set that is not valid). It reads the database
 // read-only and sends nothing to OLIS. It is never part of `npm test` or `npm run check`.
 //
 //   --database  the SQLite file the ingest worker wrote (required)
-//   --session   the Session whose questions to run (2025R1); the database must hold that Session
+//   --session   the Session whose questions to run, such as 2025R1. Not given, the Session the database holds (it must
+//               hold exactly one, or name one). A Session needs its question set: scripts/eval/questions/<session>.yml.
 //   --since     what "since yesterday" means to every question that says so: an ISO 8601 date or time. Not given, each
 //               question's own: the Pacific day before the moment it is asked at (its `clock`), so no flag is needed.
 // MODEL_PATH names the embedding model's directory as for the server; unset, it is the one `npm run model:fetch` fills.
@@ -16,14 +17,14 @@ import { loadOnnxEmbedder } from "#/packages/embedder/onnx.ts";
 import { modelDirectory } from "../model/files.ts";
 import { formatReport, runEvaluation } from "./runner.ts";
 
-const usage = "usage: node scripts/eval/run.ts --database <path> [--session 2025R1] [--since <iso>]";
+const usage = "usage: node scripts/eval/run.ts --database <path> [--session <key>] [--since <iso>]";
 
 try {
   const { values } = parseArgs({
     args: argv.slice(2),
     options: {
       database: { type: "string" },
-      session: { type: "string", default: "2025R1" },
+      session: { type: "string" },
       since: { type: "string" },
     },
     strict: true,
@@ -41,7 +42,7 @@ try {
   const embedder = await loadOnnxEmbedder({ modelPath, lockPath: modelLockPath, intraOpThreads: 1 });
   const report = await runEvaluation({
     databasePath: values.database,
-    session: values.session,
+    ...(values.session === undefined ? {} : { session: values.session }),
     ...(values.since === undefined ? {} : { since: values.since }),
     embedder,
     modelPath,

@@ -82,6 +82,7 @@ import { openReadConnection } from "./lib/connection.ts";
 import { listedOrUnchecked } from "./lib/listing.ts";
 import {
   readFullPullAsOf,
+  readSessionsHeld,
   readIncrementAsOf,
   readMeetingDays,
   readConveneDays,
@@ -131,6 +132,11 @@ export type IndexReader = {
    * until a full pull has completed.
    */
   asOf(session: SessionKey): Timestamp | undefined;
+  /**
+   * The Sessions the index holds a completed full pull of, in key order. A deployment holds one (ADR-0003); a database
+   * that more than one deployment's worker has written holds more, and a new one none (ticket #82).
+   */
+  sessionsHeld(): SessionKey[];
   /** When the last complete full pull started, or undefined while there has been none. */
   lastFullPull(session: SessionKey): Timestamp | undefined;
   /** When the last increment started, or undefined while there has been none (ticket #17, ADR-0039). */
@@ -1445,6 +1451,9 @@ export function openIndexReader(path: string): IndexReader {
       const increment = incrementOf(session);
       if (full === undefined || increment === undefined) return full;
       return compareTimestamps(increment, full) > 0 ? increment : full;
+    },
+    sessionsHeld() {
+      return readSessionsHeld(database);
     },
     lastFullPull: fullPullOf,
     lastIncrement: incrementOf,

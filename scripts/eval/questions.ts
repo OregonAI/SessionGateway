@@ -61,7 +61,7 @@ const question = z
   });
 
 const questionSet = z.strictObject({
-  /** The Session whose database this set is run against: 2025R1. */
+  /** The Session whose database this set is run against, such as 2025R1. */
   session: z.string().min(1),
   questions: z
     .array(question)
@@ -79,8 +79,8 @@ export function questionAsksSince(each: Question): boolean {
 export type QuestionSet = z.infer<typeof questionSet>;
 
 /** Where a Session's questions are kept. */
-export function questionSetPath(session: string): string {
-  return join(import.meta.dirname, "questions", `${session}.yml`);
+export function questionSetPath(session: string, folder: string = join(import.meta.dirname, "questions")): string {
+  return join(folder, `${session}.yml`);
 }
 
 /** Reads and checks a question set; throws an Error that names the file and what is wrong. */
