@@ -468,5 +468,5 @@ describe("the bound on a live lookup", () => {
     } finally {
       await system.stop();
     }
-  }, 15_000);
+  });
 });

@@ -57,14 +57,26 @@ function runStep(name: string): Promise<StepResult> {
   });
 }
 
-const steps = process.argv.slice(2);
-if (steps.length === 0) {
-  console.error("usage: node scripts/check.ts <npm script> [<npm script> ...]");
+// `--skip <script>` leaves a named step out, so `check:static` is `check` without `test` and the
+// two cannot drift apart.
+const argv = process.argv.slice(2);
+const skipped = new Set<string>();
+const steps: string[] = [];
+for (let index = 0; index < argv.length; index += 1) {
+  const argument = argv[index] ?? "";
+  if (argument === "--skip") {
+    index += 1;
+    skipped.add(argv[index] ?? "");
+  } else steps.push(argument);
+}
+const wanted = steps.filter((step) => !skipped.has(step));
+if (wanted.length === 0) {
+  console.error("usage: node scripts/check.ts <npm script> [<npm script> ...] [--skip <npm script>]");
   process.exit(2);
 }
 
 const results: StepResult[] = [];
-for (const step of steps) results.push(await runStep(step));
+for (const step of wanted) results.push(await runStep(step));
 
 console.log("\n=== check summary ===");
 for (const result of results) {

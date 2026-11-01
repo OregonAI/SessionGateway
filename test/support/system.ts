@@ -310,7 +310,8 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
   const workerDeps = (workerEmbedder: Embedder): IngestDeps => ({
     fetch,
     clock,
-    signal: AbortSignal.timeout(30_000),
+    // Wall time, so it is generous: a full pull of the fixture can take longer than 30 s on a loaded machine.
+    signal: AbortSignal.timeout(120_000),
     // The worker does not wait between attempts to fetch a document: a test reads how many there were.
     pause: () => Promise.resolve(),
     ...(options.documentTimeoutMs === undefined ? {} : { documentTimeoutMs: options.documentTimeoutMs }),

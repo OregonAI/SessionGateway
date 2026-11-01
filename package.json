@@ -12,6 +12,7 @@
   },
   "scripts": {
     "check": "node scripts/check.ts format:check lint typecheck guard:tsc lint:boundaries fixture:verify snapshot:verify model:verify test",
+    "check:static": "npm run --silent check -- --skip test",
     "format:check": "prettier --check \"{src,test,scripts}/**/*.ts\" vitest.config.ts",
     "format": "prettier --write \"{src,test,scripts}/**/*.ts\" vitest.config.ts",
     "lint": "eslint \"{src,test,scripts}/**/*.ts\" vitest.config.ts",
