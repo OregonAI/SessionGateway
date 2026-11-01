@@ -294,3 +294,16 @@ _Avoid_: cache, mirror
 **Chapter table**:
 The Snapshot's table from an ORS chapter to the Agencies whose rules implement its sections, found from the rules' links to ORS sections and each rule's OAR chapter. It is how a Statute Link to a chapter reaches an Agency. It lists a sub-unit, not its parent.
 _Avoid_: statute-to-agency map
+
+### Evaluation
+
+**Acceptance question**:
+One of the questions spec #1 says a release exists to answer, (a) to (f), written as the tool calls an agent would make and what must hold in what it sees. The 2025R1 set (`scripts/eval/questions/2025R1.yml`) keeps (a) as two, one for statutes and one for Fiscal Impact Statements, because they are stories 1 and 2 of the spec, so it has seven. Its expected values are the literals seam 1 already established, and a check names what its question needs, not incidental counts.
+_Avoid_: test case, eval case
+
+**Question set**:
+The acceptance questions of one Session, as a data file named for it (`2025R1.yml`). A later Session's set is another file and needs no change to the code that runs it.
+
+**Evaluation report**:
+What the evaluation runner returns for a database and a question set: the database's As of time, what "since yesterday" meant in the run, and each question as passed or failed with the reason for each failure (the call, the path into its result and what was found there). `npm run eval` prints it and exits 1 when any question failed. "Since yesterday" is the day before the As of time in Pacific time, unless the operator gives `--since`, which a database pulled long after the Session needs. The runner never asks OLIS, so the Live status of any `get_measure` it makes says the lookup failed.
+_Avoid_: test results, score

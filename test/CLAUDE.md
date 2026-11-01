@@ -4,10 +4,12 @@
 
 ## The agreed seams
 
-Spec #1 agreed two seams. Test at these; propose any other seam before writing a test at it.
+Spec #1 agreed two seams, and ticket #23 added a third (the owner approved it on 2026-10-31). Test at these; propose any other seam before writing a test at it.
 
 - **Seam 1: the MCP tools as a black box.** A test starts the fake OLIS at a clock time, runs the ingest worker, and calls tools through an MCP client. It then moves the clock, runs an increment, and calls them again. It asserts what an agent would see.
 - **Seam 2: parser tables.** Extracted document text goes in; Statute Links or Agency Links come out. There is one row per wording variant (`test.for`), and each row quotes a real document and names it.
+
+- **Seam 3: the evaluation runner's report.** A built database and a question set (a data file keyed by Session, `scripts/eval/questions/`) go in; one pass or fail for each question, with the reason for each failure, comes out. The runner calls the same MCP tools in-process, so what a question checks is what an agent would see, but the test asserts the report and not the tools' answers, which seam 1 owns. It runs in `npm test` against a copy of the fixture template, where every question passes, and once against a copy changed so that one fails. By command it runs against any built database (`npm run eval`) and never in `npm test`.
 
 Seam-1 tests read state back through the tools, never through tables, SQL or internal types, so storage and ranking can change without touching a test. Seam-2 tests call a parser package's entry point directly: that entry point is the seam.
 
@@ -49,6 +51,7 @@ The layout is the deep-module one in `src/packages/README.md`:
 - seam 2 lives in the parser package's own `tests/` folder, next to the parser it tests. `ingest/tests/schedule.test.ts` is the one table that is not a parser (what runs at a Pacific time; ticket #17's agreed seam), and the table of amendment numbers is in `domain/tests/`, because the domain parses a number where it mints the id;
 - seam 1 lives in `test/tools/`, one file per kind of database use. Read-only cases and state-changing cases are in separate files (see Database);
 - the names say the kind of database use:
+  - `test/evaluation/` holds seam 3: the evaluation runner's report, in one file (`evaluation-runner.test.ts`) whose header says which databases it copies;
   - `<tool>.test.ts` shares one read-only database, a copy of the run's template (exceptions, in a few words: a file whose subject is the real model, the Statutes Affected Table, the clock or the schedule builds its own, and the files for increments, staleness, revised agendas and the listing tables build a system for each case);
   - `<tool>-pull.test.ts` builds its own for each case, where the pull is the subject (exception: a case that only reads or moves a row may copy the template, and some files let one system serve several cases that run in the order written);
   - `<tool>-feed.test.ts` changes the fake feed (rows, clock, page size), after the pull or before it;
@@ -62,7 +65,7 @@ Seam 1 and the harness span packages, so they live at the top. Every test import
 
 ## Speed and property tests
 
-`npm test` should finish in under a minute, so it runs before every commit. The evaluation run against a full local build (#23) has its own script and never runs in `npm test`.
+`npm test` should finish in under a minute, so it runs before every commit. The evaluation run against a full local build (#23) has its own script (`npm run eval`) and never runs in `npm test`; seam 3's test of the runner runs against the fixture, in-process, and takes a few seconds once the templates are built.
 
 fast-check (`@fast-check/vitest`) covers invariants that tables can't enumerate:
 
