@@ -31,6 +31,7 @@ export const sessionOverviewOutput = z.object({
           recording_log: z.number(),
           testimony: z.number(),
           agenda: z.number(),
+          floor_letter: z.number(),
         })
         .describe("The documents by what they are."),
     })
