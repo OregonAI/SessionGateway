@@ -109,6 +109,30 @@ means every code resolved. An entry in the alias file needs evidence from the fe
 file's `about` entry). The pull also reads the committee members, and the members of a task force are not all
 Legislators, so their names are listed here as unresolved (`CommitteeMembers`) and are not an error.
 
+## Evaluating a build
+
+`npm run eval` runs the acceptance questions of a Session (spec #1, story 58) against any built database, in
+process, through the MCP tools, the way an agent would ask them, and prints each as `PASS` or `FAIL` with the reason
+for a failure. It opens the database read-only and sends nothing to OLIS. It is development tooling, a script under
+`scripts/eval/`; it is not part of `npm test` or `npm run check`, which test it against the fixture.
+
+```
+npm run eval -- --database data/index.db                      # the 2025R1 questions, each at its own moment
+npm run eval -- --database data/index.db --since 2025-01-23   # the same, with "since yesterday" fixed for every question
+```
+
+| Option | Default | What it is |
+|---|---|---|
+| `--database` | none | The SQLite file the ingest worker wrote. Required. |
+| `--session` | `2025R1` | The Session whose questions to run: `scripts/eval/questions/<session>.yml`. The database must hold that Session. |
+| `--since` | each question's own | What "since yesterday" means to every question that says `$since` (question (a)): an ISO 8601 date or time, which overrides the question's own. Not needed: each question names the moment it is asked at (`clock`) and "since yesterday" is the Pacific day before it, so (a) is asked on 2025-01-24 and 2025-01-31, the days after its postings, and passes on any database that holds them, a full build included. |
+
+The exit status is 0 when every question passed, 1 when any failed, and 2 when the run could not be made (no
+database at the path, a bad option, a question set that is not valid). `MODEL_PATH` is read as for the server. A
+question set is data: each question has a `clock` (required when it says `$since`, otherwise the database's as-of time), and lists the tool calls and, for each, checks of the form `{ path, equals | includes |
+atLeast | length | present }` over the tool's structured result (`scripts/eval/paths.ts` says how a path is read), so
+2026R1's questions are another file in `scripts/eval/questions/` with no change to the code.
+
 ## Building in a Claude cloud session
 
 A ticket can be built in a Claude Code cloud session (claude.ai/code) as well as on a local checkout, and
