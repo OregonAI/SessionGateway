@@ -16,7 +16,7 @@ Each top-level folder has its own CLAUDE.md with the rules for that area: `src/`
 A ticket is done when all of these hold:
 
 - Every behaviour box in the ticket maps to a test that went red before the code turned it green, and the PR names the test for each box. Other boxes (a file committed, a note written) name the file or CI run that shows them.
-- `npm run check` exits 0, and the PR pastes its summary: each step's result and the test totals. CI runs the same command.
+- `npm run check` exits 0, and the PR pastes its summary: each step's result and the test totals. CI runs the same steps, sharded.
 - New domain words are in `GLOSSARY.md`. A decision that passes `/domain-modeling`'s three ADR tests is a new ADR (`docs/CLAUDE.md`).
 - `/code-review` against `main` has run, and each finding is fixed or answered in the PR.
 
@@ -26,7 +26,7 @@ A ticket is done when all of these hold:
 
 - `npm ci`: the only way to install.
 - `npm run model:fetch`: downloads the pinned embedding model into `.cache/models/` (gitignored) and sends no request when the files are there and verified. Run it once per checkout, before `npm test`: the search tests load the real model (ADR-0026).
-- `npm run check`: the whole gate. It runs `format:check`, `lint`, `typecheck`, `guard:tsc`, `lint:boundaries`, `fixture:verify`, `snapshot:verify`, `model:verify` and `test`, keeps going after a failure, prints each step's result, and exits 1 if any failed. CI runs `model:fetch` and then the same command.
+- `npm run check`: the whole gate. It runs `format:check`, `lint`, `typecheck`, `guard:tsc`, `lint:boundaries`, `fixture:verify`, `snapshot:verify`, `model:verify` and `test`, keeps going after a failure, prints each step's result, and exits 1 if any failed. CI runs `model:fetch` and then the same steps, with the tests split over shards (`.github/CLAUDE.md`); `npm run check:static` is every step but `test`.
 - `npx vitest run <file>`: one test file, for the inner loop.
 - `npm run format`: rewrites src, test and scripts with Prettier. `test/fixtures/` is never formatted.
 - `npm run eval -- --database <path> [--session <key>] [--since <iso>]`: runs the acceptance questions of the Session the database holds (or of `--session`) (`scripts/eval/questions/`) against any built database, prints each as PASS or FAIL with the reason, and exits 1 when any fails (2 when it cannot run). It reads the database read-only and sends nothing to OLIS. It is not part of `npm run check` or `npm test`; its own test (`test/evaluation/`) is.
