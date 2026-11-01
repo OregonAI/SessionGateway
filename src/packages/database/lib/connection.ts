@@ -210,6 +210,23 @@ const schema = `
     agency_id TEXT
   ) STRICT;
   CREATE INDEX IF NOT EXISTS testimony_measure ON testimony (measure_id);
+  -- What the feed says of each Floor Letter (ADR-0045), written for every FloorLetters row before any file is fetched, so
+  -- that get_measure lists the letters that name a Measure whether or not the file is in, and an increment asks for the ids
+  -- above the highest one held. A row here has a row in "document" only once its file is. measure_id is null for a letter
+  -- that names no Measure; letter_date is the feed's LetterDate, the only date the set has.
+  CREATE TABLE IF NOT EXISTS floor_letter (
+    document_id TEXT NOT NULL PRIMARY KEY,
+    session_key TEXT NOT NULL,
+    floor_letter_id INTEGER NOT NULL,
+    measure_id TEXT,
+    source_url TEXT NOT NULL,
+    chamber TEXT NOT NULL,
+    letter_date TEXT NOT NULL,
+    title TEXT,
+    description TEXT
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS floor_letter_measure ON floor_letter (measure_id);
+  CREATE INDEX IF NOT EXISTS floor_letter_id ON floor_letter (session_key, floor_letter_id);
   -- What reading one file for Statute Links came to, by the file's content hash and what it was read as, so that
   -- two postings of one amendment that share a file share one reading (ADR-0015). Written by the ingest worker
   -- from the stored text, after the files are stored.

@@ -48,6 +48,8 @@ export function entitySetOfDocument(kind: DocumentKind): ListedSet {
       return "CommitteePublicTestimonies";
     case "agenda":
       return "CommitteeMeetings.AgendaUrl";
+    case "floor_letter":
+      return "FloorLetters";
     default:
       return kind satisfies never;
   }

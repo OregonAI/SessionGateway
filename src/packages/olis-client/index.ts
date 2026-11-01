@@ -21,6 +21,7 @@ import {
   readDocumentLinks,
   type Download,
 } from "./lib/documents.ts";
+import { readFloorLetters } from "./lib/floor-letters.ts";
 import { readFloorVoteRows } from "./lib/floor-votes.ts";
 import { readHistoryActionRows } from "./lib/history.ts";
 import { readLegislatorRows } from "./lib/legislators.ts";
@@ -67,7 +68,13 @@ export type OlisClient = {
   readConvenings(session: SessionKey, signal: AbortSignal): Promise<Convening[]>;
   /** The Session's own LegislativeSessions row (its begin and end dates), or undefined when the feed has none (ticket #67). */
   readSessionDates(session: SessionKey, signal: AbortSignal): Promise<SessionDates | undefined>;
-  /** Every document the feed links for the Session, apart from agendas (a meeting's), not yet fetched. */
+  /**
+   * The Session's Floor Letters (ticket #64, ADR-0045), each a document link that carries its row: the whole set, counted
+   * with `$count`, or with `aboveId` only the letters whose `FloorLetterId` is greater (an increment's read: the set has
+   * no dates to ask by).
+   */
+  readFloorLetters(session: SessionKey, aboveId: number | undefined, signal: AbortSignal): Promise<DocumentLink[]>;
+  /** Every document the feed links for the Session, apart from agendas (a meeting's) and Floor Letters, not yet fetched. */
   readDocumentLinks(session: SessionKey, signal: AbortSignal): Promise<DocumentLink[]>;
   /** Fetches one document from OLIS. */
   downloadDocument(link: DocumentLink, signal: AbortSignal): Promise<Download>;
@@ -96,6 +103,7 @@ export function createOlisClient(options: OlisClientOptions): OlisClient {
     readConvenings: (session, signal) => readConvenings(options, session, signal),
     readSessionDates: (session, signal) => readSessionDates(options, session, signal),
     readDocumentLinks: (session, signal) => readDocumentLinks(options, session, signal),
+    readFloorLetters: (session, aboveId, signal) => readFloorLetters(options, session, aboveId, signal),
     downloadDocument: (link, signal) => downloadDocument(options, link, signal),
     downloadStoredDocument: (sourceUrl, signal) => downloadStoredDocument(options, sourceUrl, signal),
     downloadFile: (url, signal) => downloadFile(options, url, signal),

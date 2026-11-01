@@ -241,6 +241,11 @@ export type IndexWriter = {
     increment: Timestamp | undefined;
     fullPullAttempt: Timestamp | undefined;
   };
+  /**
+   * The highest `FloorLetterId` of the Session's Floor Letters the index holds a row of, or undefined while it holds none:
+   * an increment asks OLIS for the ids above it, because the set carries no dates (ADR-0005, ADR-0045).
+   */
+  highestFloorLetterId(session: SessionKey): number | undefined;
   /** Records that a full pull was begun at this time, before it reads, so a pull that is refused still counts for its day. */
   recordFullPullAttempt(session: SessionKey, startedAt: Timestamp): void;
   /** The Pacific dates (YYYY-MM-DD) of the Session's committee meetings the index holds: days the Session meets. */
@@ -523,6 +528,15 @@ export function openIndexWriter(path: string): IndexWriter {
            committee_id = excluded.committee_id, committee_code = excluded.committee_code,
            meeting_at = excluded.meeting_at, agency_id = excluded.agency_id`,
     );
+    const upsertFloorLetter = database.prepare(
+      `INSERT INTO floor_letter (document_id, session_key, floor_letter_id, measure_id, source_url, chamber, letter_date,
+                                   title, description)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (document_id) DO UPDATE SET
+           floor_letter_id = excluded.floor_letter_id, measure_id = excluded.measure_id, source_url = excluded.source_url,
+           chamber = excluded.chamber, letter_date = excluded.letter_date, title = excluded.title,
+           description = excluded.description`,
+    );
     const upsertCreated = database.prepare(
       `INSERT INTO document_created (document_id, created_at) VALUES (?, ?)
          ON CONFLICT (document_id) DO UPDATE SET created_at = excluded.created_at`,
@@ -713,6 +727,22 @@ export function openIndexWriter(path: string): IndexWriter {
           agencyId,
         );
       }
+      // Every Floor Letter row as the feed says it, whether or not its file is fetched (ADR-0045).
+      for (const link of pulled.documentLinks) {
+        const letter = link.floorLetter;
+        if (letter === undefined) continue;
+        upsertFloorLetter.run(
+          link.id,
+          session,
+          letter.floorLetterId,
+          link.relations.find((relation) => relation.relation === "measure")?.to ?? null,
+          link.sourceUrl,
+          letter.chamber,
+          letter.letterDate,
+          letter.title,
+          letter.description,
+        );
+      }
       // When OLIS created the row of each document the feed links.
       for (const link of pulled.documentLinks) {
         if (link.createdAt !== undefined) upsertCreated.run(link.id, link.createdAt);
@@ -876,6 +906,12 @@ export function openIndexWriter(path: string): IndexWriter {
         increment: readIncrementAsOf(database, session),
         fullPullAttempt: readFullPullAttempt(database, session),
       };
+    },
+    highestFloorLetterId(session) {
+      const row = database
+        .prepare("SELECT MAX(floor_letter_id) AS id FROM floor_letter WHERE session_key = ?")
+        .get(session);
+      return z.object({ id: z.number().nullable() }).parse(row).id ?? undefined;
     },
     recordFullPullAttempt(session, startedAt) {
       database

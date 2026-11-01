@@ -479,6 +479,8 @@ describe.for(eras)("get_document for a %s client", (era) => {
             recording_log: 0,
             testimony: 84,
             agenda: 36,
+            // The fixture holds no FloorLetters file (ticket #64).
+            floor_letter: 0,
           },
         },
       });

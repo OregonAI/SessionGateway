@@ -16,6 +16,7 @@ export const documentKinds = [
   "recording_log",
   "testimony",
   "agenda",
+  "floor_letter",
 ] as const;
 export type DocumentKind = (typeof documentKinds)[number];
 
@@ -156,8 +157,16 @@ export function testimonyIdOf(session: SessionKey, commTestId: number): Document
   return `testimony-${session.toLowerCase()}-${commTestId}` as DocumentId;
 }
 
+/**
+ * A Floor Letter (GLOSSARY.md) by the feed's `FloorLetterId`: `floor-letter-2025r1-4220`. The id is the feed's key, which
+ * OLIS numbers in order, so an increment asks for the ids above the highest one held (ADR-0045).
+ */
+export function floorLetterIdOf(session: SessionKey, floorLetterId: number): DocumentId {
+  return `floor-letter-${session.toLowerCase()}-${floorLetterId}` as DocumentId;
+}
+
 const documentIdPattern =
-  /^(version|printed-amendment|posting|analysis|exhibit|recording-log|testimony|agenda|amendment)-(\d{4}[a-z]\d)-([a-z0-9]+(?:-[a-z0-9]+)*)$/i;
+  /^(version|printed-amendment|posting|analysis|exhibit|recording-log|testimony|agenda|floor-letter|amendment)-(\d{4}[a-z]\d)-([a-z0-9]+(?:-[a-z0-9]+)*)$/i;
 
 /**
  * Reads what a caller wrote as the id of a document or of a Proposed Amendment of the deployment's
@@ -390,6 +399,38 @@ export type TestimonyDetails = {
 };
 
 /**
+ * What a FloorLetters row says besides its file (GLOSSARY.md, "Floor Letter"; ADR-0045), every text as the feed writes
+ * it. The set has no created or modified time: `letterDate` is the only date it has.
+ */
+export type FloorLetterDetails = {
+  /** The feed's `FloorLetterId`, the key the letter's id is minted from and an increment reads the set by. */
+  floorLetterId: number;
+  /** The chamber the letter was sent to, from the feed's `Chamber`. */
+  chamber: Chamber;
+  /** The feed's `LetterDate`, in Pacific time with its offset. */
+  letterDate: Timestamp;
+  /** The feed's `LetterTitle`, or null when it gives none. */
+  title: string | null;
+  /** The feed's `LetterDescription`, or null when it gives none. */
+  description: string | null;
+};
+
+/**
+ * One Floor Letter as `get_measure` lists it under the Measure its row names: what the row says, and what the store
+ * holds of its file. The text itself is never in it; `get_document` serves that.
+ */
+export type FloorLetterEntry = FloorLetterDetails & {
+  id: DocumentId;
+  sourceUrl: string;
+  /** Whether the store holds the file. The feed lists the letter either way. */
+  fetched: boolean;
+  /** False once two complete full pulls in a row have not listed the row (ADR-0030). The row is kept and shown. */
+  listed: boolean;
+  /** False when the file has no text layer (a scan); null while the store does not hold the file. */
+  hasTextLayer: boolean | null;
+};
+
+/**
  * One document the feed links, before it is fetched: what the feed says about it, in domain terms.
  * `sourceUrl` is the link as OLIS gives it, percent-encoded; the store keeps it as the document's
  * `source_url`.
@@ -407,7 +448,8 @@ export type DocumentLink = {
   /**
    * The date search files it under: the start of the meeting a document is posted to or for (an agenda, an
    * Exhibit, a Recording Log, Testimony, a posting of a Proposed Amendment), else when the feed created the
-   * row (a Version, a Printed Amendment, an analysis document). Null when the feed gave none.
+   * row (a Version, a Printed Amendment, an analysis document), else the letter's own date (a Floor Letter's
+   * `LetterDate`, the only date its set has). Null when the feed gave none.
    */
   date: Timestamp | null;
   /**
@@ -430,6 +472,8 @@ export type DocumentLink = {
   title?: string;
   /** For Testimony: what the feed's row says besides the file. */
   testimony?: TestimonyDetails;
+  /** For a Floor Letter: what the feed's row says besides the file (ADR-0045). */
+  floorLetter?: FloorLetterDetails;
   relations: DocumentRelation[];
 };
 
@@ -465,6 +509,7 @@ export const pulledEntitySets = [
   "CommitteeMembers",
   "ConveneTimes",
   "LegislativeSessions",
+  "FloorLetters",
 ] as const;
 export type PulledEntitySet = (typeof pulledEntitySets)[number];
 

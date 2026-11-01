@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
 import { documentKinds, parseDocumentReference, relations } from "#/packages/domain/documents.ts";
+import { floorLetterDocumentOutput, floorLetterDocumentShown } from "./floor-letters.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 import { documentListingOutput, documentListingShown } from "./listing.ts";
 import { splitIntoParts } from "./parts.ts";
@@ -49,6 +50,7 @@ export const getDocumentOutput = z.object({
   part_count: z.number().describe("How many parts the text has."),
   text: z.string().describe("This part of the text, exactly as published, with a form feed between pages."),
   related: z.array(related).describe("The nodes this document points at."),
+  floor_letter: floorLetterDocumentOutput,
   ...documentListingOutput,
   as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
   notice: z.string().describe("A reminder that this is not the official record."),
@@ -94,6 +96,7 @@ export function getDocument(
   if (asOf === undefined) {
     throw new Error(`The index holds documents of ${session} but no completed full pull to date them by`);
   }
+  const floorLetter = stored.kind === "floor_letter" ? reader.floorLetterDetails(stored.id) : undefined;
   return {
     kind: "found",
     document: {
@@ -115,6 +118,7 @@ export function getDocument(
         meaning: node.meaning,
         document_id: node.relation === "posted_to" ? node.documentId : null,
       })),
+      ...(floorLetter === undefined ? {} : { floor_letter: floorLetterDocumentShown(floorLetter) }),
       ...documentListingShown(found.listing),
       as_of: asOf,
       notice: NON_OFFICIAL_NOTICE,

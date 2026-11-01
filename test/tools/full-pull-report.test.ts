@@ -7,8 +7,10 @@
 //
 // It covers what the report says of the sets a pull read, of a pull it refused, and of one that is short in a set
 // other than the first; and, for the two sets the schedule reads (ticket #67, ADR-0042), MADE UP ConveneTimes and
-// LegislativeSessions rows counted against $count, a pull short in either refused, and the two-pull rule on a convening.
+// LegislativeSessions rows counted against $count, a pull short in either refused, and the two-pull rule on a convening;
+// and MADE UP FloorLetters rows (ticket #64) counted against $count, and a pull short in FloorLetters refused.
 import { afterEach, describe, expect, it } from "vitest";
+import { withFloorLetters, type MadeUpFloorLetter } from "../support/floor-letters.ts";
 import { callTool, connectClient } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";
 import { stopListing } from "../support/unlisted-rows.ts";
@@ -75,6 +77,8 @@ const fixtureRows = {
   // The fixture holds no file for either set (its README says why), so the fake serves both empty (ticket #67).
   ConveneTimes: 0,
   LegislativeSessions: 0,
+  // The fixture holds no FloorLetters file (ticket #64 leaves real rows to a later rebuild), so the fake serves it empty.
+  FloorLetters: 0,
 } as const;
 
 describe("a full pull that is short of the feed's counts", () => {
@@ -244,5 +248,64 @@ describe("the sets the schedule reads (ticket #67)", () => {
     system.clock.set("2026-08-04T17:00:00Z");
     await system.pullAgain();
     expect(setsOf(system.buildReport())["ConveneTimes"]).toMatchObject({ counted: 1, listed: 1, no_longer_listed: 1 });
+  });
+});
+
+// Ticket #64: the full pull reads FloorLetters with `$count` like every other set. The fixture holds none, so these
+// cases give the fake two MADE UP rows (`madeUpRows`, test/support/floor-letters.ts), which the pull's filter applies to.
+const madeUpLetters: MadeUpFloorLetter[] = [
+  {
+    floorLetterId: 900001,
+    measure: { prefix: "SB", number: 69 },
+    letterDate: "2025-03-04T00:00:00",
+    chamber: "S",
+    title: "Made-up letter on SB 69",
+    description: "Made-up letter of support",
+    lines: ["A made-up floor letter."],
+  },
+  {
+    floorLetterId: 900002,
+    measure: null,
+    letterDate: "2025-03-05T00:00:00",
+    chamber: "H",
+    title: "Made-up petition",
+    description: "Made-up petition",
+    lines: ["A made-up petition."],
+  },
+];
+
+describe("FloorLetters (ticket #64)", () => {
+  async function startWithLetters(): Promise<System> {
+    const system = await startSystem({ clockAt, olis: withFloorLetters(madeUpLetters) });
+    started.push(system);
+    return system;
+  }
+
+  it("counts FloorLetters in the build report, read against $count and listed like every other set", async () => {
+    const system = await startWithLetters();
+
+    expect(setsOf(system.buildReport())["FloorLetters"]).toEqual({
+      entity_set: "FloorLetters",
+      counted: 2,
+      read: 2,
+      complete: true,
+      listed: 2,
+      no_longer_listed: 0,
+    });
+    const letterRequests = system.olis.requests().filter((request) => request.entitySet === "FloorLetters");
+    expect(letterRequests.some((request) => request.isCount)).toBe(true);
+  });
+
+  it("refuses a pull that is short in FloorLetters alone, and names it", async () => {
+    const system = await startWithLetters();
+    system.olis.withholdLastRows(1, "FloorLetters");
+    system.clock.set("2026-08-02T17:00:00Z");
+
+    await expect(system.pullAgain()).rejects.toThrow(/Short read of FloorLetters: OLIS counted 2.*read 1/);
+
+    const sets = setsOf(system.buildReport());
+    expect(sets["FloorLetters"]).toEqual({ entity_set: "FloorLetters", counted: 2, read: 1, complete: false });
+    expect(sets["Measures"]).toMatchObject({ complete: true });
+    expect(system.buildReport()["pull"]).toMatchObject({ complete: false });
   });
 });
