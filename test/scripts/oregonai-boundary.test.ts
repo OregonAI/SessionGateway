@@ -51,7 +51,9 @@ function runNode(tree: string, script: string, args: string[]): Promise<Finished
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
     child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
     child.on("error", reject);
-    child.on("close", (status) => resolve({ status, stdout, stderr }));
+    child.on("close", (status) => {
+      resolve({ status, stdout, stderr });
+    });
   });
 }
 
