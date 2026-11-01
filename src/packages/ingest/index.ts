@@ -440,7 +440,7 @@ async function readFeed(
   olis: OlisClient,
   config: IngestConfig,
   deps: IngestDeps,
-  readSchedule: boolean,
+  kind: "full_pull" | "increment",
 ): Promise<FeedRead> {
   const measures = await olis.readMeasures(config.session, deps.signal);
   const legislatorRows = await olis.readLegislators(config.session, deps.signal);
@@ -453,8 +453,8 @@ async function readFeed(
   const agendaItems = await olis.readAgendaItems(config.session, deps.signal);
   const committeeMembers = await olis.readCommitteeMembers(config.session, deps.signal);
   // The sets the schedule reads (ADR-0042) are whole-Session sets the full pull counts; an increment does not read them.
-  const convenings = readSchedule ? await olis.readConvenings(config.session, deps.signal) : [];
-  const sessionDates = readSchedule ? await olis.readSessionDates(config.session, deps.signal) : undefined;
+  const convenings = kind === "full_pull" ? await olis.readConvenings(config.session, deps.signal) : [];
+  const sessionDates = kind === "full_pull" ? await olis.readSessionDates(config.session, deps.signal) : undefined;
   const links = [
     ...(await olis.readDocumentLinks(config.session, deps.signal)),
     ...meetings.flatMap((meeting) => (meeting.agenda === null ? [] : [meeting.agenda])),
@@ -540,7 +540,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       pause: deps.pause,
     },
   });
-  const feed = await readFeed(olis, config, deps, true);
+  const feed = await readFeed(olis, config, deps, "full_pull");
   const { measures, links } = feed;
 
   // The pull is complete only when every set it read came with as many rows as the feed counted. One that is not
@@ -678,7 +678,7 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
         pause: deps.pause,
       },
     });
-    const feed = await readFeed(olis, config, deps, false);
+    const feed = await readFeed(olis, config, deps, "increment");
     const { record, committeeNames } = feedRecordOf(config, deps, snapshot, feed);
     writer.recordIncrement(config.session, asOf, record);
     const passageCounts: PassageCounts = { passages: 0, keywordOnly: 0, embedded: 0, reused: 0 };

@@ -34,6 +34,7 @@ import {
   type Relation,
   type RelatedNode,
   type TestimonyEntry,
+  type SessionSpan,
 } from "#/packages/domain/documents.ts";
 import {
   measureIdOf,
@@ -137,7 +138,7 @@ export type IndexReader = {
   /** The Pacific dates (YYYY-MM-DD) of the Session's floor convenings (ConveneTimes) the index holds: days the Session meets (ADR-0042). */
   conveneDays(session: SessionKey): string[];
   /** The dates the Session begins and ends on (its LegislativeSessions row), or undefined until a full pull has read the row (ADR-0042). */
-  sessionDates(session: SessionKey): { begin: string; end: string | null } | undefined;
+  sessionDates(session: SessionKey): SessionSpan | undefined;
   /** The version of the OregonAI snapshot the last completed full pull built the index with. */
   snapshotVersion(session: SessionKey): SnapshotVersion | undefined;
   /**

@@ -20,7 +20,6 @@ export function stalenessWarning(reader: IndexReader, config: ServerConfig, cloc
       committeeMeetingDays: reader.meetingDays(config.session),
       conveneDays: reader.conveneDays(config.session),
       session: reader.sessionDates(config.session),
-      at: now,
     }),
     latestUpdate,
     lastFullPull,

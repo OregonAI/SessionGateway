@@ -42,10 +42,7 @@ const TICK_MILLISECONDS = 15 * 60 * 1000;
 type RunKind = "increment" | "full_pull";
 
 /** What the index says of the runs so far and of the days the Session meets. */
-function readState(
-  config: IngestConfig,
-  at: Timestamp,
-): {
+function readState(config: IngestConfig): {
   schedule: SessionSchedule;
   lastRun: Record<RunKind, Timestamp | undefined>;
   /** The last full pull begun, complete or refused: what the day's one full pull is counted from. */
@@ -59,7 +56,6 @@ function readState(
         committeeMeetingDays: writer.meetingDays(config.session),
         conveneDays: writer.conveneDays(config.session),
         session: writer.sessionDates(config.session),
-        at,
       }),
       lastRun: { increment: runs.increment, full_pull: runs.fullPull },
       lastFullPullBegun: runs.fullPullAttempt,
@@ -90,7 +86,7 @@ export async function runIngestLoop(config: IngestConfig, deps: LoopDeps): Promi
     const then = hashSampleAt(lastSample, settings);
     if (then.kind === "hash_sample") hashSampleRan = then.slot;
   }
-  const start = readState(config, formatPacific(deps.clock.now()));
+  const start = readState(config);
   // A full pull counts from when it was begun, so one that was refused for a short read still holds its night.
   const startedAt: Record<RunKind, Timestamp | undefined> = {
     increment: start.lastRun.increment,
@@ -105,7 +101,7 @@ export async function runIngestLoop(config: IngestConfig, deps: LoopDeps): Promi
   while (!deps.signal.aborted) {
     const now = deps.clock.now();
     const at = formatPacific(now);
-    const state = readState(config, at);
+    const state = readState(config);
     const due: Due = whatRunsAt(at, settings, state.schedule);
     // An increment reads from the last run, so it waits for a first full pull.
     const ready = due.kind !== "increment" || state.lastRun.full_pull !== undefined;

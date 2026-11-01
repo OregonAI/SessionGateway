@@ -2,6 +2,7 @@
 // server) and the writer (the worker's loop) read the same rows, so the queries are written once, here.
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
+import type { SessionSpan } from "#/packages/domain/documents.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 
@@ -45,10 +46,7 @@ export function readConveneDays(database: DatabaseSync, session: SessionKey): st
 }
 
 /** The dates the Session begins and ends on (its LegislativeSessions row), or undefined while no full pull has read the row. */
-export function readSessionDates(
-  database: DatabaseSync,
-  session: SessionKey,
-): { begin: string; end: string | null } | undefined {
+export function readSessionDates(database: DatabaseSync, session: SessionKey): SessionSpan | undefined {
   const row = database.prepare("SELECT begin_date, end_date FROM session_dates WHERE session_key = ?").get(session);
   if (row === undefined) return undefined;
   const parsed = sessionDatesRow.parse(row);

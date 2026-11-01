@@ -23,9 +23,10 @@ import {
   type SessionSchedule,
 } from "../schedule.ts";
 
-const noMeetings: SessionSchedule = { meetingDays: new Set(), inProgress: false };
-const meets = (...days: string[]): SessionSchedule => ({ meetingDays: new Set(days), inProgress: false });
-const inProgress: SessionSchedule = { meetingDays: new Set(), inProgress: true };
+const noMeetings: SessionSchedule = { meetingDays: new Set(), session: undefined };
+const meets = (...days: string[]): SessionSchedule => ({ meetingDays: new Set(days), session: undefined });
+// A Session in progress for every date the table asks about.
+const inProgress: SessionSchedule = { meetingDays: new Set(), session: { begin: "2000-01-01", end: null } };
 
 const nothing: Due = { kind: "nothing" };
 const increment = (slot: string): Due => ({ kind: "increment", slot });
@@ -698,7 +699,6 @@ describe("what runs at a Pacific time, with the schedule built from the index's 
       committeeMeetingDays: committeeDays ?? [],
       conveneDays: conveneDays ?? [],
       session,
-      at: timestamp,
     });
 
     expect(whatRunsAt(timestamp, { increments: "15min", fullPull: "weekly" }, schedule)).toEqual(expected);
@@ -1074,4 +1074,23 @@ test.for([
   expect(hashSampleDeadline(timestamp, { increments: "daily", fullPull: fullPullSetting })).toBe(
     expected === undefined ? undefined : readTimestamp(expected),
   );
+});
+
+// Ticket #67 review: one schedule, asked about dates other than the moment it was built. The loop builds it once at
+// start-up and asks it about the last run's slot, so "in progress" is decided from the date asked, not the build time.
+test("a schedule built once decides in progress from the date it is asked about", () => {
+  const schedule = sessionScheduleOf({
+    committeeMeetingDays: [],
+    conveneDays: [],
+    session: { begin: "2025-01-13", end: "2025-03-14" },
+  });
+  const settings = { increments: "15min", fullPull: "weekly" } as const;
+  const at = (text: string) => {
+    const timestamp = readTimestamp(text);
+    if (timestamp === undefined) throw new Error(`${text} is not a time`);
+    return timestamp;
+  };
+
+  expect(whatRunsAt(at("2025-02-05T12:00:00-08:00"), settings, schedule)).toEqual(increment("2025-02-05T12:00"));
+  expect(whatRunsAt(at("2025-03-17T12:00:00-07:00"), settings, schedule)).toEqual(nothing);
 });
