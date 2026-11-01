@@ -227,7 +227,11 @@ describe("the Statutes Affected Table after the snapshot changes", () => {
       rig.system.olis.serveDocument(tablePath, madeUpTable(madeUpRows));
       rig.system.clock.set(fifthPull);
       await rig.system.pullAgain();
-      expect(rig.report()).toEqual({ source_url: tableUrlOn(rig.system.olis.origin), outcome: "unchanged", held: true });
+      expect(rig.report()).toEqual({
+        source_url: tableUrlOn(rig.system.olis.origin),
+        outcome: "unchanged",
+        held: true,
+      });
       expect(await rig.seen()).toMatchObject({ count: 23, retrievedAt: secondPullPacific });
     });
 
@@ -271,7 +275,11 @@ describe("the Statutes Affected Table after the snapshot changes", () => {
       rig.system.olis.serveDocument(tablePath, madeUpTable(madeUpRows));
       rig.system.clock.set(sixthPull);
       await rig.system.pullAgain();
-      expect(rig.report()).toEqual({ source_url: tableUrlOn(rig.system.olis.origin), outcome: "unchanged", held: true });
+      expect(rig.report()).toEqual({
+        source_url: tableUrlOn(rig.system.olis.origin),
+        outcome: "unchanged",
+        held: true,
+      });
       expect(await rig.seen()).toMatchObject({ count: 23, retrievedAt: secondPullPacific });
     });
   });
