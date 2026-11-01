@@ -127,7 +127,11 @@ describe.for(eras)("Floor Letters, for a %s client", (era) => {
     expect(served.structured).toMatchObject({
       kind: "floor_letter",
       source_url: floorLetterSourceUrl(900002),
-      floor_letter: { chamber: "house", letter_date: "2025-03-05T00:00:00-08:00", title: "Made-up lighthouse petition" },
+      floor_letter: {
+        chamber: "house",
+        letter_date: "2025-03-05T00:00:00-08:00",
+        title: "Made-up lighthouse petition",
+      },
       related: [],
     });
     expect(served.structured?.["text"]).toContain("lighthouse keepers");

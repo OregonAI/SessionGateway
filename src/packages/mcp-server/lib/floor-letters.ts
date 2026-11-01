@@ -12,7 +12,10 @@ const rowFields = {
     .describe(
       "The letter's date as the Legislature gives it (LetterDate), in Pacific time with its UTC offset: the only date a floor letter has.",
     ),
-  title: z.string().nullable().describe("The letter's title as the Legislature publishes it, or null when it gives none."),
+  title: z
+    .string()
+    .nullable()
+    .describe("The letter's title as the Legislature publishes it, or null when it gives none."),
   description: z
     .string()
     .nullable()

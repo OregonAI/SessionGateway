@@ -47,7 +47,10 @@ export async function readFloorLetters(
   aboveId: number | undefined,
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
-  const terms = [`SessionKey eq ${literal(session)}`, ...(aboveId === undefined ? [] : [`FloorLetterId gt ${aboveId}`])];
+  const terms = [
+    `SessionKey eq ${literal(session)}`,
+    ...(aboveId === undefined ? [] : [`FloorLetterId gt ${aboveId}`]),
+  ];
   const rows = await readEntitySet(options, "FloorLetters", terms.join(" and "), floorLetterRow, signal);
   return rows
     .filter((row) => row.SessionKey === session && (aboveId === undefined || row.FloorLetterId > aboveId))

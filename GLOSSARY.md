@@ -128,6 +128,10 @@ _Avoid_: amendment, unqualified
 A document a person or organization submitted to a committee on a Measure or topic.
 _Avoid_: comment, letter
 
+**Floor Letter**:
+A letter sent to a chamber's floor, published as a FloorLetters row and a file: a Document that carries its row's Chamber, LetterDate, title and description, and the Measure it names when it names one. Its LetterDate is the only date it has, and an increment picks it up by its FloorLetterId (ADR-0045).
+_Avoid_: floor document, letter, unqualified
+
 **Position**:
 Which side of a Measure a Testimony takes, from the feed's `PositionOnMeasureId`: 3983 support, 3982 oppose, 3981 neutral, 4022 unknown. Any other id is shown under its number and labelled "unlisted position", never dropped. `testimony` lists a Measure's Testimony by Position.
 _Avoid_: stance, vote
