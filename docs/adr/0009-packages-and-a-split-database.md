@@ -1,3 +1,7 @@
+---
+status: accepted; the sentence "a migration waits for the first release that needs one" is superseded by ADR-0048
+---
+
 # Packages for the tracer bullet and the tickets after it, with the database's writer and reader as two entry points
 
 Spec #1 lists twelve modules, and `src/CLAUDE.md` asks the ticket that first builds any of them to record how they become packages. Ticket #4 builds the path from OLIS to `get_measure`, so seven packages exist after it (`src/packages/`); each later ticket that adds a package or an entry point adds its row to the table below, as ticket #8 did with `legislators`, ticket #15 with `domain/votes.ts`, ticket #21 with `domain/schedule.ts`, ticket #5 with `pdf-text` and `domain/documents.ts`, ticket #10 with `oregonai-snapshot` and `domain/oregonai.ts`, ticket #12 with `domain/analysis.ts`, ticket #6 with `statute-links` and `domain/statute-links.ts`, ticket #7 with `agency-links`, ticket #13 with `readAmendedVersionHeader` and the reader and writer methods for Statute Links, and ticket #9 with `embedder`, `search`, `domain/search.ts`, `domain/citations.ts` and `database/search.ts`, ticket #16 with `domain/agency-links.ts`, and the sections after the table say what that ticket changed. Each package's root files are its entry points; everything below them is hidden (`src/packages/README.md`). The `example/` template stays until the owner deletes it.

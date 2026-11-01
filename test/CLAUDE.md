@@ -4,14 +4,15 @@
 
 ## The agreed seams
 
-Spec #1 agreed two seams, and ticket #23 added a third (the owner approved it on 2026-10-31). Test at these; propose any other seam before writing a test at it.
+Spec #1 agreed two seams, ticket #23 added a third (the owner approved it on 2026-10-31), and the architecture review of 2026-11-01 added a fourth (the owner approved it that day). Test at these; propose any other seam before writing a test at it.
 
 - **Seam 1: the MCP tools as a black box.** A test starts the fake OLIS at a clock time, runs the ingest worker, and calls tools through an MCP client. It then moves the clock, runs an increment, and calls them again. It asserts what an agent would see.
 - **Seam 2: parser tables.** Extracted document text goes in; Statute Links or Agency Links come out. There is one row per wording variant (`test.for`), and each row quotes a real document and names it.
 
 - **Seam 3: the evaluation runner's report.** A built database and a question set (a data file keyed by Session, `scripts/eval/questions/`) go in; one pass or fail for each question, with the reason for each failure, comes out. The runner calls the same MCP tools in-process, so what a question checks is what an agent would see, but the test asserts the report and not the tools' answers, which seam 1 owns. It runs in `npm test` against a copy of the fixture template, where every question passes, and once against a copy changed so that one fails. By command it runs against any built database (`npm run eval`) and never in `npm test`.
+- **Seam 4: a deep module's entry point.** A package entry point that holds a rule otherwise spread over storage and its callers (the Snapshot read, the Listing, the Statute Links of a Measure, the tool result envelope, the Index's schema) is called directly, with its real collaborators and, where it stores, a WAL database in a temp directory of its own. No fake OLIS and no MCP client: a case arranges state through package entry points and asserts what the entry point returns or what package entry points read back. It covers the rule's own cases, fast; seam 1 stays the check of what an agent sees, and the seam-1 tests of the rule stay as they are.
 
-Seam-1 tests read state back through the tools, never through tables, SQL or internal types, so storage and ranking can change without touching a test. Seam-2 tests call a parser package's entry point directly: that entry point is the seam.
+Seam-1 tests read state back through the tools, never through tables, SQL or internal types, so storage and ranking can change without touching a test. Seam-2 tests call a parser package's entry point directly: that entry point is the seam. Seam-4 tests read state back the same way, through entry points, never through tables or SQL.
 
 ## Expected values
 
@@ -51,6 +52,7 @@ Expected values are literals from an independent source:
 The layout is the deep-module one in `src/packages/README.md`:
 
 - seam 2 lives in the parser package's own `tests/` folder, next to the parser it tests. `ingest/tests/schedule.test.ts` is the one table that is not a parser (what runs at a Pacific time; ticket #17's agreed seam), and the table of amendment numbers is in `domain/tests/`, because the domain parses a number where it mints the id;
+- seam 4 lives in the package's own `tests/` folder, next to the entry point it tests, as seam 2 does;
 - seam 1 lives in `test/tools/`, one file per kind of database use. Read-only cases and state-changing cases are in separate files (see Database);
 - the names say the kind of database use:
   - `test/evaluation/` holds seam 3: the evaluation runner's report, in one file (`evaluation-runner.test.ts`) whose header says which databases it copies;
