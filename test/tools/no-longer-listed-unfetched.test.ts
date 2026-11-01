@@ -11,6 +11,8 @@
 // SB 69's Exhibit 288650 (the Preliminary SMS of SB 69-2, CommitteeMeetingDocuments) and its Proposed Amendment -2,
 // postings 26286 and 26288 (CommitteeProposedAmendments). `stopListing` makes the fake OLIS stop listing a row; two
 // complete pulls in a row then miss it.
+//
+// It also covers the `fetched` descriptions of the output schemas.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";

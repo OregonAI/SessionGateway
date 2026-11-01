@@ -8,6 +8,9 @@
 //
 // Expected values are literals from the fixture's feed rows (test/fixtures/olis-2025R1/feed/): the
 // Measures rows' CurrentLocation and CurrentCommitteeCode, and the MeasureHistoryActions rows.
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";

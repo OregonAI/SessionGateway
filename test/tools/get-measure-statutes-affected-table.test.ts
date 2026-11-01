@@ -6,6 +6,10 @@
 //
 // Expected values are literals read from the table with `pdftotext -layout` (the rows of each Measure, with their ORS
 // numbers) and from the Versions as `pdftotext` prints them; neither is computed from the other.
+//
+// Its database is built by this file and shared by every case. It is not a copy of the run's template, because the
+// system names the Statutes Affected Table and the table's address is the fake's origin (test/CLAUDE.md, Database,
+// Templates).
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { type StatuteLinks } from "../support/statute-links.ts";

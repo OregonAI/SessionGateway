@@ -8,6 +8,11 @@
 // Introduced Versions of six Measures, four agendas, SB 69's Exhibit 287879 and Proposed Amendment -1,
 // and three of HB 3131's letters. A later clock would include SB 64's Testimony 117281 (395,000
 // characters) and take half a minute to embed with the real model.
+//
+// Its database is built by this file, once, with the real embedder, and is shared by every case: the embedder is
+// the subject, so the system is not a copy of the run's template (test/CLAUDE.md, Database, Templates). It covers
+// paraphrases, citations, Testimony, filters and the shape of a hit.
+// It embeds about 106,000 characters, 53 passages of 15 documents, in about 6 s on one core (measured 2026-10-30); the early clock keeps that small.
 import { afterAll, beforeAll, describe, expect, it, test } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { loadRealEmbedder } from "../support/real-embedder.ts";

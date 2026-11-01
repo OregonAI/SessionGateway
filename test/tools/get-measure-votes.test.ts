@@ -6,6 +6,9 @@
 // Expected values are literals from outside the code: the Legislator Codes, votes and dates are the
 // fixture's CommitteeVotes and MeasureVotes rows (test/fixtures/olis-2025R1/feed/), the names are its
 // Legislators rows, and the id form is the one GLOSSARY.md gives.
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";

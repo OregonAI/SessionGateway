@@ -1,5 +1,8 @@
 // Seam 1 on a real port (test/CLAUDE.md, "MCP client"): the Node adapter, the mount path and, below,
 // the Host and Origin guards. Everything else is tested in-process through handler.fetch.
+//
+// Its systems are copies of the run's template for their options (test/CLAUDE.md, Database, Templates): one for the
+// default server and one for each configured server.
 import { request as httpRequest } from "node:http";
 import { connect } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";

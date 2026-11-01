@@ -5,6 +5,8 @@
 // Cases here change what the fake OLIS answers, so each builds its own system; cases that only read the
 // fixture are in get-measure-analysis.test.ts, and cases that add feed rows are in
 // get-measure-analysis-labels.test.ts. Every case runs once with each client.
+//
+// It covers an analysis document or a Version that the worker could not fetch.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { startSystem, type System, type SystemOptions } from "../support/system.ts";

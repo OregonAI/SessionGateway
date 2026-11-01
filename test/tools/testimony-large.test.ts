@@ -5,6 +5,9 @@
 // served with the same file (Testimony 117165's), as a form letter sent 250 times would be. The fake OLIS serves
 // them as `strayRows` and `strayDocuments`, so the worker pulls them as it would any row. One database serves
 // every case in this file because none of them changes it.
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";

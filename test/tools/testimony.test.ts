@@ -4,6 +4,9 @@
 // and an MCP client calls the tool in-process. One database serves every case in this file because none
 // of them changes it. The cases that need rows the fixture lacks are in testimony-made-up.test.ts and
 // testimony-large.test.ts.
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";

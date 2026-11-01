@@ -10,6 +10,9 @@
 // (test/fixtures/olis-2025R1/documents/), the Statutes Affected Table
 // (documents/reports/artables2025R1.pdf; docs/research/olis-odata.md §5) and the snapshot file
 // (test/fixtures/oregonai-snapshot/snapshot.json).
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { chapterTarget, expectedLinks, sectionTarget, triplesOf, type StatuteLinks } from "../support/statute-links.ts";

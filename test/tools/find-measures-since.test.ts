@@ -5,6 +5,9 @@
 //
 // Expected values are literals from the fixture's feed rows (test/fixtures/olis-2025R1/feed/), read as Pacific
 // time, and from the documents as `pdftotext` prints them.
+//
+// Each simulated day (2025-01-24, 2025-01-31 and 2025-02-04) has one database of its own, a copy of the run's
+// template for that clock (test/CLAUDE.md, Database, Templates); spec #1's case (a) reads them.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";

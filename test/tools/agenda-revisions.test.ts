@@ -9,6 +9,10 @@
 //
 // MADE UP: the revised agenda's file (a PDF written by test/support/made-up-pdf.ts, served at the agenda's own URL),
 // the revision number 2 and the item's Action "Cancelled" that the amended rows carry.
+//
+// Each case is read with both kinds of client. It covers an increment and a full pull that fetch a revised agenda
+// again, its passages replaced in search, a revision number that did not change, and one fetch for each new
+// revision.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { madeUpPdf } from "../support/made-up-pdf.ts";

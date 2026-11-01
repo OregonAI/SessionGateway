@@ -7,6 +7,9 @@
 // 15:16:44, modified 15:20:18 Pacific; the only one whose text holds "riparian planting and cover cropping") and
 // 117166 and 117167 (American Farmland Trust and the Oregon Association of Conservation Districts, created at 16:17
 // and 17:00 the same day; feed/CommitteePublicTestimonies.json).
+//
+// It covers a document absent and then found, a row with only a `CreatedDate` and one with only a `ModifiedDate`,
+// the two-hour overlap, `session_overview`'s `last_increment`, and the two-pull rule across an increment.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { createFixtureCopy } from "../support/made-up-snapshot.ts";

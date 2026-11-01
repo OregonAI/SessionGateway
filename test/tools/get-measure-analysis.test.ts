@@ -4,6 +4,9 @@
 // ingest worker pulls them into a database, and an MCP client calls the tool in-process. One database
 // serves every case in this file because none of them changes it; cases that need a feed row the
 // fixture lacks, or that change a row between two pulls, are in get-measure-analysis-labels.test.ts.
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";
