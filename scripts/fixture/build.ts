@@ -43,6 +43,7 @@ import {
 import type { LinkedBy, ManifestEntry, Row, Unresolved } from "./schema.ts";
 
 const SESSION = "2025R1";
+const committeeMembersSet = "CommitteeMembers";
 const OLIS_ORIGIN = "https://olis.oregonlegislature.gov/";
 const defaultFixture = join(import.meta.dirname, "..", "..", "test", "fixtures", "olis-2025R1");
 
@@ -227,38 +228,61 @@ function select(feed: Map<string, Row[]>, chosen: Chosen[]): Selection {
   };
 
   const unresolved: Array<{ gap: Unresolved; rowIndex: number }> = [];
-  for (let head = 0; head < queue.length; head++) {
-    const [entitySet, rowIndex] = queue[head] as [string, number];
-    const spec = entitySets[entitySet] as (typeof entitySets)[string];
-    const row = (feed.get(entitySet) as Row[])[rowIndex] as Row;
-    for (const ref of spec.refs) {
-      const target = targetKeyOf(row, ref);
-      if (target === null) continue; // a null source value: the row refers to nothing (absent ones were rejected in loadFeed)
-      const targetSpec = entitySets[ref.to] as (typeof entitySets)[string];
-      const targetIndex = indexOf(ref.to).get(keyString(targetSpec.key.map((p) => target[p])));
-      if (targetIndex === undefined) {
-        const gap = makeUnresolved(entitySet, row, ref, target);
-        if (gap === null) {
+  let head = 0;
+  // Follows the references of every queued row until the queue is empty. It runs twice: once from the
+  // Measures' rows, which finds the committees, and again after the committees' members are added.
+  const drain = (): void => {
+    for (; head < queue.length; head++) {
+      const [entitySet, rowIndex] = queue[head] as [string, number];
+      const spec = entitySets[entitySet] as (typeof entitySets)[string];
+      const row = (feed.get(entitySet) as Row[])[rowIndex] as Row;
+      for (const ref of spec.refs) {
+        const target = targetKeyOf(row, ref);
+        if (target === null) continue; // a null source value: the row refers to nothing (absent ones were rejected in loadFeed)
+        const targetSpec = entitySets[ref.to] as (typeof entitySets)[string];
+        const targetIndex = indexOf(ref.to).get(keyString(targetSpec.key.map((p) => target[p])));
+        if (targetIndex === undefined) {
+          const gap = makeUnresolved(entitySet, row, ref, target);
+          if (gap === null) {
+            throw new BuildError(
+              `${describeKey(entitySet, rowKeyOf(entitySet, row))}.${ref.property} refers to ${describeKey(ref.to, target)}, which the full ${SESSION} feed cache does not hold either. ` +
+                `The only documented gaps are the Legislator Codes ${legislatorCodesWithoutRow.join(" and ")} (olis-odata.md section 8, gotcha 4): ` +
+                "find out why this one is missing, then record it in schema.ts with the evidence. " +
+                (entitySet === committeeMembersSet
+                  ? "A CommitteeMembers row that names a person who is no Legislator is not committed: the fixture's README says why."
+                  : ""),
+            );
+          }
+          unresolved.push({ rowIndex, gap });
+          continue;
+        }
+        const targetRow = (feed.get(ref.to) as Row[])[targetIndex] as Row;
+        if (targetSpec.aboutMeasure && hasMeasure(targetRow) && !isChosen(targetRow)) {
           throw new BuildError(
-            `${describeKey(entitySet, rowKeyOf(entitySet, row))}.${ref.property} refers to ${describeKey(ref.to, target)}, which the full ${SESSION} feed cache does not hold either. ` +
-              `The only documented gaps are the Legislator Codes ${legislatorCodesWithoutRow.join(" and ")} (olis-odata.md section 8, gotcha 4): ` +
-              "find out why this one is missing, then record it in schema.ts with the evidence.",
+            `${entitySet} ${JSON.stringify(rowKeyOf(entitySet, row))} refers to ${ref.to} ${JSON.stringify(target)}, ` +
+              `which is about ${String(targetRow["MeasurePrefix"])} ${String(targetRow["MeasureNumber"])}, not in measures.txt. ` +
+              "The closure does not pull in other Measures: add that Measure on purpose, or drop the chosen one.",
           );
         }
-        unresolved.push({ rowIndex, gap });
-        continue;
+        add(ref.to, targetIndex);
       }
-      const targetRow = (feed.get(ref.to) as Row[])[targetIndex] as Row;
-      if (targetSpec.aboutMeasure && hasMeasure(targetRow) && !isChosen(targetRow)) {
-        throw new BuildError(
-          `${entitySet} ${JSON.stringify(rowKeyOf(entitySet, row))} refers to ${ref.to} ${JSON.stringify(target)}, ` +
-            `which is about ${String(targetRow["MeasurePrefix"])} ${String(targetRow["MeasureNumber"])}, not in measures.txt. ` +
-            "The closure does not pull in other Measures: add that Measure on purpose, or drop the chosen one.",
-        );
-      }
-      add(ref.to, targetIndex);
     }
-  }
+  };
+
+  drain();
+  // The members of the committees the closure found, every row of them (ticket #81). Nothing refers to a
+  // CommitteeMembers row, so the closure cannot reach them; each member's committee is already in. Their
+  // Legislator Codes are followed like any other, and one that no Legislators row answers to (a task force's
+  // non-legislator member, olis-odata.md section 8, gotcha 5) stops the build in the loop above.
+  const memberRows = feed.get(committeeMembersSet) ?? [];
+  const keptCommittees = new Set(
+    [...(included.get("Committees") ?? [])].map((i) => String((feed.get("Committees") as Row[])[i]?.["CommitteeCode"])),
+  );
+  memberRows.forEach((row, index) => {
+    if (row["SessionKey"] === SESSION && keptCommittees.has(String(row["CommitteeCode"])))
+      add(committeeMembersSet, index);
+  });
+  drain();
 
   const sorted = new Map<string, number[]>();
   for (const [entitySet, members] of included)
