@@ -1,4 +1,4 @@
-# CI runs the same gate as local work (.github/CLAUDE.md): npm ci, then npm run check. The
+# CI runs the same gate as local work (.github/CLAUDE.md), with its test step sharded. The
 # supply-chain checks are separate jobs, so a new advisory fails its own job and not the gate.
 name: CI
 
@@ -15,8 +15,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
-    name: npm run check
+  # The gate is three kinds of job. `static` runs every step of `npm run check` except the tests, once.
+  # `test` runs the tests split over SHARDS parallel jobs (Vitest's --shard: each test file runs in
+  # exactly one). `check`, named as it always was, is the one result that branch rules and humans read:
+  # it fails when `static` or any shard did not succeed. The suite alone took 18 minutes in one job.
+  static:
+    name: npm run check (all steps but the tests)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -35,7 +39,51 @@ jobs:
           path: .cache/models
           key: model-${{ hashFiles('src/packages/embedder/data/model-lock.json') }}
       - run: npm run model:fetch
-      - run: npm run check
+      - run: npm run check:static
+
+  test:
+    name: tests (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: package.json
+      - run: npm ci
+      # The embedding model is pinned by src/packages/embedder/data/model-lock.json and kept out of the
+      # repository. The cache is keyed on the lock, so a new revision or hash misses it and model:fetch
+      # downloads the files again; on a hit model:fetch checks the files and sends no request.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/models
+          key: model-${{ hashFiles('src/packages/embedder/data/model-lock.json') }}
+      - run: npm run model:fetch
+      - run: npx vitest run --shard=${{ matrix.shard }}/4
+
+  check:
+    name: npm run check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [static, test]
+    if: ${{ always() }}
+    steps:
+      - name: Every step and every shard passed
+        env:
+          STATIC_RESULT: ${{ needs.static.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+        run: |
+          echo "static: $STATIC_RESULT, tests (all shards): $TEST_RESULT"
+          if [ "$STATIC_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ]; then
+            echo "check FAILED"
+            exit 1
+          fi
 
   audit-signatures:
     name: npm audit signatures

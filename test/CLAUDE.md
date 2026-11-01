@@ -63,6 +63,10 @@ The layout is the deep-module one in `src/packages/README.md`:
 
 Seam 1 and the harness span packages, so they live at the top. Every test imports packages only through their entry points, and dependency-cruiser checks both `src` and `test` for it.
 
+## Timeouts under load
+
+Seam-1 tests pull the fixture, which takes seconds alone and much longer when two suites share a machine (load 30-40 on 2026-10-31 and 11-01: a different set of files timed out at Vitest's 5 s default each time, and each passed alone). `vitest.config.ts` therefore sets `testTimeout` and `hookTimeout` to 60 s for every file, and the worker's pull signal in `startSystem` is 120 s. A file that needs more still raises it with `vi.setConfig`. These are limits on a hang, not budgets: a test that waits on a document that hangs shortens that wait with `documentTimeoutMs`, which no timeout here changes.
+
 ## Speed and property tests
 
 `npm test` should finish in under a minute, so it runs before every commit. The evaluation run against a full local build (#23) has its own script (`npm run eval`) and never runs in `npm test`; seam 3's test of the runner runs against the fixture, in-process, and takes a few seconds once the templates are built.
