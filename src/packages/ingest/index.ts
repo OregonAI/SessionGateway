@@ -441,6 +441,7 @@ async function readFeed(
   config: IngestConfig,
   deps: IngestDeps,
   kind: "full_pull" | "increment",
+  floorLettersAbove: number | undefined,
 ): Promise<FeedRead> {
   const measures = await olis.readMeasures(config.session, deps.signal);
   const legislatorRows = await olis.readLegislators(config.session, deps.signal);
@@ -458,6 +459,8 @@ async function readFeed(
   const links = [
     ...(await olis.readDocumentLinks(config.session, deps.signal)),
     ...meetings.flatMap((meeting) => (meeting.agenda === null ? [] : [meeting.agenda])),
+    // FloorLetters carry no dates, so an increment asks for the ids above the highest one held (ADR-0005, ADR-0045).
+    ...(await olis.readFloorLetters(config.session, floorLettersAbove, deps.signal)),
   ];
   return {
     measures,
@@ -540,7 +543,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       pause: deps.pause,
     },
   });
-  const feed = await readFeed(olis, config, deps, "full_pull");
+  const feed = await readFeed(olis, config, deps, "full_pull", undefined);
   const { measures, links } = feed;
 
   // The pull is complete only when every set it read came with as many rows as the feed counted. One that is not
@@ -678,7 +681,7 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
         pause: deps.pause,
       },
     });
-    const feed = await readFeed(olis, config, deps, "increment");
+    const feed = await readFeed(olis, config, deps, "increment", writer.highestFloorLetterId(config.session));
     const { record, committeeNames } = feedRecordOf(config, deps, snapshot, feed);
     writer.recordIncrement(config.session, asOf, record);
     const passageCounts: PassageCounts = { passages: 0, keywordOnly: 0, embedded: 0, reused: 0 };

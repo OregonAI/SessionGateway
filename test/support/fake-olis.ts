@@ -16,8 +16,9 @@
 //  - Timestamps carry no offset (they are Pacific local time, which the fixture rows already are).
 //  - `$filter` is a conjunction of "Property eq 'text'", "Property eq 123" and "Property ge datetime'...'"
 //    terms, the forms the live lookup sends (olis-odata.md section 1 verified `eq`, `ge`, `and` and
-//    `datetime'...'`), and the increments' parenthesised group "(CreatedDate gt datetime'...' or ModifiedDate gt
-//    datetime'...')" (`gt` and `or`, ticket #17). Anything else is refused with 400, and so is a property no row of the set has,
+//    `datetime'...'`), the increments' parenthesised group "(CreatedDate gt datetime'...' or ModifiedDate gt
+//    datetime'...')" (`gt` and `or`, ticket #17), and "FloorLetterId gt 123", the term an increment reads FloorLetters
+//    by (ticket #64). Anything else is refused with 400, and so is a property no row of the set has,
 //    as live OLIS refuses `Nope eq 1`.
 //
 // With `documents: true` it also serves the documents the feed links, as OLIS does: the bytes of each
@@ -81,6 +82,16 @@ export type FakeOlisOptions = {
    * A test adds the feed row that links one through `strayRows`.
    */
   strayDocuments?: Record<string, string>;
+  /**
+   * MADE-UP rows added to the fixture's from the start, by entity set: for a set the fixture holds none of (FloorLetters,
+   * ticket #64). Unlike `strayRows`, the `$filter`, the clock and `amendRows` apply to them as to the fixture's rows.
+   */
+  madeUpRows?: Record<string, Row[]>;
+  /**
+   * MADE-UP documents, by their path on the fake (`/liz/2025R1/Downloads/FloorLetter/900001`): bytes a test builds
+   * (`madeUpPdf`), served from the start whether or not `documents` is on, since the test asked for them by name.
+   */
+  madeUpDocuments?: Record<string, Uint8Array>;
   /** Called at the start of every request, feed or document: how a test makes OLIS take time on the simulated clock. */
   onRequest?: () => void;
 };
@@ -255,13 +266,16 @@ function sendError(response: ServerResponse, status: number, message: string): v
 
 type SimpleTerm =
   | { property: string; operator: "eq"; value: string | number }
-  | { property: string; operator: "ge" | "gt"; value: number };
+  | { property: string; operator: "ge" | "gt"; value: number }
+  /** A number greater than this one: "FloorLetterId gt 4220". */
+  | { property: string; operator: "number_gt"; value: number };
 
 /** A term of the conjunction: one simple term, or a parenthesised group of simple terms joined by " or ". */
 type FilterTerm = SimpleTerm[];
 
 const textTerm = /^(\w+) eq '((?:[^']|'')*)'$/;
 const numberTerm = /^(\w+) eq (-?\d+)$/;
+const numberGreaterTerm = /^(\w+) gt (-?\d+)$/;
 const datetimeTerm = /^(\w+) (ge|gt) datetime'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?)'$/;
 
 /** Splits at a separator that is outside every parenthesis and every quoted text. */
@@ -289,6 +303,10 @@ function parseSimpleTerm(text: string): SimpleTerm | undefined {
   const asText = textTerm.exec(text);
   const asNumber = numberTerm.exec(text);
   const asDatetime = datetimeTerm.exec(text);
+  const asNumberGreater = numberGreaterTerm.exec(text);
+  if (asNumberGreater?.[1] !== undefined && asNumberGreater[2] !== undefined) {
+    return { property: asNumberGreater[1], operator: "number_gt", value: Number(asNumberGreater[2]) };
+  }
   if (asText?.[1] !== undefined && asText[2] !== undefined) {
     return { property: asText[1], operator: "eq", value: asText[2].replaceAll("''", "'") };
   }
@@ -318,7 +336,7 @@ function parseFilter(filter: string): FilterTerm[] | { error: string } {
     const parsed = alternatives.map((alternative) => parseSimpleTerm(alternative));
     if (parsed.some((term) => term === undefined)) {
       return {
-        error: `The fake OLIS understands only "Property eq 'text'", "Property eq 123" and "Property ge datetime'...'" (or gt), joined by " and ", with " or " inside parentheses, not "${text}".`,
+        error: `The fake OLIS understands only "Property eq 'text'", "Property eq 123", "Property gt 123" and "Property ge datetime'...'" (or gt), joined by " and ", with " or " inside parentheses, not "${text}".`,
       };
     }
     terms.push(parsed.filter((term): term is SimpleTerm => term !== undefined));
@@ -328,6 +346,7 @@ function parseFilter(filter: string): FilterTerm[] | { error: string } {
 
 function matchesSimple(row: Row, term: SimpleTerm): boolean {
   const value = row[term.property];
+  if (term.operator === "number_gt") return typeof value === "number" && value > term.value;
   if (term.operator === "ge") return typeof value === "string" && feedWallClock(value) >= term.value;
   if (term.operator === "gt") return typeof value === "string" && feedWallClock(value) > term.value;
   return value === term.value;
@@ -339,6 +358,9 @@ function matches(row: Row, term: FilterTerm): boolean {
 
 export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis> {
   const feed = loadFeed();
+  for (const [entitySet, rows] of Object.entries(options.madeUpRows ?? {})) {
+    feed.set(entitySet, [...(feed.get(entitySet) ?? []), ...rows.map((row) => ({ ...row }))]);
+  }
   const documentPaths = loadDocumentPaths();
   for (const [path, file] of Object.entries(options.strayDocuments ?? {})) {
     documentPaths.set(path, new URL(`documents/${file}`, fixtureDirectory));
@@ -348,6 +370,7 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
     Object.entries(options.documentFailures ?? {}).map(([sourceUrl, list]) => [new URL(sourceUrl).pathname, [...list]]),
   );
   const servedBytes = new Map<string, Uint8Array>();
+  const madeUpDocuments = new Map(Object.entries(options.madeUpDocuments ?? {}));
   const servesDocuments = options.documents === true;
   const pageSize = options.pageSize ?? 5000;
   let withheldRows = options.withholdLastRows ?? 0;
@@ -387,6 +410,12 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
     if (failure !== undefined) {
       if (failure === "hang") return; // no answer: the client's timeout ends the request
       sendText(response, failure, "text/plain", `The fake OLIS fails this document with ${failure}.`);
+      return;
+    }
+    const madeUp = madeUpDocuments.get(path);
+    if (madeUp !== undefined) {
+      response.writeHead(200, { "content-type": "application/pdf", "cache-control": "private" });
+      response.end(madeUp);
       return;
     }
     const file = documentPaths.get(path);

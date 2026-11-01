@@ -22,6 +22,8 @@ export function isKeywordOnly(link: Pick<DocumentLink, "kind" | "label" | "title
     case "proposed_amendment":
     case "analysis":
     case "testimony":
+    // A Floor Letter gets no special search rule (ADR-0002, ADR-0045): it is found by its words and its meaning.
+    case "floor_letter":
       return false;
     default:
       return link.kind satisfies never;
@@ -40,6 +42,8 @@ function titleOf(link: DocumentLink, measure: MeasureId | null, committeeName: s
     case "version":
     case "printed_amendment":
     case "testimony":
+    // A Floor Letter's label is its own title (`LetterTitle`), else its description.
+    case "floor_letter":
       return joined(citation, link.label);
     case "analysis": {
       const version =
