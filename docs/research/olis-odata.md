@@ -339,6 +339,13 @@ Source: `B/<Set>/$count?$filter=SessionKey eq '2025R1'`. **verified**; every cou
 | Legislators | 90 | 90 | 90 | 91 | 3,592 |
 | ConveneTimes | 157 | 42 | 25 | 3 | 2,314 |
 
+Re-measured 2026-11-01 with the same `$count` queries (**verified**), for ADR-0046:
+- **2026R1:** every count equals the table's except CommitteePublicTestimonies, 33,229 (was 33,228).
+- **2025R1:** every count equals the table's except CommitteePublicTestimonies, 99,668 (was 99,665). A closed Session still gains rows.
+- **Document-linking sets** (MeasureDocuments, MeasureAnalysisDocuments, CommitteeMeetingDocuments, CommitteeProposedAmendments, CommitteePublicTestimonies, FloorLetters) sum to 39,297 for 2026R1 and 130,677 for 2025R1, so 2026R1 has about 30% of 2025R1's documents. Not every row carries a file, so this is an upper bound (**inferred**).
+- `B/LegislativeSessions('2026R1')`: BeginDate 2026-02-02, EndDate null, ModifiedDate 2026-07-13T10:30:58.
+- `https://www.oregonlegislature.gov/AutoPubs/artables2026R1.pdf` answers 200.
+
 Breakdowns for 2025R1 (**verified** from the pull):
 - **Measures by prefix:** HB 2,037, SB 1,267, HCR 42, SCR 34, SJR 34, HJR 22, HJM 14, SJM 10, HR 3, SR 3. 634 have a ChapterNumber; 7 were vetoed.
 - **MeasureDocuments by VersionDescription:** Introduced 3,466, A-Engrossed 834, Enrolled 702, House Amendments to Introduced 493, Senate Amendments to Introduced 341, B-Engrossed 139, C-Engrossed 15, and smaller minority-report and conference variants.
