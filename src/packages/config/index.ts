@@ -19,6 +19,8 @@ export type IngestConfig = {
   increments: IncrementsSetting;
   /** The full pull's rhythm: INGEST_FULL_PULL, `weekly` unless set. */
   fullPull: FullPullSetting;
+  /** How many stored documents the nightly hash sample fetches again: INGEST_HASH_SAMPLE_SIZE, 200 unless set (ADR-0040). */
+  hashSampleSize: number;
   /** The one Session this deployment serves (ADR-0003). */
   session: SessionKey;
   olisBaseUrl: string;
@@ -96,6 +98,13 @@ const fullPullSetting = z
 const ingestSchema = z.object({
   INGEST_INCREMENTS: incrementsSetting,
   INGEST_FULL_PULL: fullPullSetting,
+  // About 200 documents a night, as ADR-0005 says. Only the worker samples, so only its schema reads this.
+  INGEST_HASH_SAMPLE_SIZE: z
+    .string()
+    .regex(/^\d+$/, "must be a whole number")
+    .transform(Number)
+    .pipe(z.number().min(1, "must be at least 1"))
+    .default(200),
   SESSION_KEY: sessionKey,
   OLIS_BASE_URL: serviceRoot,
   // Documents are on olis.oregonlegislature.gov, not on the feed's host. Only a test sets this.
@@ -197,6 +206,7 @@ export function loadIngestConfig(env: Environment): IngestConfig {
   return {
     increments: parsed.INGEST_INCREMENTS,
     fullPull: parsed.INGEST_FULL_PULL,
+    hashSampleSize: parsed.INGEST_HASH_SAMPLE_SIZE,
     session: parsed.SESSION_KEY,
     olisBaseUrl: parsed.OLIS_BASE_URL,
     olisDocumentOrigin: parsed.OLIS_DOCUMENT_ORIGIN,

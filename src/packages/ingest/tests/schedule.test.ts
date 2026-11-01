@@ -12,7 +12,15 @@
 import { describe, expect, test } from "vitest";
 import type { FullPullSetting, IncrementsSetting } from "#/packages/config/index.ts";
 import { readTimestamp } from "#/packages/time/pacific.ts";
-import { fullPullDeadline, whatRunsAt, type Due, type SessionSchedule } from "../schedule.ts";
+import {
+  fullPullDeadline,
+  hashSampleAt,
+  hashSampleDeadline,
+  whatRunsAt,
+  type Due,
+  type HashSampleDue,
+  type SessionSchedule,
+} from "../schedule.ts";
 
 const noMeetings: SessionSchedule = { meetingDays: new Set(), inProgress: false };
 const meets = (...days: string[]): SessionSchedule => ({ meetingDays: new Set(days), inProgress: false });
@@ -604,4 +612,344 @@ test.for([
   const timestamp = readTimestamp(at);
   if (timestamp === undefined) throw new Error(`The row's time ${at} is not a time`);
   expect(fullPullDeadline(timestamp)).toBe(expected === undefined ? undefined : readTimestamp(expected));
+});
+
+// The nightly hash sample (ticket #20, ADR-0040): about 200 stored documents fetched again each night. It runs every
+// night, whatever INGEST_INCREMENTS says, once a night, inside 5 pm to 6 am Pacific, and never in the hours the full
+// pull holds (midnight to 6 am of its date). So on a full-pull night it has the evening, 5 pm to midnight; on any other
+// night it has the whole night. Its slot names the night by the date it ends on. Written out from that rule.
+const noSample: HashSampleDue = { kind: "nothing" };
+const sample = (slot: string): HashSampleDue => ({ kind: "hash_sample", slot });
+
+type SampleRow = {
+  name: string;
+  at: string;
+  increments?: IncrementsSetting;
+  fullPull: FullPullSetting;
+  expected: HashSampleDue;
+};
+
+const sampleRows: SampleRow[] = [
+  // weekly: the night that ends on Tuesday 2025-01-07 is an ordinary night
+  {
+    name: "ordinary night: 4:59 pm is before it",
+    at: "2025-01-06T16:59:00-08:00",
+    fullPull: "weekly",
+    expected: noSample,
+  },
+  {
+    name: "ordinary night: 5:00 pm opens it",
+    at: "2025-01-06T17:00:00-08:00",
+    fullPull: "weekly",
+    expected: sample("hash-sample-2025-01-07"),
+  },
+  {
+    name: "ordinary night: 11:59 pm is in it",
+    at: "2025-01-06T23:59:00-08:00",
+    fullPull: "weekly",
+    expected: sample("hash-sample-2025-01-07"),
+  },
+  {
+    name: "ordinary night: past midnight is the same night",
+    at: "2025-01-07T00:00:00-08:00",
+    fullPull: "weekly",
+    expected: sample("hash-sample-2025-01-07"),
+  },
+  {
+    name: "ordinary night: 5:59 am is in it",
+    at: "2025-01-07T05:59:00-08:00",
+    fullPull: "weekly",
+    expected: sample("hash-sample-2025-01-07"),
+  },
+  {
+    name: "ordinary night: 6:00 am closes it",
+    at: "2025-01-07T06:00:00-08:00",
+    fullPull: "weekly",
+    expected: noSample,
+  },
+  {
+    name: "ordinary night: working hours on a meeting day run none",
+    at: "2025-01-08T10:00:00-08:00",
+    fullPull: "weekly",
+    expected: noSample,
+  },
+
+  // weekly: the night that ends on Saturday 2025-01-11 holds the full pull from midnight
+  {
+    name: "full-pull night: 5:00 pm Friday opens its evening",
+    at: "2025-01-10T17:00:00-08:00",
+    fullPull: "weekly",
+    expected: sample("hash-sample-2025-01-11"),
+  },
+  {
+    name: "full-pull night: 11:59 pm is the last minute before the full pull",
+    at: "2025-01-10T23:59:00-08:00",
+    fullPull: "weekly",
+    expected: sample("hash-sample-2025-01-11"),
+  },
+  {
+    name: "full-pull night: midnight starts the full pull, so no sample",
+    at: "2025-01-11T00:00:00-08:00",
+    fullPull: "weekly",
+    expected: noSample,
+  },
+  {
+    name: "full-pull night: 5:59 am is still the full pull's",
+    at: "2025-01-11T05:59:00-08:00",
+    fullPull: "weekly",
+    expected: noSample,
+  },
+  { name: "full-pull night: 6:00 am is out", at: "2025-01-11T06:00:00-08:00", fullPull: "weekly", expected: noSample },
+  {
+    name: "the night after it is ordinary: Saturday 5:00 pm",
+    at: "2025-01-11T17:00:00-08:00",
+    fullPull: "weekly",
+    expected: sample("hash-sample-2025-01-12"),
+  },
+  {
+    name: "the night after it is ordinary: Sunday 12:00 am",
+    at: "2025-01-12T00:00:00-08:00",
+    fullPull: "weekly",
+    expected: sample("hash-sample-2025-01-12"),
+  },
+
+  // nightly: every night holds the full pull, so the sample has the evening of each
+  {
+    name: "nightly: 5:00 pm opens the evening",
+    at: "2025-01-06T17:00:00-08:00",
+    fullPull: "nightly",
+    expected: sample("hash-sample-2025-01-07"),
+  },
+  {
+    name: "nightly: 11:59 pm is the last minute",
+    at: "2025-01-06T23:59:00-08:00",
+    fullPull: "nightly",
+    expected: sample("hash-sample-2025-01-07"),
+  },
+  {
+    name: "nightly: midnight is the full pull's",
+    at: "2025-01-07T00:00:00-08:00",
+    fullPull: "nightly",
+    expected: noSample,
+  },
+  {
+    name: "nightly: 5:59 am is the full pull's",
+    at: "2025-01-07T05:59:00-08:00",
+    fullPull: "nightly",
+    expected: noSample,
+  },
+  { name: "nightly: 6:00 am is out", at: "2025-01-07T06:00:00-08:00", fullPull: "nightly", expected: noSample },
+
+  // monthly: the night that ends on the 1st holds the full pull (2025-04-01 is a Tuesday)
+  {
+    name: "monthly: 5:00 pm on the 31st opens the evening before the 1st",
+    at: "2025-03-31T17:00:00-07:00",
+    fullPull: "monthly",
+    expected: sample("hash-sample-2025-04-01"),
+  },
+  {
+    name: "monthly: midnight of the 1st is the full pull's",
+    at: "2025-04-01T00:00:00-07:00",
+    fullPull: "monthly",
+    expected: noSample,
+  },
+  {
+    name: "monthly: 5:59 am on the 1st is the full pull's",
+    at: "2025-04-01T05:59:00-07:00",
+    fullPull: "monthly",
+    expected: noSample,
+  },
+  {
+    name: "monthly: 5:00 pm on the 1st opens an ordinary night",
+    at: "2025-04-01T17:00:00-07:00",
+    fullPull: "monthly",
+    expected: sample("hash-sample-2025-04-02"),
+  },
+  {
+    name: "monthly: 3 am on the 2nd is in the night that ends on the 2nd",
+    at: "2025-04-02T03:00:00-07:00",
+    fullPull: "monthly",
+    expected: sample("hash-sample-2025-04-02"),
+  },
+
+  // the sample does not follow INGEST_INCREMENTS
+  {
+    name: "increments off: the sample still runs",
+    at: "2025-01-06T17:00:00-08:00",
+    increments: "off",
+    fullPull: "weekly",
+    expected: sample("hash-sample-2025-01-07"),
+  },
+  {
+    name: "increments 15min: the sample still runs in the night",
+    at: "2025-01-06T23:00:00-08:00",
+    increments: "15min",
+    fullPull: "weekly",
+    expected: sample("hash-sample-2025-01-07"),
+  },
+  {
+    name: "increments 15min: 5:00 pm, while the day's increments still run, opens the night",
+    at: "2025-01-06T17:00:00-08:00",
+    increments: "15min",
+    fullPull: "weekly",
+    expected: sample("hash-sample-2025-01-07"),
+  },
+  {
+    name: "increments 15min: working hours run no sample",
+    at: "2025-01-07T10:00:00-08:00",
+    increments: "15min",
+    fullPull: "weekly",
+    expected: noSample,
+  },
+
+  // daylight time begins: Sunday 2025-03-09, 2 am becomes 3 am (monthly: the 9th is an ordinary night)
+  {
+    name: "spring forward: 5:00 pm PST opens the night",
+    at: "2025-03-08T17:00:00-08:00",
+    fullPull: "monthly",
+    expected: sample("hash-sample-2025-03-09"),
+  },
+  {
+    name: "spring forward: 1:59 am PST is in it",
+    at: "2025-03-09T01:59:00-08:00",
+    fullPull: "monthly",
+    expected: sample("hash-sample-2025-03-09"),
+  },
+  {
+    name: "spring forward: 3:00 am PDT is in it, the same night",
+    at: "2025-03-09T03:00:00-07:00",
+    fullPull: "monthly",
+    expected: sample("hash-sample-2025-03-09"),
+  },
+  {
+    name: "spring forward: 5:59 am PDT is the last minute",
+    at: "2025-03-09T05:59:00-07:00",
+    fullPull: "monthly",
+    expected: sample("hash-sample-2025-03-09"),
+  },
+  {
+    name: "spring forward: 6:00 am PDT is out",
+    at: "2025-03-09T06:00:00-07:00",
+    fullPull: "monthly",
+    expected: noSample,
+  },
+  {
+    name: "spring forward, nightly: 3:00 am PDT is the full pull's",
+    at: "2025-03-09T03:00:00-07:00",
+    fullPull: "nightly",
+    expected: noSample,
+  },
+
+  // daylight time ends: Sunday 2025-11-02, 1 am to 2 am happens twice
+  {
+    name: "fall back: 1:30 am PDT, the first time, is in the night",
+    at: "2025-11-02T01:30:00-07:00",
+    fullPull: "weekly",
+    expected: sample("hash-sample-2025-11-02"),
+  },
+  {
+    name: "fall back: 1:30 am PST, the second time, is the same night",
+    at: "2025-11-02T01:30:00-08:00",
+    fullPull: "weekly",
+    expected: sample("hash-sample-2025-11-02"),
+  },
+  {
+    name: "fall back: 5:59 am PST is the last minute",
+    at: "2025-11-02T05:59:00-08:00",
+    fullPull: "weekly",
+    expected: sample("hash-sample-2025-11-02"),
+  },
+  { name: "fall back: 6:00 am PST is out", at: "2025-11-02T06:00:00-08:00", fullPull: "weekly", expected: noSample },
+  {
+    name: "fall back, nightly: 1:30 am PST is the full pull's",
+    at: "2025-11-02T01:30:00-08:00",
+    fullPull: "nightly",
+    expected: noSample,
+  },
+  {
+    name: "fall back, nightly: 11:59 pm the evening before is the sample's",
+    at: "2025-11-01T23:59:00-07:00",
+    fullPull: "nightly",
+    expected: sample("hash-sample-2025-11-02"),
+  },
+];
+
+describe("what the hash sample does at a Pacific time", () => {
+  test.for(sampleRows)("$name", ({ at, increments, fullPull: fullPullSetting, expected }) => {
+    const timestamp = readTimestamp(at);
+    if (timestamp === undefined) throw new Error(`The row's time ${at} is not a time`);
+
+    expect(hashSampleAt(timestamp, { increments: increments ?? "daily", fullPull: fullPullSetting })).toEqual(expected);
+  });
+});
+
+// The moment a sample begun at this time must be over: 6 am of the date its night ends on, or midnight on a full-pull
+// night, when the full pull begins. Nothing when no sample is due then. Written out from the rule.
+test.for([
+  {
+    name: "ordinary night, 5:00 pm",
+    at: "2025-01-06T17:00:00-08:00",
+    fullPull: "weekly",
+    expected: "2025-01-07T06:00:00-08:00",
+  },
+  {
+    name: "ordinary night, 3 am",
+    at: "2025-01-07T03:00:00-08:00",
+    fullPull: "weekly",
+    expected: "2025-01-07T06:00:00-08:00",
+  },
+  {
+    name: "ordinary night, 6:00 am has closed",
+    at: "2025-01-07T06:00:00-08:00",
+    fullPull: "weekly",
+    expected: undefined,
+  },
+  {
+    name: "full-pull night, 5:00 pm ends at midnight",
+    at: "2025-01-10T17:00:00-08:00",
+    fullPull: "weekly",
+    expected: "2025-01-11T00:00:00-08:00",
+  },
+  {
+    name: "full-pull night, 11:59 pm",
+    at: "2025-01-10T23:59:00-08:00",
+    fullPull: "weekly",
+    expected: "2025-01-11T00:00:00-08:00",
+  },
+  {
+    name: "full-pull night, 12:30 am is the full pull's",
+    at: "2025-01-11T00:30:00-08:00",
+    fullPull: "weekly",
+    expected: undefined,
+  },
+  {
+    name: "nightly, 5:00 pm ends at the next midnight",
+    at: "2025-01-06T17:00:00-08:00",
+    fullPull: "nightly",
+    expected: "2025-01-07T00:00:00-08:00",
+  },
+  {
+    name: "monthly, the evening before the 1st, in daylight time",
+    at: "2025-03-31T17:00:00-07:00",
+    fullPull: "monthly",
+    expected: "2025-04-01T00:00:00-07:00",
+  },
+  {
+    name: "the night daylight time begins (UTC-7 by 6 am)",
+    at: "2025-03-08T17:00:00-08:00",
+    fullPull: "monthly",
+    expected: "2025-03-09T06:00:00-07:00",
+  },
+  {
+    name: "the night daylight time ends (UTC-8 by 6 am)",
+    at: "2025-11-01T17:00:00-07:00",
+    fullPull: "weekly",
+    expected: "2025-11-02T06:00:00-08:00",
+  },
+] as const)("a hash sample's deadline: $name", ({ at, fullPull: fullPullSetting, expected }) => {
+  const timestamp = readTimestamp(at);
+  if (timestamp === undefined) throw new Error(`The row's time ${at} is not a time`);
+  expect(hashSampleDeadline(timestamp, { increments: "daily", fullPull: fullPullSetting })).toBe(
+    expected === undefined ? undefined : readTimestamp(expected),
+  );
 });

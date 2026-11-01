@@ -104,6 +104,36 @@ export function whatRunsAt(at: Timestamp, settings: Settings, schedule: SessionS
   }
 }
 
+/** The nightly hash sample (ticket #20, ADR-0040): due or not, with a `slot` that names the night it belongs to. */
+export type HashSampleDue = { kind: "nothing" } | { kind: "hash_sample"; slot: string };
+
+/**
+ * Whether the nightly hash sample is due, and for which night. It is a function of its own beside `whatRunsAt`
+ * because it runs on every night whatever the increments setting is, so one night can hold an increment and the
+ * sample, which a single `Due` cannot say. It never falls in the hours the full pull holds (midnight to 6 am of a
+ * full-pull date): on a full-pull night it has the evening, 5 pm to midnight; on any other night, all of it. Its
+ * slot names the night by the date it ends on, so a caller that asks again in the night knows it has run.
+ */
+export function hashSampleAt(at: Timestamp, settings: Settings): HashSampleDue {
+  const wallClock = wallClockOf(at);
+  const night = nightEndingOn(wallClock);
+  if (night === undefined) return { kind: "nothing" };
+  if (wallClock.hour < NIGHT_ENDS_HOUR && isFullPullDate(night, settings.fullPull)) return { kind: "nothing" };
+  return { kind: "hash_sample", slot: `hash-sample-${night.toString()}` };
+}
+
+/**
+ * The moment a hash sample begun at this time must be over: 6 am of the date its night ends on, or midnight when that
+ * night holds the full pull. Undefined when no sample is due then.
+ */
+export function hashSampleDeadline(at: Timestamp, settings: Settings): Timestamp | undefined {
+  if (hashSampleAt(at, settings).kind === "nothing") return undefined;
+  const night = nightEndingOn(wallClockOf(at));
+  if (night === undefined) return undefined;
+  const closes = isFullPullDate(night, settings.fullPull) ? 0 : NIGHT_ENDS_HOUR;
+  return atPacificLocalTime(night.toPlainDateTime({ hour: closes }));
+}
+
 /** The longest the index may go without an update during working hours, with `15min` increments. */
 export const STALE_AFTER_HOURS = 2;
 
