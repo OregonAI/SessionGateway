@@ -74,8 +74,8 @@ describe.for(eras)("session_overview for a %s client", (era) => {
 
 describe("a build with the committed snapshot fixture", () => {
   // The fixture is the real snapshot, trimmed, so its version is real: the executive-regulatory-frameworks
-  // checkout at commit 58e1839d441addf3ac1e1748c91ce3de78d3f342, which `git log -1` there dates
-  // 2026-09-13T12:36:19-07:00 (the checkout is behind origin/main, which the version shows).
+  // checkout at commit 6c41efefb5683a35437c9db6baf235c2051cef4b (ERF PR #455, ticket #49), which `git log -1` there
+  // dates 2026-10-31T07:13:00-07:00.
   it("reports the version of the ERF checkout it was taken from", async () => {
     const system = await startSystem({ clockAt: "2025-01-29T17:00:00Z" });
     cleanups.push(() => system.stop());
@@ -86,8 +86,8 @@ describe("a build with the committed snapshot fixture", () => {
 
     expect(outcome.structured?.["snapshot"]).toEqual({
       source: "executive-regulatory-frameworks",
-      commit: "58e1839d441addf3ac1e1748c91ce3de78d3f342",
-      commit_date: "2026-09-13T12:36:19-07:00",
+      commit: "6c41efefb5683a35437c9db6baf235c2051cef4b",
+      commit_date: "2026-10-31T07:13:00-07:00",
     });
   });
 });

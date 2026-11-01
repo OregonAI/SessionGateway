@@ -376,6 +376,16 @@ describe.for(eras)("find_measures for a %s client", (era) => {
     const dhs = "department-of-human-services";
     const apd = "department-of-human-services-aging-and-people-with-disabilities-and-developmental-disabilities";
 
+    // Testimony 209256 of HB 3795 has the Organization "ODHS", an alias of the Department since ERF 6c41efefb5 (#49).
+    it("lists HB 3795 under the Department's Testimony, by the alias ODHS", async () => {
+      const items = await allItems({ agency: dhs }, "testimony");
+
+      expect(items.map((item) => [item.id, item.type])).toEqual([["measure-2025r1-hb3795", "measure"]]);
+      expect(items[0]?.evidence.flatMap((group) => group.examples.map((example) => example.document_id))).toEqual([
+        "testimony-2025r1-209256",
+      ]);
+    });
+
     it("lists SB 69 among the Department's statutes, through the sub-unit whose rules implement chapter 659A", async () => {
       const found = await find({ agency: dhs });
 

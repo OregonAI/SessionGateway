@@ -47,6 +47,7 @@
     "construction-contractors-board",
     "department-of-administrative-services",
     "department-of-agriculture",
+    "department-of-agriculture-oregon-sheep-commission",
     "department-of-consumer-and-business-services",
     "department-of-fish-and-wildlife",
     "department-of-human-services",
@@ -57,30 +58,36 @@
     "employment-department",
     "higher-education-coordinating-commission",
     "judicial-department",
+    "land-conservation-and-development-commission",
+    "land-conservation-and-development-department",
     "legislative-assembly",
     "legislative-commission-on-indian-services",
     "legislative-revenue-office",
     "office-of-training-investigations-and-safety",
+    "oregon-agricultural-heritage-commission",
+    "oregon-business-development-commission",
     "oregon-business-development-department",
     "oregon-department-of-education",
     "oregon-department-of-education-early-learning-division",
     "oregon-government-ethics-commission",
     "oregon-health-authority",
+    "oregon-housing-and-community-services-department",
     "oregon-public-employees-retirement-system",
     "oregon-state-treasury",
     "oregon-watershed-enhancement-board",
     "secretary-of-state",
+    "state-board-of-education",
     "water-resources-department"
   ],
   "kept": {
-    "agencies": 114,
+    "agencies": 129,
     "orsSections": 4392,
     "chaptersWithAgencies": 39
   },
   "of": {
-    "agencies": 190,
-    "orsSections": 37534,
-    "chaptersWithAgencies": 439
+    "agencies": 231,
+    "orsSections": 39002,
+    "chaptersWithAgencies": 442
   },
-  "snapshotSha256": "25d2336da841361224e0f1acc4da07d58dd98dd4ad9653fe3250d777d4bec727"
+  "snapshotSha256": "ba13db4b7287aed2f94c5b6b3104e8a3d4d2ec025edb77a0350f25a8adbad839"
 }
