@@ -463,6 +463,8 @@ export const pulledEntitySets = [
   "CommitteeProposedAmendments",
   "CommitteePublicTestimonies",
   "CommitteeMembers",
+  "ConveneTimes",
+  "LegislativeSessions",
 ] as const;
 export type PulledEntitySet = (typeof pulledEntitySets)[number];
 
@@ -551,6 +553,24 @@ export type Meeting = {
   status: string;
   /** The meeting's agenda, when the feed links one. */
   agenda: DocumentLink | null;
+};
+
+/** A floor convening the feed schedules (a ConveneTimes row): a chamber convening on a day. Its day is a day the Session meets (ADR-0042). */
+export type Convening = {
+  session: SessionKey;
+  /** When the chamber convenes, with the Pacific offset. */
+  at: Timestamp;
+  /** The feed's `Chamber`: "H" or "S". */
+  chamber: string;
+};
+
+/** The Session's own row of LegislativeSessions: the dates the Session is in progress between (ADR-0042). */
+export type SessionDates = {
+  session: SessionKey;
+  /** The Pacific date (YYYY-MM-DD) the Session begins on. */
+  begin: string;
+  /** The Pacific date (YYYY-MM-DD) it ends on, or null while the feed gives none (2025R1's row has none). */
+  end: string | null;
 };
 
 /** A meeting as a list shows it: when, whose and what the feed says of its status, without its contents. */

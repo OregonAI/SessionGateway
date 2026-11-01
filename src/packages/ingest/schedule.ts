@@ -22,12 +22,27 @@ export type SessionSchedule = {
 };
 
 /**
- * What the Session has scheduled, from the days the index holds a committee meeting on (ADR-0039). ConveneTimes and the
- * Session's BeginDate and EndDate are not read yet, so no Session is "in progress" here. The worker and the server both
- * build the schedule this way, so the day the Session meets means the same to the schedule and to the staleness rule.
+ * What the Session has scheduled, from the three things the index holds (ADR-0039, ADR-0042): the days with a committee
+ * meeting, the days with a floor convening (ConveneTimes), and the Session's begin and end dates (LegislativeSessions).
+ * A day the Session meets is a day with either, or a weekday while the Session is in progress. `at` is the moment the
+ * schedule is asked about: the Session is in progress when its Pacific date is from the begin date to the end date,
+ * both included. A Session whose end date the feed leaves null is in progress from its begin date on, and one with no
+ * row at all is not in progress. The worker and the server both build the schedule this way, so the day the Session
+ * meets means the same to the schedule and to the staleness rule.
  */
-export function sessionScheduleOf(meetingDays: readonly string[]): SessionSchedule {
-  return { meetingDays: new Set(meetingDays), inProgress: false };
+export function sessionScheduleOf(input: {
+  /** Pacific dates (YYYY-MM-DD) with a committee meeting. */
+  committeeMeetingDays: readonly string[];
+  /** Pacific dates (YYYY-MM-DD) with a floor convening. */
+  conveneDays: readonly string[];
+  /** The Session's begin and end dates (Pacific, YYYY-MM-DD), or undefined while the index holds no row. */
+  session: { begin: string; end: string | null } | undefined;
+  at: Timestamp;
+}): SessionSchedule {
+  const today = wallClockOf(input.at).toPlainDate().toString();
+  const { session } = input;
+  const inProgress = session !== undefined && session.begin <= today && (session.end === null || today <= session.end);
+  return { meetingDays: new Set([...input.committeeMeetingDays, ...input.conveneDays]), inProgress };
 }
 
 /**

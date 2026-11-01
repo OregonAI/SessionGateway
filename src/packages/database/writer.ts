@@ -7,10 +7,12 @@ import {
   type AmendmentHeader,
   type Committee,
   type CommitteeMember,
+  type Convening,
   type DocumentId,
   type DocumentKind,
   type DocumentLink,
   type Meeting,
+  type SessionDates,
   type StoredDocument,
   type TestimonyDetails,
 } from "#/packages/domain/documents.ts";
@@ -30,7 +32,14 @@ import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceToJson } from "./lib/agency-evidence.ts";
 import { openWriteConnection } from "./lib/connection.ts";
-import { readFullPullAsOf, readFullPullAttempt, readIncrementAsOf, readMeetingDays } from "./lib/run-state.ts";
+import {
+  readFullPullAsOf,
+  readFullPullAttempt,
+  readIncrementAsOf,
+  readMeetingDays,
+  readConveneDays,
+  readSessionDates,
+} from "./lib/run-state.ts";
 import { listedRowsOf } from "./lib/listing.ts";
 import { statuteLinkOfRow, statuteLinkRow } from "./lib/statute-link-rows.ts";
 
@@ -106,6 +115,10 @@ export type FullPullRecord = {
   testimony: readonly TestimonyRecord[];
   /** The CommitteeMembers rows, every one: the set's declared key is not unique (`CommitteeMember.key` is the whole row). */
   committeeMembers: readonly CommitteeMember[];
+  /** The ConveneTimes rows: the days with a floor convening. A full pull reads them whole; an increment does not read them (ADR-0042). */
+  convenings: readonly Convening[];
+  /** The Session's LegislativeSessions row, or undefined when the feed has none or the run did not read it. */
+  sessionDates: SessionDates | undefined;
 };
 
 /** A file the store holds that has not been read for Statute Links yet: one document stands for every document with the same file. */
@@ -231,6 +244,10 @@ export type IndexWriter = {
   recordFullPullAttempt(session: SessionKey, startedAt: Timestamp): void;
   /** The Pacific dates (YYYY-MM-DD) of the Session's committee meetings the index holds: days the Session meets. */
   meetingDays(session: SessionKey): string[];
+  /** The Pacific dates (YYYY-MM-DD) of the Session's floor convenings (ConveneTimes) the index holds: days the Session meets (ADR-0042). */
+  conveneDays(session: SessionKey): string[];
+  /** The dates the Session begins and ends on (its LegislativeSessions row), or undefined until a full pull has read the row (ADR-0042). */
+  sessionDates(session: SessionKey): { begin: string; end: string | null } | undefined;
   /** The commit of the snapshot the index reports (the last full pull's), or undefined while it reports none. */
   reportedSnapshotCommit(session: SessionKey): string | undefined;
   /**
@@ -534,6 +551,13 @@ export function openIndexWriter(path: string): IndexWriter {
          VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (session_key, row_key) DO NOTHING`,
     );
+    const upsertConvening = database.prepare(
+      "INSERT INTO convening (session_key, at, chamber) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
+    );
+    const upsertSessionDates = database.prepare(
+      `INSERT INTO session_dates (session_key, begin_date, end_date) VALUES (?, ?, ?)
+         ON CONFLICT (session_key) DO UPDATE SET begin_date = excluded.begin_date, end_date = excluded.end_date`,
+    );
     const insertVersionListing = database.prepare(
       "INSERT OR REPLACE INTO version_listing (document_id, session_key, measure_id, label) VALUES (?, ?, ?, ?)",
     );
@@ -644,6 +668,11 @@ export function openIndexWriter(path: string): IndexWriter {
           member.createdAt,
           member.modifiedAt,
         );
+      }
+      // The days with a floor convening, and the dates the Session is in progress between (ADR-0042).
+      for (const convening of pulled.convenings) upsertConvening.run(session, convening.at, convening.chamber);
+      if (pulled.sessionDates !== undefined) {
+        upsertSessionDates.run(session, pulled.sessionDates.begin, pulled.sessionDates.end);
       }
       // What each meeting lists. A link to any other kind of document, or to no meeting, is not listed.
       for (const link of pulled.documentLinks) {
@@ -857,6 +886,12 @@ export function openIndexWriter(path: string): IndexWriter {
     },
     meetingDays(session) {
       return readMeetingDays(database, session);
+    },
+    conveneDays(session) {
+      return readConveneDays(database, session);
+    },
+    sessionDates(session) {
+      return readSessionDates(database, session);
     },
     reportedSnapshotCommit(session) {
       const row = database.prepare("SELECT commit_sha FROM snapshot_state WHERE session_key = ?").get(session);

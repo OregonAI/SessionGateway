@@ -337,6 +337,21 @@ const schema = `
     modified_at TEXT,
     PRIMARY KEY (session_key, row_key)
   ) STRICT;
+  -- The Session's floor convenings (ConveneTimes, ADR-0042): each day with one is a day the Session meets. at is the
+  -- convening's time with the Pacific offset; a row is told apart by its time and Chamber, the feed's key.
+  CREATE TABLE IF NOT EXISTS convening (
+    session_key TEXT NOT NULL,
+    at TEXT NOT NULL,
+    chamber TEXT NOT NULL,
+    PRIMARY KEY (session_key, at, chamber)
+  ) STRICT;
+  -- The Session's own LegislativeSessions row (ADR-0042): the Pacific dates it begins and ends on. end_date is null while
+  -- the feed gives none.
+  CREATE TABLE IF NOT EXISTS session_dates (
+    session_key TEXT NOT NULL PRIMARY KEY,
+    begin_date TEXT NOT NULL,
+    end_date TEXT
+  ) STRICT;
   -- The two-pull rule (ADR-0005, ADR-0030). feed_pull has a row for each complete full pull of a Session,
   -- numbered from 1; a pull that was refused for being short of its counts has none. feed_row has a row for
   -- every row the index keeps from the feed, by its entity set and its key, with the number of the latest

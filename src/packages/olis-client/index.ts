@@ -1,7 +1,15 @@
 // The OLIS client: the only code that sees the feed's own shapes (src/CLAUDE.md, "Shape"). It reads
 // the OData v3 feed and hands everything else domain types named as GLOSSARY.md names them.
 import type { HistoryAction, Measure, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
-import type { AgendaItem, Committee, CommitteeMember, DocumentLink, Meeting } from "#/packages/domain/documents.ts";
+import type {
+  AgendaItem,
+  Committee,
+  CommitteeMember,
+  Convening,
+  DocumentLink,
+  Meeting,
+  SessionDates,
+} from "#/packages/domain/documents.ts";
 import type { LegislatorRow, Sponsorship } from "#/packages/domain/legislators.ts";
 import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
 import { readCommitteeMembers } from "./lib/committee-members.ts";
@@ -20,6 +28,7 @@ import { readMeasureLive, type MeasureLiveRead } from "./lib/live.ts";
 import { readMeasureRows } from "./lib/measures.ts";
 import { readAgendaItems, readCommittees, readMeetings } from "./lib/meetings.ts";
 import type { OlisClientOptions, SetCount } from "./lib/options.ts";
+import { readConvenings, readSessionDates } from "./lib/schedule.ts";
 import { readSponsorshipRows } from "./lib/sponsors.ts";
 
 export type { Download, OlisClientOptions, MeasureLiveRead, SetCount };
@@ -54,6 +63,10 @@ export type OlisClient = {
    * each entry's `key` is the whole row, and no two rows are taken for one (olis-odata.md section 8, gotcha 5).
    */
   readCommitteeMembers(session: SessionKey, signal: AbortSignal): Promise<CommitteeMember[]>;
+  /** Every ConveneTimes row of the Session: the floor convenings, each day of which is a day the Session meets (ticket #67). */
+  readConvenings(session: SessionKey, signal: AbortSignal): Promise<Convening[]>;
+  /** The Session's own LegislativeSessions row (its begin and end dates), or undefined when the feed has none (ticket #67). */
+  readSessionDates(session: SessionKey, signal: AbortSignal): Promise<SessionDates | undefined>;
   /** Every document the feed links for the Session, apart from agendas (a meeting's), not yet fetched. */
   readDocumentLinks(session: SessionKey, signal: AbortSignal): Promise<DocumentLink[]>;
   /** Fetches one document from OLIS. */
@@ -80,6 +93,8 @@ export function createOlisClient(options: OlisClientOptions): OlisClient {
     readMeetings: (session, signal) => readMeetings(options, session, signal),
     readAgendaItems: (session, signal) => readAgendaItems(options, session, signal),
     readCommitteeMembers: (session, signal) => readCommitteeMembers(options, session, signal),
+    readConvenings: (session, signal) => readConvenings(options, session, signal),
+    readSessionDates: (session, signal) => readSessionDates(options, session, signal),
     readDocumentLinks: (session, signal) => readDocumentLinks(options, session, signal),
     downloadDocument: (link, signal) => downloadDocument(options, link, signal),
     downloadStoredDocument: (sourceUrl, signal) => downloadStoredDocument(options, sourceUrl, signal),

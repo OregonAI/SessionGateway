@@ -12,10 +12,16 @@ export function stalenessWarning(reader: IndexReader, config: ServerConfig, cloc
   const latestUpdate = reader.asOf(config.session);
   const lastFullPull = reader.lastFullPull(config.session);
   if (latestUpdate === undefined || lastFullPull === undefined) return undefined;
+  const now = formatPacific(clock.now());
   const staleness = stalenessAt({
-    now: formatPacific(clock.now()),
+    now,
     settings: { increments: config.increments, fullPull: config.fullPull },
-    schedule: sessionScheduleOf(reader.meetingDays(config.session)),
+    schedule: sessionScheduleOf({
+      committeeMeetingDays: reader.meetingDays(config.session),
+      conveneDays: reader.conveneDays(config.session),
+      session: reader.sessionDates(config.session),
+      at: now,
+    }),
     latestUpdate,
     lastFullPull,
   });
