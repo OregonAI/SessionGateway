@@ -3,20 +3,26 @@
 // pass or fail with the reason for a failure. The tools are the same ones seam 1 tests; what this file asserts is the
 // report, not the tools' answers.
 //
-// The command is `npm run eval -- --database <path> [--session 2025R1] [--since <iso>]`. It runs the question set of the
-// Session (scripts/eval/questions/<session>.yml) against any built database, prints the report and exits 1 when any
-// question fails (2 when it cannot run at all). It never runs in `npm test`: the cases below call the runner's function
-// and, for the exit status, the script as a child process, against copies of the run's templates.
+// The command is `npm run eval -- --database <path> [--session <key>] [--since <iso>]`. It runs the question set of the
+// Session the database holds, or of `--session` (scripts/eval/questions/<session>.yml) against any built database,
+// prints the report and exits 1 when any question fails (2 when it cannot run at all). It never runs in `npm test`: the
+// cases below call the runner's function and, for the exit status, the script as a child process, against copies of the
+// run's templates.
 //
-// Databases (test/CLAUDE.md, Database, Templates). Every case copies a template and only reads it, except the failing
-// case, which changes the fake feed and pulls again so that one answer differs. The templates are the ones
-// find-measures.test.ts and find-measures-since.test.ts already build for the same clocks and options, so a run that
-// holds those files builds nothing more:
+// Databases (test/CLAUDE.md, Database, Templates). Every case copies a template and only reads the copy, except three.
+// The failing case changes the fake feed and pulls again so that one answer differs. The several-Sessions case pulls a
+// second Session (2025S1) into its copy. The no-Session case copies nothing: it makes an empty database with
+// `openIndexWriter`. The 2025R1 templates are the ones find-measures.test.ts and find-measures-since.test.ts already
+// build for the same clocks and options, so a run that holds those files builds nothing more:
 //   - 2026-08-01 10:00 Pacific, documents on: every row of the fixture exists, as in a database built after both
 //     postings. The passing case (with no flags) and the exit-status cases.
 //   - 2025-01-24 12:00 Pacific and 2025-01-31 12:00 Pacific: the days after SB 69's amendments were posted, and after
 //     its Fiscal Impact Statement was. They show that a question fails when the database was built too early to hold
 //     its posting. Each question names the moment it is asked at, so "since yesterday" does not come from these.
+//   - 2026-08-01 10:00 Pacific, documents off, Session 2025S1: a copy of its own template, built once for the file. The
+//     fake feed holds no rows for that Session, so the pull is complete and the database is empty, which is all the
+//     cases for a Session that is not 2025R1 need (ticket #82). They are the one with a MADE UP question set, the one
+//     with no question set, and the command case for a missing set.
 // The embedder is the fake one (test/CLAUDE.md, "The embedder"): no question of the 2025R1 set searches.
 //
 // A question set made up by a case (written to a temp folder and labelled MADE UP) shows that a Session's questions are
@@ -29,7 +35,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatReport, runEvaluation, type EvaluationReport } from "../../scripts/eval/runner.ts";
 import { createFakeEmbedder } from "../support/fake-embedder.ts";
 import { modelPath } from "../support/real-embedder.ts";
+import { openIndexWriter } from "#/packages/database/writer.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";
+import { createTempDatabase } from "../support/temp-database.ts";
 
 // The first case that needs a template builds it (about 10 seconds for the pull of the fixture's documents).
 vi.setConfig({ testTimeout: 60_000 });
@@ -54,14 +62,25 @@ async function start(clockAt: string): Promise<System> {
   return system;
 }
 
-async function evaluate(system: System, extra: { since?: string; questions?: string } = {}): Promise<EvaluationReport> {
+/** No `session` unless a case gives one: the runner then runs the Session the database holds (ticket #82). */
+async function evaluate(
+  system: System,
+  extra: { session?: string; since?: string; questions?: string; questionsFolder?: string } = {},
+): Promise<EvaluationReport> {
   return runEvaluation({
     databasePath: system.database.path,
-    session: "2025R1",
     embedder: await createFakeEmbedder(),
     modelPath: modelPath(),
     ...extra,
   });
+}
+
+/** Writes a folder of question sets (MADE UP), each named for its Session as the runner's own folder is, and returns it. */
+function writeFolder(sets: Record<string, string>): string {
+  const folder = mkdtempSync(join(tmpdir(), "session-gateway-question-sets-"));
+  folders.push(folder);
+  for (const [session, text] of Object.entries(sets)) writeFileSync(join(folder, `${session}.yml`), text);
+  return folder;
 }
 
 /** Writes a question set (MADE UP, not a Session's) and returns its path. */
@@ -310,6 +329,107 @@ questions:
   });
 });
 
+describe("the Session it runs", () => {
+  // Ticket #82. With no session given the runner reads the Session the database holds (the reader's `sessionsHeld`) and
+  // runs scripts/eval/questions/<that Session>.yml. The made-up Session is 2025S1, pulled from the fake OLIS, which
+  // holds no rows of it: a complete pull of a Session with nothing in it. Its question set is MADE UP.
+  const special = (title: string): string => `
+session: 2025S1
+questions:
+  - id: made-up-special
+    title: ${title}
+    steps:
+      - tool: session_overview
+        arguments: {}
+        expect:
+          - { path: session, equals: 2025S1 }
+`;
+
+  async function startSpecial(): Promise<System> {
+    const system = await startCopiedSystem({ clockAt: "2026-08-01T17:00:00Z", sessionKey: "2025S1" });
+    started.push(system);
+    return system;
+  }
+
+  it("runs the fixture build's own Session with no session given", async () => {
+    const system = await startCopiedSystem(augustOptions);
+    started.push(system);
+
+    const report = await runEvaluation({
+      databasePath: system.database.path,
+      embedder: await createFakeEmbedder(),
+      modelPath: modelPath(),
+    });
+
+    expect(report.session).toBe("2025R1");
+    expect(ids(report)).toEqual(questionIds);
+    expect(report.passed).toBe(true);
+  });
+
+  it("runs the question set named for a Session that is not 2025R1, with the server configured for it", async () => {
+    const system = await startSpecial();
+    const questionsFolder = writeFolder({ "2025S1": special("MADE UP, the Session is the database's own") });
+
+    const report = await evaluate(system, { questionsFolder });
+
+    expect(report.session).toBe("2025S1");
+    expect(report.results.map((result) => [result.id, result.passed, result.reasons])).toEqual([
+      ["made-up-special", true, []],
+    ]);
+  });
+
+  it("refuses an explicit session the database does not hold, naming both", async () => {
+    const system = await startCopiedSystem(augustOptions);
+    started.push(system);
+
+    const refusal = evaluate(system, { session: "2026R1" });
+
+    await expect(refusal).rejects.toThrow(/2026R1/);
+    await expect(refusal).rejects.toThrow(/holds 2025R1/);
+  });
+
+  it("refuses a Session that has no question set, naming the missing file", async () => {
+    const system = await startSpecial();
+    const questionsFolder = writeFolder({});
+
+    const refusal = evaluate(system, { questionsFolder });
+
+    await expect(refusal).rejects.toThrow(/no question set for 2025S1/);
+    await expect(refusal).rejects.toThrow(join(questionsFolder, "2025S1.yml"));
+  });
+
+  it("refuses a database that holds more than one Session unless one is named, and runs the one that is", async () => {
+    const system = await startCopiedSystem(augustOptions);
+    started.push(system);
+    await system.pullAnotherSession("2025S1");
+    const questionsFolder = writeFolder({ "2025S1": special("MADE UP, named by --session") });
+
+    const unnamed = evaluate(system, { questionsFolder });
+    await expect(unnamed).rejects.toThrow(/2025R1 and 2025S1/);
+    await expect(unnamed).rejects.toThrow(/--session/);
+
+    const named = await evaluate(system, { questionsFolder, session: "2025S1" });
+    expect(named.session).toBe("2025S1");
+    expect(named.passed).toBe(true);
+    const fixture = await evaluate(system, { session: "2025R1" });
+    expect(fixture.session).toBe("2025R1");
+    expect(fixture.passed).toBe(true);
+  });
+
+  it("refuses a database that holds no completed full pull of any Session", async () => {
+    const database = createTempDatabase();
+    try {
+      openIndexWriter(database.path).close();
+
+      await expect(
+        runEvaluation({ databasePath: database.path, embedder: await createFakeEmbedder(), modelPath: modelPath() }),
+      ).rejects.toThrow(/holds no completed full pull of any Session/);
+    } finally {
+      database.remove();
+    }
+  });
+});
+
 describe("the command", () => {
   const script = join(import.meta.dirname, "..", "..", "scripts", "eval", "run.ts");
 
@@ -328,6 +448,29 @@ describe("the command", () => {
     expect(outcome.status).toBe(0);
     expect(outcome.stdout).toContain("PASS a-statutes");
     expect(outcome.stdout).toContain("7 of 7 questions passed");
+  });
+
+  // Ticket #82: the default is the database's Session, not 2025R1. A 2025S1 database has no committed question set.
+  it("exits 2 and names the missing question set when the database's Session has none", async () => {
+    const system = await startCopiedSystem({ clockAt: "2026-08-01T17:00:00Z", sessionKey: "2025S1" });
+    started.push(system);
+
+    const outcome = run(["--database", system.database.path]);
+
+    expect(outcome.status).toBe(2);
+    expect(outcome.stdout).toBe("");
+    expect(outcome.stderr).toContain(join("questions", "2025S1.yml"));
+  });
+
+  it("exits 2 and names both Sessions when --session is not the one the database holds", async () => {
+    const system = await startCopiedSystem(augustOptions);
+    started.push(system);
+
+    const outcome = run(["--database", system.database.path, "--session", "2026R1"]);
+
+    expect(outcome.status).toBe(2);
+    expect(outcome.stderr).toContain("2026R1");
+    expect(outcome.stderr).toContain("holds 2025R1");
   });
 
   it("exits 1 and names the question when one fails", async () => {

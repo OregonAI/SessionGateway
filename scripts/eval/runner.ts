@@ -11,7 +11,7 @@ import { existsSync } from "node:fs";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { loadServerConfig, type ServerConfig } from "#/packages/config/index.ts";
 import { openIndexReader } from "#/packages/database/reader.ts";
-import { parseSessionKey } from "#/packages/domain/index.ts";
+import { parseSessionKey, type SessionKey } from "#/packages/domain/index.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
 import { createSessionGatewayHandler, type SessionGatewayHandler } from "#/packages/mcp-server/handler.ts";
 import { problemWith } from "./paths.ts";
@@ -21,8 +21,11 @@ import { loadQuestionSet, questionAsksSince, questionSetPath, type Question, typ
 export type EvaluationOptions = {
   /** The built database to read (the ingest worker's `DATABASE_PATH`). */
   databasePath: string;
-  /** The Session the database holds and whose question set is run: 2025R1. */
-  session: string;
+  /**
+   * The Session whose question set is run. Not given, the Session the database holds; given, it must be one the
+   * database holds. A database that holds more than one needs it, and one that holds none cannot be run (ticket #82).
+   */
+  session?: string;
   /**
    * What "since yesterday" means to every question that says `$since`: an ISO 8601 date or time. When it is not given,
    * each question's own: the Pacific day before the moment the question is asked at (its `clock`).
@@ -30,6 +33,8 @@ export type EvaluationOptions = {
   since?: string;
   /** A question set to run instead of the Session's own (scripts/eval/questions/<session>.yml). */
   questions?: string;
+  /** The folder of question sets named for their Sessions, instead of scripts/eval/questions/. */
+  questionsFolder?: string;
   /** Embeds the questions that `search` is asked; the 2025R1 set asks none. */
   embedder: Embedder;
   /** The directory of the embedding model, which the server's configuration names. */
@@ -59,6 +64,27 @@ export type EvaluationReport = {
   /** True when every question passed. */
   passed: boolean;
 };
+
+/**
+ * The Session to run: the one asked for, which the database must hold, or else the one the database holds. A database
+ * that holds none, more than one with none asked for, or not the one asked for, cannot be run (ticket #82).
+ */
+function chooseSession(databasePath: string, held: SessionKey[], asked: SessionKey | undefined): SessionKey {
+  if (held.length === 0) {
+    throw new Error(`The database at ${databasePath} holds no completed full pull of any Session`);
+  }
+  if (asked !== undefined) {
+    if (!held.includes(asked)) {
+      throw new Error(`The database at ${databasePath} holds ${held.join(" and ")}, not ${asked}`);
+    }
+    return asked;
+  }
+  const [only, ...others] = held;
+  if (only === undefined || others.length > 0) {
+    throw new Error(`The database at ${databasePath} holds ${held.join(" and ")}: name the one to run with --session`);
+  }
+  return only;
+}
 
 /** A clock that stands still, so a question about "the next meeting" is asked at the moment it names. */
 const stoppedAt = (moment: Date): { now(): Date } => ({ now: () => new Date(moment) });
@@ -141,25 +167,29 @@ async function runStep(client: Client, step: Step, since: string): Promise<strin
  * that is not valid, throws, because there is nothing to report.
  */
 export async function runEvaluation(options: EvaluationOptions): Promise<EvaluationReport> {
-  const session = parseSessionKey(options.session);
-  if (session === undefined) throw new Error(`"${options.session}" is not an OLIS Session key such as 2025R1`);
+  const given = options.session === undefined ? undefined : parseSessionKey(options.session);
+  if (options.session !== undefined && given === undefined) {
+    throw new Error(`"${options.session}" is not an OLIS Session key such as 2025R1`);
+  }
   if (options.since !== undefined && readTimestamp(options.since) === undefined) {
     throw new Error(
       `"${options.since}" is not a time. Give a date such as 2025-01-23 or a time such as 2025-01-23T16:00:00 (Pacific) or 2025-01-24T00:00:00Z.`,
     );
   }
   if (!existsSync(options.databasePath)) throw new Error(`There is no database at ${options.databasePath}`);
-  const set = loadQuestionSet(options.questions ?? questionSetPath(options.session), options.session);
 
   const reader = openIndexReader(options.databasePath);
+  let session: SessionKey;
   let asOf: string | undefined;
   try {
+    session = chooseSession(options.databasePath, reader.sessionsHeld(), given);
     asOf = reader.asOf(session);
   } finally {
     reader.close();
   }
-  if (asOf === undefined)
-    throw new Error(`The database at ${options.databasePath} holds no completed full pull of ${session}`);
+  // Cannot happen: a held Session has an index_state row, and that is what asOf reads. It narrows the type.
+  if (asOf === undefined) throw new Error(`The database at ${options.databasePath} has no as-of time for ${session}`);
+  const set = loadQuestionSet(options.questions ?? questionSetPath(session, options.questionsFolder), session);
 
   const config = (): ServerConfig =>
     loadServerConfig({
@@ -213,7 +243,7 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
     );
   }
   return {
-    session: options.session,
+    session,
     databasePath: options.databasePath,
     asOf,
     ...(options.since === undefined ? {} : { since: options.since }),

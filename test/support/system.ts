@@ -117,6 +117,11 @@ export type System = {
    */
   pullAgain(options?: { embedder?: Embedder }): Promise<FullPullResult>;
   /**
+   * Runs the worker's full pull for another Session (its first, so it is not an "again") into the same database, as a
+   * deployment would that was pointed at a second Session (ticket #82). The server stays configured for the system's own Session.
+   */
+  pullAnotherSession(sessionKey: string): Promise<FullPullResult>;
+  /**
    * Runs the worker's increment at the clock's time now, into the same database: what a test calls after it moves
    * the clock (and adds rows to the fake) to see what the next increment brings.
    */
@@ -314,6 +319,8 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
   });
   const pull = (pullOptions: { embedder?: Embedder } = {}): Promise<FullPullResult> =>
     runFullPull(loadIngestConfig(env), workerDeps(pullOptions.embedder ?? embedder));
+  const pullSession = (sessionKey: string): Promise<FullPullResult> =>
+    runFullPull(loadIngestConfig({ ...env, SESSION_KEY: sessionKey }), workerDeps(embedder));
   const schedule = async (until: string): Promise<void> => {
     const stop = new AbortController();
     const end = new Date(until).getTime();
@@ -353,6 +360,7 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
       buildReport: () => readReport(database.path, "build-report.json"),
       hashSampleReport: () => readReport(database.path, "hash-sample-report.json"),
       pullAgain: pull,
+      pullAnotherSession: pullSession,
       incrementAgain: increment,
       runSchedule: schedule,
       everyRequestTakes: (milliseconds) => {
