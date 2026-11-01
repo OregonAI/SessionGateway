@@ -1,8 +1,8 @@
 // Seam 1: the Statutes Affected Table's series after the OregonAI snapshot changes between two pulls (ticket #59,
 // ADR-0044, which supersedes part of ADR-0034, and ADR-0035). A series in the table ("345.010 to 345.340") is expanded
 // against the snapshot's ORS section list, as a range in a Version is, so the held table is read again when the
-// snapshot's commit changes though its bytes do not; when the table cannot be fetched on that pull, the held copy's text
-// is read again without fetching.
+// snapshot's commit changes though its bytes do not; when the table cannot be fetched on that pull, or the server gives
+// bytes that are refused as no table, the held copy's text is read again and nothing fetched is stored.
 //
 // Each case is a story of pulls, so it builds its own system (a real pull of the fixture's documents, about four seconds;
 // a system with the table is never copied from a template). Each answer is asked for by a 2026-07-28 client and by a
@@ -46,6 +46,10 @@ const secondPullPacific = "2026-08-02T10:00:00-07:00";
 const thirdPull = "2026-08-03T17:00:00Z";
 const fourthPull = "2026-08-04T17:00:00Z";
 const fifthPull = "2026-08-05T17:00:00Z";
+const sixthPull = "2026-08-06T17:00:00Z";
+
+/** Bytes that are no table (no PDF at all), which the worker refuses and remembers by their hash. */
+const placeholder = new TextEncoder().encode("this is a placeholder, not a table");
 
 /** What get_measure shows of the table for HB 3027: the entries its Introduced Version's text lacks, and the copy's time. */
 type Seen = { count: number; shown: string[]; retrievedAt: string | undefined };
@@ -186,6 +190,88 @@ describe("the Statutes Affected Table after the snapshot changes", () => {
         outcome: statuses[0] === 404 ? "not_published" : "not_fetched",
         held: true,
       });
+      expect(await rig.seen()).toMatchObject({ count: 23, retrievedAt: secondPullPacific });
+    });
+  });
+
+  describe("when the server gives bytes refused as no table at the pull whose snapshot changed", () => {
+    it("reads the held copy's text again with the new section list when it refuses the bytes on first sight (not_read), and keeps the copy and the refusal", async () => {
+      const rig = await openRig();
+      rig.snapshot.changeIt();
+      rig.system.olis.serveDocument(tablePath, placeholder);
+      rig.system.clock.set(thirdPull);
+      await rig.system.pullAgain();
+
+      expect(await rig.seen()).toMatchObject({ count: 23, retrievedAt: secondPullPacific });
+      const refusal = rig.report();
+      expect(refusal).toMatchObject({
+        source_url: tableUrlOn(rig.system.olis.origin),
+        outcome: "not_read",
+        held: true,
+        reason: expect.any(String),
+        entries: 23,
+      });
+
+      // The refusal is remembered: the same bytes with the same snapshot are refused again, and nothing is read again.
+      rig.system.clock.set(fourthPull);
+      await rig.system.pullAgain();
+      expect(rig.report()).toEqual({
+        source_url: tableUrlOn(rig.system.olis.origin),
+        outcome: "refused_unchanged",
+        held: true,
+        reason: refusal?.["reason"],
+      });
+      expect(await rig.seen()).toMatchObject({ count: 23, retrievedAt: secondPullPacific });
+
+      // The held copy's hash is the second pull's: its bytes, given again, are unchanged.
+      rig.system.olis.serveDocument(tablePath, madeUpTable(madeUpRows));
+      rig.system.clock.set(fifthPull);
+      await rig.system.pullAgain();
+      expect(rig.report()).toEqual({ source_url: tableUrlOn(rig.system.olis.origin), outcome: "unchanged", held: true });
+      expect(await rig.seen()).toMatchObject({ count: 23, retrievedAt: secondPullPacific });
+    });
+
+    it("reads the held copy's text again with the new section list when the bytes were refused before (refused_unchanged), and keeps the copy and the refusal", async () => {
+      const rig = await openRig();
+      // A pull of the same snapshot refuses the placeholder and reads nothing again: the table block still counts 22.
+      rig.system.olis.serveDocument(tablePath, placeholder);
+      rig.system.clock.set(thirdPull);
+      await rig.system.pullAgain();
+      const refusal = rig.report();
+      expect(refusal).toEqual({
+        source_url: tableUrlOn(rig.system.olis.origin),
+        outcome: "not_read",
+        held: true,
+        reason: expect.any(String),
+      });
+      expect(await rig.seen()).toMatchObject({ count: 22, retrievedAt: secondPullPacific });
+
+      rig.snapshot.changeIt();
+      rig.system.clock.set(fourthPull);
+      await rig.system.pullAgain();
+
+      expect(await rig.seen()).toMatchObject({ count: 23, retrievedAt: secondPullPacific });
+      expect(rig.report()).toMatchObject({
+        source_url: tableUrlOn(rig.system.olis.origin),
+        outcome: "refused_unchanged",
+        held: true,
+        reason: refusal?.["reason"],
+        entries: 23,
+      });
+
+      // A pull of the same snapshot reads the held copy no further, and the copy's hash is the second pull's.
+      rig.system.clock.set(fifthPull);
+      await rig.system.pullAgain();
+      expect(rig.report()).toEqual({
+        source_url: tableUrlOn(rig.system.olis.origin),
+        outcome: "refused_unchanged",
+        held: true,
+        reason: refusal?.["reason"],
+      });
+      rig.system.olis.serveDocument(tablePath, madeUpTable(madeUpRows));
+      rig.system.clock.set(sixthPull);
+      await rig.system.pullAgain();
+      expect(rig.report()).toEqual({ source_url: tableUrlOn(rig.system.olis.origin), outcome: "unchanged", held: true });
       expect(await rig.seen()).toMatchObject({ count: 23, retrievedAt: secondPullPacific });
     });
   });
