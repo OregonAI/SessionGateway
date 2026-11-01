@@ -175,6 +175,12 @@ const schema = `
     text TEXT NOT NULL
   ) STRICT;
   CREATE INDEX IF NOT EXISTS document_node ON document (node_id);
+  -- The AgendaRevisionNumber a stored agenda was fetched at (ADR-0041): an agenda is fetched again when its meeting's
+  -- row says another one. A table of its own, because a column on "document" would need a migration.
+  CREATE TABLE IF NOT EXISTS agenda_revision (
+    document_id TEXT NOT NULL PRIMARY KEY,
+    revision INTEGER NOT NULL
+  ) STRICT;
   CREATE TABLE IF NOT EXISTS document_relation (
     document_id TEXT NOT NULL,
     relation TEXT NOT NULL,

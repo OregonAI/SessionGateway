@@ -156,6 +156,9 @@ One sitting of a Committee, identified by the Committee and its start time in Pa
 **Agenda**:
 A Meeting's published agenda, a Document of its own.
 
+**Agenda revision**:
+The `AgendaRevisionNumber` on a Meeting's row in the feed, which OLIS raises when the committee posts a changed agenda at the same address. The index keeps the revision each stored Agenda was fetched at; an Agenda is the one Document fetched again, when the row's revision is another one (ADR-0005, ADR-0041). Every other Document is treated as unchanging.
+
 **Agenda item**:
 One line of a Meeting's agenda: a Measure the Committee takes up (a Public Hearing, a Work Session, or both) or another item, such as an executive appointment. The feed's `CommitteeAgendaItems` rows give them, each with its committee, meeting time and kind of meeting, and the Action says what the Committee did with each. The feed's property for the committee is `CommitteCode`; the OLIS client hands it on as the committee's code. An item about no Measure is not a Measure's Schedule (`docs/research/olis-live.md` §2).
 _Avoid_: agenda entry

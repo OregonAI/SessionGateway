@@ -417,6 +417,11 @@ export type DocumentLink = {
    * row gives none.
    */
   createdAt?: Timestamp;
+  /**
+   * For an agenda: the meeting row's `AgendaRevisionNumber`, 0 when the feed gives none. An agenda is the one
+   * document fetched again when this changes (ADR-0005, ADR-0041).
+   */
+  agendaRevision?: number;
   /** For an analysis document: the feed's own `Version` label, "" when the feed gives none. */
   versionLabel?: string;
   /** For an analysis document: the feed's own `IsMinority` flag. */

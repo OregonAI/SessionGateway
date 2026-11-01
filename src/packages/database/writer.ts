@@ -292,6 +292,17 @@ export type IndexWriter = {
    */
   storeDocument(session: SessionKey, document: StoredDocument, search: SearchRecord): void;
   /**
+   * Replaces a stored agenda with the one fetched again after its revision changed (ADR-0041), in one transaction:
+   * the text, hashes, relations, filing, passages, citations and the revision it was fetched at are the new ones,
+   * and no trace of the old text is left in search. The vectors are stored as `storeDocument` stores them.
+   */
+  replaceDocument(session: SessionKey, document: StoredDocument, search: SearchRecord): void;
+  /**
+   * The `AgendaRevisionNumber` each stored agenda was fetched at, by document id. An agenda stored before the revision
+   * was recorded has none.
+   */
+  storedAgendaRevisions(session: SessionKey): Map<DocumentId, number>;
+  /**
    * The files of the Session's stored Versions and postings of Proposed Amendments that have not been read
    * for Statute Links with this snapshot, each once however many documents share it: a file never read, and every
    * file read with another commit, because a range is expanded against the snapshot's section list (ADR-0035).
@@ -339,6 +350,7 @@ export type IndexWriter = {
 };
 
 const idRow = z.object({ id: z.string() });
+const revisionRow = z.object({ id: z.string(), revision: z.number() });
 const pullNumberRow = z.object({ number: z.number() });
 const countRow = z.object({ n: z.number() });
 const memberRow = z.object({ committee_code: z.string(), legislator_code: z.string() });
@@ -720,6 +732,107 @@ export function openIndexWriter(path: string): IndexWriter {
       throw error;
     }
   }
+  /**
+   * Writes one fetched document with its relations, filing, passages, citations and vectors in one transaction. A
+   * document it replaces (an agenda fetched again, ADR-0041) is deleted first, in the same transaction, so a reader
+   * sees the old agenda or the new one and never neither.
+   */
+  function writeDocument(
+    session: SessionKey,
+    document: StoredDocument,
+    search: SearchRecord,
+    replacing: boolean,
+  ): void {
+    const insertDocument = database.prepare(
+      `INSERT INTO document (id, node_id, session_key, kind, label, source_url, retrieved_at, content_hash,
+                             text_hash, page_count, has_text_layer, posted_at, analysis_version_label,
+                             analysis_is_minority, text)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const insertRelation = database.prepare(
+      `INSERT INTO document_relation (document_id, relation, to_id, meaning, provenance) VALUES (?, ?, ?, ?, ?)`,
+    );
+    const insertSearchDocument = database.prepare(
+      `INSERT INTO search_document (document_id, session_key, node_id, kind, title, measure_id, committee_id,
+                                    dated_at, keyword_only)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const insertPassage = database.prepare(
+      "INSERT INTO passage (document_id, ordinal, start_offset, end_offset, text_hash) VALUES (?, ?, ?, ?, ?)",
+    );
+    const insertPassageText = database.prepare("INSERT INTO passage_fts (rowid, text) VALUES (?, ?)");
+    const insertCitation = database.prepare(
+      "INSERT INTO document_citation (citation_id, document_id, first_offset) VALUES (?, ?, ?)",
+    );
+    const insertAgendaRevision = database.prepare("INSERT INTO agenda_revision (document_id, revision) VALUES (?, ?)");
+    const insertVector = database.prepare(
+      "INSERT OR IGNORE INTO passage_vector (text_hash, model_id, vector) VALUES (?, ?, ?)",
+    );
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      if (replacing) {
+        // Each statement reads its result as BigInt: deleting from the contentless FTS5 table leaves the connection's
+        // last rowid beyond what a JavaScript number holds, which `run` would refuse to convert for the next statement.
+        const deleteFor = (sql: string): void => {
+          const statement = database.prepare(sql);
+          statement.setReadBigInts(true);
+          statement.run(document.id);
+        };
+        deleteFor("DELETE FROM passage_fts WHERE rowid IN (SELECT id FROM passage WHERE document_id = ?)");
+        deleteFor("DELETE FROM passage WHERE document_id = ?");
+        deleteFor("DELETE FROM document_citation WHERE document_id = ?");
+        deleteFor("DELETE FROM search_document WHERE document_id = ?");
+        deleteFor("DELETE FROM document_relation WHERE document_id = ?");
+        deleteFor("DELETE FROM agenda_revision WHERE document_id = ?");
+        deleteFor("DELETE FROM document WHERE id = ?");
+      }
+      insertDocument.run(
+        document.id,
+        document.nodeId,
+        session,
+        document.kind,
+        document.label,
+        document.sourceUrl,
+        document.retrievedAt,
+        document.contentHash,
+        document.textHash,
+        document.pageCount,
+        document.hasTextLayer ? 1 : 0,
+        document.postedAt,
+        document.versionLabel ?? null,
+        minorityColumn(document.isMinority),
+        document.text,
+      );
+      for (const relation of document.relations) {
+        insertRelation.run(document.id, relation.relation, relation.to, relation.meaning, relation.provenance);
+      }
+      insertSearchDocument.run(
+        document.id,
+        session,
+        search.entry.nodeId,
+        search.entry.kind,
+        search.entry.title,
+        search.entry.measureId,
+        search.entry.committeeId,
+        search.entry.date,
+        search.entry.keywordOnly ? 1 : 0,
+      );
+      search.passages.forEach((passage, ordinal) => {
+        const inserted = insertPassage.run(document.id, ordinal, passage.start, passage.end, passage.hash);
+        insertPassageText.run(inserted.lastInsertRowid, passage.text);
+      });
+      for (const citation of search.citations) insertCitation.run(citation.id, document.id, citation.index);
+      for (const row of search.vectors.rows) insertVector.run(row.hash, search.vectors.modelId, row.vector);
+      // The vectors of a keyword-only document are not loaded, so storing one changes nothing the server holds.
+      if (document.agendaRevision !== undefined) insertAgendaRevision.run(document.id, document.agendaRevision);
+      if (replacing || (!search.entry.keywordOnly && search.passages.length > 0)) bumpSearchGeneration();
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
   return {
     recordFullPull(session, asOf, pulled) {
       recordRows(session, asOf, pulled, "full_pull");
@@ -910,76 +1023,23 @@ export function openIndexWriter(path: string): IndexWriter {
       }
     },
     storeDocument(session, document, search) {
-      const insertDocument = database.prepare(
-        `INSERT INTO document (id, node_id, session_key, kind, label, source_url, retrieved_at, content_hash,
-                               text_hash, page_count, has_text_layer, posted_at, analysis_version_label,
-                               analysis_is_minority, text)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      writeDocument(session, document, search, false);
+    },
+    replaceDocument(session, document, search) {
+      writeDocument(session, document, search, true);
+    },
+    storedAgendaRevisions(session) {
+      const rows = database
+        .prepare(
+          "SELECT r.document_id AS id, r.revision AS revision FROM agenda_revision r JOIN document d ON d.id = r.document_id WHERE d.session_key = ?",
+        )
+        .all(session);
+      return new Map(
+        rows.map((row) => {
+          const parsed = revisionRow.parse(row);
+          return [parsed.id as DocumentId, parsed.revision];
+        }),
       );
-      const insertRelation = database.prepare(
-        `INSERT INTO document_relation (document_id, relation, to_id, meaning, provenance) VALUES (?, ?, ?, ?, ?)`,
-      );
-      const insertSearchDocument = database.prepare(
-        `INSERT INTO search_document (document_id, session_key, node_id, kind, title, measure_id, committee_id,
-                                      dated_at, keyword_only)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      );
-      const insertPassage = database.prepare(
-        "INSERT INTO passage (document_id, ordinal, start_offset, end_offset, text_hash) VALUES (?, ?, ?, ?, ?)",
-      );
-      const insertPassageText = database.prepare("INSERT INTO passage_fts (rowid, text) VALUES (?, ?)");
-      const insertCitation = database.prepare(
-        "INSERT INTO document_citation (citation_id, document_id, first_offset) VALUES (?, ?, ?)",
-      );
-      const insertVector = database.prepare(
-        "INSERT OR IGNORE INTO passage_vector (text_hash, model_id, vector) VALUES (?, ?, ?)",
-      );
-      database.exec("BEGIN IMMEDIATE");
-      try {
-        insertDocument.run(
-          document.id,
-          document.nodeId,
-          session,
-          document.kind,
-          document.label,
-          document.sourceUrl,
-          document.retrievedAt,
-          document.contentHash,
-          document.textHash,
-          document.pageCount,
-          document.hasTextLayer ? 1 : 0,
-          document.postedAt,
-          document.versionLabel ?? null,
-          minorityColumn(document.isMinority),
-          document.text,
-        );
-        for (const relation of document.relations) {
-          insertRelation.run(document.id, relation.relation, relation.to, relation.meaning, relation.provenance);
-        }
-        insertSearchDocument.run(
-          document.id,
-          session,
-          search.entry.nodeId,
-          search.entry.kind,
-          search.entry.title,
-          search.entry.measureId,
-          search.entry.committeeId,
-          search.entry.date,
-          search.entry.keywordOnly ? 1 : 0,
-        );
-        search.passages.forEach((passage, ordinal) => {
-          const inserted = insertPassage.run(document.id, ordinal, passage.start, passage.end, passage.hash);
-          insertPassageText.run(inserted.lastInsertRowid, passage.text);
-        });
-        for (const citation of search.citations) insertCitation.run(citation.id, document.id, citation.index);
-        for (const row of search.vectors.rows) insertVector.run(row.hash, search.vectors.modelId, row.vector);
-        // The vectors of a keyword-only document are not loaded, so storing one changes nothing the server holds.
-        if (!search.entry.keywordOnly && search.passages.length > 0) bumpSearchGeneration();
-        database.exec("COMMIT");
-      } catch (error) {
-        database.exec("ROLLBACK");
-        throw error;
-      }
     },
     unreadStatuteFiles(session, snapshot) {
       const rows = database
