@@ -19,11 +19,22 @@ point at, and every document they link.
   rows point at: committees (and their parents), meetings, agenda items and the Legislators that
   sponsor and vote rows name. The closure runs one way: another Measure's rows are not pulled in
   because they share a meeting, and the build stops if a reference would pull one in.
-- **Not in the slice.** `CommitteeMembers`, `CommitteeStaffMembers`, `ConveneTimes` and
-  `LegislativeSessions`: no row about a Measure points at them. `verify.ts` still knows what
-  refers to what in the first three. Adding `CommitteeMembers` would need a decision first: its
-  `LegislatorCode` holds the personal names of non-legislator members (`olis-odata.md` section 8,
-  gotcha 5), which no Legislators row matches, and the build stops on a gap that is not documented.
+- **Committee members.** `feed/CommitteeMembers.json` holds every CommitteeMembers row of the
+  slice's committees, parents included: 99 rows for the 12 committees, as the cache has them. No row
+  about a Measure points at a member, so the build adds them after the closure has found the
+  committees, and follows each row's Legislator Code like any other reference. 20 declared keys
+  (CommitteeCode, CreatedDate, Title) are shared by 72 of the rows, for example Rep Helm and
+  Rep Owens, Co-Chairs of HALNRW from one instant, because the set's declared key is not unique
+  (`olis-odata.md` section 8, gotcha 5); the file keeps every row.
+  **Personal names.** The set's `LegislatorCode` holds the personal names of non-legislator members
+  of task forces (gotcha 5), which no Legislators row matches. That decision does not arise here:
+  all 99 rows name a Legislator Code that a Legislators row of the slice answers to (checked on the
+  cache on 2026-10-31: no code is unresolved), and no non-legislator is committed. The cache's
+  task force committees that have such members (JOCSS, for one) are not among the 12. The build
+  stops on a member whose code resolves to no Legislators row, naming it, so a Measure added later
+  whose committee has one needs a decision first, and its README note.
+- **Not in the slice.** `CommitteeStaffMembers`, `ConveneTimes` and `LegislativeSessions`: no row
+  about a Measure points at them. `verify.ts` still knows what refers to what in the first two.
 - **Documents.** Versions and Printed Amendments, analysis documents (Fiscal and Revenue Impact
   Statements, staff measure summaries), Proposed Amendments, Exhibits (the feed's
   `CommitteeMeetingDocuments`), agendas, and Testimony from
