@@ -23,6 +23,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+// A child that hangs is killed after this long, so its case fails and the copies can be removed.
+const childProcessTimeout = 60_000;
+
 let cruiseTree: string;
 let lintTree: string;
 
@@ -44,6 +47,8 @@ function runNode(tree: string, script: string, args: string[]): Promise<Finished
     const child = spawn(process.execPath, [script, ...args], {
       cwd: tree,
       env: { PATH: process.env["PATH"] ?? "" },
+      timeout: childProcessTimeout,
+      killSignal: "SIGKILL",
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
@@ -66,7 +71,7 @@ function cruise(): Promise<Cruise> {
 }
 
 /** One violation as dependency-cruiser's JSON reporter gives it: `via` is the chain of imports from `from` to `to`. */
-type Violation = { rule: string; from: string; to: string; via: string[] };
+type Violation = { rule: string; severity: string; from: string; to: string; via: string[] };
 
 async function violations(): Promise<{ list: Violation[]; output: string }> {
   const finished = await runNode(cruiseTree, "node_modules/dependency-cruiser/bin/dependency-cruiser.mjs", [
@@ -77,10 +82,13 @@ async function violations(): Promise<{ list: Violation[]; output: string }> {
   const output = `${finished.stdout}${finished.stderr}`;
   try {
     const report = JSON.parse(finished.stdout) as {
-      summary: { violations: { rule: { name: string }; from: string; to: string; via?: { name: string }[] }[] };
+      summary: {
+        violations: { rule: { name: string; severity: string }; from: string; to: string; via?: { name: string }[] }[];
+      };
     };
     const list = report.summary.violations.map((violation) => ({
       rule: violation.rule.name,
+      severity: violation.rule.severity,
       from: violation.from,
       to: violation.to,
       via: (violation.via ?? []).map((step) => step.name),
@@ -94,23 +102,23 @@ async function violations(): Promise<{ list: Violation[]; output: string }> {
 /** Puts each file's lines at its top, runs `whileThere`, and puts every file back as it was. */
 async function withPlants<T>(lines: Map<string, string[]>, whileThere: () => Promise<T>): Promise<T> {
   const originals = new Map<string, string | undefined>();
-  for (const [file, added] of lines) {
-    const path = join(cruiseTree, file);
-    let original: string | undefined;
-    try {
-      original = readFileSync(path, "utf8");
-    } catch {
-      original = undefined; // a new file
-    }
-    originals.set(file, original);
-    writeFileSync(path, `${added.join("\n")}\n${original ?? ""}`);
-  }
   try {
+    for (const [file, added] of lines) {
+      const path = join(cruiseTree, file);
+      let original: string | undefined;
+      try {
+        original = readFileSync(path, "utf8");
+      } catch {
+        original = undefined; // a new file
+      }
+      originals.set(file, original);
+      writeFileSync(path, `${added.join("\n")}\n${original ?? ""}`);
+    }
     return await whileThere();
   } finally {
     for (const [file, original] of originals) {
       const path = join(cruiseTree, file);
-      if (original === undefined) rmSync(path);
+      if (original === undefined) rmSync(path, { force: true });
       else writeFileSync(path, original);
     }
   }
@@ -222,8 +230,6 @@ function startCruises(): void {
 
 // Each case waits for a cruise or an ESLint run that is a child process, about a second to three here, but over
 // 5 s (Vitest's default) on a GitHub Actions runner, so these cases get their own bound.
-const childProcessTimeout = 60_000;
-
 describe("the rules that keep OregonAI out of the server path", { timeout: childProcessTimeout }, () => {
   it("pass on the source as it is, and cruise a real number of modules", async () => {
     const clean = await cleanCruise;
@@ -235,7 +241,11 @@ describe("the rules that keep OregonAI out of the server path", { timeout: child
 
   it.for(plants)("fail, naming the rule, when %s", async ([, file, , rule, reached]) => {
     const planted = await plantedCruise;
-    const against = planted.json.list.filter((violation) => violation.rule === rule && reportsAgainst(violation, file));
+    // Only an `error` ends the cruise with a failing status, as the text cruise below needs; a rule downgraded to
+    // `warn` loses its plant's violation here and fails its own case.
+    const against = planted.json.list.filter(
+      (violation) => violation.rule === rule && violation.severity === "error" && reportsAgainst(violation, file),
+    );
 
     expect(planted.text.status).not.toBe(0);
     expect(planted.text.output).toContain(rule);
