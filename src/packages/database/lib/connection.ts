@@ -261,7 +261,8 @@ const schema = `
   ) STRICT;
   -- Legislative Counsel's Statutes Affected Table (ticket #22, ADR-0033, ADR-0034): the copy the worker last read, kept like
   -- a document (where it came from, when, its content hash and its text), and its ORS entries. The worker fetches the
-  -- table in each full pull and replaces both tables only when the bytes it fetched differ from these.
+  -- table in each full pull and replaces both tables when the bytes it fetched differ from these; when only the snapshot's
+  -- commit differs, it reads the held text again and replaces the entries alone (ADR-0044).
   CREATE TABLE IF NOT EXISTS statutes_affected_table (
     session_key TEXT NOT NULL PRIMARY KEY,
     source_url TEXT NOT NULL,
@@ -283,6 +284,13 @@ const schema = `
     emergency INTEGER NOT NULL,
     lone_e INTEGER NOT NULL,
     PRIMARY KEY (session_key, ordinal)
+  ) STRICT;
+  -- With which commit of the OregonAI snapshot the entries were read (ADR-0044): a series is expanded against the
+  -- snapshot's ORS section list, so the worker reads the held table again when the commit changes. A database with no row
+  -- here (made before this table) reads the table once more.
+  CREATE TABLE IF NOT EXISTS statutes_affected_read (
+    session_key TEXT NOT NULL PRIMARY KEY,
+    snapshot_commit TEXT NOT NULL
   ) STRICT;
   CREATE INDEX IF NOT EXISTS statutes_affected_entry_measure ON statutes_affected_entry (session_key, prefix, number);
   -- The bytes the worker last refused as no table (not a PDF, no text layer, or no ORS row in it), by their hash, so that a

@@ -152,6 +152,21 @@ export type StatutesAffectedTableRecord = {
   /** The extracted text, as the pdf-text package gives it. */
   text: string;
   entries: readonly StatutesAffectedEntry[];
+  /** The commit of the snapshot whose ORS section list the table's series were expanded against (ADR-0044). */
+  snapshotCommit: string;
+};
+
+/** The Statutes Affected Table the index holds, as the next pull compares it with what it fetches and its snapshot. */
+export type HeldStatutesAffectedTable = {
+  /** The sha256 of the bytes the copy was read from. */
+  contentHash: string;
+  /**
+   * The commit of the snapshot its entries were read with, or undefined for a table read before the index kept it
+   * (ADR-0044).
+   */
+  snapshotCommit: string | undefined;
+  /** The copy's extracted text, which a new snapshot reads again when the table cannot be fetched (ADR-0044). */
+  text: string;
 };
 
 /** What an Agency Link is read from: a Fiscal Impact Statement's text, or a Version's or a posting's. */
@@ -339,8 +354,8 @@ export type IndexWriter = {
    * earlier reading of the file made are replaced.
    */
   storeStatuteParse(record: StatuteParseRecord, snapshot: SnapshotVersion): void;
-  /** The content hash of the Statutes Affected Table the Session's index holds, or undefined while it holds none. */
-  statutesAffectedTableHash(session: SessionKey): string | undefined;
+  /** The Statutes Affected Table the Session's index holds, or undefined while it holds none. */
+  heldStatutesAffectedTable(session: SessionKey): HeldStatutesAffectedTable | undefined;
   /**
    * The Measures for which the feed lists a Version with this description ("E-Engrossed"), as the last full pull read
    * the feed and whether or not the worker fetched the Version's file.
@@ -351,6 +366,15 @@ export type IndexWriter = {
    * during the pull sees the old table or the new one, never half of either. It also forgets the bytes last refused.
    */
   storeStatutesAffectedTable(session: SessionKey, record: StatutesAffectedTableRecord): void;
+  /**
+   * Replaces the entries of the table the Session's index holds with these, read again from its stored text with
+   * another snapshot, in one transaction; the copy (its bytes, hash, address and retrieval time) is left as it was, and
+   * so are the bytes last refused (ADR-0044).
+   */
+  rereadStatutesAffectedTable(
+    session: SessionKey,
+    reading: { entries: readonly StatutesAffectedEntry[]; snapshotCommit: string },
+  ): void;
   /** The bytes the worker last refused as no table, by their sha256, and why; undefined if it refused none since it last stored a table. */
   refusedStatutesAffectedTable(session: SessionKey): { contentHash: string; reason: string } | undefined;
   /** Remembers the sha256 of bytes refused as no table, so that the next pull that is given them does not read them again. */
@@ -386,7 +410,7 @@ const unreadFileRow = z.object({
   content_hash: z.string(),
 });
 const storedTextRow = z.object({ text: z.string(), has_text_layer: z.number() });
-const tableHashRow = z.object({ content_hash: z.string() });
+const heldTableRow = z.object({ content_hash: z.string(), text: z.string(), snapshot_commit: z.string().nullable() });
 const measureIdRow = z.object({ measure_id: z.string() });
 const refusalRow = z.object({ content_hash: z.string(), reason: z.string() });
 const unreadAgencyRow = z.object({ id: z.string(), kind: z.enum(["version", "proposed_amendment", "analysis"]) });
@@ -423,6 +447,53 @@ export function openIndexWriter(path: string): IndexWriter {
    */
   function bumpSearchGeneration(): void {
     raiseSearchGeneration.run();
+  }
+  /** Runs these writes in one transaction, rolled back if any throws. */
+  function inTransaction(writes: () => void): void {
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      writes();
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  /**
+   * Replaces the Statutes Affected Table's entries and the snapshot commit they were read with (ADR-0044), inside the
+   * caller's transaction.
+   */
+  function replaceTableEntries(
+    session: SessionKey,
+    reading: { entries: readonly StatutesAffectedEntry[]; snapshotCommit: string },
+  ): void {
+    const insertEntry = database.prepare(
+      `INSERT INTO statutes_affected_entry (session_key, ordinal, prefix, number, level, action, target_type,
+                                            target_id, measure_section, emergency, lone_e)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    database.prepare("DELETE FROM statutes_affected_entry WHERE session_key = ?").run(session);
+    reading.entries.forEach((entry, ordinal) => {
+      insertEntry.run(
+        session,
+        ordinal,
+        entry.measure.prefix,
+        entry.measure.number,
+        entry.level,
+        entry.action,
+        entry.target.type,
+        entry.target.id,
+        entry.measureSection,
+        entry.emergency ? 1 : 0,
+        entry.loneE ? 1 : 0,
+      );
+    });
+    database
+      .prepare(
+        `INSERT INTO statutes_affected_read (session_key, snapshot_commit) VALUES (?, ?)
+         ON CONFLICT (session_key) DO UPDATE SET snapshot_commit = excluded.snapshot_commit`,
+      )
+      .run(session, reading.snapshotCommit);
   }
   /** The upserts a full pull and an increment share; a full pull also lists what it read and replaces the Versions' listing. */
   function recordRows(
@@ -1186,11 +1257,16 @@ export function openIndexWriter(path: string): IndexWriter {
         throw error;
       }
     },
-    statutesAffectedTableHash(session) {
+    heldStatutesAffectedTable(session) {
       const row = database
-        .prepare("SELECT content_hash FROM statutes_affected_table WHERE session_key = ?")
+        .prepare(
+          `SELECT t.content_hash, t.text, r.snapshot_commit FROM statutes_affected_table t
+           LEFT JOIN statutes_affected_read r ON r.session_key = t.session_key WHERE t.session_key = ?`,
+        )
         .get(session);
-      return row === undefined ? undefined : tableHashRow.parse(row).content_hash;
+      if (row === undefined) return undefined;
+      const held = heldTableRow.parse(row);
+      return { contentHash: held.content_hash, snapshotCommit: held.snapshot_commit ?? undefined, text: held.text };
     },
     measuresListingVersion(session, description) {
       const rows = database
@@ -1199,13 +1275,7 @@ export function openIndexWriter(path: string): IndexWriter {
       return new Set(rows.map((row) => measureIdRow.parse(row).measure_id as MeasureId));
     },
     storeStatutesAffectedTable(session, record) {
-      const insertEntry = database.prepare(
-        `INSERT INTO statutes_affected_entry (session_key, ordinal, prefix, number, level, action, target_type,
-                                              target_id, measure_section, emergency, lone_e)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      );
-      database.exec("BEGIN IMMEDIATE");
-      try {
+      inTransaction(() => {
         database
           .prepare(
             `INSERT INTO statutes_affected_table (session_key, source_url, retrieved_at, content_hash, page_count, text)
@@ -1215,28 +1285,14 @@ export function openIndexWriter(path: string): IndexWriter {
                content_hash = excluded.content_hash, page_count = excluded.page_count, text = excluded.text`,
           )
           .run(session, record.sourceUrl, record.retrievedAt, record.contentHash, record.pageCount, record.text);
-        database.prepare("DELETE FROM statutes_affected_entry WHERE session_key = ?").run(session);
         database.prepare("DELETE FROM statutes_affected_refusal WHERE session_key = ?").run(session);
-        record.entries.forEach((entry, ordinal) => {
-          insertEntry.run(
-            session,
-            ordinal,
-            entry.measure.prefix,
-            entry.measure.number,
-            entry.level,
-            entry.action,
-            entry.target.type,
-            entry.target.id,
-            entry.measureSection,
-            entry.emergency ? 1 : 0,
-            entry.loneE ? 1 : 0,
-          );
-        });
-        database.exec("COMMIT");
-      } catch (error) {
-        database.exec("ROLLBACK");
-        throw error;
-      }
+        replaceTableEntries(session, record);
+      });
+    },
+    rereadStatutesAffectedTable(session, reading) {
+      inTransaction(() => {
+        replaceTableEntries(session, reading);
+      });
     },
     unreadAgencyDocuments(session, snapshot) {
       const rows = database
