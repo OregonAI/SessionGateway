@@ -1,3 +1,7 @@
+---
+status: accepted; "read again only when its bytes change" and the Consequence that a new snapshot reads the table again only after the copy is deleted or the file changes are superseded by ADR-0044
+---
+
 # The Statutes Affected Table is fetched from a URL the deployment names, read again only when its bytes change, and kept when the server stops giving it
 
 The table (`artables{session}.pdf`) is Legislative Counsel's, on `www.oregonlegislature.gov`, not OLIS's: no feed row links it, and it does not exist until the Session has ended (2025R1's is dated 8/19/2025; ADR-0001). The worker therefore cannot learn its address from the feed. Ticket #22 gives it to the worker as `STATUTES_AFFECTED_TABLE_URL` (2026-10-30), read through the config module like every other variable: an `http` or `https` URL, or unset. A bad value stops the worker at start-up and names the variable, never its value.

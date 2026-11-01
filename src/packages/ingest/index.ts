@@ -591,7 +591,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
         .map((entry) => entry.code),
     );
     // Legislative Counsel's Statutes Affected Table, when the deployment names it: a second source for the Statute
-    // Links, fetched in each pull and read again only when its bytes change (ADR-0034).
+    // Links, fetched in each pull and read again when its bytes or the snapshot's commit change (ADR-0034, ADR-0044).
     const statutesAffectedTable =
       config.statutesAffectedTableUrl === null
         ? undefined
@@ -601,6 +601,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
             writer,
             session: config.session,
             orsSections: snapshot.orsSections,
+            snapshotCommit: snapshot.version.commit,
             now: () => formatPacific(deps.clock.now()),
             signal: deps.signal,
           });
