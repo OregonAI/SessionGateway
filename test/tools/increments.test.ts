@@ -401,5 +401,51 @@ describe("an increment and the OregonAI snapshot (ADR-0035, ADR-0039)", () => {
         expect(await testimonyLinks(system, era, "HB 3795")).toEqual([[dhs, `testimony-2025r1-${heldRow}`]]);
       });
     });
+
+    it("matches a Testimony row new to the index with the registry as before when the snapshot file has not changed", async () => {
+      // The committed registry names the Bureau of Labor and Industries by its name; nothing is changed.
+      const system = await template.start();
+      started.push(system);
+      addNewRow(system, "Bureau of Labor and Industries");
+      system.clock.set(atTheIncrement);
+
+      await system.incrementAgain();
+
+      await everyClient(async (era) => {
+        expect(await testimonyLinks(system, era, "HB 3131")).toEqual([[boli, `testimony-2025r1-${newRow}`]]);
+      });
+    });
+
+    it("is followed by a full pull that matches every Testimony row with the changed snapshot and reports it", async () => {
+      const copy = copyWithChangedRegistry();
+      const system = await startOn(copy.path);
+      const [first] = eras;
+      if (first === undefined) throw new Error("There are no client eras");
+      const before = await snapshotCommit(system, first);
+      addNewRow(system, madeUpOrganization);
+      system.olis.amendRows("CommitteePublicTestimonies", (candidate) => candidate["CommTestId"] === heldRow, {
+        ModifiedDate: "2026-08-01T10:30:00",
+      });
+      copy.changeIt();
+      system.clock.set(atTheIncrement);
+
+      await system.incrementAgain();
+
+      // The increment left both rows to the full pull.
+      await everyClient(async (era) => {
+        expect(await testimonyLinks(system, era, "HB 3131")).toEqual([]);
+        expect(await testimonyLinks(system, era, "HB 3795")).toEqual([[dhs, `testimony-2025r1-${heldRow}`]]);
+        expect(await snapshotCommit(system, era)).toBe(before);
+      });
+
+      await system.pullAgain();
+
+      // The full pull matches the new row with the alias the changed registry gave and the held row without the alias it took.
+      await everyClient(async (era) => {
+        expect(await testimonyLinks(system, era, "HB 3131")).toEqual([[boli, `testimony-2025r1-${newRow}`]]);
+        expect(await testimonyLinks(system, era, "HB 3795")).toEqual([]);
+        expect(await snapshotCommit(system, era)).not.toBe(before);
+      });
+    });
   });
 });
