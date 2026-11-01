@@ -21,8 +21,7 @@ afterEach(async () => {
 // 2026-08-01 10:00 in Oregon: the committee members were all created before it.
 const clockAt = "2026-08-01T17:00:00Z";
 
-// MADE UP: a member of a task force who is no Legislator, as the cache's JOCSS has ("Shanbo Zhang", a real name this
-// repo does not commit). Added after the first pull with `addRows`.
+// MADE UP: a member of a task force who is no Legislator, as the cache's JOCSS has (olis-odata.md gotcha 5). Added after the first pull with `addRows`.
 const taskForceMember = {
   SessionKey: "2025R1",
   CommitteeCode: "JOCSS",

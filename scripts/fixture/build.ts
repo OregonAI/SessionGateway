@@ -244,13 +244,15 @@ function select(feed: Map<string, Row[]>, chosen: Chosen[]): Selection {
         if (targetIndex === undefined) {
           const gap = makeUnresolved(entitySet, row, ref, target);
           if (gap === null) {
+            const refers = `${describeKey(entitySet, rowKeyOf(entitySet, row))}.${ref.property} refers to ${describeKey(ref.to, target)}, which the full ${SESSION} feed cache does not hold either. `;
             throw new BuildError(
-              `${describeKey(entitySet, rowKeyOf(entitySet, row))}.${ref.property} refers to ${describeKey(ref.to, target)}, which the full ${SESSION} feed cache does not hold either. ` +
-                `The only documented gaps are the Legislator Codes ${legislatorCodesWithoutRow.join(" and ")} (olis-odata.md section 8, gotcha 4): ` +
-                "find out why this one is missing, then record it in schema.ts with the evidence. " +
+              refers +
                 (entitySet === committeeMembersSet
-                  ? "A CommitteeMembers row that names a person who is no Legislator is not committed: the fixture's README says why."
-                  : ""),
+                  ? "This is a member who is no Legislator (olis-odata.md section 8, gotcha 5), not a gap for schema.ts: " +
+                    "committing a non-Legislator's personal name needs the owner's decision first " +
+                    "(test/fixtures/olis-2025R1/README.md, 'Personal names'). Ask before changing the build or measures.txt."
+                  : `The only documented gaps are the Legislator Codes ${legislatorCodesWithoutRow.join(" and ")} (olis-odata.md section 8, gotcha 4): ` +
+                    "find out why this one is missing, then record it in schema.ts with the evidence."),
             );
           }
           unresolved.push({ rowIndex, gap });
