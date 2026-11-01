@@ -12,9 +12,11 @@
 // case, which changes the fake feed and pulls again so that one answer differs. The templates are the ones
 // find-measures.test.ts and find-measures-since.test.ts already build for the same clocks and options, so a run that
 // holds those files builds nothing more:
-//   - 2026-08-01 10:00 Pacific, documents on: every row of the fixture exists. The passing case and the exit-status cases.
+//   - 2026-08-01 10:00 Pacific, documents on: every row of the fixture exists, as in a database built after both
+//     postings. The passing case (with no flags) and the exit-status cases.
 //   - 2025-01-24 12:00 Pacific and 2025-01-31 12:00 Pacific: the days after SB 69's amendments were posted, and after
-//     its Fiscal Impact Statement was. They show "since yesterday" measured from the database's own as-of time.
+//     its Fiscal Impact Statement was. They show that a question fails when the database was built too early to hold
+//     its posting. Each question names the moment it is asked at, so "since yesterday" does not come from these.
 // The embedder is the fake one (test/CLAUDE.md, "The embedder"): no question of the 2025R1 set searches.
 //
 // A question set made up by a case (written to a temp folder and labelled MADE UP) shows that a Session's questions are
@@ -40,11 +42,14 @@ afterEach(async () => {
   for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true });
 });
 
+/** The options find-measures*.test.ts use for the same clocks, so the templates are shared. */
+const optionsAt = (clockAt: string) => ({ clockAt, documents: true, serverEnv: { MCP_RATE_LIMIT: "1000" } });
+
 /** Every row of the fixture exists by then, so the pull fetches all 278 documents. */
-const augustOptions = { clockAt: "2026-08-01T17:00:00Z", documents: true, serverEnv: { MCP_RATE_LIMIT: "1000" } };
+const augustOptions = optionsAt("2026-08-01T17:00:00Z");
 
 async function start(clockAt: string): Promise<System> {
-  const system = await startCopiedSystem({ clockAt, documents: true, serverEnv: { MCP_RATE_LIMIT: "1000" } });
+  const system = await startCopiedSystem(optionsAt(clockAt));
   started.push(system);
   return system;
 }
@@ -59,6 +64,15 @@ async function evaluate(system: System, extra: { since?: string; questions?: str
   });
 }
 
+/** Writes a question set (MADE UP, not a Session's) and returns its path. */
+function writeSet(text: string): string {
+  const folder = mkdtempSync(join(tmpdir(), "session-gateway-questions-"));
+  folders.push(folder);
+  const path = join(folder, "set.yml");
+  writeFileSync(path, text);
+  return path;
+}
+
 const ids = (report: EvaluationReport): string[] => report.results.map((result) => result.id);
 const resultOf = (report: EvaluationReport, id: string): EvaluationReport["results"][number] => {
   const found = report.results.find((result) => result.id === id);
@@ -69,14 +83,13 @@ const resultOf = (report: EvaluationReport, id: string): EvaluationReport["resul
 const questionIds = ["a-statutes", "a-fiscal", "b-amendment", "c-meeting", "d-testimony", "e-analysis", "f-status"];
 
 describe("the report of the 2025R1 question set", () => {
-  // The database of 2026-08-01 holds the whole fixture, so "since yesterday" would be 2026-07-31 and name nothing; the
-  // operator of a full local build gives the day the question is about (spec #1: "the evaluation run" uses the full
-  // cache), here the day before SB 69's amendments were posted.
-  it("lists every question of the set as passed against the fixture build", async () => {
-    const system = await startCopiedSystem(augustOptions);
-    started.push(system);
+  // The database of 2026-08-01 was built after both postings (SB 69's amendments on 2025-01-23, its Fiscal Impact
+  // Statement on 2025-01-30) and holds the whole fixture. Each question carries its own moment, so "since yesterday" does
+  // not depend on the day the database was pulled and no flag is needed (ticket #23, review P1).
+  it("passes every question with no flags on a database built after both postings", async () => {
+    const system = await start("2026-08-01T17:00:00Z");
 
-    const report = await evaluate(system, { since: "2025-01-23" });
+    const report = await evaluate(system);
 
     expect(report.session).toBe("2025R1");
     expect(ids(report)).toEqual(questionIds);
@@ -87,38 +100,104 @@ describe("the report of the 2025R1 question set", () => {
     expect(formatReport(report)).toContain("7 of 7 questions passed");
   });
 
-  // SB 69's amendments -1 and -2 were posted on 2025-01-23 (feed/CommitteeProposedAmendments.json), so on 2025-01-24
-  // "since yesterday" is 2025-01-23 and question (a) finds them. Its Fiscal Impact Statement (analysis 85414, 2025-01-30)
-  // is not there yet, and the report says that question fails, for that reason.
-  it("measures 'since yesterday' from the database's own as-of time when no time is given", async () => {
+  // (a) is asked on the day after each posting (spec #1 stories 1 and 2): the amendments of 2025-01-23 on 2025-01-24, the
+  // Fiscal Impact Statement of 2025-01-30 (analysis 85414) on 2025-01-31.
+  it("asks (a) on the day after each posting, so 'since yesterday' is the day before that moment", async () => {
+    const system = await start("2026-08-01T17:00:00Z");
+
+    const report = await evaluate(system);
+
+    expect(resultOf(report, "a-statutes")).toMatchObject({ moment: "2025-01-24T12:00:00-08:00", since: "2025-01-23" });
+    expect(resultOf(report, "a-fiscal")).toMatchObject({ moment: "2025-01-31T12:00:00-08:00", since: "2025-01-30" });
+    expect(resultOf(report, "b-amendment").since).toBeUndefined();
+    expect(resultOf(report, "b-amendment").moment).toBe(report.asOf);
+  });
+
+  // A database built the day after the first posting does not hold the second yet: the report says (a)'s second question
+  // fails, and the first still holds. One built the day after the second holds both.
+  it("fails a question whose posting the database was built too early to hold", async () => {
     const system = await start("2025-01-24T20:00:00Z");
 
     const report = await evaluate(system);
 
     expect(report.asOf).toBe("2025-01-24T12:00:00-08:00");
-    expect(report.since).toBe("2025-01-23");
     expect(resultOf(report, "a-statutes")).toMatchObject({ passed: true, reasons: [] });
     expect(resultOf(report, "a-fiscal").passed).toBe(false);
   });
 
-  it("finds the Fiscal Impact Statement posted yesterday on the day after it", async () => {
+  it("passes both halves of (a) on a database built the day after the Fiscal Impact Statement", async () => {
     const system = await start("2025-01-31T20:00:00Z");
 
     const report = await evaluate(system);
 
-    expect(report.since).toBe("2025-01-30");
+    expect(resultOf(report, "a-statutes")).toMatchObject({ passed: true, reasons: [] });
     expect(resultOf(report, "a-fiscal")).toMatchObject({ passed: true, reasons: [] });
   });
 
-  it("uses the time it is given instead of yesterday", async () => {
-    const system = await start("2025-01-24T20:00:00Z");
+  it("uses the time it is given instead of yesterday, for every question that asks for it", async () => {
+    const system = await start("2026-08-01T17:00:00Z");
 
     const report = await evaluate(system, { since: "2025-01-24" });
 
     expect(report.since).toBe("2025-01-24");
+    expect(report.results.filter((result) => result.since !== undefined).map((result) => result.since)).toEqual([
+      "2025-01-24",
+      "2025-01-24",
+    ]);
     const statutes = resultOf(report, "a-statutes");
     expect(statutes.passed).toBe(false);
     expect(statutes.reasons.join("\n")).toContain("amendment-2025r1-sb69-2");
+  });
+
+  it("refuses a time it cannot read", async () => {
+    const system = await start("2026-08-01T17:00:00Z");
+
+    await expect(evaluate(system, { since: "yesterday" })).rejects.toThrow(/"yesterday" is not a time/);
+  });
+});
+
+describe("a question's own moment", () => {
+  // MADE UP sets. The clock "2025-01-24T02:00:00Z" is 18:00 on 2025-01-23 in Pacific time, so the day before it, in
+  // Pacific time, is 2025-01-22 (and not 2025-01-23, the day before its UTC date).
+  it("makes 'since yesterday' the Pacific day before the question's moment", async () => {
+    const system = await start("2026-08-01T17:00:00Z");
+    const questions = writeSet(`
+session: 2025R1
+questions:
+  - id: made-up-evening
+    title: MADE UP, asked at 18:00 Pacific on 2025-01-23
+    clock: "2025-01-24T02:00:00Z"
+    steps:
+      - tool: find_measures
+        arguments: { agency: bureau-of-labor-and-industries, since: $since }
+        expect:
+          - { path: query.since, equals: "2025-01-22T00:00:00-08:00" }
+`);
+
+    const report = await evaluate(system, { questions });
+
+    expect(
+      report.results.map(({ id, moment, since, passed, reasons }) => ({ id, moment, since, passed, reasons })),
+    ).toEqual([
+      { id: "made-up-evening", moment: "2025-01-23T18:00:00-08:00", since: "2025-01-22", passed: true, reasons: [] },
+    ]);
+  });
+
+  it("refuses a question that says $since and names no moment", async () => {
+    const system = await start("2026-08-01T17:00:00Z");
+    const questions = writeSet(`
+session: 2025R1
+questions:
+  - id: made-up-no-moment
+    title: MADE UP, asks since yesterday and says when yesterday is not
+    steps:
+      - tool: find_measures
+        arguments: { agency: bureau-of-labor-and-industries, since: $since }
+        expect:
+          - { path: query.since, present: true }
+`);
+
+    await expect(evaluate(system, { questions })).rejects.toThrow(/made-up-no-moment.*clock/);
   });
 });
 
@@ -135,7 +214,7 @@ describe("a question that fails", () => {
     });
     await system.pullAgain();
 
-    const report = await evaluate(system, { since: "2025-01-23" });
+    const report = await evaluate(system);
 
     expect(report.passed).toBe(false);
     expect(report.results.filter((result) => !result.passed).map((result) => result.id)).toEqual(["d-testimony"]);
@@ -151,15 +230,6 @@ describe("a question that fails", () => {
 });
 
 describe("a question set made up for a case", () => {
-  /** Writes a question set (MADE UP, not a Session's) and returns its path. */
-  function writeSet(text: string): string {
-    const folder = mkdtempSync(join(tmpdir(), "session-gateway-questions-"));
-    folders.push(folder);
-    const path = join(folder, "set.yml");
-    writeFileSync(path, text);
-    return path;
-  }
-
   // The tool and the arguments are the question's data. Each check names a path into what the tool returned: `[*]`
   // takes every element of a list, `[key=value]` the elements whose key has that value.
   it("is run without code: each question reports the call and the check that failed", async () => {
@@ -248,31 +318,31 @@ describe("the command", () => {
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
   }
 
-  it("prints the report and exits 0 when every question passes", async () => {
+  it("prints the report and exits 0 when every question passes, with no flags", async () => {
     const system = await startCopiedSystem(augustOptions);
     started.push(system);
 
-    const outcome = run(["--database", system.database.path, "--since", "2025-01-23"]);
+    const outcome = run(["--database", system.database.path]);
 
     expect(outcome.stderr).toBe("");
     expect(outcome.status).toBe(0);
     expect(outcome.stdout).toContain("PASS a-statutes");
     expect(outcome.stdout).toContain("7 of 7 questions passed");
-  }, 60_000);
+  });
 
   it("exits 1 and names the question when one fails", async () => {
     const system = await startCopiedSystem(augustOptions);
     started.push(system);
 
-    // Without --since, "yesterday" of a database as of 2026-08-01 is 2026-07-31: nothing was posted then.
-    const outcome = run(["--database", system.database.path]);
+    // --since 2025-01-24 is after the amendments of 2025-01-23: nothing was posted since.
+    const outcome = run(["--database", system.database.path, "--since", "2025-01-24"]);
 
     expect(outcome.status).toBe(1);
     expect(outcome.stdout).toContain("FAIL a-statutes");
     expect(outcome.stdout).toContain("PASS d-testimony");
-  }, 60_000);
+  });
 
-  it("exits 2 with a message when it cannot run: no database named, or none at the path", () => {
+  it("exits 2 with a message when it cannot run: no database named, none at the path, or a time it cannot read", async () => {
     const missing = run([]);
     expect(missing.status).toBe(2);
     expect(missing.stderr).toContain("--database");
@@ -280,5 +350,12 @@ describe("the command", () => {
     const absent = run(["--database", join(tmpdir(), "session-gateway-no-such-database.db")]);
     expect(absent.status).toBe(2);
     expect(absent.stderr).toContain("session-gateway-no-such-database.db");
-  }, 60_000);
+
+    const system = await startCopiedSystem(augustOptions);
+    started.push(system);
+    const unreadable = run(["--database", system.database.path, "--since", "yesterday"]);
+    expect(unreadable.status).toBe(2);
+    expect(unreadable.stderr).toContain('"yesterday" is not a time');
+    expect(unreadable.stdout).toBe("");
+  });
 });

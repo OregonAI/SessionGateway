@@ -8,18 +8,22 @@
 # (ticket #49) or a fuller database (the whole cached Session) does not move it. Lists are checked with `includes`
 # where a fuller database may hold more, and with `equals` where the Session fixes the answer.
 #
-# "$since" in an argument is the run's "since yesterday": the day before the database's own as-of time, or the --since
-# the operator gives. Question (a) needs a database that was pulled just after the posting it asks about (the day after
-# for the default), or a --since of 2025-01-23 for a database pulled later.
+# Each question carries the moment it is asked at (`clock`), and "$since" in an argument is the Pacific day before that
+# moment ("since yesterday"), unless the operator gives --since. So a question about a posting does not depend on the day
+# the database was pulled: (a) is asked on the day after each posting and passes on any database that holds the rows.
+# A question that says "$since" must name its clock; one that does not is asked at the database's own as-of time. A set
+# for another Session (2026R1) follows the same convention.
 session: 2025R1
 
 questions:
   # (a), story 1: "what was introduced or posted since yesterday that touches statutes my Agency administers?"
   # Proposed Amendments SB 69-1 and SB 69-2 were posted on 2025-01-23 (feed/CommitteeProposedAmendments.json, rows 26285
   # to 26288), and both amend sections of chapters 653, 657B and 659A, which the snapshot gives to the Bureau of Labor
-  # and Industries (find-measures-since.test.ts). The Agency's registry slug is the Bureau's.
+  # and Industries (find-measures-since.test.ts). The Agency's registry slug is the Bureau's. Asked on 2025-01-24, the day
+  # after (find-measures-since.test.ts asks with since 2025-01-23).
   - id: a-statutes
     title: What was introduced or posted since yesterday that touches statutes my Agency (BOLI) administers?
+    clock: "2025-01-24T12:00:00-08:00"
     steps:
       - tool: find_measures
         arguments: { agency: bureau-of-labor-and-industries, since: $since }
@@ -34,9 +38,11 @@ questions:
   # (a), story 2: "...or names my Agency in a Fiscal Impact Statement?" SB 69's Fiscal Impact Statement is analysis
   # 85414, created 2025-01-30 (feed/MeasureAnalysisDocuments.json), and its "Government Unit(s) Affected:" line names the
   # Bureau of Labor and Industries. The item is the Measure until the A-Engrossed Version exists and the Version after it
-  # (ADR-0013), so the check reads the evidence and not the item's id.
+  # (ADR-0013), so the check reads the evidence and not the item's id. Asked on 2025-01-31, the day after (the file's
+  # 2025-01-31 case asks with since 2025-01-30).
   - id: a-fiscal
     title: What was introduced or posted since yesterday that names my Agency (BOLI) in a Fiscal Impact Statement?
+    clock: "2025-01-31T12:00:00-08:00"
     steps:
       - tool: find_measures
         arguments: { agency: bureau-of-labor-and-industries, since: $since }
@@ -91,7 +97,8 @@ questions:
   # (d): "who testified on HB 3131, for and against, grouped by organization, with the text?" HB 3131 has 42 Testimony rows:
   # 41 support (PositionOnMeasureId 3983) and 1 oppose (3982, CommTestId 117368, David Wall of Newberg), and "Portland" is
   # the most common Organization, eight rows spelled "Portland" or "PORTLAND" (testimony.test.ts, feed/
-  # CommitteePublicTestimonies.json). The text of a letter is read with get_document: 117368's file is at the Legislature's
+  # CommitteePublicTestimonies.json). The tool does not order the groups by count, and seam 1 establishes "most common" as
+  # "no other group has eight", which the path language cannot say, so the check is Portland's own count. The text of a letter is read with get_document: 117368's file is at the Legislature's
   # address in the manifest (test/fixtures/olis-2025R1/manifest.json).
   - id: d-testimony
     title: Who testified on HB 3131, for and against, grouped by organization, with the text?

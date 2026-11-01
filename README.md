@@ -117,19 +117,19 @@ for a failure. It opens the database read-only and sends nothing to OLIS. It is 
 `scripts/eval/`; it is not part of `npm test` or `npm run check`, which test it against the fixture.
 
 ```
-npm run eval -- --database data/index.db                 # the 2025R1 questions, "since yesterday" from the database's as-of time
-npm run eval -- --database data/index.db --since 2025-01-23   # a full build made long after the Session
+npm run eval -- --database data/index.db                      # the 2025R1 questions, each at its own moment
+npm run eval -- --database data/index.db --since 2025-01-23   # the same, with "since yesterday" fixed for every question
 ```
 
 | Option | Default | What it is |
 |---|---|---|
 | `--database` | none | The SQLite file the ingest worker wrote. Required. |
 | `--session` | `2025R1` | The Session whose questions to run: `scripts/eval/questions/<session>.yml`. The database must hold that Session. |
-| `--since` | the day before the database's as-of time | What "since yesterday" means to the questions that say `$since` (question (a)): an ISO 8601 date or time. A database pulled the morning after SB 69's amendments were posted needs none; a full build made months later needs `--since 2025-01-23`. |
+| `--since` | each question's own | What "since yesterday" means to every question that says `$since` (question (a)): an ISO 8601 date or time, which overrides the question's own. Not needed: each question names the moment it is asked at (`clock`) and "since yesterday" is the Pacific day before it, so (a) is asked on 2025-01-24 and 2025-01-31, the days after its postings, and passes on any database that holds them, a full build included. |
 
 The exit status is 0 when every question passed, 1 when any failed, and 2 when the run could not be made (no
 database at the path, a bad option, a question set that is not valid). `MODEL_PATH` is read as for the server. A
-question set is data: each question lists the tool calls and, for each, checks of the form `{ path, equals | includes |
+question set is data: each question has a `clock` (required when it says `$since`, otherwise the database's as-of time), and lists the tool calls and, for each, checks of the form `{ path, equals | includes |
 atLeast | length | present }` over the tool's structured result (`scripts/eval/paths.ts` says how a path is read), so
 2026R1's questions are another file in `scripts/eval/questions/` with no change to the code.
 

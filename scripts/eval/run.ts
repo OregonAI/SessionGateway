@@ -5,10 +5,10 @@
 //
 //   --database  the SQLite file the ingest worker wrote (required)
 //   --session   the Session whose questions to run (2025R1); the database must hold that Session
-//   --since     what "since yesterday" means to the questions that say so: an ISO 8601 date or time. The day before
-//               the database's own as-of time when it is not given, so a full build made months after the Session
-//               needs it (for 2025R1 question (a): 2025-01-23).
+//   --since     what "since yesterday" means to every question that says so: an ISO 8601 date or time. Not given, each
+//               question's own: the Pacific day before the moment it is asked at (its `clock`), so no flag is needed.
 // MODEL_PATH names the embedding model's directory as for the server; unset, it is the one `npm run model:fetch` fills.
+import { existsSync } from "node:fs";
 import { argv, exit } from "node:process";
 import { parseArgs } from "node:util";
 import { modelLockPath, readModelLock } from "#/packages/embedder/lock.ts";
@@ -30,6 +30,11 @@ try {
   });
   if (values.database === undefined) {
     console.error(`eval: --database is required\n${usage}`);
+    exit(2);
+  }
+  // Check the input before the model is loaded (about a second): no database is an exit 2 without the model.
+  if (!existsSync(values.database)) {
+    console.error(`eval: There is no database at ${values.database}\n${usage}`);
     exit(2);
   }
   const modelPath = modelDirectory(readModelLock());

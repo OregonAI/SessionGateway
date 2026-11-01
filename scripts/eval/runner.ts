@@ -15,7 +15,8 @@ import { parseSessionKey } from "#/packages/domain/index.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
 import { createSessionGatewayHandler, type SessionGatewayHandler } from "#/packages/mcp-server/handler.ts";
 import { problemWith } from "./paths.ts";
-import { loadQuestionSet, questionSetPath, type Question, type Step } from "./questions.ts";
+import { pacificTimestampOf, readTimestamp } from "#/packages/time/pacific.ts";
+import { loadQuestionSet, questionAsksSince, questionSetPath, type Question, type Step } from "./questions.ts";
 
 export type EvaluationOptions = {
   /** The built database to read (the ingest worker's `DATABASE_PATH`). */
@@ -23,8 +24,8 @@ export type EvaluationOptions = {
   /** The Session the database holds and whose question set is run: 2025R1. */
   session: string;
   /**
-   * What "since yesterday" means to the questions that say `$since`: an ISO 8601 date or time. The day before the
-   * database's as-of time, in Pacific time, when it is not given.
+   * What "since yesterday" means to every question that says `$since`: an ISO 8601 date or time. When it is not given,
+   * each question's own: the Pacific day before the moment the question is asked at (its `clock`).
    */
   since?: string;
   /** A question set to run instead of the Session's own (scripts/eval/questions/<session>.yml). */
@@ -38,6 +39,10 @@ export type EvaluationOptions = {
 export type QuestionResult = {
   id: string;
   title: string;
+  /** The moment the question was asked at, in Pacific time: its clock, or the database's as-of time. */
+  moment: string;
+  /** What "since yesterday" meant to it; undefined when the question does not say `$since`. */
+  since?: string;
   passed: boolean;
   /** Why it failed, one line for each check or call that did not hold; empty when it passed. */
   reasons: string[];
@@ -48,8 +53,8 @@ export type EvaluationReport = {
   databasePath: string;
   /** When the database was last refreshed, in Pacific time with its UTC offset. */
   asOf: string;
-  /** The time "since yesterday" meant in this run. */
-  since: string;
+  /** The `since` the run was given, which overrides each question's own "since yesterday"; undefined when none was. */
+  since?: string;
   results: QuestionResult[];
   /** True when every question passed. */
   passed: boolean;
@@ -58,9 +63,13 @@ export type EvaluationReport = {
 /** A clock that stands still, so a question about "the next meeting" is asked at the moment it names. */
 const stoppedAt = (moment: Date): { now(): Date } => ({ now: () => new Date(moment) });
 
-/** The day before the as-of time's day, as a date: the as-of time is already in Pacific time. */
-function dayBefore(asOf: string): string {
-  return Temporal.PlainDate.from(asOf.slice(0, 10)).subtract({ days: 1 }).toString();
+/** The Pacific day before the day a moment falls in, as a date. */
+function dayBefore(moment: Date): string {
+  return Temporal.Instant.fromEpochMilliseconds(moment.getTime())
+    .toZonedDateTimeISO("America/Los_Angeles")
+    .toPlainDate()
+    .subtract({ days: 1 })
+    .toString();
 }
 
 /** The arguments of a call with each "$since" replaced by the run's time. */
@@ -134,6 +143,11 @@ async function runStep(client: Client, step: Step, since: string): Promise<strin
 export async function runEvaluation(options: EvaluationOptions): Promise<EvaluationReport> {
   const session = parseSessionKey(options.session);
   if (session === undefined) throw new Error(`"${options.session}" is not an OLIS Session key such as 2025R1`);
+  if (options.since !== undefined && readTimestamp(options.since) === undefined) {
+    throw new Error(
+      `"${options.since}" is not a time. Give a date such as 2025-01-23 or a time such as 2025-01-23T16:00:00 (Pacific) or 2025-01-24T00:00:00Z.`,
+    );
+  }
   if (!existsSync(options.databasePath)) throw new Error(`There is no database at ${options.databasePath}`);
   const set = loadQuestionSet(options.questions ?? questionSetPath(options.session), options.session);
 
@@ -146,7 +160,6 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
   }
   if (asOf === undefined)
     throw new Error(`The database at ${options.databasePath} holds no completed full pull of ${session}`);
-  const since = options.since ?? dayBefore(asOf);
 
   const config = (): ServerConfig =>
     loadServerConfig({
@@ -170,7 +183,13 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
       signal: shutdown.signal,
       onLiveLookupFailed: () => {},
     });
-    const client = await connect(handler);
+    let client: Client;
+    try {
+      client = await connect(handler);
+    } catch (error) {
+      await handler.close();
+      throw error;
+    }
     connections.set(moment.getTime(), { client, handler });
     return client;
   };
@@ -178,20 +197,26 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
   const results: QuestionResult[] = [];
   try {
     for (const question of set.questions) {
-      results.push(await runQuestion(question, new Date(question.clock ?? asOf), connection, since));
+      results.push(await runQuestion(question, new Date(question.clock ?? asOf), connection, options.since));
     }
   } finally {
     shutdown.abort();
-    for (const { client, handler } of connections.values()) {
-      await client.close();
-      await handler.close();
-    }
+    // One close that throws must not leave the others open.
+    await Promise.allSettled(
+      [...connections.values()].map(async ({ client, handler }) => {
+        try {
+          await client.close();
+        } finally {
+          await handler.close();
+        }
+      }),
+    );
   }
   return {
     session: options.session,
     databasePath: options.databasePath,
     asOf,
-    since,
+    ...(options.since === undefined ? {} : { since: options.since }),
     results,
     passed: results.every((result) => result.passed),
   };
@@ -201,27 +226,38 @@ async function runQuestion(
   question: Question,
   moment: Date,
   connection: (moment: Date) => Promise<Client>,
-  since: string,
+  given: string | undefined,
 ): Promise<QuestionResult> {
   const reasons: string[] = [];
+  const since = questionAsksSince(question) ? (given ?? dayBefore(moment)) : undefined;
   try {
     const client = await connection(moment);
-    for (const step of question.steps) reasons.push(...(await runStep(client, step, since)));
+    for (const step of question.steps) reasons.push(...(await runStep(client, step, since ?? "")));
   } catch (error) {
     reasons.push(`the question could not be asked: ${error instanceof Error ? error.message : String(error)}`);
   }
-  return { id: question.id, title: question.title, passed: reasons.length === 0, reasons };
+  return {
+    id: question.id,
+    title: question.title,
+    moment: pacificTimestampOf(Temporal.Instant.fromEpochMilliseconds(moment.getTime())),
+    ...(since === undefined ? {} : { since }),
+    passed: reasons.length === 0,
+    reasons,
+  };
 }
 
 /** The report as the command prints it: one line for each question, the reasons under a failed one, and a total. */
 export function formatReport(report: EvaluationReport): string {
   const lines = [
     `Evaluation of ${report.session} against ${report.databasePath}`,
-    `The database is as of ${report.asOf}; "since yesterday" is ${report.since}.`,
+    report.since === undefined
+      ? `The database is as of ${report.asOf}. Each question is asked at its own moment, and "since yesterday" is the day before it.`
+      : `The database is as of ${report.asOf}. "Since yesterday" is ${report.since} for every question that asks for it.`,
     "",
   ];
   for (const result of report.results) {
-    lines.push(`${result.passed ? "PASS" : "FAIL"} ${result.id}  ${result.title}`);
+    const asked = result.since === undefined ? "" : `  [asked ${result.moment}, since ${result.since}]`;
+    lines.push(`${result.passed ? "PASS" : "FAIL"} ${result.id}  ${result.title}${asked}`);
     for (const reason of result.reasons) lines.push(`       - ${reason}`);
   }
   const passed = report.results.filter((result) => result.passed).length;
