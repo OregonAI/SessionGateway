@@ -7,6 +7,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { callTool, connectClient } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";
+import { stopListing } from "../support/unlisted-rows.ts";
 
 const started: System[] = [];
 
@@ -67,6 +68,9 @@ const fixtureRows = {
   CommitteeProposedAmendments: 15,
   CommitteePublicTestimonies: 84,
   CommitteeMembers: 0,
+  // The fixture holds no file for either set (its README says why), so the fake serves both empty (ticket #67).
+  ConveneTimes: 0,
+  LegislativeSessions: 0,
 } as const;
 
 describe("a full pull that is short of the feed's counts", () => {
@@ -146,5 +150,95 @@ describe("a full pull that matches the feed's counts", () => {
         no_longer_listed: 0,
       });
     }
+  });
+});
+
+// Ticket #67: the sets the schedule reads, ConveneTimes and LegislativeSessions, are counted against `$count` like every
+// other set. The fixture holds no rows for them, so these cases add MADE UP rows with `strayRows` (the first pull sees
+// them): two floor convenings of 2025-01-29 and the Session's own row.
+const madeUpFeed = {
+  ConveneTimes: [
+    // MADE UP: a House and a Senate convening, in the feed's shape (olis-odata.md section 2).
+    { SessionKey: "2025R1", SessionDate: "2025-01-29T08:30:00", Chamber: "H", RecessUntil: null, ModifiedDate: null },
+    { SessionKey: "2025R1", SessionDate: "2025-01-29T09:00:00", Chamber: "S", RecessUntil: null, ModifiedDate: null },
+  ],
+  LegislativeSessions: [
+    // MADE UP: the Session's row. The real 2025R1 row has BeginDate 2025-01-13 and a null EndDate.
+    {
+      SessionKey: "2025R1",
+      SessionName: "2025 Regular Session",
+      BeginDate: "2025-01-13T00:00:00",
+      EndDate: "2025-03-14T00:00:00",
+      ModifiedDate: "2026-06-09T11:05:09",
+      DefaultSession: false,
+    },
+  ],
+};
+
+describe("the sets the schedule reads (ticket #67)", () => {
+  async function startWithMadeUpFeed(): Promise<System> {
+    const system = await startSystem({ clockAt, olis: { strayRows: madeUpFeed } });
+    started.push(system);
+    return system;
+  }
+
+  it("counts ConveneTimes and LegislativeSessions in the build report, listed like every other set", async () => {
+    const system = await startWithMadeUpFeed();
+
+    const sets = setsOf(system.buildReport());
+
+    expect(sets["ConveneTimes"]).toEqual({
+      entity_set: "ConveneTimes",
+      counted: 2,
+      read: 2,
+      complete: true,
+      listed: 2,
+      no_longer_listed: 0,
+    });
+    expect(sets["LegislativeSessions"]).toEqual({
+      entity_set: "LegislativeSessions",
+      counted: 1,
+      read: 1,
+      complete: true,
+      listed: 1,
+      no_longer_listed: 0,
+    });
+  });
+
+  it.for(["ConveneTimes", "LegislativeSessions"] as const)(
+    "refuses a pull that is short in %s alone, and names it",
+    async (shortSet) => {
+      const system = await startWithMadeUpFeed();
+      const counted = madeUpFeed[shortSet].length;
+      system.olis.withholdLastRows(1, shortSet);
+      system.clock.set("2026-08-02T17:00:00Z");
+
+      await expect(system.pullAgain()).rejects.toThrow(
+        new RegExp(`Short read of ${shortSet}: OLIS counted ${counted}.*read ${counted - 1}`),
+      );
+
+      const sets = setsOf(system.buildReport());
+      expect(sets[shortSet]).toEqual({ entity_set: shortSet, counted, read: counted - 1, complete: false });
+      expect(sets["Measures"]).toMatchObject({ complete: true });
+      expect(system.buildReport()["pull"]).toMatchObject({ complete: false });
+    },
+  );
+
+  it("applies the two-pull rule to ConveneTimes rows: a convening OLIS stops listing is no longer listed after two pulls", async () => {
+    // `stopListing` moves a row of the fake's feed, which `strayRows` are not part of, so the rows are added after the first pull.
+    const system = await start();
+    system.olis.addRows("ConveneTimes", madeUpFeed.ConveneTimes);
+    system.clock.set("2026-08-02T17:00:00Z");
+    await system.pullAgain();
+    expect(setsOf(system.buildReport())["ConveneTimes"]).toMatchObject({ counted: 2, listed: 2, no_longer_listed: 0 });
+
+    stopListing(system.olis, "ConveneTimes", (row) => row["Chamber"] === "S");
+    system.clock.set("2026-08-03T17:00:00Z");
+    await system.pullAgain();
+    expect(setsOf(system.buildReport())["ConveneTimes"]).toMatchObject({ counted: 1, listed: 2, no_longer_listed: 0 });
+
+    system.clock.set("2026-08-04T17:00:00Z");
+    await system.pullAgain();
+    expect(setsOf(system.buildReport())["ConveneTimes"]).toMatchObject({ counted: 1, listed: 1, no_longer_listed: 1 });
   });
 });
