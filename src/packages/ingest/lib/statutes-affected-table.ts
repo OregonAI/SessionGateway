@@ -25,15 +25,15 @@ export type StatutesAffectedTableReport = {
     | "refused_unchanged"; // the bytes are the ones an earlier pull refused as no table, so nothing was read again
   held: boolean;
   /**
-   * For "loaded" and "read_again_from_held_copy": the entries read, the rows of a previous Session's Measures (repassed over the Governor's veto, “OVP”)
-   * kept apart from them, and the lines of the ORS table the parser could not read.
+   * For "loaded" and "read_again_from_held_copy": the entries read, the rows of a previous Session's Measures (repassed
+   * over the Governor's veto, “OVP”) kept apart from them, and the lines of the ORS table the parser could not read.
    */
   entries?: number;
   previous_session_entries?: number;
   unread_lines?: number;
   /**
-   * For "loaded" and "read_again_from_held_copy": how many of the entries end in an E alone after the Measure number, which is the emergency clause or an
-   * E-Engrossed level and the table's text does not say which (ADR-0033), and how many of those name a Measure of which the
+   * For "loaded" and "read_again_from_held_copy": how many of the entries end in an E alone after the Measure number,
+   * which is the emergency clause or an E-Engrossed level and the table's text does not say which (ADR-0033), and how many of those name a Measure of which the
    * feed lists an E-Engrossed Version in this pull. The rest are read as the emergency clause of the Introduced Version when
    * get_measure shows their Measure (an entry of a Measure the index does not hold is shown nowhere). The Versions the feed
    * lists change between pulls and the table need not, so the second count is of the pull that loaded the table; get_measure
@@ -56,7 +56,10 @@ type LoadArguments = {
   session: SessionKey;
   /** The snapshot's ORS section list, which a series in the table is expanded against. */
   orsSections: readonly OrsSectionId[];
-  /** The commit of that snapshot: a held table read with another commit is read again, though its bytes are the same (ADR-0044). */
+  /**
+   * The commit of that snapshot: a held table read with another commit is read again, though its bytes are the same
+   * (ADR-0044).
+   */
   snapshotCommit: string;
   /** The time of the fetch, for the copy's retrieval time. */
   now: () => Timestamp;
