@@ -18,16 +18,21 @@ export type Settings = { increments: IncrementsSetting; fullPull: FullPullSettin
 export type SessionSchedule = {
   /** Pacific dates (YYYY-MM-DD) with a committee meeting or a floor convening (ConveneTimes) scheduled. */
   meetingDays: ReadonlySet<string>;
-  /** The Session's begin and end dates, or undefined while the index holds no row. A weekday between them is a day the Session meets. */
-  session: SessionSpan | undefined;
+  /**
+   * The dates the Session is in progress, both included, or undefined while the index holds no row. A weekday between
+   * them is a day the Session meets. The end is always a date: `sessionScheduleOf` reads a null `EndDate` (ADR-0043).
+   */
+  session: { begin: string; end: string } | undefined;
 };
 
 /**
  * What the Session has scheduled, from the three things the index holds (ADR-0039, ADR-0042): the days with a committee
  * meeting, the days with a floor convening (ConveneTimes), and the Session's begin and end dates (LegislativeSessions).
  * A day the Session meets is a day with either, or a weekday while the Session is in progress: `sessionMeetsOn`
- * decides that for the date it is asked about, from the begin date to the end date, both included. A Session whose end date the feed leaves null is in progress from its begin date on, and one with no
- * row at all is not in progress. The worker and the server both build the schedule this way, so the day the Session
+ * decides that for the date it is asked about, from the begin date to the end date, both included. A Session whose end
+ * date the feed leaves null is in progress up to the last convening the index holds (ADR-0043): its end is read as the
+ * later of the begin date and the last convening's date, or the begin date alone while no convening is held. One with
+ * no row at all is not in progress. The worker and the server both build the schedule this way, so the day the Session
  * meets means the same to the schedule and to the staleness rule.
  */
 export function sessionScheduleOf(input: {
@@ -38,7 +43,12 @@ export function sessionScheduleOf(input: {
   /** The Session's begin and end dates (Pacific, YYYY-MM-DD), or undefined while the index holds no row. */
   session: SessionSpan | undefined;
 }): SessionSchedule {
-  return { meetingDays: new Set([...input.committeeMeetingDays, ...input.conveneDays]), session: input.session };
+  const meetingDays = new Set([...input.committeeMeetingDays, ...input.conveneDays]);
+  if (input.session === undefined) return { meetingDays, session: undefined };
+  const { begin, end } = input.session;
+  if (end !== null) return { meetingDays, session: { begin, end } };
+  const lastConvening = input.conveneDays.reduce((latest, day) => (day > latest ? day : latest), begin);
+  return { meetingDays, session: { begin, end: lastConvening } };
 }
 
 /**
@@ -90,7 +100,7 @@ export function isFullPullDate(date: Temporal.PlainDate, setting: FullPullSettin
 export function sessionMeetsOn(date: Temporal.PlainDate, schedule: SessionSchedule): boolean {
   const day = date.toString();
   const { session } = schedule;
-  const inProgress = session !== undefined && session.begin <= day && (session.end === null || day <= session.end);
+  const inProgress = session !== undefined && session.begin <= day && day <= session.end;
   return schedule.meetingDays.has(day) || (inProgress && date.dayOfWeek <= 5);
 }
 

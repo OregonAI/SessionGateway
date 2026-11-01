@@ -1,5 +1,5 @@
 ---
-status: accepted; replaces the note in ADR-0039 that the worker sees only committee-meeting days (the rest of ADR-0039 stands)
+status: accepted; replaces the note in ADR-0039 that the worker sees only committee-meeting days (the rest of ADR-0039 stands); the bullet "A null `EndDate` means in progress from the begin date on" is superseded by ADR-0043
 ---
 
 # The days the Session meets come from committee meetings, floor convenings and the Session's dates

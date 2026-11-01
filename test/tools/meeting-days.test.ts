@@ -1,15 +1,17 @@
 // Seam 1 (test/CLAUDE.md): the days the Session meets (ticket #67, ADR-0039, ADR-0042). With `15min` increments run on
 // a day with a floor convening (ConveneTimes) scheduled and on any weekday while the Session is in progress (the
 // LegislativeSessions row's BeginDate to EndDate), as well as on a day with a committee meeting; the staleness warning's
-// 15min rule follows the same days. Each case builds its own system, because the feed it needs is the thing under test:
-// the fixture holds no ConveneTimes or LegislativeSessions file, so every row here is MADE UP, in the feed's shape
+// 15min rule follows the same days. A null EndDate ends at the last convening the index holds (ticket #74, ADR-0043).
+// Each case builds its own system, because the feed it needs is the thing under test: the fixture holds no
+// ConveneTimes or LegislativeSessions file, so every row here is MADE UP, in the feed's shape
 // (docs/research/olis-odata.md section 2), and added with `strayRows` so that the first pull reads it. The worker's loop
 // runs with the harness's sleep (`runSchedule`); the fake OLIS's request log says what ran, as in ingest-schedule.test.ts.
 // The embedder is the fake. The documents are off: nothing here reads one.
 //
 // The fixture's committee meetings fall on 2025-01-21..23, 27, 28 and 30 (feed/CommitteeMeetings.json), none on
-// Wednesday 2025-01-29, Saturday 2025-02-01 or Wednesday 2025-03-19. 2025-01-29 and 2025-03-19 are Wednesdays and
-// 2025-02-01 is a Saturday. January is UTC-8 and March 19 is UTC-7 (daylight time began on 2025-03-09).
+// Wednesday 2025-01-29, Saturday 2025-02-01, Wednesday 2025-03-12 or Wednesday 2025-03-19. 2025-01-29, 2025-03-12 and
+// 2025-03-19 are Wednesdays and 2025-02-01 is a Saturday. January is UTC-8 and March is UTC-7 from 2025-03-09, when
+// daylight time began.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FakeOlis } from "../support/fake-olis.ts";
 import { callTool, connectClient } from "../support/mcp-clients.ts";
@@ -117,6 +119,49 @@ describe("with 15min, a weekday while the Session is in progress", () => {
   });
 });
 
+// Ticket #74 (ADR-0043): the real 2025R1 row's EndDate is null. MADE UP: that row, and convenings held up to Thursday
+// 2025-03-13 (both chambers), so the Session is in progress from 2025-01-13 to 2025-03-13. 2025-03-12 is a Wednesday
+// with no committee meeting in the fixture; 2025-03-19 is the Wednesday after.
+const openSessionRow: Row = { ...sessionRow, EndDate: null };
+const conveningsToMarch13: Row[] = [
+  { SessionKey: "2025R1", SessionDate: "2025-01-13T11:00:00", Chamber: "H", RecessUntil: null, ModifiedDate: null },
+  { SessionKey: "2025R1", SessionDate: "2025-03-13T11:00:00", Chamber: "H", RecessUntil: null, ModifiedDate: null },
+  { SessionKey: "2025R1", SessionDate: "2025-03-13T11:00:00", Chamber: "S", RecessUntil: null, ModifiedDate: null },
+];
+const openSession = { strayRows: { LegislativeSessions: [openSessionRow], ConveneTimes: conveningsToMarch13 } };
+
+describe("with 15min, a Session whose EndDate is null", () => {
+  it("runs increments on a weekday before the last convening that has no meeting", async () => {
+    // Wednesday 2025-03-12 from 5 am to Thursday 5:30 am (UTC-7).
+    const system = await start({ clockAt: "2025-03-12T12:00:00Z", olis: openSession });
+
+    await system.runSchedule("2025-03-13T12:30:00Z");
+
+    expect(incrementsOf(system.olis)).toBe(incrementsOnAWeekday);
+  });
+
+  it("runs none on a weekday after the last convening that has no meeting", async () => {
+    // Wednesday 2025-03-19 from 5 am to Thursday 5:30 am (UTC-7), six days after the last convening.
+    const system = await start({ clockAt: "2025-03-19T12:00:00Z", olis: openSession });
+
+    await system.runSchedule("2025-03-20T12:30:00Z");
+
+    expect(incrementsOf(system.olis)).toBe(0);
+  });
+
+  it("runs none on a weekday after the begin date when no convening is held", async () => {
+    // Wednesday 2025-01-29, which the fixture gives no committee meeting.
+    const system = await start({
+      clockAt: wednesday.clockAt,
+      olis: { strayRows: { LegislativeSessions: [openSessionRow] } },
+    });
+
+    await system.runSchedule(wednesday.until);
+
+    expect(incrementsOf(system.olis)).toBe(0);
+  });
+});
+
 describe("the staleness warning's 15min rule", () => {
   const WARNING = "may be out of date";
   // The pull is at 7:00 am; ten o'clock is three hours later, past the two hours the rule allows.
@@ -165,5 +210,16 @@ describe("the staleness warning's 15min rule", () => {
     });
     afterEnd.clock.set("2025-03-19T17:00:00Z");
     expect(await answerText(afterEnd)).not.toContain(WARNING);
+  });
+
+  it("with a null EndDate, warns on a weekday before the last convening and not on one after it", async () => {
+    // Wednesday 2025-03-12 and Wednesday 2025-03-19, each pulled at 7 am (UTC-7) and read at 10 am.
+    const before = await start({ clockAt: "2025-03-12T14:00:00Z", olis: openSession });
+    before.clock.set("2025-03-12T17:00:00Z");
+    expect(await answerText(before)).toContain(WARNING);
+
+    const after = await start({ clockAt: "2025-03-19T14:00:00Z", olis: openSession });
+    after.clock.set("2025-03-19T17:00:00Z");
+    expect(await answerText(after)).not.toContain(WARNING);
   });
 });
