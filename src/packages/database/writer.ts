@@ -1019,7 +1019,12 @@ export function openIndexWriter(path: string): IndexWriter {
           "SELECT r.document_id AS id, r.revision AS revision FROM agenda_revision r JOIN document d ON d.id = r.document_id WHERE d.session_key = ?",
         )
         .all(session);
-      return new Map(rows.map((row) => [revisionRow.parse(row).id as DocumentId, revisionRow.parse(row).revision]));
+      return new Map(
+        rows.map((row) => {
+          const parsed = revisionRow.parse(row);
+          return [parsed.id as DocumentId, parsed.revision];
+        }),
+      );
     },
     unreadStatuteFiles(session, snapshot) {
       const rows = database
