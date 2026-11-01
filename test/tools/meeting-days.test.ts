@@ -1,7 +1,7 @@
 // Seam 1 (test/CLAUDE.md): the days the Session meets (ticket #67, ADR-0039, ADR-0042). With `15min` increments run on
 // a day with a floor convening (ConveneTimes) scheduled and on any weekday while the Session is in progress (the
 // LegislativeSessions row's BeginDate to EndDate), as well as on a day with a committee meeting; the staleness warning's
-// 15min rule follows the same days. Each case builds its own system, because the feed it needs is the thing under test:
+// 15min rule follows the same days. A null EndDate ends at the last convening the index holds (ticket #74, ADR-0043). Each case builds its own system, because the feed it needs is the thing under test:
 // the fixture holds no ConveneTimes or LegislativeSessions file, so every row here is MADE UP, in the feed's shape
 // (docs/research/olis-odata.md section 2), and added with `strayRows` so that the first pull reads it. The worker's loop
 // runs with the harness's sleep (`runSchedule`); the fake OLIS's request log says what ran, as in ingest-schedule.test.ts.
