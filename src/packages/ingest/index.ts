@@ -337,29 +337,38 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
     );
   }
   writer.refreshDocuments(config.session, refreshed, refreshedEntries);
+  // An agenda is the one document fetched again (ADR-0005, ADR-0041): when its meeting's revision is not the one it was
+  // fetched at. An agenda stored before revisions were recorded has none, so it is fetched once more.
+  const agendaRevisions = writer.storedAgendaRevisions(config.session);
+  const revised = new Set(
+    refreshed
+      .filter((link) => link.agendaRevision !== undefined && agendaRevisions.get(link.id) !== link.agendaRevision)
+      .map((link) => link.id),
+  );
   for (const link of links) {
-    if (stored.has(link.id)) continue;
+    if (stored.has(link.id) && !revised.has(link.id)) continue;
     const fetched = await fetchAndRead(olis, link, deps.signal);
     if (fetched.kind === "left_out") {
-      notFetched.push({ id: link.id, source_url: link.sourceUrl, reason: fetched.reason });
+      // A revised agenda that cannot be fetched stays as it was stored (ADR-0041): the index holds it, so it is not
+      // a document the index lacks.
+      if (!revised.has(link.id)) notFetched.push({ id: link.id, source_url: link.sourceUrl, reason: fetched.reason });
       continue;
     }
     const entry = searchEntryOf(link, committeeNames);
     const passages = splitPassages(fetched.pdf.text, deps.embedder);
     const vectors = await vectorsForNewPassages(writer, deps.embedder, entry, passages, passageCounts);
-    writer.storeDocument(
-      config.session,
-      {
-        ...link,
-        retrievedAt: formatPacific(deps.clock.now()),
-        contentHash: createHash("sha256").update(fetched.bytes).digest("hex"),
-        textHash: createHash("sha256").update(fetched.pdf.text).digest("hex"),
-        pageCount: fetched.pdf.pageCount,
-        hasTextLayer: fetched.pdf.hasTextLayer,
-        text: fetched.pdf.text,
-      },
-      { entry, passages, citations: findCitations(fetched.pdf.text, config.session), vectors },
-    );
+    const document = {
+      ...link,
+      retrievedAt: formatPacific(deps.clock.now()),
+      contentHash: createHash("sha256").update(fetched.bytes).digest("hex"),
+      textHash: createHash("sha256").update(fetched.pdf.text).digest("hex"),
+      pageCount: fetched.pdf.pageCount,
+      hasTextLayer: fetched.pdf.hasTextLayer,
+      text: fetched.pdf.text,
+    };
+    const search = { entry, passages, citations: findCitations(fetched.pdf.text, config.session), vectors };
+    if (revised.has(link.id)) writer.replaceDocument(config.session, document, search);
+    else writer.storeDocument(config.session, document, search);
     stored.add(link.id);
     documentsFetched += 1;
   }
