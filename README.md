@@ -32,7 +32,7 @@ their configuration from the environment and fail at start-up, naming the variab
 
 ```
 npm run model:fetch   # once: the embedding model (about 34 MB) into .cache/models/
-export SESSION_KEY=2025R1 DATABASE_PATH=data/index.db OLIS_BASE_URL=https://api.oregonlegislature.gov/odata/odataservice.svc
+export SESSION_KEY=2026R1 DATABASE_PATH=data/index.db OLIS_BASE_URL=https://api.oregonlegislature.gov/odata/odataservice.svc
 export MODEL_PATH=.cache/models/Xenova--bge-small-en-v1.5/ea104dacec62c0de699686887e3f920caeb4f3e3
 SNAPSHOT_PATH=data/snapshot.json node src/bin/ingest.ts --once   # one full pull, then exit: the first pull
 SNAPSHOT_PATH=data/snapshot.json node src/bin/ingest.ts          # then the schedule below, until stopped
@@ -41,7 +41,7 @@ node src/bin/server.ts   # serves it at http://127.0.0.1:3000/mcp
 
 | Variable | Used by | Default | What it is |
 |---|---|---|---|
-| `SESSION_KEY` | both | none | The one Session this deployment serves (ADR-0003), such as `2025R1`. |
+| `SESSION_KEY` | both | none | The one Session this deployment serves (ADR-0003), such as `2026R1` (ADR-0046). |
 | `DATABASE_PATH` | both | none | The SQLite file. The worker writes it and the server reads it. |
 | `SNAPSHOT_PATH` | worker | none | The OregonAI snapshot file the build uses (see "Building the OregonAI snapshot"). The worker reads it before it reads OLIS and stores its version with the full pull; the server never reads it. |
 | `MODEL_PATH` | both | none | The directory that holds the pinned embedding model's files, which `npm run model:fetch` downloads and `npm run model:verify` checks (ADR-0026). The worker embeds each new passage with it and the server embeds each question; either checks every file against the lock's sha256 at start-up and stops, naming the file, if one is missing or is not the pinned one (about 25 ms). |
@@ -49,7 +49,7 @@ node src/bin/server.ts   # serves it at http://127.0.0.1:3000/mcp
 | `OLIS_BASE_URL` | both | none | The OLIS OData service root, such as `https://api.oregonlegislature.gov/odata/odataservice.svc` (a trailing slash is added if it is missing). The worker pulls from it, and the server reads one Measure from it when `get_measure` is called. |
 | `OLIS_LIVE_TIMEOUT_MS` | server | `5000` | How long one live lookup may take, its five requests together, before `get_measure` answers from the cache and says the lookup failed. A whole number of milliseconds from 1 to 30000 (half what an MCP client waits for a tool by default); another value stops the start-up. |
 | `OLIS_DOCUMENT_ORIGIN` | worker | `https://olis.oregonlegislature.gov` | Where the worker fetches the documents the feed links. They are not on the feed's host. Only a test sets it. |
-| `STATUTES_AFFECTED_TABLE_URL` | worker | none | Where Legislative Counsel publishes the Session's Statutes Affected Table, such as `https://www.oregonlegislature.gov/AutoPubs/artables2025R1.pdf` (an `http` or `https` URL; another value stops the start-up). It is not on OLIS, and it appears only after the Session ends (2025R1's is dated 8/19/2025). With it set, each full pull fetches the table, reads it again when its bytes or the snapshot's commit change, and `get_measure` sets its entries beside each Version's parsed Statute Links (ADR-0033, ADR-0034, ADR-0044). Unset, or while the address answers 404, nothing changes. |
+| `STATUTES_AFFECTED_TABLE_URL` | worker | none | Where Legislative Counsel publishes the Session's Statutes Affected Table, such as `https://www.oregonlegislature.gov/AutoPubs/artables2026R1.pdf` (an `http` or `https` URL; another value stops the start-up). It is not on OLIS, and it appears only after the Session ends (2025R1's is dated 8/19/2025). With it set, each full pull fetches the table, reads it again when its bytes or the snapshot's commit change, and `get_measure` sets its entries beside each Version's parsed Statute Links (ADR-0033, ADR-0034, ADR-0044). Unset, or while the address answers 404, nothing changes. |
 | `INGEST_INCREMENTS` | both | `daily` | How often the worker reads what OLIS changed between full pulls: `off`, `daily` (one a night, 5 pm to 6 am Pacific, on nights the full pull does not run) or `15min` (every 15 minutes, 6 am to 10 pm Pacific, on days the Session meets). Another value stops the start-up (ADR-0039). The server reads it to know when the index is too old. |
 | `INGEST_FULL_PULL` | both | `weekly` | How often the worker reads the whole Session: `nightly`, `weekly` (Saturday) or `monthly` (the 1st). It runs from midnight to 6 am Pacific, once a day at most, whatever the value. Another value stops the start-up (ADR-0039). |
 | `INGEST_HASH_SAMPLE_SIZE` | worker | `200` | How many stored documents the nightly hash sample fetches again to compare their hashes with the stored ones (ADR-0040). A whole number of at least 1; another value stops the start-up. The sample runs every night inside 5 pm to 6 am Pacific and writes `hash-sample-report.json` beside the database. |
@@ -229,7 +229,7 @@ Three things stay on a local machine:
   `.cache/` with its retrieval time, so that a rebuild produces no diff (`test/fixtures/CLAUDE.md`).
 
 So three kinds of ticket are built on a local checkout, not in a cloud session: a snapshot rebuild (such as
-#49), a fixture rebuild (such as #54), and anything that reads the OLIS cache, such as the 2025R1 backfill (#24)
+#49), a fixture rebuild (such as #54), and anything that pulls from OLIS or reads its cache, such as the 2026R1 backfill (#24)
 or an evaluation run against a full build (#23).
 
 ## Building the OregonAI snapshot

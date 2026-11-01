@@ -1,3 +1,7 @@
+---
+status: accepted; the backfill is 2026R1's, not 2025R1's, and runs on the desktop's CPU (ADR-0046)
+---
+
 # Run on the OregonAI deploy box under platform-deploy, not on a free cloud tier
 
 SessionGateway runs on the OregonAI deploy box (`192.168.86.2`: 2 cores, 14 GB RAM, no GPU) as two containers from one image, a server and an ingest worker, sharing one SQLite database on a host volume. The worker writes and the server reads, so a document is searchable as soon as it is indexed. The image carries only code and the embedding model; the database (about 1–1.5 GB a Session) and the cached PDFs (about 14 GB) live on the volume. It deploys through platform-deploy's reconcile loop, which redeploys within 10 minutes of a merge and records the serving commit in `deployed.txt`, as a second kind of service beside the Python corpora, and is reached at a path on the existing Cloudflare tunnel.
