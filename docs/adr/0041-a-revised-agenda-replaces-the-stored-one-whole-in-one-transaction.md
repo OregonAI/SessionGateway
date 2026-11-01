@@ -1,5 +1,5 @@
 ---
-status: accepted; fills in the "replaced files" bullet of ADR-0005, which stands
+status: accepted; fills in the "replaced files" bullet of ADR-0005, which stands; the reason it gives for rejecting a `revision` column (no migration) is superseded by ADR-0048
 ---
 
 # A revised agenda replaces the stored one whole, in one transaction

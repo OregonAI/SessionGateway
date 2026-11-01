@@ -18,6 +18,10 @@ The Session currently meeting, whose measures, documents and votes change during
 **Index**:
 Everything a deployment holds of its Session, pulled from OLIS.
 
+**Pull**:
+One read of the Session's feed into the Index: a Full pull or an Increment.
+_Avoid_: run (the nightly Hash sample is a run too), pass, sync
+
 **Full pull**:
 A pass that reads every row of the Session from the OLIS feed. It counts as complete only when every set's rows match the feed's own count (ADR-0005). A pull that is short of any count is refused whole: it stores nothing, the Index stays as the last complete pull left it, and the Build report says which sets were short (ADR-0030).
 
@@ -33,6 +37,10 @@ The block of text added to every tool result when the Index's latest update is t
 **No longer listed**:
 Said of a row the Index keeps when two complete Full pulls in a row did not list it. The row leaves search results, stays served by id (`get_document` says `no_longer_listed` and when the feed last listed it), and stays in the lists of the other tools, flagged `no_longer_listed`. A row that one complete pull misses is still listed, a pull that was refused counts for nothing, and a row that a later complete pull lists is listed again. A row no complete pull has listed (an old file's, or one an increment stored) is read as listed, not yet checked: `get_document` gives it `last_listed_at: null`. An Agency Link whose every evidence Document is no longer listed is flagged the same way, and search's Agency filter no longer counts it (ADR-0037). Nothing is deleted (ADR-0005, ADR-0030).
 _Avoid_: deleted, withdrawn, removed (OLIS says none of these: a row stops being listed)
+
+**Listing**:
+Whether the feed still lists a row the Index keeps, and when a complete Full pull last listed it: listed, No longer listed, or listed and not yet checked by any complete Full pull. A Proposed Amendment's Listing follows its Postings, and an Agency Link's its evidence Documents (ADR-0037).
+_Avoid_: status
 
 **Committee member**:
 A row of the feed's CommitteeMembers: a Legislator Code, a title ("Chair", "Co-Chair", "Member") and a Committee. The set's declared key (committee, date created, title) is not unique, so a row is told apart by all its properties, and Rep Helm and Rep Owens, Co-Chairs of HALNRW from one instant, are two rows. A task force's members are not all Legislators, so the code is stored as written, and one that names no Legislators row is an Unresolved Legislator Code, not an error. No tool shows the set yet; the Build report lists each committee's rows by Legislator Code.
@@ -56,7 +64,7 @@ The documents the worker fetches again each night (about 200, `INGEST_HASH_SAMPL
 What the ingest worker writes after a full pull, beside the database (spec #1, story 54): `build-report.json`, the sets the pull read with the rows the feed counted, the rows that came and how many the Index lists (ADR-0030), the Documents with no Text layer, the Documents it could not get or read, and what it made of the Passages it stored (how many were embedded and how many reused, ADR-0025), what it made of the Statutes Affected Table when the deployment names one (ADR-0034), and `unresolved-legislator-codes.json`, the Unresolved Legislator Codes. For the Committee members it holds, the report lists each committee's rows by Legislator Code, with the unresolved ones. A refused pull writes a report of its own, with the sets and which were short.
 
 **As of**:
-When the Index was last refreshed from OLIS: the moment the latest completed full pull began, shown in Pacific time with its UTC offset. Every result carries it.
+When the Index was last refreshed from OLIS: the moment the latest complete Full pull, or a later Increment, began, shown in Pacific time with its UTC offset (ADR-0039). Every result carries it.
 
 **Live status**:
 A Measure's Location, History, Schedule and Votes as OLIS says them when a `get_measure` call arrives, in the result's `live_status` block beside what the Index last pulled. It is dated by the clock at the read, and the Index's As of time dates the rest of the result. The block says only what the top level does not: a Location, History or vote list that OLIS gives as the top level shows it is `unchanged`; a list that OLIS gives as the top level's entries with more after the last shows only those `new_entries`; any other difference is shown `full`, and replaces the top level's. The Schedule, which the top level has none of, is always shown (`docs/adr/0038-the-live-status-block-says-only-what-the-top-level-does-not.md`). The lookup asks OLIS five questions about that one Measure and never pulls a set (ADR-0005; `docs/adr/0014-get-measure-reads-one-measure-from-olis-and-falls-back-to-the-cache.md` lists them), and gives up after a bound (5 seconds unless the deployment sets `OLIS_LIVE_TIMEOUT_MS`). If it fails (an error status, a broken connection, no answer within the bound, a page the client cannot read, a Measure OLIS does not list), the block is dated by the As of time, says in its `notice` that the lookup failed and why, repeats none of the top level's values (each is `unchanged`, meaning the Index's), and has no Schedule. That is a normal result, not an error: the cache still answers.
