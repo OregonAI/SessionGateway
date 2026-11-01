@@ -16,7 +16,8 @@
 //  - Timestamps carry no offset (they are Pacific local time, which the fixture rows already are).
 //  - `$filter` is a conjunction of "Property eq 'text'", "Property eq 123" and "Property ge datetime'...'"
 //    terms, the forms the live lookup sends (olis-odata.md section 1 verified `eq`, `ge`, `and` and
-//    `datetime'...'`). Anything else is refused with 400, and so is a property no row of the set has,
+//    `datetime'...'`), and the increments' parenthesised group "(CreatedDate gt datetime'...' or ModifiedDate gt
+//    datetime'...')" (`gt` and `or`, ticket #17). Anything else is refused with 400, and so is a property no row of the set has,
 //    as live OLIS refuses `Nope eq 1`.
 //
 // With `documents: true` it also serves the documents the feed links, as OLIS does: the bytes of each
@@ -80,6 +81,8 @@ export type FakeOlisOptions = {
    * A test adds the feed row that links one through `strayRows`.
    */
   strayDocuments?: Record<string, string>;
+  /** Called at the start of every request, feed or document: how a test makes OLIS take time on the simulated clock. */
+  onRequest?: () => void;
 };
 
 /** One request the fake OLIS received, as the feed's own URL words it. */
@@ -250,39 +253,88 @@ function sendError(response: ServerResponse, status: number, message: string): v
   );
 }
 
-type FilterTerm =
-  { property: string; operator: "eq"; value: string | number } | { property: string; operator: "ge"; value: number };
+type SimpleTerm =
+  | { property: string; operator: "eq"; value: string | number }
+  | { property: string; operator: "ge" | "gt"; value: number };
+
+/** A term of the conjunction: one simple term, or a parenthesised group of simple terms joined by " or ". */
+type FilterTerm = SimpleTerm[];
 
 const textTerm = /^(\w+) eq '((?:[^']|'')*)'$/;
 const numberTerm = /^(\w+) eq (-?\d+)$/;
-const datetimeTerm = /^(\w+) ge datetime'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?)'$/;
+const datetimeTerm = /^(\w+) (ge|gt) datetime'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?)'$/;
 
-/** Reads a `$filter` of terms joined by " and ", or says which term the fake does not understand. */
+/** Splits at a separator that is outside every parenthesis and every quoted text. */
+function splitOutsideParentheses(text: string, separator: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quoted = false;
+  let start = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === "'") quoted = !quoted;
+    else if (!quoted && char === "(") depth += 1;
+    else if (!quoted && char === ")") depth -= 1;
+    else if (!quoted && depth === 0 && text.startsWith(separator, index)) {
+      parts.push(text.slice(start, index));
+      start = index + separator.length;
+      index += separator.length - 1;
+    }
+  }
+  parts.push(text.slice(start));
+  return parts;
+}
+
+function parseSimpleTerm(text: string): SimpleTerm | undefined {
+  const asText = textTerm.exec(text);
+  const asNumber = numberTerm.exec(text);
+  const asDatetime = datetimeTerm.exec(text);
+  if (asText?.[1] !== undefined && asText[2] !== undefined) {
+    return { property: asText[1], operator: "eq", value: asText[2].replaceAll("''", "'") };
+  }
+  if (asNumber?.[1] !== undefined && asNumber[2] !== undefined) {
+    return { property: asNumber[1], operator: "eq", value: Number(asNumber[2]) };
+  }
+  if (asDatetime?.[1] !== undefined && asDatetime[2] !== undefined && asDatetime[3] !== undefined) {
+    return {
+      property: asDatetime[1],
+      operator: asDatetime[2] === "gt" ? "gt" : "ge",
+      value: feedWallClock(asDatetime[3]),
+    };
+  }
+  return undefined;
+}
+
+/**
+ * Reads a `$filter` of terms joined by " and ", each a simple term or a parenthesised group joined by " or " (the
+ * increments' `(CreatedDate gt datetime'...' or ModifiedDate gt datetime'...')`), or says which term the fake does
+ * not understand.
+ */
 function parseFilter(filter: string): FilterTerm[] | { error: string } {
   const terms: FilterTerm[] = [];
-  for (const text of filter.split(" and ")) {
-    const asText = textTerm.exec(text);
-    const asNumber = numberTerm.exec(text);
-    const asDatetime = datetimeTerm.exec(text);
-    if (asText?.[1] !== undefined && asText[2] !== undefined) {
-      terms.push({ property: asText[1], operator: "eq", value: asText[2].replaceAll("''", "'") });
-    } else if (asNumber?.[1] !== undefined && asNumber[2] !== undefined) {
-      terms.push({ property: asNumber[1], operator: "eq", value: Number(asNumber[2]) });
-    } else if (asDatetime?.[1] !== undefined && asDatetime[2] !== undefined) {
-      terms.push({ property: asDatetime[1], operator: "ge", value: feedWallClock(asDatetime[2]) });
-    } else {
+  for (const text of splitOutsideParentheses(filter, " and ")) {
+    const grouped = text.startsWith("(") && text.endsWith(")");
+    const alternatives = grouped ? splitOutsideParentheses(text.slice(1, -1), " or ") : [text];
+    const parsed = alternatives.map((alternative) => parseSimpleTerm(alternative));
+    if (parsed.some((term) => term === undefined)) {
       return {
-        error: `The fake OLIS understands only "Property eq 'text'", "Property eq 123" and "Property ge datetime'...'" joined by " and ", not "${text}".`,
+        error: `The fake OLIS understands only "Property eq 'text'", "Property eq 123" and "Property ge datetime'...'" (or gt), joined by " and ", with " or " inside parentheses, not "${text}".`,
       };
     }
+    terms.push(parsed.filter((term): term is SimpleTerm => term !== undefined));
   }
   return terms;
 }
 
-function matches(row: Row, term: FilterTerm): boolean {
+function matchesSimple(row: Row, term: SimpleTerm): boolean {
   const value = row[term.property];
   if (term.operator === "ge") return typeof value === "string" && feedWallClock(value) >= term.value;
+  if (term.operator === "gt") return typeof value === "string" && feedWallClock(value) > term.value;
   return value === term.value;
+}
+
+function matches(row: Row, term: FilterTerm): boolean {
+  return term.some((simple) => matchesSimple(row, simple));
 }
 
 export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis> {
@@ -312,9 +364,9 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
     const known = feed.get(entitySet) ?? [];
     // A set with no row at all cannot say which properties its type has, so a filter on one is not refused.
     const sample = [...known, ...(options.strayRows?.[entitySet] ?? [])];
-    for (const term of terms) {
-      if (sample.length > 0 && !sample.some((row) => term.property in row)) {
-        return { error: `Could not find a property named '${term.property}' on type '${entitySet}'.` };
+    for (const simple of terms.flat()) {
+      if (sample.length > 0 && !sample.some((row) => simple.property in row)) {
+        return { error: `Could not find a property named '${simple.property}' on type '${entitySet}'.` };
       }
     }
     const now = pacificWallClock(options.clock.now());
@@ -348,6 +400,7 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
   }
 
   function handle(request: IncomingMessage, response: ServerResponse): void {
+    options.onRequest?.();
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     const documentPath = url.pathname.toLowerCase();
     if (request.method === "GET" && (documentPath.startsWith("/liz/") || documentPath.startsWith("/autopubs/"))) {

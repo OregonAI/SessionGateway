@@ -1,11 +1,14 @@
 // Seam 1 on a real port (test/CLAUDE.md, "MCP client"): the Node adapter, the mount path and, below,
 // the Host and Origin guards. Everything else is tested in-process through handler.fetch.
+//
+// Its systems are copies of the run's template for their options (test/CLAUDE.md, Database, Templates): one for the
+// default server and one for each configured server.
 import { request as httpRequest } from "node:http";
 import { connect } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { serveMcp, type RunningServer } from "#/packages/mcp-server/http.ts";
 import { callTool, connectClientToUrl, eras } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 
 let system: System;
 let server: RunningServer;
@@ -74,7 +77,7 @@ function rethrow(error: Error): never {
 }
 
 beforeAll(async () => {
-  system = await startSystem({
+  system = await startCopiedSystem({
     clockAt: "2025-01-29T17:00:00Z",
     serverEnv: { MCP_HOST: "127.0.0.1", MCP_PORT: "0", MCP_PATH: "/session-gateway/mcp" },
   });
@@ -158,7 +161,7 @@ describe("the Host and Origin lists set in the environment", () => {
   let configuredServer: RunningServer;
 
   beforeAll(async () => {
-    configured = await startSystem({
+    configured = await startCopiedSystem({
       clockAt: "2025-01-29T17:00:00Z",
       serverEnv: {
         MCP_HOST: "127.0.0.1",

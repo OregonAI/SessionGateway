@@ -18,6 +18,7 @@ const meetingRow = z.looseObject({
   CommitteeCode: z.string(),
   MeetingDate: feedTimestamp,
   AgendaUrl: z.string().nullable(),
+  AgendaRevisionNumber: z.number().int().nullish(),
   MeetingStatus: z.string(),
 });
 
@@ -48,6 +49,7 @@ export async function readMeetings(
               nodeId: agendaId,
               kind: "agenda",
               label: "Agenda",
+              agendaRevision: row.AgendaRevisionNumber ?? 0,
               sourceUrl: sourceUrlOf(row.AgendaUrl),
               postedAt: null,
               date: row.MeetingDate,

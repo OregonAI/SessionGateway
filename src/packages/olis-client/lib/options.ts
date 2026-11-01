@@ -1,4 +1,5 @@
 import type { PulledEntitySet } from "#/packages/domain/documents.ts";
+import type { Timestamp } from "#/packages/time/pacific.ts";
 
 /**
  * How many rows the feed counted for one whole entity set of a Session, and how many came. A set is complete when
@@ -24,6 +25,12 @@ export type OlisClientOptions = {
    * as in the server's client, a short read throws.
    */
   onSetRead?: (count: SetCount) => void;
+  /**
+   * Makes every read of a whole Session an increment's (ADR-0005, ADR-0039): only the rows OLIS created or modified
+   * after this time, `CreatedDate gt X or ModifiedDate gt X`. Legislators and Committees are small and carry the
+   * names the rest resolve against, so they are still read whole.
+   */
+  changedSince?: Timestamp;
   /** How documents are fetched. Only the worker's client has them: the server's reads the feed alone. */
   documents?: {
     /** The origin the documents are fetched from: OLIS's own, https://olis.oregonlegislature.gov, except in a test. */

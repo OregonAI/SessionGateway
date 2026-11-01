@@ -5,15 +5,18 @@
 //
 // Expected values are literals from the fixture's feed rows (test/fixtures/olis-2025R1/feed/), the documents as
 // `pdftotext` prints them (test/fixtures/olis-2025R1/documents/) and the snapshot fixture.
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates). It covers ORS section, ORS chapter and Agency, and the calls `find_measures` refuses.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 
 let system: System;
 
 beforeAll(async () => {
   // 2026-08-01 10:00 in Oregon: every row of the fixture exists by then, so the pull fetches all 278 documents.
-  system = await startSystem({
+  system = await startCopiedSystem({
     clockAt: "2026-08-01T17:00:00Z",
     documents: true,
     serverEnv: { MCP_RATE_LIMIT: "1000" },

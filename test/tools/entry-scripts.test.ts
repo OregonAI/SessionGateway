@@ -32,7 +32,7 @@ function childEnvironment(env: Record<string, string>): Record<string, string> {
 /** Runs a script with exactly this environment, until it exits, or until `limitMs` have passed and it is killed (code null). */
 function run(script: string, env: Record<string, string>, limitMs = 60_000): Promise<Finished> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [script], { env: childEnvironment(env) });
+    const child = spawn(process.execPath, script.split(" "), { env: childEnvironment(env) });
     const timer = setTimeout(() => child.kill("SIGKILL"), limitMs);
     let stdout = "";
     let stderr = "";
@@ -115,7 +115,7 @@ describe("the entry scripts", () => {
     const { olis, database } = await fakeOlisAndDatabase();
     const env = workerEnvironment(olis, database.path);
 
-    const pulled = await run("src/bin/ingest.ts", env);
+    const pulled = await run("src/bin/ingest.ts --once", env);
     expect(pulled.code, pulled.stderr).toBe(0);
 
     const port = await freePort();
@@ -142,10 +142,33 @@ describe("the entry scripts", () => {
       source: "olis",
       lookup_failed: false,
       as_of: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-0[78]:00$/) as unknown,
-      location: { current: "Chapter Number Assigned", committee_code: null },
+      // The pull and the read see the same OLIS, so the block says the location is the top level's.
+      location: { status: "unchanged" },
     });
     expect(await exited).toBe(0);
   }, 20_000);
+
+  // Ticket #17, ADR-0039: the two rhythms are configuration, read through the config schema at start-up.
+  describe.for([
+    { script: "src/bin/ingest.ts", variable: "INGEST_INCREMENTS", bad: "hourly" },
+    { script: "src/bin/ingest.ts", variable: "INGEST_FULL_PULL", bad: "fortnightly" },
+    // Ticket #20, ADR-0040: the hash sample's size is the worker's alone.
+    { script: "src/bin/ingest.ts", variable: "INGEST_HASH_SAMPLE_SIZE", bad: "lots" },
+    { script: "src/bin/server.ts", variable: "INGEST_INCREMENTS", bad: "hourly" },
+    { script: "src/bin/server.ts", variable: "INGEST_FULL_PULL", bad: "fortnightly" },
+  ])("$script with $variable=$bad", ({ script, variable, bad }) => {
+    it("fails at start-up, naming the variable and not its value", async () => {
+      const { olis, database } = await fakeOlisAndDatabase();
+      const env = { ...workerEnvironment(olis, database.path), [variable]: bad };
+
+      const finished = await run(script, env, 20_000);
+
+      expect(finished.code).not.toBe(0);
+      expect(finished.code).not.toBeNull();
+      expect(finished.stderr).toContain(variable);
+      expect(finished.stderr).not.toContain(bad);
+    }, 30_000);
+  });
 
   it("src/bin/ingest.ts writes the Legislator Codes it could not resolve to a report beside the database", async () => {
     // A sponsor row (SB 69) whose code has no Legislators row and no alias; the cache's real codes
@@ -154,7 +177,7 @@ describe("the entry scripts", () => {
     const { olis, database } = await fakeOlisAndDatabase({ strayRows: { MeasureSponsors: [stray] } });
     const env = workerEnvironment(olis, database.path);
 
-    const pulled = await run("src/bin/ingest.ts", env);
+    const pulled = await run("src/bin/ingest.ts --once", env);
 
     expect(pulled.code, pulled.stderr).toBe(0);
     const report: unknown = JSON.parse(
@@ -175,7 +198,7 @@ describe("the entry scripts", () => {
     const { olis, database } = await fakeOlisAndDatabase({ clockAt: "2025-01-10T21:30:00Z", documents: true });
     const env = workerEnvironment(olis, database.path);
 
-    const pulled = await run("src/bin/ingest.ts", env);
+    const pulled = await run("src/bin/ingest.ts --once", env);
     expect(pulled.code, pulled.stderr).toBe(0);
 
     const port = await freePort();
@@ -222,7 +245,7 @@ describe("the entry scripts", () => {
     const { olis, database } = await fakeOlisAndDatabase({ clockAt: "2025-01-29T17:00:00Z", documents: true });
     const env = { ...workerEnvironment(olis, database.path), NODE_OPTIONS: withoutPdfjsBundle };
 
-    const finished = await run("src/bin/ingest.ts", env);
+    const finished = await run("src/bin/ingest.ts --once", env);
 
     // A bug or a failed install is not an outcome to report per document: the pull fails, and the
     // error says what broke and for which document.
@@ -242,7 +265,7 @@ describe("the entry scripts", () => {
     }> {
       const { olis, database } = await fakeOlisAndDatabase();
       const env = workerEnvironment(olis, database.path);
-      const pulled = await run("src/bin/ingest.ts", env);
+      const pulled = await run("src/bin/ingest.ts --once", env);
       expect(pulled.code, pulled.stderr).toBe(0);
       const port = await freePort();
       const child = spawn(process.execPath, ["src/bin/server.ts"], {
@@ -336,7 +359,7 @@ describe("the entry scripts", () => {
       // registered yet, Node's default action ends the process by the signal, with nothing logged and no close.
       const { olis, database } = await fakeOlisAndDatabase();
       const env = workerEnvironment(olis, database.path);
-      const pulled = await run("src/bin/ingest.ts", env);
+      const pulled = await run("src/bin/ingest.ts --once", env);
       expect(pulled.code, pulled.stderr).toBe(0);
 
       for (let start = 1; start <= 5; start += 1) {
@@ -546,7 +569,7 @@ describe("the entry scripts", () => {
     const withoutSnapshot: Record<string, string> = workerEnvironment(olis, database.path);
     delete withoutSnapshot["SNAPSHOT_PATH"];
 
-    const finished = await run("src/bin/ingest.ts", withoutSnapshot);
+    const finished = await run("src/bin/ingest.ts --once", withoutSnapshot);
 
     expect(finished.code).not.toBe(0);
     expect(finished.stderr).toContain("SNAPSHOT_PATH");
@@ -558,7 +581,7 @@ describe("the entry scripts", () => {
     const { olis } = await fakeOlisAndDatabase();
     const env = workerEnvironment(olis, ":memory:");
 
-    const finished = await run("src/bin/ingest.ts", env);
+    const finished = await run("src/bin/ingest.ts --once", env);
 
     expect(finished.code).not.toBe(0);
     expect(finished.stderr).toContain("WAL");

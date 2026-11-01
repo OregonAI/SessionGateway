@@ -11,6 +11,9 @@
 // where they are used), for the cases the fixture lacks: an amendment whose Version is not known, a Version with no
 // text layer, and a Version with no place in the order of printing.
 // Every case runs once with a 2026-07-28 client and once with a legacy client.
+//
+// A case that only reads, or that moves a row, starts from a copy of the run's template for its options
+// (test/CLAUDE.md, Database, Templates); the system with made-up rows pulls for itself.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import {
@@ -21,7 +24,7 @@ import {
   triplesOf,
   type StatuteLinks,
 } from "../support/statute-links.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, startSystem, type System } from "../support/system.ts";
 
 // A case that builds its own system and serves the documents pulls up to the fixture's 278 files, about four
 // seconds on its own and more with the other files' workers running beside it (the default is five).
@@ -40,7 +43,7 @@ type Block = {
   versions: {
     id: string;
     label: string;
-    same_as?: string;
+    same_links_as?: string;
     text_read?: boolean;
     not_read_reason?: string | null;
     statute_links?: StatuteLinks;
@@ -75,7 +78,7 @@ describe("the feed as it stood on 2025-02-01", () => {
   let system: System;
 
   beforeAll(async () => {
-    system = await startSystem({
+    system = await startCopiedSystem({
       clockAt: "2025-02-01T20:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "1000" },
@@ -161,6 +164,7 @@ describe("the feed as it stood on 2025-02-01", () => {
 });
 
 // The case moves the clock and pulls again, which changes the database, so each era gets a system of its own.
+// A real pull from an empty database: the case counts the requests of the first pull and of the second (test/CLAUDE.md).
 describe.for(eras)("when the next Version comes in with a later pull, for a %s client", (era) => {
   let system: System;
   let connected: ConnectedClient;
@@ -236,7 +240,7 @@ describe("rows the fixture lacks", () => {
   let system: System;
 
   beforeAll(async () => {
-    system = await startSystem({
+    system = await startCopiedSystem({
       clockAt: "2026-08-01T17:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "1000" },
@@ -282,10 +286,10 @@ describe("rows the fixture lacks", () => {
       const block = await blockOf(connected, "SB 69");
 
       // The made-up Minority Report is served with the A-Engrossed file, and Enrolled reads the same as that file: so the
-      // Minority Report is the same as Enrolled, the Version before it in print order (L1 of the fix pass of #16). Enrolled
+      // Minority Report's links are the same as Enrolled's, the Version before it in print order (ADR-0036). Enrolled
       // is listed in full: the Version before it, B-Engrossed, was not read, and a Version that was not read is nothing
       // another can be the same as.
-      expect(block.versions.map((version) => [version.label, version.text_read, version.same_as])).toEqual([
+      expect(block.versions.map((version) => [version.label, version.text_read, version.same_links_as])).toEqual([
         ["Introduced", true, undefined],
         ["A-Engrossed", true, undefined],
         ["B-Engrossed", false, undefined],
@@ -319,7 +323,7 @@ describe.for(eras)("a Version with no place in the order of printing is the only
   let connected: ConnectedClient;
 
   beforeAll(async () => {
-    system = await startSystem({
+    system = await startCopiedSystem({
       clockAt: "2025-02-01T20:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "1000" },
@@ -383,7 +387,7 @@ describe.for(eras)("an amendment whose earliest posting writes its number with n
   });
 
   beforeAll(async () => {
-    system = await startSystem({
+    system = await startCopiedSystem({
       clockAt: "2026-08-01T17:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "1000" },

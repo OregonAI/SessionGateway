@@ -1,11 +1,13 @@
 // The MCP server's side of the database: read-only.
 import { z } from "zod";
-import type {
-  AgencyEvidence,
-  LinkedNode,
-  StoredAgencyLink,
-  StoredStatuteLinked,
-  StoredUnresolvedUnit,
+import {
+  agencyLinkKey,
+  listedLinkKeys,
+  type AgencyEvidence,
+  type LinkedNode,
+  type StoredAgencyLink,
+  type StoredStatuteLinked,
+  type StoredUnresolvedUnit,
 } from "#/packages/domain/agency-links.ts";
 import type { StoredAnalysis } from "#/packages/domain/analysis.ts";
 import {
@@ -32,6 +34,7 @@ import {
   type Relation,
   type RelatedNode,
   type TestimonyEntry,
+  type SessionSpan,
 } from "#/packages/domain/documents.ts";
 import {
   measureIdOf,
@@ -71,10 +74,17 @@ import {
   type FloorVote,
   type LegislatorVote,
 } from "#/packages/domain/votes.ts";
-import type { Timestamp } from "#/packages/time/pacific.ts";
+import { compareTimestamps, type Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceFromJson, storedEvidenceKinds } from "./lib/agency-evidence.ts";
 import { openReadConnection } from "./lib/connection.ts";
 import { listedOrUnchecked } from "./lib/listing.ts";
+import {
+  readFullPullAsOf,
+  readIncrementAsOf,
+  readMeetingDays,
+  readConveneDays,
+  readSessionDates,
+} from "./lib/run-state.ts";
 import { statuteLinkOfRow, statuteLinkRow, storedTargetOf } from "./lib/statute-link-rows.ts";
 
 /** What a meetings query asks for. Every field given must hold. */
@@ -114,8 +124,21 @@ export type IndexReader = {
    * is not one the pull could resolve. The live lookup resolves the codes in OLIS's current votes this way.
    */
   findLegislatorOfCode(session: SessionKey, code: string): Legislator | undefined;
-  /** When the last completed full pull started, or undefined if none has completed. */
+  /**
+   * The index's as-of time: the start of the latest complete full pull or of a later increment (ADR-0039), or undefined
+   * until a full pull has completed.
+   */
   asOf(session: SessionKey): Timestamp | undefined;
+  /** When the last complete full pull started, or undefined while there has been none. */
+  lastFullPull(session: SessionKey): Timestamp | undefined;
+  /** When the last increment started, or undefined while there has been none (ticket #17, ADR-0039). */
+  lastIncrement(session: SessionKey): Timestamp | undefined;
+  /** The Pacific dates (YYYY-MM-DD) of the Session's committee meetings the index holds: days the Session meets. */
+  meetingDays(session: SessionKey): string[];
+  /** The Pacific dates (YYYY-MM-DD) of the Session's floor convenings (ConveneTimes) the index holds: days the Session meets (ADR-0042). */
+  conveneDays(session: SessionKey): string[];
+  /** The dates the Session begins and ends on (its LegislativeSessions row), or undefined until a full pull has read the row (ADR-0042). */
+  sessionDates(session: SessionKey): SessionSpan | undefined;
   /** The version of the OregonAI snapshot the last completed full pull built the index with. */
   snapshotVersion(session: SessionKey): SnapshotVersion | undefined;
   /**
@@ -210,7 +233,6 @@ const measureRow = z.object({
   created_at: z.string(),
   modified_at: z.string().nullable(),
 });
-const stateRow = z.object({ full_pull_as_of: z.string() });
 const textRow = z.object({ text: z.string() });
 const historyRow = z.object({
   history_id: z.number(),
@@ -401,6 +423,8 @@ const agencyLinkRow = z.object({
   document_created_at: z.string().nullable(),
   measure_id: z.string(),
   version_id: z.string().nullable(),
+  listed: z.number().nullable(),
+  last_listed_at: z.string().nullable(),
 });
 const testimonyLinkRow = z.object({
   agency_id: z.string(),
@@ -409,6 +433,8 @@ const testimonyLinkRow = z.object({
   document_source_url: z.string(),
   document_created_at: z.string().nullable(),
   measure_id: z.string(),
+  listed: z.number().nullable(),
+  last_listed_at: z.string().nullable(),
 });
 const statuteLinkedRow = statuteLinkRow.extend({
   document_id: z.string(),
@@ -419,7 +445,6 @@ const statuteLinkedRow = statuteLinkRow.extend({
   node_id: z.string(),
   measure_id: z.string(),
 });
-const measureOfAgencyRow = z.object({ measure_id: z.string() });
 const agencyParentRow = z.object({ agency_id: z.string(), parent_id: z.string() });
 const unresolvedUnitRow = z.object({
   unit: z.string(),
@@ -427,6 +452,8 @@ const unresolvedUnitRow = z.object({
   document_source_url: z.string(),
   measure_id: z.string(),
   version_id: z.string().nullable(),
+  listed: z.number().nullable(),
+  last_listed_at: z.string().nullable(),
 });
 const versionNodeRow = z.object({ label: z.string(), source_url: z.string() });
 const amendmentNumberRow = z.object({ label: z.string() });
@@ -489,7 +516,8 @@ export function openIndexReader(path: string): IndexReader {
        ON legislator.session_key = legislator_code.session_key AND legislator.id = legislator_code.legislator_id
      WHERE legislator_code.session_key = ? AND legislator_code.code = ?`,
   );
-  const selectAsOf = database.prepare("SELECT full_pull_as_of FROM index_state WHERE session_key = ?");
+  const fullPullOf = (session: SessionKey): Timestamp | undefined => readFullPullAsOf(database, session);
+  const incrementOf = (session: SessionKey): Timestamp | undefined => readIncrementAsOf(database, session);
   const selectSnapshot = database.prepare(
     "SELECT source, commit_sha, commit_date FROM snapshot_state WHERE session_key = ?",
   );
@@ -637,26 +665,17 @@ export function openIndexReader(path: string): IndexReader {
   const agencyLinksWhere = (condition: string): string =>
     `SELECT a.agency_id, a.kind AS link_kind, a.evidence, d.id AS document_id, d.source_url AS document_source_url,
             d.label AS document_label, d.kind AS document_kind, d.node_id, dc.created_at AS document_created_at,
-            mr.to_id AS measure_id, vr.to_id AS version_id
+            mr.to_id AS measure_id, vr.to_id AS version_id, fr.listed, fr.last_listed_at
      FROM agency_link a
        JOIN document d ON d.id = a.document_id
        JOIN document_relation mr ON mr.document_id = d.id AND mr.relation = 'measure'
        LEFT JOIN document_relation vr ON vr.document_id = d.id AND vr.relation = 'version'
        LEFT JOIN document_created dc ON dc.document_id = d.id
+       LEFT JOIN feed_row_state fr ON fr.document_id = d.id
      WHERE d.session_key = ?1 AND ${condition}
      ORDER BY a.agency_id, d.id, a.ordinal`;
   const selectAgencyLinksOfAgency = database.prepare(agencyLinksWhere("a.agency_id = ?2"));
   const selectAgencyLinksOfMeasure = database.prepare(agencyLinksWhere("mr.to_id = ?2"));
-  const selectMeasuresOfAgency = database.prepare(
-    `SELECT mr.to_id AS measure_id
-     FROM agency_link a
-       JOIN document d ON d.id = a.document_id
-       JOIN document_relation mr ON mr.document_id = d.id AND mr.relation = 'measure'
-     WHERE d.session_key = ?1 AND a.agency_id = ?2
-     UNION
-     SELECT t.measure_id FROM testimony t
-     WHERE t.session_key = ?1 AND t.agency_id = ?2 AND t.measure_id IS NOT NULL`,
-  );
   // The files with a Statute Link to a section or a chapter (`target_id = ?2`), or to a section of a chapter: its ids
   // from "ors-657b." up to "ors-657b/", the character after the dot, so chapter 657 does not take 657B's sections.
   const statuteLinkedWhere = (condition: string): string =>
@@ -674,19 +693,21 @@ export function openIndexReader(path: string): IndexReader {
   // Testimony whose Organization names an Agency: the worker matched it when it stored the row (ADR-0016, ADR-0027).
   const testimonyLinksWhere = (condition: string): string =>
     `SELECT t.agency_id, t.organization, t.document_id, t.source_url AS document_source_url,
-            dc.created_at AS document_created_at, t.measure_id
+            dc.created_at AS document_created_at, t.measure_id, fr.listed, fr.last_listed_at
      FROM testimony t LEFT JOIN document_created dc ON dc.document_id = t.document_id
+       LEFT JOIN feed_row_state fr ON fr.document_id = t.document_id
      WHERE t.session_key = ?1 AND t.agency_id IS NOT NULL AND t.measure_id IS NOT NULL AND ${condition}
      ORDER BY t.agency_id, t.comm_test_id`;
   const selectTestimonyLinksOfAgency = database.prepare(testimonyLinksWhere("t.agency_id = ?2"));
   const selectTestimonyLinksOfMeasure = database.prepare(testimonyLinksWhere("t.measure_id = ?2"));
   const selectUnresolvedUnits = database.prepare(
     `SELECT u.unit, d.id AS document_id, d.source_url AS document_source_url, mr.to_id AS measure_id,
-            vr.to_id AS version_id
+            vr.to_id AS version_id, fr.listed, fr.last_listed_at
      FROM unresolved_unit u
        JOIN document d ON d.id = u.document_id
        JOIN document_relation mr ON mr.document_id = d.id AND mr.relation = 'measure'
        LEFT JOIN document_relation vr ON vr.document_id = d.id AND vr.relation = 'version'
+       LEFT JOIN feed_row_state fr ON fr.document_id = d.id
      WHERE mr.to_id = ?
      ORDER BY d.id, u.ordinal`,
   );
@@ -890,6 +911,54 @@ export function openIndexReader(path: string): IndexReader {
       files: [...readings.values()],
     };
   }
+  function findAgencyLinks(
+    session: SessionKey,
+    of: { agency: AgencyId } | { measure: MeasureKey },
+  ): StoredAgencyLink[] {
+    const [links, testimonyLinks, asked] =
+      "agency" in of
+        ? [selectAgencyLinksOfAgency, selectTestimonyLinksOfAgency, of.agency]
+        : [selectAgencyLinksOfMeasure, selectTestimonyLinksOfMeasure, measureIdOf(of.measure)];
+    const stored = links.all(session, asked).map((row) => agencyLinkRow.parse(row));
+    const known = new Map<string, LinkedNode>();
+    const read = stored.map((found): StoredAgencyLink => {
+      const key = measureKeyOf(found.measure_id, session);
+      const evidence: AgencyEvidence = evidenceFromJson(found.link_kind, found.evidence);
+      return {
+        agency: found.agency_id as AgencyId,
+        evidence,
+        document: {
+          id: found.document_id as DocumentId,
+          sourceUrl: found.document_source_url,
+          createdAt: found.document_created_at as Timestamp | null,
+          // A Proposed Amendment is listed while the feed lists any of its postings (ADR-0030), as its node is.
+          listing: listingOf(
+            found.document_kind === "proposed_amendment" ? selectPostingsListing.get(found.node_id) : found,
+          ),
+        },
+        node: nodeOfDocument(found, key, known),
+      };
+    });
+    const testimony = testimonyLinks
+      .all(session, asked)
+      .map((row) => testimonyLinkRow.parse(row))
+      .map((found): StoredAgencyLink => {
+        const key = measureKeyOf(found.measure_id, session);
+        return {
+          agency: found.agency_id as AgencyId,
+          // The Agency Link extractor matches the Organization with stray spaces trimmed (agency-links, matchOrganization).
+          evidence: { kind: "testimony", organization: (found.organization ?? "").trim() },
+          document: {
+            id: found.document_id as DocumentId,
+            sourceUrl: found.document_source_url,
+            createdAt: found.document_created_at as Timestamp | null,
+            listing: listingOf(found),
+          },
+          node: measureNodeOf(key),
+        };
+      });
+    return [...read, ...testimony];
+  }
   return {
     analysisDocuments(key) {
       return selectAnalyses.all(measureIdOf(key)).map((row) => {
@@ -911,46 +980,7 @@ export function openIndexReader(path: string): IndexReader {
     analysisNotHeld(key) {
       return countRow.parse(countNotHeld.get(measureIdOf(key))).n;
     },
-    findAgencyLinks(session, of) {
-      const [links, testimonyLinks, asked] =
-        "agency" in of
-          ? [selectAgencyLinksOfAgency, selectTestimonyLinksOfAgency, of.agency]
-          : [selectAgencyLinksOfMeasure, selectTestimonyLinksOfMeasure, measureIdOf(of.measure)];
-      const stored = links.all(session, asked).map((row) => agencyLinkRow.parse(row));
-      const known = new Map<string, LinkedNode>();
-      const read = stored.map((found): StoredAgencyLink => {
-        const key = measureKeyOf(found.measure_id, session);
-        const evidence: AgencyEvidence = evidenceFromJson(found.link_kind, found.evidence);
-        return {
-          agency: found.agency_id as AgencyId,
-          evidence,
-          document: {
-            id: found.document_id as DocumentId,
-            sourceUrl: found.document_source_url,
-            createdAt: found.document_created_at as Timestamp | null,
-          },
-          node: nodeOfDocument(found, key, known),
-        };
-      });
-      const testimony = testimonyLinks
-        .all(session, asked)
-        .map((row) => testimonyLinkRow.parse(row))
-        .map((found): StoredAgencyLink => {
-          const key = measureKeyOf(found.measure_id, session);
-          return {
-            agency: found.agency_id as AgencyId,
-            // The Agency Link extractor matches the Organization with stray spaces trimmed (agency-links, matchOrganization).
-            evidence: { kind: "testimony", organization: (found.organization ?? "").trim() },
-            document: {
-              id: found.document_id as DocumentId,
-              sourceUrl: found.document_source_url,
-              createdAt: found.document_created_at as Timestamp | null,
-            },
-            node: measureNodeOf(key),
-          };
-        });
-      return [...read, ...testimony];
-    },
+    findAgencyLinks,
     findStatuteLinked(session, target) {
       const known = new Map<string, LinkedNode>();
       let rows;
@@ -985,9 +1015,16 @@ export function openIndexReader(path: string): IndexReader {
         });
     },
     measuresWithAgencyLink(session, agency) {
-      return selectMeasuresOfAgency
-        .all(session, agency)
-        .map((row) => measureOfAgencyRow.parse(row).measure_id as MeasureId);
+      // ADR-0037: a link none of whose evidence documents the feed lists is not counted, as a node no longer listed is not.
+      const links = findAgencyLinks(session, { agency });
+      const listed = listedLinkKeys(links);
+      return [
+        ...new Set(
+          links
+            .filter((link) => listed.has(agencyLinkKey(link.agency, link.node.id)))
+            .map((link) => measureIdOf(link.node.measure)),
+        ),
+      ];
     },
     agencyParents() {
       const parents = new Map<AgencyId, AgencyId>();
@@ -1002,7 +1039,11 @@ export function openIndexReader(path: string): IndexReader {
         const found = unresolvedUnitRow.parse(row);
         return {
           unit: found.unit,
-          statement: { id: found.document_id as DocumentId, sourceUrl: found.document_source_url },
+          statement: {
+            id: found.document_id as DocumentId,
+            sourceUrl: found.document_source_url,
+            listing: listingOf(found),
+          },
           node: statementNodeOf(measure, found.version_id),
         };
       });
@@ -1336,8 +1377,22 @@ export function openIndexReader(path: string): IndexReader {
       return { id: stored.legislator_id as LegislatorId, name: stored.legislator_name };
     },
     asOf(session) {
-      const row = selectAsOf.get(session);
-      return row === undefined ? undefined : (stateRow.parse(row).full_pull_as_of as Timestamp);
+      // The index is as of its latest update: the last complete full pull, or a later increment (ADR-0039).
+      const full = fullPullOf(session);
+      const increment = incrementOf(session);
+      if (full === undefined || increment === undefined) return full;
+      return compareTimestamps(increment, full) > 0 ? increment : full;
+    },
+    lastFullPull: fullPullOf,
+    lastIncrement: incrementOf,
+    meetingDays(session) {
+      return readMeetingDays(database, session);
+    },
+    conveneDays(session) {
+      return readConveneDays(database, session);
+    },
+    sessionDates(session) {
+      return readSessionDates(database, session);
     },
     snapshotVersion(session) {
       const row = selectSnapshot.get(session);

@@ -9,14 +9,18 @@
 // ranking of an exact citation reads the stored citations and the Measure and amendment ids, never a vector. The
 // fake is the real tokenizer over a fake session, so the documents are cut into the passages production cuts
 // (the cuts decide which citations a passage boundary splits), and that is why it is enough here.
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates). It covers the citations, the citations the index does not hold, the size of an answer and
+// the values of a hit.
 import { afterAll, beforeAll, describe, expect, it, test } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 
 let system: System;
 
 beforeAll(async () => {
-  system = await startSystem({
+  system = await startCopiedSystem({
     clockAt: "2026-08-01T17:00:00Z",
     documents: true,
     // About a hundred and twenty calls are made on the one simulated clock (the cases run for two MCP clients): the

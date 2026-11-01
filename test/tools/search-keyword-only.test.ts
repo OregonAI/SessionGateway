@@ -12,6 +12,10 @@
 //     lists under Meeting Material, and one under Presentation (cache of 2026-10-28);
 //   - 900003: DocumentType "Recording Log", with the text of HB 3131's Preliminary SMS (row 287931);
 //   - 900004: DocumentType "Meeting Material", with that same text: the control that IS found by meaning.
+//
+// Its database is built by this file, once, with the real embedder, which is why it is not a copy of the run's
+// template (test/CLAUDE.md, Database, Templates).
+// It embeds about 13,000 characters (measured 2026-10-30); the early clock keeps that small.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { loadRealEmbedder } from "../support/real-embedder.ts";

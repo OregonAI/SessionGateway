@@ -7,16 +7,19 @@
 // Expected values are literals from the documents as `pdftotext` prints them
 // (test/fixtures/olis-2025R1/documents/measure-documents/), read by hand: the lines with "SECTION n." and
 // "is amended to read", and the references to ORS.
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { chapterTarget, expectedLinks, sectionTarget, triplesOf, type StatuteLinks } from "../support/statute-links.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 
 let system: System;
 
 beforeAll(async () => {
   // 2026-08-01 10:00 in Oregon: every row of the fixture exists by then, so the pull fetches all 278 documents.
-  system = await startSystem({
+  system = await startCopiedSystem({
     clockAt: "2026-08-01T17:00:00Z",
     documents: true,
     serverEnv: { MCP_RATE_LIMIT: "1000" },
@@ -31,8 +34,8 @@ type VersionEntry = {
   id: string;
   label: string;
   source_url: string;
-  /** The id of the Version before it in print order, when this one reads the same and its reading is not repeated. */
-  same_as?: string;
+  /** The id of the Version before it in print order, when this one's Statute Links are exactly that Version's and are not repeated. */
+  same_links_as?: string;
   text_read?: boolean;
   not_read_reason?: string | null;
   statute_links?: StatuteLinks;
@@ -113,11 +116,11 @@ describe.for(eras)("get_measure's Statute Links for a %s client", (era) => {
         chapters: [chapterTarget("ors-chapter-657b", "1")],
       });
       expect(aEngrossed?.statute_links?.repeals).toEqual({ sections: [], chapters: [] });
-      // The Enrolled Version's links are the A-Engrossed Version's, to the last measure section (L1 of the fix pass of #16).
-      expect(enrolled?.same_as).toBe("version-2025r1-sb69-a-engrossed");
+      // The Enrolled Version's links are the A-Engrossed Version's, to the last measure section (ADR-0036).
+      expect(enrolled?.same_links_as).toBe("version-2025r1-sb69-a-engrossed");
     });
 
-    // L1: a Version whose reading is the one before it in print order says so and does not list it again. The Enrolled
+    // ADR-0036: a Version whose reading is the one before it in print order says so and does not list it again. The Enrolled
     // Version of SB 69 repeats the A-Engrossed Version's 292 links (8 amends, 1 adds-to and 283 cites) to the measure
     // section, which was 15,145 characters of the answer (counted in the answer before this change). A Version that
     // differs lists its own: the A-Engrossed Version is not the Introduced one.
@@ -129,10 +132,10 @@ describe.for(eras)("get_measure's Statute Links for a %s client", (era) => {
         id: "version-2025r1-sb69-enrolled",
         label: "Enrolled",
         source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/Enrolled",
-        same_as: "version-2025r1-sb69-a-engrossed",
+        same_links_as: "version-2025r1-sb69-a-engrossed",
       });
       const aEngrossed = versions.find((version) => version.id === "version-2025r1-sb69-a-engrossed");
-      expect(aEngrossed?.same_as).toBeUndefined();
+      expect(aEngrossed?.same_links_as).toBeUndefined();
       expect(aEngrossed?.text_read).toBe(true);
       expect(triplesOf(aEngrossed?.statute_links ?? expectedLinks({}))).toHaveLength(292);
     });
@@ -208,8 +211,8 @@ describe.for(eras)("get_measure's Statute Links for a %s client", (era) => {
         },
       });
       expect(bEngrossed?.statute_links).toEqual(both);
-      // The Enrolled Version reads the same as the B-Engrossed one, so it says so (L1).
-      expect(enrolled?.same_as).toBe("version-2025r1-hb3795-b-engrossed");
+      // The Enrolled Version reads the same as the B-Engrossed one, so it says so (ADR-0036).
+      expect(enrolled?.same_links_as).toBe("version-2025r1-hb3795-b-engrossed");
       expect(enrolled?.statute_links).toBeUndefined();
     });
   });

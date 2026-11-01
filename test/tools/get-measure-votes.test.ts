@@ -6,9 +6,12 @@
 // Expected values are literals from outside the code: the Legislator Codes, votes and dates are the
 // fixture's CommitteeVotes and MeasureVotes rows (test/fixtures/olis-2025R1/feed/), the names are its
 // Legislators rows, and the id form is the one GLOSSARY.md gives.
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 import {
   hb3795Hechs,
   hb3795FloorVotes,
@@ -25,7 +28,7 @@ let system: System;
 beforeAll(async () => {
   // 2025-12-15, after every row these Measures have was created: the fake OLIS hides a row created
   // after its clock, and the Legislators snapshot's newest row is from 2025-06-07.
-  system = await startSystem({ clockAt: "2025-12-15T17:00:00Z" });
+  system = await startCopiedSystem({ clockAt: "2025-12-15T17:00:00Z" });
 });
 
 afterAll(async () => {

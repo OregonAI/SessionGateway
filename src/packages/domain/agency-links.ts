@@ -1,7 +1,7 @@
 // Agency Links (GLOSSARY.md, "Agency Link"; ADR-0004, ADR-0027) as the extractor makes them and as the
 // store gives them back. The extractor (`agency-links`) and the database both name these types, so they are
 // here and the extractor re-exports them, as the Statute Link types are (statute-links.ts).
-import type { AmendmentId, DocumentId } from "./documents.ts";
+import type { AmendmentId, DocumentId, Listing } from "./documents.ts";
 import type { MeasureId, MeasureKey } from "./index.ts";
 import type { AgencyId, OrsChapterId } from "./oregonai.ts";
 import type { StatuteLink } from "./statute-links.ts";
@@ -78,7 +78,7 @@ export type StoredAgencyLink = {
    * The document the evidence was read from: the Fiscal Impact Statement, the Version, the posting of the amendment,
    * or the Testimony. `createdAt` is when OLIS created its row (null when the feed gave none).
    */
-  document: { id: DocumentId; sourceUrl: string; createdAt: Timestamp | null };
+  document: { id: DocumentId; sourceUrl: string; createdAt: Timestamp | null; listing: Listing };
   /**
    * Where the link sits: the Version a Fiscal Impact Statement is placed on (ADR-0013) or the Measure when it is on none;
    * the Version or Proposed Amendment whose text it was read from; the Measure for Testimony.
@@ -89,7 +89,7 @@ export type StoredAgencyLink = {
 /** A unit a Fiscal Impact Statement lists that is not an Agency (GLOSSARY.md, "Unresolved unit"), with the statement. */
 export type StoredUnresolvedUnit = {
   unit: string;
-  statement: { id: DocumentId; sourceUrl: string };
+  statement: { id: DocumentId; sourceUrl: string; listing: Listing };
   /** Where the statement sits, as for an Agency Link. */
   node: LinkedNode;
 };
@@ -104,3 +104,18 @@ export type StoredStatuteLinked = {
   node: LinkedNode;
   link: StatuteLink;
 };
+
+/** What one Agency's links to one node are known by: the Agency and the node the evidence sits on. */
+export function agencyLinkKey(agency: AgencyId, nodeId: string): string {
+  return `${agency} ${nodeId}`;
+}
+
+/**
+ * The keys (`agencyLinkKey`) of the Agency's links to a node with at least one evidence document the feed lists. A link
+ * whose every evidence document is no longer listed is not among them (ADR-0037); one with any listed document is.
+ */
+export function listedLinkKeys(links: readonly StoredAgencyLink[]): Set<string> {
+  return new Set(
+    links.filter((link) => link.document.listing.listed).map((link) => agencyLinkKey(link.agency, link.node.id)),
+  );
+}

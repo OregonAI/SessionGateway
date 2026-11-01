@@ -22,6 +22,18 @@ const schema = `
     session_key TEXT NOT NULL PRIMARY KEY,
     full_pull_as_of TEXT NOT NULL
   ) STRICT;
+  -- When the last increment started (ticket #17, ADR-0039). An increment is not a complete full pull: it never
+  -- touches index_state's full_pull_as_of or the listing tables.
+  CREATE TABLE IF NOT EXISTS increment_state (
+    session_key TEXT NOT NULL PRIMARY KEY,
+    as_of TEXT NOT NULL
+  ) STRICT;
+  -- When the last full pull was begun, complete or not (ticket #17, ADR-0039): a pull OLIS gave short stores nothing,
+  -- but it was a full pull the Acceptable Use Agreement counts for the day, so a restarted worker does not make another.
+  CREATE TABLE IF NOT EXISTS full_pull_attempt (
+    session_key TEXT NOT NULL PRIMARY KEY,
+    as_of TEXT NOT NULL
+  ) STRICT;
   CREATE TABLE IF NOT EXISTS legislator (
     session_key TEXT NOT NULL,
     id TEXT NOT NULL,
@@ -163,6 +175,12 @@ const schema = `
     text TEXT NOT NULL
   ) STRICT;
   CREATE INDEX IF NOT EXISTS document_node ON document (node_id);
+  -- The AgendaRevisionNumber a stored agenda was fetched at (ADR-0041): an agenda is fetched again when its meeting's
+  -- row says another one. A table of its own, because a column on "document" would need a migration.
+  CREATE TABLE IF NOT EXISTS agenda_revision (
+    document_id TEXT NOT NULL PRIMARY KEY,
+    revision INTEGER NOT NULL
+  ) STRICT;
   CREATE TABLE IF NOT EXISTS document_relation (
     document_id TEXT NOT NULL,
     relation TEXT NOT NULL,
@@ -203,6 +221,15 @@ const schema = `
     header_measure_prefix TEXT,
     header_measure_number INTEGER,
     relating_clause_edits TEXT NOT NULL,
+    PRIMARY KEY (content_hash, parsed_as)
+  ) STRICT;
+  -- With which commit of the OregonAI snapshot a file was read for Statute Links (ADR-0035): a range is expanded against
+  -- the snapshot's ORS section list, so the worker reads every file again from the stored text when the commit changes.
+  -- A database that has no row here (made before this table) reads every file once more.
+  CREATE TABLE IF NOT EXISTS statute_read (
+    content_hash TEXT NOT NULL,
+    parsed_as TEXT NOT NULL CHECK (parsed_as IN ('version', 'proposed_amendment')),
+    snapshot_commit TEXT NOT NULL,
     PRIMARY KEY (content_hash, parsed_as)
   ) STRICT;
   CREATE TABLE IF NOT EXISTS statute_link (
@@ -309,6 +336,21 @@ const schema = `
     created_at TEXT NOT NULL,
     modified_at TEXT,
     PRIMARY KEY (session_key, row_key)
+  ) STRICT;
+  -- The Session's floor convenings (ConveneTimes, ADR-0042): each day with one is a day the Session meets. at is the
+  -- convening's time with the Pacific offset; a row is told apart by its time and chamber ("house" or "senate"), the feed's key.
+  CREATE TABLE IF NOT EXISTS convening (
+    session_key TEXT NOT NULL,
+    at TEXT NOT NULL,
+    chamber TEXT NOT NULL,
+    PRIMARY KEY (session_key, at, chamber)
+  ) STRICT;
+  -- The Session's own LegislativeSessions row (ADR-0042): the Pacific dates it begins and ends on. end_date is null while
+  -- the feed gives none.
+  CREATE TABLE IF NOT EXISTS session_dates (
+    session_key TEXT NOT NULL PRIMARY KEY,
+    begin_date TEXT NOT NULL,
+    end_date TEXT
   ) STRICT;
   -- The two-pull rule (ADR-0005, ADR-0030). feed_pull has a row for each complete full pull of a Session,
   -- numbered from 1; a pull that was refused for being short of its counts has none. feed_row has a row for

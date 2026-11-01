@@ -12,8 +12,8 @@ import type { AgendaItem } from "#/packages/domain/schedule.ts";
 import type { CommitteeVote, FloorVote, LegislatorVote } from "#/packages/domain/votes.ts";
 import { agencyLinksOf, agencyLinksOutput } from "./agency-links.ts";
 import { analysisDocumentsOf, analysisDocumentsOutput } from "./analysis.ts";
-import { measureListingOutput, measureListingShown } from "./listing.ts";
-import { statuteLinksBySourceOf, versionsWithSameAs } from "./statute-links.ts";
+import { measureListingOutput, listingShown } from "./listing.ts";
+import { statuteLinksBySourceOf, versionsWithSameLinksAs } from "./statute-links.ts";
 import { statuteLinksBySourceWithTable, statuteLinksBySourceWithTableOutput } from "./statutes-affected-table.ts";
 import type { LiveLookup, LiveStatusReader } from "./live-status.ts";
 
@@ -60,13 +60,57 @@ const committeeVoteOutput = z.object({
     .describe("Each member's vote, in the order of the ids the feed gives the entries."),
 });
 
-/** The live status block: the Measure's location, history, schedule and votes from OLIS now, or from the cache. */
+const UNCHANGED_DESCRIPTION =
+  '"unchanged" means read the top-level field of the same name: nothing is repeated here. When source is "olis", OLIS gives exactly the top-level value. When source is "cache", nothing was read from OLIS, and the top-level value is the cache\'s, which is all there is.';
+
+/** One value of the live block that is a single thing (the location): the top level's, or OLIS's in full. */
+const unchangedStatus = z.object({ status: z.literal("unchanged") });
+
+/**
+ * One list of the live block (history, floor votes, committee votes), said against the top level's list:
+ * unchanged, the new entries at its end, or OLIS's whole list.
+ */
+function liveListOutput<Entry extends z.ZodType>(entry: Entry, name: string) {
+  return z
+    .discriminatedUnion("status", [
+      unchangedStatus.describe(`The top-level ${name} is the one to read. ${UNCHANGED_DESCRIPTION}`),
+      z
+        .object({
+          status: z.literal("new_entries"),
+          entries: z
+            .array(entry)
+            .describe(
+              `Only the entries OLIS has after the top level's last one, in the top level's order. The full ${name} is the top-level ${name} followed by these entries.`,
+            ),
+        })
+        .describe(
+          `OLIS gives the top-level ${name} with new entries after its last one. The top level's entries are not repeated: read them from the top-level ${name} and add these at the end.`,
+        ),
+      z
+        .object({
+          status: z.literal("full"),
+          entries: z
+            .array(entry)
+            .describe(
+              `OLIS's whole ${name}, in order. It replaces the top-level ${name}. OLIS's list differs from the top level's other than by new entries at the end: an entry changed, missing or reordered, or fewer entries.`,
+            ),
+        })
+        .describe(
+          `OLIS's ${name} differs from the top level's other than by new entries at the end (an entry changed, missing or reordered, or fewer entries), so all of it is shown. Use it instead of the top-level ${name}.`,
+        ),
+    ])
+    .describe(
+      `The Measure's ${name} (see as_of), said against the top-level ${name}. Read status: "unchanged" (nothing to add), "new_entries" (the top level's entries, then these) or "full" (these entries replace the top level's).`,
+    );
+}
+
+/** The live status block: what OLIS says now about the Measure's location, history, schedule and votes, against what the top level shows. */
 const liveStatusOutput = z
   .object({
     source: z
       .enum(["olis", "cache"])
       .describe(
-        '"olis" when the values were read from OLIS when this call arrived. "cache" when the live lookup failed and the values are the cache\'s, as of the last full pull.',
+        '"olis" when the values were read from OLIS when this call arrived. "cache" when the live lookup failed: then nothing was read from OLIS, and location, history and votes are the top level\'s, as of the last full pull.',
       ),
     lookup_failed: z.boolean().describe("True when the live lookup of OLIS failed and the values come from the cache."),
     as_of: z
@@ -76,17 +120,23 @@ const liveStatusOutput = z
       ),
     notice: z.string().describe("Says in words where the values in this block come from, and why."),
     location: z
-      .object({
-        current: z.string().describe("Where the Measure is, as OLIS says it."),
-        committee_code: z
-          .string()
-          .nullable()
-          .describe("The committee code OLIS gives with the location, or null. See the top-level location."),
-      })
-      .describe("The Measure's location (see as_of)."),
-    history: z
-      .array(historyActionOutput)
-      .describe("The Measure's history (see as_of), oldest action first as OLIS prints it."),
+      .discriminatedUnion("status", [
+        unchangedStatus.describe(`The top-level location is the one to read. ${UNCHANGED_DESCRIPTION}`),
+        z
+          .object({
+            status: z.literal("full"),
+            current: z.string().describe("Where the Measure is, as OLIS says it."),
+            committee_code: z
+              .string()
+              .nullable()
+              .describe("The committee code OLIS gives with the location, or null. See the top-level location."),
+          })
+          .describe("OLIS's location differs from the top level's: this is OLIS's, and replaces it."),
+      ])
+      .describe(
+        'The Measure\'s location (see as_of), said against the top-level location. "unchanged": read the top level\'s. "full": this is where OLIS says the Measure is now.',
+      ),
+    history: liveListOutput(historyActionOutput, "history"),
     schedule: z
       .array(
         z.object({
@@ -97,19 +147,13 @@ const liveStatusOutput = z
       )
       .nullable()
       .describe(
-        'The committee meetings still ahead at which the Measure is on the agenda (meeting_date at or after as_of), soonest first, as OLIS lists them now; empty when none is. Null when source is "cache": the cache holds no schedule.',
+        'The committee meetings still ahead at which the Measure is on the agenda (meeting_date at or after as_of), soonest first, as OLIS lists them now; empty when none is. The top level has no schedule, so this is always shown in full. Null when source is "cache": the cache holds no schedule.',
       ),
-    floor_votes: z
-      .array(floorVoteOutput)
-      .describe("The Measure's floor votes (see as_of), in the order they were taken, as the top-level floor_votes."),
-    committee_votes: z
-      .array(committeeVoteOutput)
-      .describe(
-        "The Measure's committee votes (see as_of), in the order the committees met, as the top-level committee_votes, including the note there that a meeting_date can be later than as_of.",
-      ),
+    floor_votes: liveListOutput(floorVoteOutput, "floor_votes"),
+    committee_votes: liveListOutput(committeeVoteOutput, "committee_votes"),
   })
   .describe(
-    "The Measure's current status, read from OLIS when the call arrived. If OLIS could not be read, the same fields come from the cache, and source and notice say so.",
+    'The Measure\'s current status, read from OLIS when the call arrived, and only what the top level does not already show: a value OLIS gives as the top level does is "unchanged", a list that adds entries at its end shows only those, and any other difference is shown in full. If OLIS could not be read, source and notice say so and every value is "unchanged", which then means nothing was read: the top level\'s values are the cache\'s.',
   );
 
 export const getMeasureInput = z.object({
@@ -205,10 +249,26 @@ function legislatorVoteShown(cast: LegislatorVote): z.infer<typeof legislatorVot
 export type GetMeasureResult =
   { kind: "found"; measure: GetMeasureOutput } | { kind: "unknown"; reference: string; session: SessionKey };
 
-/** The live block of a call whose lookup answered, or the cache's values when it did not. */
+/** True when two values shown to an agent are the same in every field. */
+function sameShown(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+type LiveListShown<Entry> = z.infer<ReturnType<typeof liveListOutput<z.ZodType<Entry>>>>;
+
+/** A list said against the top level's: unchanged, the entries after the top level's last one, or all of it. */
+function listAgainst<Entry>(top: readonly Entry[], live: readonly Entry[]): LiveListShown<Entry> {
+  if (live.length === top.length && sameShown(top, live)) return { status: "unchanged" };
+  if (live.length > top.length && sameShown(top, live.slice(0, top.length))) {
+    return { status: "new_entries", entries: live.slice(top.length) };
+  }
+  return { status: "full", entries: [...live] };
+}
+
+/** The live block of a call whose lookup answered, or a block that repeats nothing when it did not. */
 function liveStatusOf(
   live: LiveLookup,
-  cached: {
+  top: {
     location: MeasureLocation;
     history: readonly HistoryAction[];
     floorVotes: readonly FloorVote[];
@@ -222,24 +282,30 @@ function liveStatusOf(
         source: "olis",
         lookup_failed: false,
         as_of: live.asOf,
-        notice: `Read from OLIS when this call arrived, as of ${live.asOf}.`,
-        location: { current: live.location.current, committee_code: live.location.committeeCode },
-        history: live.history.map(historyShown),
+        notice: `Read from OLIS when this call arrived, as of ${live.asOf}. A value marked unchanged is the top level's; a list marked new_entries shows only what follows the top level's last entry; a value marked full is OLIS's, whole.`,
+        location:
+          live.location.current === top.location.current && live.location.committeeCode === top.location.committeeCode
+            ? { status: "unchanged" }
+            : { status: "full", current: live.location.current, committee_code: live.location.committeeCode },
+        history: listAgainst(top.history.map(historyShown), live.history.map(historyShown)),
         schedule: live.schedule.map(scheduledItemShown),
-        floor_votes: live.floorVotes.map(floorVoteShown),
-        committee_votes: live.committeeVotes.map(committeeVoteShown),
+        floor_votes: listAgainst(top.floorVotes.map(floorVoteShown), live.floorVotes.map(floorVoteShown)),
+        committee_votes: listAgainst(
+          top.committeeVotes.map(committeeVoteShown),
+          live.committeeVotes.map(committeeVoteShown),
+        ),
       };
     case "failed":
       return {
         source: "cache",
         lookup_failed: true,
-        as_of: cached.asOf,
-        notice: `The live lookup of OLIS failed: ${live.reason}. The location, history and votes in this block come from the cache, as of ${cached.asOf}, the index's as-of time, and may be out of date. The cache holds no schedule, so schedule is null.`,
-        location: { current: cached.location.current, committee_code: cached.location.committeeCode },
-        history: cached.history.map(historyShown),
+        as_of: top.asOf,
+        notice: `The live lookup of OLIS failed: ${live.reason}. The location, history and votes come from the cache, as of ${top.asOf}, the index's as-of time, and may be out of date; they are the top level's, so this block repeats none of them and marks each unchanged. The cache holds no schedule, so schedule is null.`,
+        location: { status: "unchanged" },
+        history: { status: "unchanged" },
         schedule: null,
-        floor_votes: cached.floorVotes.map(floorVoteShown),
-        committee_votes: cached.committeeVotes.map(committeeVoteShown),
+        floor_votes: { status: "unchanged" },
+        committee_votes: { status: "unchanged" },
       };
     default:
       return live satisfies never;
@@ -292,7 +358,7 @@ export async function getMeasure(
   const live = await liveStatus.lookup(measure);
   const listing = reader.measureListing(measure);
   const statuteLinksBySource = statuteLinksBySourceOf(measure, versions, reader.findMeasureAmendments(measure));
-  // The table's blocks are set beside the Versions first, so that same_as compares the whole entry an agent would see.
+  // The table's blocks are set beside the Versions first; same_links_as keeps each Version's own block (ADR-0036).
   const withTable = statuteLinksBySourceWithTable(
     statuteLinksBySource,
     versions,
@@ -302,7 +368,7 @@ export async function getMeasure(
     kind: "found",
     measure: {
       id: measureIdOf(measure),
-      ...measureListingShown(listing),
+      ...listingShown(listing),
       catchline: measure.catchline,
       digest: measure.digest,
       analysis_documents: analysisDocumentsOf(
@@ -310,7 +376,7 @@ export async function getMeasure(
         reader.analysisDocuments(measure),
         reader.analysisNotHeld(measure),
       ),
-      statute_links_by_source: { ...withTable, versions: versionsWithSameAs(withTable.versions) },
+      statute_links_by_source: { ...withTable, versions: versionsWithSameLinksAs(withTable.versions) },
       agency_links: agencyLinksOf(reader.findAgencyLinks(session, { measure }), reader.findUnresolvedUnits(measure), {
         parents: reader.agencyParents(),
         supersededAmendments: new Set(statuteLinksBySource.superseded_amendments.map((amendment) => amendment.id)),

@@ -2,7 +2,7 @@
 // their ids (src/CLAUDE.md, "Shape"). The forms are spec #1's (Implementation Decisions, "Session graph")
 // and follow ADR-0004's `{kind}-{session}-{key}` shape for what only SessionGateway holds.
 
-import type { MeasureId, MeasureKey, SessionKey } from "./index.ts";
+import type { Chamber, MeasureId, MeasureKey, SessionKey } from "./index.ts";
 import type { AgencyId } from "./oregonai.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 
@@ -417,6 +417,11 @@ export type DocumentLink = {
    * row gives none.
    */
   createdAt?: Timestamp;
+  /**
+   * For an agenda: the meeting row's `AgendaRevisionNumber`, 0 when the feed gives none. An agenda is the one
+   * document fetched again when this changes (ADR-0005, ADR-0041).
+   */
+  agendaRevision?: number;
   /** For an analysis document: the feed's own `Version` label, "" when the feed gives none. */
   versionLabel?: string;
   /** For an analysis document: the feed's own `IsMinority` flag. */
@@ -458,6 +463,8 @@ export const pulledEntitySets = [
   "CommitteeProposedAmendments",
   "CommitteePublicTestimonies",
   "CommitteeMembers",
+  "ConveneTimes",
+  "LegislativeSessions",
 ] as const;
 export type PulledEntitySet = (typeof pulledEntitySets)[number];
 
@@ -547,6 +554,26 @@ export type Meeting = {
   /** The meeting's agenda, when the feed links one. */
   agenda: DocumentLink | null;
 };
+
+/** A floor convening the feed schedules (a ConveneTimes row): a chamber convening on a day. Its day is a day the Session meets (ADR-0042). */
+export type Convening = {
+  session: SessionKey;
+  /** When the chamber convenes, with the Pacific offset. */
+  at: Timestamp;
+  chamber: Chamber;
+};
+
+/** The Session's own row of LegislativeSessions: the dates the Session is in progress between (ADR-0042). */
+export type SessionDates = {
+  session: SessionKey;
+  /** The Pacific date (YYYY-MM-DD) the Session begins on. */
+  begin: string;
+  /** The Pacific date (YYYY-MM-DD) it ends on, or null while the feed gives none (2025R1's row has none). */
+  end: string | null;
+};
+
+/** The span a Session is in progress over: its begin and end dates, as the schedule reads them. */
+export type SessionSpan = Pick<SessionDates, "begin" | "end">;
 
 /** A meeting as a list shows it: when, whose and what the feed says of its status, without its contents. */
 export type MeetingHeader = {

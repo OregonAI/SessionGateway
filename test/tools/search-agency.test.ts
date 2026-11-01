@@ -8,14 +8,17 @@
 // its text, Testimony 196915 and the sections it amends) and HB 3027, whose Versions add a section to ORS 345.010 to
 // 345.340, a chapter the snapshot gives to the Bureau (among others). No other Measure of the fixture names the Bureau in
 // a statement or its text, submits Testimony as it, or changes a section in a chapter it implements.
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates). It covers search's Agency filter.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 
 let system: System;
 
 beforeAll(async () => {
-  system = await startSystem({
+  system = await startCopiedSystem({
     clockAt: "2026-08-01T17:00:00Z",
     documents: true,
     serverEnv: { MCP_RATE_LIMIT: "100000" },

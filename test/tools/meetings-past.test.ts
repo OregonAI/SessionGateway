@@ -3,14 +3,17 @@
 // database serves every case in this file because none of them changes it. No document is needed: the
 // cases here read meetings, their status and their agenda items, and the fake serves no files, so the
 // worker lists the documents as not fetched. The cases that need documents are in meetings.test.ts.
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 
 let system: System;
 
 beforeAll(async () => {
-  system = await startSystem({ clockAt: "2025-07-15T17:00:00Z", documents: false });
+  system = await startCopiedSystem({ clockAt: "2025-07-15T17:00:00Z", documents: false });
 }, 60_000);
 
 afterAll(async () => {

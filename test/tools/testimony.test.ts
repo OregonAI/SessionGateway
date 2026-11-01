@@ -4,9 +4,12 @@
 // and an MCP client calls the tool in-process. One database serves every case in this file because none
 // of them changes it. The cases that need rows the fixture lacks are in testimony-made-up.test.ts and
 // testimony-large.test.ts.
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 
 let system: System;
 
@@ -14,7 +17,7 @@ let system: System;
 // the default 120 calls a minute would refuse the last ones. The ceiling is raised here and is tested in
 // meetings-pull.test.ts.
 beforeAll(async () => {
-  system = await startSystem({
+  system = await startCopiedSystem({
     clockAt: "2025-07-15T17:00:00Z",
     documents: true,
     serverEnv: { MCP_RATE_LIMIT: "1000" },

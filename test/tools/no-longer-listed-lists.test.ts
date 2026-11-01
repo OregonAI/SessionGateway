@@ -8,6 +8,8 @@
 // complete pulls go by), and the cases read it, so the early Session's files are pulled twice and not twelve times.
 // The rows are real ones of the fixture, named by their feed ids in the comments; `stopListing` is the fake's way
 // of making OLIS stop listing one (test/support/unlisted-rows.ts).
+//
+// On a system of its own it also covers the Versions and postings of `get_measure`'s statute links.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";

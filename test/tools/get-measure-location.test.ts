@@ -8,16 +8,19 @@
 //
 // Expected values are literals from the fixture's feed rows (test/fixtures/olis-2025R1/feed/): the
 // Measures rows' CurrentLocation and CurrentCommitteeCode, and the MeasureHistoryActions rows.
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 
 let system: System;
 
 beforeAll(async () => {
   // 2025-12-15, after every row these Measures have was created: the fake OLIS hides a row created
   // after its clock.
-  system = await startSystem({ clockAt: "2025-12-15T17:00:00Z" });
+  system = await startCopiedSystem({ clockAt: "2025-12-15T17:00:00Z" });
 });
 
 afterAll(async () => {

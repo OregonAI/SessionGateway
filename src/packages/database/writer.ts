@@ -7,10 +7,13 @@ import {
   type AmendmentHeader,
   type Committee,
   type CommitteeMember,
+  type Convening,
   type DocumentId,
   type DocumentKind,
   type DocumentLink,
   type Meeting,
+  type SessionDates,
+  type SessionSpan,
   type StoredDocument,
   type TestimonyDetails,
 } from "#/packages/domain/documents.ts";
@@ -30,6 +33,14 @@ import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceToJson } from "./lib/agency-evidence.ts";
 import { openWriteConnection } from "./lib/connection.ts";
+import {
+  readFullPullAsOf,
+  readFullPullAttempt,
+  readIncrementAsOf,
+  readMeetingDays,
+  readConveneDays,
+  readSessionDates,
+} from "./lib/run-state.ts";
 import { listedRowsOf } from "./lib/listing.ts";
 import { statuteLinkOfRow, statuteLinkRow } from "./lib/statute-link-rows.ts";
 
@@ -86,10 +97,6 @@ export type FullPullRecord = {
   sponsors: readonly SponsorRecord[];
   floorVotes: readonly FloorVoteRecord[];
   committeeVotes: readonly CommitteeVoteRecord[];
-  /** The version of the OregonAI snapshot the build used. */
-  snapshot: SnapshotVersion;
-  /** The parent of each Agency the snapshot gives one: stored with its version, so the two always agree (ADR-0029). */
-  agencyParents: readonly { agency: AgencyId; parent: AgencyId }[];
   committees: readonly Committee[];
   /** The committee meetings. A meeting's status is the feed's latest. */
   meetings: readonly Meeting[];
@@ -109,6 +116,10 @@ export type FullPullRecord = {
   testimony: readonly TestimonyRecord[];
   /** The CommitteeMembers rows, every one: the set's declared key is not unique (`CommitteeMember.key` is the whole row). */
   committeeMembers: readonly CommitteeMember[];
+  /** The ConveneTimes rows: the days with a floor convening. A full pull reads them whole; an increment does not read them (ADR-0042). */
+  convenings: readonly Convening[];
+  /** The Session's LegislativeSessions row, or undefined when the feed has none or the run did not read it. */
+  sessionDates: SessionDates | undefined;
 };
 
 /** A file the store holds that has not been read for Statute Links yet: one document stands for every document with the same file. */
@@ -196,6 +207,9 @@ export type SearchRecord = {
   vectors: { modelId: string; rows: readonly { hash: string; vector: Int8Array }[] };
 };
 
+/** A stored document with where it came from and the hash of its file: what the hash sample compares (ticket #20). */
+export type StoredDocumentHash = { id: DocumentId; sourceUrl: string; contentHash: string };
+
 export type IndexWriter = {
   /**
    * Stores what a full pull read, when, and the version of the OregonAI snapshot the build used, in one
@@ -209,6 +223,45 @@ export type IndexWriter = {
    * is never given to this method.
    */
   recordFullPull(session: SessionKey, asOf: Timestamp, pulled: FullPullRecord): void;
+  /**
+   * Stores what an increment read (ADR-0039): the rows OLIS created or modified since the last run, upserted as a full
+   * pull upserts them, in one transaction, and the increment's time. It is not a complete pull and counts for nothing in
+   * the two-pull rule (ADR-0030): it writes no `feed_pull` and no `feed_row`, so a row a complete pull has seen keeps the
+   * number of the latest complete pull that listed it, and a row it sees first has no listing row (read as listed, not yet
+   * checked). It never marks anything no longer listed, and it replaces no listing: the Versions it reads are added to the
+   * listing of Versions, none removed.
+   */
+  recordIncrement(session: SessionKey, asOf: Timestamp, pulled: FullPullRecord): void;
+  /**
+   * When the Session's last complete full pull, last increment and last begun full pull (complete or refused) started,
+   * or undefined while there has been none.
+   */
+  lastRuns(session: SessionKey): {
+    fullPull: Timestamp | undefined;
+    increment: Timestamp | undefined;
+    fullPullAttempt: Timestamp | undefined;
+  };
+  /** Records that a full pull was begun at this time, before it reads, so a pull that is refused still counts for its day. */
+  recordFullPullAttempt(session: SessionKey, startedAt: Timestamp): void;
+  /** The Pacific dates (YYYY-MM-DD) of the Session's committee meetings the index holds: days the Session meets. */
+  meetingDays(session: SessionKey): string[];
+  /** The Pacific dates (YYYY-MM-DD) of the Session's floor convenings (ConveneTimes) the index holds: days the Session meets (ADR-0042). */
+  conveneDays(session: SessionKey): string[];
+  /** The dates the Session begins and ends on (its LegislativeSessions row), or undefined until a full pull has read the row (ADR-0042). */
+  sessionDates(session: SessionKey): SessionSpan | undefined;
+  /** The commit of the snapshot the index reports (the last full pull's), or undefined while it reports none. */
+  reportedSnapshotCommit(session: SessionKey): string | undefined;
+  /**
+   * Records which snapshot the index's links were all read with, and the parent of each Agency it gives one, in one
+   * transaction so that the two always agree (ADR-0029). It is the last step of a pull, after the Statute Links and the
+   * Agency Links have been read with this snapshot (ADR-0035): until then `session_overview` reports the snapshot of
+   * the last pull that finished, and a pull that stops part-way leaves it so.
+   */
+  recordSnapshotRead(
+    session: SessionKey,
+    snapshot: SnapshotVersion,
+    agencyParents: readonly { agency: AgencyId; parent: AgencyId }[],
+  ): void;
   /**
    * For each entity set the index keeps rows of, how many are listed (fewer than two complete pulls in a row have
    * missed them) and how many are no longer listed (ADR-0030). For the build report.
@@ -247,6 +300,8 @@ export type IndexWriter = {
    * embeddable (`refreshDocuments`).
    */
   storeVectors(vectors: SearchRecord["vectors"]): void;
+  /** Every stored document of the Session with where it came from and the hash of its file, by id (the hash sample, ticket #20). */
+  documentsToSample(session: SessionKey): StoredDocumentHash[];
   /** Every stored document of the Session whose file has no text layer, by id. */
   documentsWithoutTextLayer(session: SessionKey): { id: DocumentId; sourceUrl: string }[];
   /**
@@ -255,14 +310,30 @@ export type IndexWriter = {
    */
   storeDocument(session: SessionKey, document: StoredDocument, search: SearchRecord): void;
   /**
-   * The files of the Session's stored Versions and postings of Proposed Amendments that have not been read
-   * for Statute Links, each once however many documents share it. Read from the stored text; nothing is fetched.
+   * Replaces a stored agenda with the one fetched again after its revision changed (ADR-0041), in one transaction:
+   * the text, hashes, relations, filing, passages, citations and the revision it was fetched at are the new ones,
+   * and no trace of the old text is left in search. The vectors are stored as `storeDocument` stores them.
    */
-  unreadStatuteFiles(session: SessionKey): UnreadStatuteFile[];
+  replaceDocument(session: SessionKey, document: StoredDocument, search: SearchRecord): void;
+  /**
+   * The `AgendaRevisionNumber` each stored agenda was fetched at, by document id. An agenda stored before the revision
+   * was recorded has none.
+   */
+  storedAgendaRevisions(session: SessionKey): Map<DocumentId, number>;
+  /**
+   * The files of the Session's stored Versions and postings of Proposed Amendments that have not been read
+   * for Statute Links with this snapshot, each once however many documents share it: a file never read, and every
+   * file read with another commit, because a range is expanded against the snapshot's section list (ADR-0035).
+   * Read from the stored text; nothing is fetched.
+   */
+  unreadStatuteFiles(session: SessionKey, snapshot: SnapshotVersion): UnreadStatuteFile[];
   /** The stored text of one document, and whether the file had a text layer. */
   storedText(id: DocumentId): { text: string; hasTextLayer: boolean };
-  /** Keeps what reading one file came to, its links with it, in one transaction. */
-  storeStatuteParse(record: StatuteParseRecord): void;
+  /**
+   * Keeps what reading one file came to with this snapshot, its links with it, in one transaction. The links an
+   * earlier reading of the file made are replaced.
+   */
+  storeStatuteParse(record: StatuteParseRecord, snapshot: SnapshotVersion): void;
   /** The content hash of the Statutes Affected Table the Session's index holds, or undefined while it holds none. */
   statutesAffectedTableHash(session: SessionKey): string | undefined;
   /**
@@ -297,11 +368,13 @@ export type IndexWriter = {
 };
 
 const idRow = z.object({ id: z.string() });
+const revisionRow = z.object({ id: z.string(), revision: z.number() });
 const pullNumberRow = z.object({ number: z.number() });
 const countRow = z.object({ n: z.number() });
 const memberRow = z.object({ committee_code: z.string(), legislator_code: z.string() });
 const listingCountRow = z.object({ entity_set: z.string(), listed: z.number(), no_longer_listed: z.number() });
 const scanRow = z.object({ id: z.string(), source_url: z.string() });
+const sampleRow = z.object({ id: z.string(), source_url: z.string(), content_hash: z.string() });
 const unreadFileRow = z.object({
   id: z.string(),
   kind: z.enum(["version", "proposed_amendment"]),
@@ -346,26 +419,31 @@ export function openIndexWriter(path: string): IndexWriter {
   function bumpSearchGeneration(): void {
     raiseSearchGeneration.run();
   }
-  return {
-    recordFullPull(session, asOf, pulled) {
-      const upsertMeasure = database.prepare(
-        `INSERT INTO measure (session_key, prefix, number, catchline, location, committee_code, digest, created_at,
+  /** The upserts a full pull and an increment share; a full pull also lists what it read and replaces the Versions' listing. */
+  function recordRows(
+    session: SessionKey,
+    asOf: Timestamp,
+    pulled: FullPullRecord,
+    mode: "full_pull" | "increment",
+  ): void {
+    const upsertMeasure = database.prepare(
+      `INSERT INTO measure (session_key, prefix, number, catchline, location, committee_code, digest, created_at,
                               modified_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (session_key, prefix, number) DO UPDATE SET
            catchline = excluded.catchline, location = excluded.location, committee_code = excluded.committee_code,
            digest = excluded.digest, created_at = excluded.created_at, modified_at = excluded.modified_at`,
-      );
-      const upsertLegislator = database.prepare(
-        `INSERT INTO legislator (session_key, id, name) VALUES (?, ?, ?)
+    );
+    const upsertLegislator = database.prepare(
+      `INSERT INTO legislator (session_key, id, name) VALUES (?, ?, ?)
          ON CONFLICT (session_key, id) DO UPDATE SET name = excluded.name`,
-      );
-      const upsertLegislatorCode = database.prepare(
-        `INSERT INTO legislator_code (session_key, code, legislator_id) VALUES (?, ?, ?)
+    );
+    const upsertLegislatorCode = database.prepare(
+      `INSERT INTO legislator_code (session_key, code, legislator_id) VALUES (?, ?, ?)
          ON CONFLICT (session_key, code) DO UPDATE SET legislator_id = excluded.legislator_id`,
-      );
-      const upsertSponsor = database.prepare(
-        `INSERT INTO sponsor (session_key, sponsor_id, prefix, number, kind, level, print_order,
+    );
+    const upsertSponsor = database.prepare(
+      `INSERT INTO sponsor (session_key, sponsor_id, prefix, number, kind, level, print_order,
                               legislator_code, legislator_id, committee_code, presession_message)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (session_key, sponsor_id) DO UPDATE SET
@@ -373,71 +451,68 @@ export function openIndexWriter(path: string): IndexWriter {
            print_order = excluded.print_order, legislator_code = excluded.legislator_code,
            legislator_id = excluded.legislator_id, committee_code = excluded.committee_code,
            presession_message = excluded.presession_message`,
-      );
-      const upsertFloorVote = database.prepare(
-        `INSERT INTO floor_vote (session_key, vote_id, history_id, prefix, number, chamber, action_date, action_text,
+    );
+    const upsertFloorVote = database.prepare(
+      `INSERT INTO floor_vote (session_key, vote_id, history_id, prefix, number, chamber, action_date, action_text,
                                  legislator_code, legislator_id, vote)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (session_key, vote_id) DO UPDATE SET
            history_id = excluded.history_id, prefix = excluded.prefix, number = excluded.number,
            chamber = excluded.chamber, action_date = excluded.action_date, action_text = excluded.action_text,
            legislator_code = excluded.legislator_code, legislator_id = excluded.legislator_id, vote = excluded.vote`,
-      );
-      const upsertCommitteeVote = database.prepare(
-        `INSERT INTO committee_vote (session_key, vote_id, report_id, prefix, number, committee_code, meeting_date,
+    );
+    const upsertCommitteeVote = database.prepare(
+      `INSERT INTO committee_vote (session_key, vote_id, report_id, prefix, number, committee_code, meeting_date,
                                      legislator_code, legislator_id, vote)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (session_key, vote_id) DO UPDATE SET
            report_id = excluded.report_id, prefix = excluded.prefix, number = excluded.number,
            committee_code = excluded.committee_code, meeting_date = excluded.meeting_date,
            legislator_code = excluded.legislator_code, legislator_id = excluded.legislator_id, vote = excluded.vote`,
-      );
-      const upsertHistory = database.prepare(
-        `INSERT INTO history_action (session_key, history_id, prefix, number, chamber, action_date, action_text)
+    );
+    const upsertHistory = database.prepare(
+      `INSERT INTO history_action (session_key, history_id, prefix, number, chamber, action_date, action_text)
          VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (session_key, history_id) DO UPDATE SET
            prefix = excluded.prefix, number = excluded.number, chamber = excluded.chamber,
            action_date = excluded.action_date, action_text = excluded.action_text`,
-      );
-      const recordAsOf = database.prepare(
-        `INSERT INTO index_state (session_key, full_pull_as_of) VALUES (?, ?)
+    );
+    const recordAsOf = database.prepare(
+      `INSERT INTO index_state (session_key, full_pull_as_of) VALUES (?, ?)
          ON CONFLICT (session_key) DO UPDATE SET full_pull_as_of = excluded.full_pull_as_of`,
-      );
-      const recordSnapshot = database.prepare(
-        `INSERT INTO snapshot_state (session_key, source, commit_sha, commit_date) VALUES (?, ?, ?, ?)
-         ON CONFLICT (session_key) DO UPDATE SET
-           source = excluded.source, commit_sha = excluded.commit_sha, commit_date = excluded.commit_date`,
-      );
-      const clearAgencyParents = database.prepare("DELETE FROM agency_parent");
-      const insertAgencyParent = database.prepare("INSERT INTO agency_parent (agency_id, parent_id) VALUES (?, ?)");
-      const upsertCommittee = database.prepare(
-        `INSERT INTO committee (session_key, code, id, name) VALUES (?, ?, ?, ?)
+    );
+    const recordIncrementAsOf = database.prepare(
+      `INSERT INTO increment_state (session_key, as_of) VALUES (?, ?)
+         ON CONFLICT (session_key) DO UPDATE SET as_of = excluded.as_of`,
+    );
+    const upsertCommittee = database.prepare(
+      `INSERT INTO committee (session_key, code, id, name) VALUES (?, ?, ?, ?)
          ON CONFLICT (session_key, code) DO UPDATE SET id = excluded.id, name = excluded.name`,
-      );
-      const upsertMeeting = database.prepare(
-        `INSERT INTO meeting (id, session_key, committee_code, committee_id, at, status) VALUES (?, ?, ?, ?, ?, ?)
+    );
+    const upsertMeeting = database.prepare(
+      `INSERT INTO meeting (id, session_key, committee_code, committee_id, at, status) VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET committee_code = excluded.committee_code,
            committee_id = excluded.committee_id, at = excluded.at, status = excluded.status`,
-      );
-      const upsertAgendaItem = database.prepare(
-        `INSERT INTO agenda_item (id, meeting_id, session_key, measure_prefix, measure_number, meeting_type, action,
+    );
+    const upsertAgendaItem = database.prepare(
+      `INSERT INTO agenda_item (id, meeting_id, session_key, measure_prefix, measure_number, meeting_type, action,
                                   print_order, comments, board_name, executive_appointee)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET meeting_id = excluded.meeting_id, measure_prefix = excluded.measure_prefix,
            measure_number = excluded.measure_number, meeting_type = excluded.meeting_type, action = excluded.action,
            print_order = excluded.print_order, comments = excluded.comments, board_name = excluded.board_name,
            executive_appointee = excluded.executive_appointee`,
-      );
-      const upsertMeetingDocument = database.prepare(
-        `INSERT INTO meeting_document (document_id, meeting_id, session_key, kind, node_id, label, source_url,
+    );
+    const upsertMeetingDocument = database.prepare(
+      `INSERT INTO meeting_document (document_id, meeting_id, session_key, kind, node_id, label, source_url,
                                        title, measure_id, meaning)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (document_id) DO UPDATE SET meeting_id = excluded.meeting_id, kind = excluded.kind,
            node_id = excluded.node_id, label = excluded.label, source_url = excluded.source_url,
            title = excluded.title, measure_id = excluded.measure_id, meaning = excluded.meaning`,
-      );
-      const upsertTestimony = database.prepare(
-        `INSERT INTO testimony (document_id, session_key, comm_test_id, measure_id, source_url, document_description,
+    );
+    const upsertTestimony = database.prepare(
+      `INSERT INTO testimony (document_id, session_key, comm_test_id, measure_id, source_url, document_description,
                                 position_id, submitter, behalf_of, organization, committee_id, committee_code,
                                 meeting_at, agency_id)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -447,233 +522,395 @@ export function openIndexWriter(path: string): IndexWriter {
            submitter = excluded.submitter, behalf_of = excluded.behalf_of, organization = excluded.organization,
            committee_id = excluded.committee_id, committee_code = excluded.committee_code,
            meeting_at = excluded.meeting_at, agency_id = excluded.agency_id`,
-      );
-      const upsertCreated = database.prepare(
-        `INSERT INTO document_created (document_id, created_at) VALUES (?, ?)
+    );
+    const upsertCreated = database.prepare(
+      `INSERT INTO document_created (document_id, created_at) VALUES (?, ?)
          ON CONFLICT (document_id) DO UPDATE SET created_at = excluded.created_at`,
-      );
-      const upsertAnalysisListing = database.prepare(
-        `INSERT INTO analysis_listing (document_id, session_key, measure_id) VALUES (?, ?, ?)
+    );
+    const upsertAnalysisListing = database.prepare(
+      `INSERT INTO analysis_listing (document_id, session_key, measure_id) VALUES (?, ?, ?)
          ON CONFLICT (document_id) DO UPDATE SET measure_id = excluded.measure_id`,
-      );
-      const selectLatestPull = database.prepare(
-        "SELECT COALESCE(MAX(number), 0) AS number FROM feed_pull WHERE session_key = ?",
-      );
-      const insertPull = database.prepare("INSERT INTO feed_pull (session_key, number, as_of) VALUES (?, ?, ?)");
-      const listRow = database.prepare(
-        `INSERT INTO feed_row (session_key, entity_set, row_key, document_id, last_listed_pull) VALUES (?, ?, ?, ?, ?)
+    );
+    const selectLatestPull = database.prepare(
+      "SELECT COALESCE(MAX(number), 0) AS number FROM feed_pull WHERE session_key = ?",
+    );
+    const insertPull = database.prepare("INSERT INTO feed_pull (session_key, number, as_of) VALUES (?, ?, ?)");
+    const listRow = database.prepare(
+      `INSERT INTO feed_row (session_key, entity_set, row_key, document_id, last_listed_pull) VALUES (?, ?, ?, ?, ?)
          ON CONFLICT (session_key, entity_set, row_key) DO UPDATE SET
            document_id = excluded.document_id, last_listed_pull = excluded.last_listed_pull`,
-      );
-      const selectUnlistedDocuments = database.prepare(
-        "SELECT document_id AS id FROM feed_row WHERE session_key = ? AND document_id IS NOT NULL AND last_listed_pull <= ?",
-      );
-      const countDocumentsLastListedIn = database.prepare(
-        "SELECT COUNT(*) AS n FROM feed_row WHERE session_key = ? AND document_id IS NOT NULL AND last_listed_pull = ?",
-      );
-      const upsertCommitteeMember = database.prepare(
-        `INSERT INTO committee_member (session_key, row_key, committee_code, legislator_code, title, created_at,
+    );
+    const selectUnlistedDocuments = database.prepare(
+      "SELECT document_id AS id FROM feed_row WHERE session_key = ? AND document_id IS NOT NULL AND last_listed_pull <= ?",
+    );
+    const countDocumentsLastListedIn = database.prepare(
+      "SELECT COUNT(*) AS n FROM feed_row WHERE session_key = ? AND document_id IS NOT NULL AND last_listed_pull = ?",
+    );
+    const upsertCommitteeMember = database.prepare(
+      `INSERT INTO committee_member (session_key, row_key, committee_code, legislator_code, title, created_at,
                                        modified_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (session_key, row_key) DO NOTHING`,
+    );
+    const upsertConvening = database.prepare(
+      "INSERT INTO convening (session_key, at, chamber) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
+    );
+    const upsertSessionDates = database.prepare(
+      `INSERT INTO session_dates (session_key, begin_date, end_date) VALUES (?, ?, ?)
+         ON CONFLICT (session_key) DO UPDATE SET begin_date = excluded.begin_date, end_date = excluded.end_date`,
+    );
+    const insertVersionListing = database.prepare(
+      "INSERT OR REPLACE INTO version_listing (document_id, session_key, measure_id, label) VALUES (?, ?, ?, ?)",
+    );
+    const clearVersionListing = database.prepare("DELETE FROM version_listing WHERE session_key = ?");
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      for (const measure of pulled.measures) {
+        upsertMeasure.run(
+          measure.session,
+          measure.prefix,
+          measure.number,
+          measure.catchline,
+          measure.location.current,
+          measure.location.committeeCode,
+          measure.digest,
+          measure.createdAt,
+          measure.modifiedAt,
+        );
+      }
+      for (const legislator of pulled.legislators) upsertLegislator.run(session, legislator.id, legislator.name);
+      for (const record of pulled.legislatorCodes) upsertLegislatorCode.run(session, record.code, record.legislatorId);
+      for (const sponsor of pulled.sponsors) {
+        const columns = kindColumnsOf(sponsor);
+        upsertSponsor.run(
+          session,
+          sponsor.id,
+          sponsor.measure.prefix,
+          sponsor.measure.number,
+          sponsor.kind,
+          sponsor.level,
+          sponsor.printOrder,
+          columns.legislatorCode,
+          columns.legislatorId,
+          columns.committeeCode,
+          columns.message,
+        );
+      }
+      for (const entry of pulled.floorVotes) {
+        upsertFloorVote.run(
+          session,
+          entry.id,
+          entry.historyId,
+          entry.measure.prefix,
+          entry.measure.number,
+          entry.chamber,
+          entry.date,
+          entry.action,
+          entry.legislatorCode,
+          entry.legislatorId,
+          entry.vote,
+        );
+      }
+      for (const entry of pulled.committeeVotes) {
+        upsertCommitteeVote.run(
+          session,
+          entry.id,
+          entry.reportId,
+          entry.measure.prefix,
+          entry.measure.number,
+          entry.committeeCode,
+          entry.meetingDate,
+          entry.legislatorCode,
+          entry.legislatorId,
+          entry.vote,
+        );
+      }
+      for (const action of pulled.history) {
+        upsertHistory.run(
+          session,
+          action.id,
+          action.measure.prefix,
+          action.measure.number,
+          action.chamber,
+          action.date,
+          action.text,
+        );
+      }
+      for (const committee of pulled.committees) {
+        upsertCommittee.run(session, committee.code, committee.id, committee.name);
+      }
+      for (const meeting of pulled.meetings) {
+        upsertMeeting.run(meeting.id, session, meeting.committeeCode, meeting.committeeId, meeting.at, meeting.status);
+      }
+      for (const item of pulled.agendaItems) {
+        upsertAgendaItem.run(
+          item.itemId,
+          item.meetingId,
+          session,
+          item.measure?.prefix ?? null,
+          item.measure?.number ?? null,
+          item.meetingType,
+          item.action,
+          item.printOrder,
+          item.comments,
+          item.boardName,
+          item.executiveAppointee,
+        );
+      }
+      // Every CommitteeMembers row, by the whole row (the set's declared key is not unique). Two rows with one
+      // whole-row key are the same row, and a row the feed changes is a new one; the old one stops being listed.
+      for (const member of pulled.committeeMembers) {
+        upsertCommitteeMember.run(
+          session,
+          member.key,
+          member.committeeCode,
+          member.legislatorCode,
+          member.title,
+          member.createdAt,
+          member.modifiedAt,
+        );
+      }
+      // The days with a floor convening, and the dates the Session is in progress between (ADR-0042).
+      for (const convening of pulled.convenings) upsertConvening.run(session, convening.at, convening.chamber);
+      if (pulled.sessionDates !== undefined) {
+        upsertSessionDates.run(session, pulled.sessionDates.begin, pulled.sessionDates.end);
+      }
+      // What each meeting lists. A link to any other kind of document, or to no meeting, is not listed.
+      for (const link of pulled.documentLinks) {
+        const listing = meetingListingOf(link);
+        if (listing === undefined) continue;
+        upsertMeetingDocument.run(
+          link.id,
+          listing.meetingId,
+          session,
+          link.kind,
+          link.nodeId,
+          link.label,
+          link.sourceUrl,
+          link.title ?? null,
+          link.relations.find((relation) => relation.relation === "measure")?.to ?? null,
+          listing.meaning,
+        );
+      }
+      // Who testified: every Testimony row as the feed says it, whether or not its file is fetched.
+      for (const { link, agencyId } of pulled.testimony) {
+        const committee = link.relations.find((relation) => relation.relation === "committee");
+        if (committee === undefined) throw new Error(`The Testimony ${link.id} names no committee`);
+        upsertTestimony.run(
+          link.id,
+          session,
+          link.testimony.commTestId,
+          link.relations.find((relation) => relation.relation === "measure")?.to ?? null,
+          link.sourceUrl,
+          link.label,
+          link.testimony.position.id,
+          link.testimony.submitter,
+          link.testimony.behalfOf,
+          link.testimony.organization,
+          committee.to,
+          link.testimony.committeeCode,
+          link.testimony.meetingAt,
+          agencyId,
+        );
+      }
+      // When OLIS created the row of each document the feed links.
+      for (const link of pulled.documentLinks) {
+        if (link.createdAt !== undefined) upsertCreated.run(link.id, link.createdAt);
+      }
+      // Which analysis documents the feed lists for each Measure, as this pull read it. The rows are kept, not
+      // replaced: a row this pull does not list is still counted until two complete pulls in a row have missed it,
+      // and the count reads that from the listing state (ADR-0030).
+      for (const link of pulled.documentLinks) {
+        if (link.kind !== "analysis") continue;
+        const measure = link.relations.find((relation) => relation.relation === "measure");
+        if (measure === undefined) throw new Error(`The analysis document ${link.id} names no Measure`);
+        upsertAnalysisListing.run(link.id, session, measure.to);
+      }
+      // Which Versions the feed lists for each Measure, as this pull read them (a Printed Amendment is not a Version).
+      // A full pull replaces the listing; an increment read only the rows that changed, so it adds to it.
+      if (mode === "full_pull") clearVersionListing.run(session);
+      for (const link of pulled.documentLinks) {
+        if (link.kind !== "version") continue;
+        const measure = link.relations.find((relation) => relation.relation === "measure");
+        if (measure === undefined) throw new Error(`The Version ${link.id} names no Measure`);
+        insertVersionListing.run(link.id, session, measure.to, link.label);
+      }
+      if (mode === "increment") {
+        recordIncrementAsOf.run(session, asOf);
+        database.exec("COMMIT");
+        return;
+      }
+      recordAsOf.run(session, asOf);
+      // The pull is a complete one: it lists every row it read. A document that was no longer listed and is
+      // listed again, or that this pull makes no longer listed, changes what search holds in memory.
+      const previous = pullNumberRow.parse(selectLatestPull.get(session)).number;
+      const number = previous + 1;
+      const unlistedBefore = new Set(
+        selectUnlistedDocuments.all(session, previous - 2).map((row) => idRow.parse(row).id),
       );
-      const insertVersionListing = database.prepare(
-        "INSERT INTO version_listing (document_id, session_key, measure_id, label) VALUES (?, ?, ?, ?)",
+      insertPull.run(session, number, asOf);
+      let relisted = false;
+      for (const row of listedRowsOf(pulled)) {
+        listRow.run(session, row.entitySet, row.key, row.documentId, number);
+        if (row.documentId !== null && unlistedBefore.has(row.documentId)) relisted = true;
+      }
+      const agedOut = countRow.parse(countDocumentsLastListedIn.get(session, number - 2)).n > 0;
+      if (relisted || agedOut) bumpSearchGeneration();
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  /**
+   * Writes one fetched document with its relations, filing, passages, citations and vectors in one transaction. A
+   * document it replaces (an agenda fetched again, ADR-0041) is deleted first, in the same transaction, so a reader
+   * sees the old agenda or the new one and never neither.
+   */
+  function writeDocument(
+    session: SessionKey,
+    document: StoredDocument,
+    search: SearchRecord,
+    replacing: boolean,
+  ): void {
+    const insertDocument = database.prepare(
+      `INSERT INTO document (id, node_id, session_key, kind, label, source_url, retrieved_at, content_hash,
+                             text_hash, page_count, has_text_layer, posted_at, analysis_version_label,
+                             analysis_is_minority, text)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const insertRelation = database.prepare(
+      `INSERT INTO document_relation (document_id, relation, to_id, meaning, provenance) VALUES (?, ?, ?, ?, ?)`,
+    );
+    const insertSearchDocument = database.prepare(
+      `INSERT INTO search_document (document_id, session_key, node_id, kind, title, measure_id, committee_id,
+                                    dated_at, keyword_only)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const insertPassage = database.prepare(
+      "INSERT INTO passage (document_id, ordinal, start_offset, end_offset, text_hash) VALUES (?, ?, ?, ?, ?)",
+    );
+    const insertPassageText = database.prepare("INSERT INTO passage_fts (rowid, text) VALUES (?, ?)");
+    const insertCitation = database.prepare(
+      "INSERT INTO document_citation (citation_id, document_id, first_offset) VALUES (?, ?, ?)",
+    );
+    const insertAgendaRevision = database.prepare("INSERT INTO agenda_revision (document_id, revision) VALUES (?, ?)");
+    const insertVector = database.prepare(
+      "INSERT OR IGNORE INTO passage_vector (text_hash, model_id, vector) VALUES (?, ?, ?)",
+    );
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      if (replacing) {
+        // Each statement reads its result as BigInt: deleting from the contentless FTS5 table leaves the connection's
+        // last rowid beyond what a JavaScript number holds, which `run` would refuse to convert for the next statement.
+        const deleteFor = (sql: string): void => {
+          const statement = database.prepare(sql);
+          statement.setReadBigInts(true);
+          statement.run(document.id);
+        };
+        deleteFor("DELETE FROM passage_fts WHERE rowid IN (SELECT id FROM passage WHERE document_id = ?)");
+        deleteFor("DELETE FROM passage WHERE document_id = ?");
+        deleteFor("DELETE FROM document_citation WHERE document_id = ?");
+        deleteFor("DELETE FROM search_document WHERE document_id = ?");
+        deleteFor("DELETE FROM document_relation WHERE document_id = ?");
+        deleteFor("DELETE FROM agenda_revision WHERE document_id = ?");
+        deleteFor("DELETE FROM document WHERE id = ?");
+      }
+      insertDocument.run(
+        document.id,
+        document.nodeId,
+        session,
+        document.kind,
+        document.label,
+        document.sourceUrl,
+        document.retrievedAt,
+        document.contentHash,
+        document.textHash,
+        document.pageCount,
+        document.hasTextLayer ? 1 : 0,
+        document.postedAt,
+        document.versionLabel ?? null,
+        minorityColumn(document.isMinority),
+        document.text,
       );
-      const clearVersionListing = database.prepare("DELETE FROM version_listing WHERE session_key = ?");
+      for (const relation of document.relations) {
+        insertRelation.run(document.id, relation.relation, relation.to, relation.meaning, relation.provenance);
+      }
+      insertSearchDocument.run(
+        document.id,
+        session,
+        search.entry.nodeId,
+        search.entry.kind,
+        search.entry.title,
+        search.entry.measureId,
+        search.entry.committeeId,
+        search.entry.date,
+        search.entry.keywordOnly ? 1 : 0,
+      );
+      search.passages.forEach((passage, ordinal) => {
+        const inserted = insertPassage.run(document.id, ordinal, passage.start, passage.end, passage.hash);
+        insertPassageText.run(inserted.lastInsertRowid, passage.text);
+      });
+      for (const citation of search.citations) insertCitation.run(citation.id, document.id, citation.index);
+      for (const row of search.vectors.rows) insertVector.run(row.hash, search.vectors.modelId, row.vector);
+      // The vectors of a keyword-only document are not loaded, so storing one changes nothing the server holds.
+      if (document.agendaRevision !== undefined) insertAgendaRevision.run(document.id, document.agendaRevision);
+      if (replacing || (!search.entry.keywordOnly && search.passages.length > 0)) bumpSearchGeneration();
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  return {
+    recordFullPull(session, asOf, pulled) {
+      recordRows(session, asOf, pulled, "full_pull");
+    },
+    recordIncrement(session, asOf, pulled) {
+      recordRows(session, asOf, pulled, "increment");
+    },
+    lastRuns(session) {
+      return {
+        fullPull: readFullPullAsOf(database, session),
+        increment: readIncrementAsOf(database, session),
+        fullPullAttempt: readFullPullAttempt(database, session),
+      };
+    },
+    recordFullPullAttempt(session, startedAt) {
+      database
+        .prepare(
+          `INSERT INTO full_pull_attempt (session_key, as_of) VALUES (?, ?)
+           ON CONFLICT (session_key) DO UPDATE SET as_of = excluded.as_of`,
+        )
+        .run(session, startedAt);
+    },
+    meetingDays(session) {
+      return readMeetingDays(database, session);
+    },
+    conveneDays(session) {
+      return readConveneDays(database, session);
+    },
+    sessionDates(session) {
+      return readSessionDates(database, session);
+    },
+    reportedSnapshotCommit(session) {
+      const row = database.prepare("SELECT commit_sha FROM snapshot_state WHERE session_key = ?").get(session);
+      return row === undefined ? undefined : z.object({ commit_sha: z.string() }).parse(row).commit_sha;
+    },
+    recordSnapshotRead(session, snapshot, agencyParents) {
+      const recordSnapshot = database.prepare(
+        `INSERT INTO snapshot_state (session_key, source, commit_sha, commit_date) VALUES (?, ?, ?, ?)
+         ON CONFLICT (session_key) DO UPDATE SET
+           source = excluded.source, commit_sha = excluded.commit_sha, commit_date = excluded.commit_date`,
+      );
+      const clearAgencyParents = database.prepare("DELETE FROM agency_parent");
+      const insertAgencyParent = database.prepare("INSERT INTO agency_parent (agency_id, parent_id) VALUES (?, ?)");
       database.exec("BEGIN IMMEDIATE");
       try {
-        for (const measure of pulled.measures) {
-          upsertMeasure.run(
-            measure.session,
-            measure.prefix,
-            measure.number,
-            measure.catchline,
-            measure.location.current,
-            measure.location.committeeCode,
-            measure.digest,
-            measure.createdAt,
-            measure.modifiedAt,
-          );
-        }
-        for (const legislator of pulled.legislators) upsertLegislator.run(session, legislator.id, legislator.name);
-        for (const record of pulled.legislatorCodes)
-          upsertLegislatorCode.run(session, record.code, record.legislatorId);
-        for (const sponsor of pulled.sponsors) {
-          const columns = kindColumnsOf(sponsor);
-          upsertSponsor.run(
-            session,
-            sponsor.id,
-            sponsor.measure.prefix,
-            sponsor.measure.number,
-            sponsor.kind,
-            sponsor.level,
-            sponsor.printOrder,
-            columns.legislatorCode,
-            columns.legislatorId,
-            columns.committeeCode,
-            columns.message,
-          );
-        }
-        for (const entry of pulled.floorVotes) {
-          upsertFloorVote.run(
-            session,
-            entry.id,
-            entry.historyId,
-            entry.measure.prefix,
-            entry.measure.number,
-            entry.chamber,
-            entry.date,
-            entry.action,
-            entry.legislatorCode,
-            entry.legislatorId,
-            entry.vote,
-          );
-        }
-        for (const entry of pulled.committeeVotes) {
-          upsertCommitteeVote.run(
-            session,
-            entry.id,
-            entry.reportId,
-            entry.measure.prefix,
-            entry.measure.number,
-            entry.committeeCode,
-            entry.meetingDate,
-            entry.legislatorCode,
-            entry.legislatorId,
-            entry.vote,
-          );
-        }
-        for (const action of pulled.history) {
-          upsertHistory.run(
-            session,
-            action.id,
-            action.measure.prefix,
-            action.measure.number,
-            action.chamber,
-            action.date,
-            action.text,
-          );
-        }
-        for (const committee of pulled.committees) {
-          upsertCommittee.run(session, committee.code, committee.id, committee.name);
-        }
-        for (const meeting of pulled.meetings) {
-          upsertMeeting.run(
-            meeting.id,
-            session,
-            meeting.committeeCode,
-            meeting.committeeId,
-            meeting.at,
-            meeting.status,
-          );
-        }
-        for (const item of pulled.agendaItems) {
-          upsertAgendaItem.run(
-            item.itemId,
-            item.meetingId,
-            session,
-            item.measure?.prefix ?? null,
-            item.measure?.number ?? null,
-            item.meetingType,
-            item.action,
-            item.printOrder,
-            item.comments,
-            item.boardName,
-            item.executiveAppointee,
-          );
-        }
-        // Every CommitteeMembers row, by the whole row (the set's declared key is not unique). Two rows with one
-        // whole-row key are the same row, and a row the feed changes is a new one; the old one stops being listed.
-        for (const member of pulled.committeeMembers) {
-          upsertCommitteeMember.run(
-            session,
-            member.key,
-            member.committeeCode,
-            member.legislatorCode,
-            member.title,
-            member.createdAt,
-            member.modifiedAt,
-          );
-        }
-        // What each meeting lists. A link to any other kind of document, or to no meeting, is not listed.
-        for (const link of pulled.documentLinks) {
-          const listing = meetingListingOf(link);
-          if (listing === undefined) continue;
-          upsertMeetingDocument.run(
-            link.id,
-            listing.meetingId,
-            session,
-            link.kind,
-            link.nodeId,
-            link.label,
-            link.sourceUrl,
-            link.title ?? null,
-            link.relations.find((relation) => relation.relation === "measure")?.to ?? null,
-            listing.meaning,
-          );
-        }
-        // Who testified: every Testimony row as the feed says it, whether or not its file is fetched.
-        for (const { link, agencyId } of pulled.testimony) {
-          const committee = link.relations.find((relation) => relation.relation === "committee");
-          if (committee === undefined) throw new Error(`The Testimony ${link.id} names no committee`);
-          upsertTestimony.run(
-            link.id,
-            session,
-            link.testimony.commTestId,
-            link.relations.find((relation) => relation.relation === "measure")?.to ?? null,
-            link.sourceUrl,
-            link.label,
-            link.testimony.position.id,
-            link.testimony.submitter,
-            link.testimony.behalfOf,
-            link.testimony.organization,
-            committee.to,
-            link.testimony.committeeCode,
-            link.testimony.meetingAt,
-            agencyId,
-          );
-        }
-        // When OLIS created the row of each document the feed links.
-        for (const link of pulled.documentLinks) {
-          if (link.createdAt !== undefined) upsertCreated.run(link.id, link.createdAt);
-        }
-        // Which analysis documents the feed lists for each Measure, as this pull read it. The rows are kept, not
-        // replaced: a row this pull does not list is still counted until two complete pulls in a row have missed it,
-        // and the count reads that from the listing state (ADR-0030).
-        for (const link of pulled.documentLinks) {
-          if (link.kind !== "analysis") continue;
-          const measure = link.relations.find((relation) => relation.relation === "measure");
-          if (measure === undefined) throw new Error(`The analysis document ${link.id} names no Measure`);
-          upsertAnalysisListing.run(link.id, session, measure.to);
-        }
-        // Which Versions the feed lists for each Measure, as this pull read them (a Printed Amendment is not a Version).
-        clearVersionListing.run(session);
-        for (const link of pulled.documentLinks) {
-          if (link.kind !== "version") continue;
-          const measure = link.relations.find((relation) => relation.relation === "measure");
-          if (measure === undefined) throw new Error(`The Version ${link.id} names no Measure`);
-          insertVersionListing.run(link.id, session, measure.to, link.label);
-        }
-        recordAsOf.run(session, asOf);
-        recordSnapshot.run(session, pulled.snapshot.source, pulled.snapshot.commit, pulled.snapshot.commitDate);
-        // The pull is a complete one: it lists every row it read. A document that was no longer listed and is
-        // listed again, or that this pull makes no longer listed, changes what search holds in memory.
-        const previous = pullNumberRow.parse(selectLatestPull.get(session)).number;
-        const number = previous + 1;
-        const unlistedBefore = new Set(
-          selectUnlistedDocuments.all(session, previous - 2).map((row) => idRow.parse(row).id),
-        );
-        insertPull.run(session, number, asOf);
-        let relisted = false;
-        for (const row of listedRowsOf(pulled)) {
-          listRow.run(session, row.entitySet, row.key, row.documentId, number);
-          if (row.documentId !== null && unlistedBefore.has(row.documentId)) relisted = true;
-        }
-        const agedOut = countRow.parse(countDocumentsLastListedIn.get(session, number - 2)).n > 0;
-        if (relisted || agedOut) bumpSearchGeneration();
+        recordSnapshot.run(session, snapshot.source, snapshot.commit, snapshot.commitDate);
         clearAgencyParents.run();
-        for (const { agency, parent } of pulled.agencyParents) insertAgencyParent.run(agency, parent);
+        for (const { agency, parent } of agencyParents) insertAgencyParent.run(agency, parent);
         database.exec("COMMIT");
       } catch (error) {
         database.exec("ROLLBACK");
@@ -749,6 +986,15 @@ export function openIndexWriter(path: string): IndexWriter {
       const select = database.prepare("SELECT 1 AS present FROM passage_vector WHERE text_hash = ? AND model_id = ?");
       return new Set(hashes.filter((hash) => select.get(hash, modelId) !== undefined));
     },
+    documentsToSample(session) {
+      const rows = database
+        .prepare("SELECT id, source_url, content_hash FROM document WHERE session_key = ? ORDER BY id")
+        .all(session);
+      return rows.map((row) => {
+        const stored = sampleRow.parse(row);
+        return { id: stored.id as DocumentId, sourceUrl: stored.source_url, contentHash: stored.content_hash };
+      });
+    },
     documentsWithoutTextLayer(session) {
       const rows = database
         .prepare("SELECT id, source_url FROM document WHERE session_key = ? AND has_text_layer = 0 ORDER BY id")
@@ -813,86 +1059,34 @@ export function openIndexWriter(path: string): IndexWriter {
       }
     },
     storeDocument(session, document, search) {
-      const insertDocument = database.prepare(
-        `INSERT INTO document (id, node_id, session_key, kind, label, source_url, retrieved_at, content_hash,
-                               text_hash, page_count, has_text_layer, posted_at, analysis_version_label,
-                               analysis_is_minority, text)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      );
-      const insertRelation = database.prepare(
-        `INSERT INTO document_relation (document_id, relation, to_id, meaning, provenance) VALUES (?, ?, ?, ?, ?)`,
-      );
-      const insertSearchDocument = database.prepare(
-        `INSERT INTO search_document (document_id, session_key, node_id, kind, title, measure_id, committee_id,
-                                      dated_at, keyword_only)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      );
-      const insertPassage = database.prepare(
-        "INSERT INTO passage (document_id, ordinal, start_offset, end_offset, text_hash) VALUES (?, ?, ?, ?, ?)",
-      );
-      const insertPassageText = database.prepare("INSERT INTO passage_fts (rowid, text) VALUES (?, ?)");
-      const insertCitation = database.prepare(
-        "INSERT INTO document_citation (citation_id, document_id, first_offset) VALUES (?, ?, ?)",
-      );
-      const insertVector = database.prepare(
-        "INSERT OR IGNORE INTO passage_vector (text_hash, model_id, vector) VALUES (?, ?, ?)",
-      );
-      database.exec("BEGIN IMMEDIATE");
-      try {
-        insertDocument.run(
-          document.id,
-          document.nodeId,
-          session,
-          document.kind,
-          document.label,
-          document.sourceUrl,
-          document.retrievedAt,
-          document.contentHash,
-          document.textHash,
-          document.pageCount,
-          document.hasTextLayer ? 1 : 0,
-          document.postedAt,
-          document.versionLabel ?? null,
-          minorityColumn(document.isMinority),
-          document.text,
-        );
-        for (const relation of document.relations) {
-          insertRelation.run(document.id, relation.relation, relation.to, relation.meaning, relation.provenance);
-        }
-        insertSearchDocument.run(
-          document.id,
-          session,
-          search.entry.nodeId,
-          search.entry.kind,
-          search.entry.title,
-          search.entry.measureId,
-          search.entry.committeeId,
-          search.entry.date,
-          search.entry.keywordOnly ? 1 : 0,
-        );
-        search.passages.forEach((passage, ordinal) => {
-          const inserted = insertPassage.run(document.id, ordinal, passage.start, passage.end, passage.hash);
-          insertPassageText.run(inserted.lastInsertRowid, passage.text);
-        });
-        for (const citation of search.citations) insertCitation.run(citation.id, document.id, citation.index);
-        for (const row of search.vectors.rows) insertVector.run(row.hash, search.vectors.modelId, row.vector);
-        // The vectors of a keyword-only document are not loaded, so storing one changes nothing the server holds.
-        if (!search.entry.keywordOnly && search.passages.length > 0) bumpSearchGeneration();
-        database.exec("COMMIT");
-      } catch (error) {
-        database.exec("ROLLBACK");
-        throw error;
-      }
+      writeDocument(session, document, search, false);
     },
-    unreadStatuteFiles(session) {
+    replaceDocument(session, document, search) {
+      writeDocument(session, document, search, true);
+    },
+    storedAgendaRevisions(session) {
+      const rows = database
+        .prepare(
+          "SELECT r.document_id AS id, r.revision AS revision FROM agenda_revision r JOIN document d ON d.id = r.document_id WHERE d.session_key = ?",
+        )
+        .all(session);
+      return new Map(
+        rows.map((row) => {
+          const parsed = revisionRow.parse(row);
+          return [parsed.id as DocumentId, parsed.revision];
+        }),
+      );
+    },
+    unreadStatuteFiles(session, snapshot) {
       const rows = database
         .prepare(
           `SELECT MIN(d.id) AS id, d.kind, d.content_hash FROM document d
            WHERE d.session_key = ? AND d.kind IN ('version', 'proposed_amendment')
-             AND NOT EXISTS (SELECT 1 FROM statute_parse p WHERE p.content_hash = d.content_hash AND p.parsed_as = d.kind)
+             AND NOT EXISTS (SELECT 1 FROM statute_read r WHERE r.content_hash = d.content_hash AND r.parsed_as = d.kind
+                               AND r.snapshot_commit = ?)
            GROUP BY d.content_hash, d.kind ORDER BY MIN(d.id)`,
         )
-        .all(session);
+        .all(session, snapshot.commit);
       return rows.map((row) => {
         const unread = unreadFileRow.parse(row);
         return { documentId: unread.id as DocumentId, readAs: unread.kind, contentHash: unread.content_hash };
@@ -904,7 +1098,13 @@ export function openIndexWriter(path: string): IndexWriter {
       const stored = storedTextRow.parse(row);
       return { text: stored.text, hasTextLayer: stored.has_text_layer === 1 };
     },
-    storeStatuteParse(record) {
+    storeStatuteParse(record, snapshot) {
+      const deleteParse = database.prepare("DELETE FROM statute_parse WHERE content_hash = ? AND parsed_as = ?");
+      const deleteLinks = database.prepare("DELETE FROM statute_link WHERE content_hash = ? AND parsed_as = ?");
+      const insertRead = database.prepare(
+        `INSERT INTO statute_read (content_hash, parsed_as, snapshot_commit) VALUES (?, ?, ?)
+         ON CONFLICT (content_hash, parsed_as) DO UPDATE SET snapshot_commit = excluded.snapshot_commit`,
+      );
       const insertParse = database.prepare(
         `INSERT INTO statute_parse (content_hash, parsed_as, text_read, amended_version_header,
                                     header_measure_prefix, header_measure_number, relating_clause_edits)
@@ -914,8 +1114,16 @@ export function openIndexWriter(path: string): IndexWriter {
         `INSERT INTO statute_link (content_hash, parsed_as, ordinal, kind, target_type, target_id, measure_section)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       );
+      // The Agency Links are made from these links, so every document that shares the file is unread for them again.
+      const unreadAgency = database.prepare(
+        "DELETE FROM agency_read WHERE document_id IN (SELECT id FROM document WHERE content_hash = ? AND kind = ?)",
+      );
       database.exec("BEGIN IMMEDIATE");
       try {
+        unreadAgency.run(record.contentHash, record.readAs);
+        deleteParse.run(record.contentHash, record.readAs);
+        deleteLinks.run(record.contentHash, record.readAs);
+        insertRead.run(record.contentHash, record.readAs, snapshot.commit);
         insertParse.run(
           record.contentHash,
           record.readAs,

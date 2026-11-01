@@ -1,3 +1,7 @@
+---
+status: accepted; the shape of the live_status block (what it repeats of the top level) is superseded by ADR-0038
+---
+
 # get_measure reads one Measure from OLIS when it is called, and the cache answers when that fails
 
 ADR-0005 allows on-demand queries, and spec #1 (module 11) wants a Measure's status to be current, so `get_measure` returns a `live_status` block: the Measure's location, history, schedule and votes, read from OLIS when the call arrives and dated by the injected clock at the read. A read that fails does not fail the call: the cache answers, and the block says so. Ticket #21 built it; `0009-packages-and-a-split-database.md` records where the code sits.

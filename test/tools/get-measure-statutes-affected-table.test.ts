@@ -6,6 +6,10 @@
 //
 // Expected values are literals read from the table with `pdftotext -layout` (the rows of each Measure, with their ORS
 // numbers) and from the Versions as `pdftotext` prints them; neither is computed from the other.
+//
+// Its database is built by this file and shared by every case. It is not a copy of the run's template, because the
+// system names the Statutes Affected Table and the table's address is the fake's origin (test/CLAUDE.md, Database,
+// Templates).
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { type StatuteLinks } from "../support/statute-links.ts";
@@ -43,6 +47,8 @@ afterAll(async () => {
 type VersionEntry = {
   id: string;
   label: string;
+  source_url: string;
+  same_links_as?: string;
   statute_links: StatuteLinks;
   statutes_affected_table?: TableOfVersion;
 };
@@ -137,6 +143,24 @@ describe.for(eras)("get_measure's Statutes Affected Table for a %s client", (era
       expect(version(links, "Enrolled").statutes_affected_table).toBeUndefined();
     });
 
+    // ADR-0036 (ticket #52): the Enrolled Version's links are the A-Engrossed Version's, to the last measure section
+    // (get-measure-statute-links.test.ts), so it says so though the A-Engrossed Version has a table block and it has none.
+    // Listed in full, its entry was 15,145 characters, and SB 69's answer 82,145 with the table against 65,623 without it
+    // (measured on the fixture at cee9d03); the Enrolled Version's own entry is back to its id, label and source_url.
+    it("says the Enrolled Version's links are the A-Engrossed Version's, though only the A-Engrossed Version has a table block", async () => {
+      const outcome = await callTool(connected, "get_measure", { measure: "SB 69" });
+      const links = outcome.structured?.["statute_links_by_source"] as LinksBySource;
+
+      expect(version(links, "Enrolled")).toEqual({
+        id: "version-2025r1-sb69-enrolled",
+        label: "Enrolled",
+        source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/Enrolled",
+        same_links_as: "version-2025r1-sb69-a-engrossed",
+      });
+      expect(version(links, "A-Engrossed").same_links_as).toBeUndefined();
+      expect(outcome.text.length).toBeLessThan(70_000);
+    });
+
     it("says where the table is from and when this index retrieved it, and that it lists the Measure", async () => {
       const table = (await linksOf("SB 69")).statutes_affected_table;
 
@@ -171,6 +195,16 @@ describe.for(eras)("get_measure's Statutes Affected Table for a %s client", (era
       for (const label of ["Introduced", "A-Engrossed", "Enrolled"]) {
         expect(version(links, label).statutes_affected_table).toBeUndefined();
       }
+    });
+
+    // ADR-0036: the Enrolled Version reads the same as the B-Engrossed one, which has the table's block, so it says
+    // same_links_as and repeats neither. Listed in full, its entry was 798 characters (207 without the table, at cee9d03).
+    it("says the Enrolled Version's links are the B-Engrossed Version's, though only the B-Engrossed Version has a table block", async () => {
+      const enrolled = version(await linksOf("HB 3795"), "Enrolled");
+
+      expect(enrolled.same_links_as).toBe("version-2025r1-hb3795-b-engrossed");
+      expect(enrolled.statutes_affected_table).toBeUndefined();
+      expect(JSON.stringify(enrolled).length).toBeLessThan(250);
     });
   });
 

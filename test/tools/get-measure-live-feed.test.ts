@@ -5,7 +5,7 @@
 // same in the cache and at OLIS until a case moves it). Cases that read the fixture as it stands are in
 // get-measure-live.test.ts.
 import { afterEach, describe, expect, it } from "vitest";
-import { liveStatusOf, type ToolLiveStatus } from "../support/live-status.ts";
+import { liveFloorVotesOf, liveStatusOf, type ToolLiveStatus } from "../support/live-status.ts";
 import { callTool, connectClient, type ToolOutcome } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";
 import { floorVoteRow, floorVotesOf, tuplesOf } from "../support/votes.ts";
@@ -52,7 +52,7 @@ describe("a location that has changed since the pull", () => {
 
     expect(liveStatusOf(outcome)).toMatchObject({
       source: "olis",
-      location: { current: "In House Committee", committee_code: "HLWS" },
+      location: { status: "full", current: "In House Committee", committee_code: "HLWS" },
     });
     expect(outcome.structured?.["location"]).toEqual({ current: "Chapter Number Assigned", committee_code: null });
   });
@@ -74,15 +74,15 @@ describe("a floor vote OLIS gained since the pull", () => {
 
     const outcome = await getMeasure(system, "SB 69");
 
-    const live = liveStatusOf(outcome);
-    const reconsidered = live?.floor_votes.find((vote) => vote.action === "Reconsidered. Passed.");
+    const live = liveFloorVotesOf(outcome);
+    const reconsidered = live.find((vote) => vote.action === "Reconsidered. Passed.");
     expect(reconsidered?.date).toBe("2025-02-07T10:00:00-08:00");
     expect(tuplesOf(reconsidered?.votes ?? [])).toEqual([
       ["Sen Bonham", "Nay", "legislator-2025r1-bonham", "Daniel Bonham"],
       ["Sen Newcomer", "Aye", undefined, undefined],
     ]);
     // It sits between the Senate's vote of 2025-02-06 and the House's of 2025-05-05.
-    expect(live?.floor_votes.map((vote) => vote.date)).toEqual([
+    expect(live.map((vote) => vote.date)).toEqual([
       "2025-02-06T11:21:32-08:00",
       "2025-02-07T10:00:00-08:00",
       "2025-05-05T11:30:33-07:00",

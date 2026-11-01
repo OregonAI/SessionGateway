@@ -3,9 +3,12 @@
 // `strayRows` row of the fake OLIS, shaped like feed/CommitteePublicTestimonies.json's, filed under SB 983 unless the
 // case says otherwise) and is said so in the case's comment. The cases that read the fixture as it stands are in
 // testimony.test.ts, and the Measure with more rows than a page is in testimony-large.test.ts.
+//
+// A case that only reads or moves a row starts from a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates); a case whose second pull is the subject pulls for itself.
 import { afterEach, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
-import { startSystem, type System, type SystemOptions } from "../support/system.ts";
+import { startCopiedSystem, startSystem, type System, type SystemOptions } from "../support/system.ts";
 import { madeUpTestimonyRow, testimonyDownloadPath, type MadeUpTestimony } from "../support/testimony.ts";
 
 const started: System[] = [];
@@ -17,8 +20,10 @@ afterEach(async () => {
 // 2025-07-15 10:00 in Oregon: after every row of the fixture was created.
 const clockAt = "2025-07-15T17:00:00Z";
 
-async function start(options: Partial<SystemOptions> = {}): Promise<System> {
-  const system = await startSystem({ clockAt, ...options });
+// A case copies the database of its inputs, which the two clients share, and pulls for itself only where the pull is its
+// subject: the file the worker could not fetch and fetches at the next pull (test/CLAUDE.md, "Database").
+async function start(options: Partial<SystemOptions> = {}, pulls = false): Promise<System> {
+  const system = pulls ? await startSystem({ clockAt, ...options }) : await startCopiedSystem({ clockAt, ...options });
   started.push(system);
   return system;
 }
@@ -83,7 +88,7 @@ describe.for(eras)("testimony on rows the fixture lacks, for a %s client", (era)
     // get-document-pull.test.ts for a Version, and then serves it.
     it("is answered by get_document with an error that says the file is not held and the next pull fetches it", async () => {
       const download = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/PublicTestimonyDocument/117165";
-      const system = await start({ documents: true, olis: { documentFailures: { [download]: [404] } } });
+      const system = await start({ documents: true, olis: { documentFailures: { [download]: [404] } } }, true);
 
       const listed = await testimonyOf(system, era, "HB 3131");
       const items = positionsOf(listed)

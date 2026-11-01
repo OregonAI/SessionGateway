@@ -3,16 +3,19 @@
 // worker pulls them into a database, and an MCP client calls the tool in-process. One database serves
 // every case in this file because none of them changes it; cases that build their own are in
 // get-document-pull.test.ts.
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 
 let system: System;
 
 beforeAll(async () => {
   // 2026-08-01 10:00 in Oregon: every row of the fixture exists by then (the newest Exhibit row was
   // created on 2026-07-27), so the pull fetches all 278 documents.
-  system = await startSystem({ clockAt: "2026-08-01T17:00:00Z", documents: true });
+  system = await startCopiedSystem({ clockAt: "2026-08-01T17:00:00Z", documents: true });
 }, 60_000);
 
 afterAll(async () => {

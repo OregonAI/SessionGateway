@@ -17,8 +17,10 @@ import type { IngestConfig } from "#/packages/config/index.ts";
 import {
   openIndexWriter,
   type CommitteeVoteRecord,
+  type FullPullRecord,
   type FloorVoteRecord,
   type IndexWriter,
+  type StoredDocumentHash,
   type SearchRecord,
   type SponsorRecord,
   type TestimonyRecord,
@@ -48,9 +50,17 @@ import { searchEntryOf } from "#/packages/search/documents.ts";
 import { splitPassages } from "#/packages/search/passages.ts";
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import type { Clock } from "#/packages/time/clock.ts";
-import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
+import { compareTimestamps, formatPacific, pacificTimestampOf, type Timestamp } from "#/packages/time/pacific.ts";
 import { agencyReadOf } from "./lib/agency-links.ts";
 import { buildReportPath, writeBuildReport, type BuildReport, type SetReport } from "./lib/build-report.ts";
+import {
+  hashSampleReportPath,
+  lastHashSampleAt,
+  readHashSampleReport,
+  sampleHashes,
+  writeHashSampleReport,
+  type HashSampleReport,
+} from "./lib/hash-sample.ts";
 import { loadStatutesAffectedTable } from "./lib/statutes-affected-table.ts";
 
 export type IngestDeps = {
@@ -290,6 +300,228 @@ function committeeMembersReportOf(
   }));
 }
 
+/** What the documents step of a pull and of an increment share. */
+type DocumentsStep = {
+  config: IngestConfig;
+  deps: IngestDeps;
+  writer: IndexWriter;
+  olis: OlisClient;
+  snapshot: Snapshot;
+  /** The links of the rows this run read. */
+  links: readonly DocumentLink[];
+  committeeNames: ReadonlyMap<CommitteeId, string>;
+  passageCounts: PassageCounts;
+  /** Gets an entry for each document this run could not get or read. */
+  notFetched: BuildReport["documents_not_fetched"];
+  /**
+   * Whether this run reads the links and reports the snapshot. A full pull does. An increment does only while the
+   * snapshot file is the one the index reports: a changed snapshot makes every stored document's links unread, which is
+   * the full pull's work (ADR-0035), and a new document's links wait for it.
+   */
+  readLinks: boolean;
+};
+
+/**
+ * Fetches the linked documents the store does not hold, once each, and keeps their text; refreshes what the feed says of
+ * the ones it holds; reads the Statute Links and the Agency Links of what is stored and reports the snapshot. A full pull
+ * and an increment do the same here with the links each read, and it returns how many documents it fetched.
+ */
+async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
+  const { config, deps, writer, olis, snapshot, links, committeeNames, passageCounts, notFetched, readLinks } = step;
+  let documentsFetched = 0;
+  const stored = writer.storedDocumentIds(config.session);
+  // A fetched file is unchanging (ADR-0005) but its feed row is not: OLIS changes a posting's Meaning,
+  // a Testimony's Measure. What the row says about a stored document is refreshed without fetching it.
+  const refreshed = links.filter((link) => stored.has(link.id));
+  const refreshedEntries = new Map(refreshed.map((link) => [link.id, searchEntryOf(link, committeeNames)]));
+  // A document OLIS now files as embeddable that the index holds as keyword-only (a list relabelled as material)
+  // has passages and no vectors. They are embedded in this pull, before the document is refiled, so that it is
+  // never filed as embeddable without them. The other direction needs nothing: the vectors of a keyword-only
+  // document are never loaded.
+  const keywordOnlyBefore = writer.keywordOnlyDocumentIds(config.session);
+  for (const [id, entry] of refreshedEntries) {
+    if (!keywordOnlyBefore.has(id) || entry.keywordOnly) continue;
+    writer.storeVectors(
+      await vectorsForNewPassages(writer, deps.embedder, entry, writer.passagesOf(id), passageCounts),
+    );
+  }
+  writer.refreshDocuments(config.session, refreshed, refreshedEntries);
+  // An agenda is the one document fetched again (ADR-0005, ADR-0041): when its meeting's revision is not the one it was
+  // fetched at. An agenda stored before revisions were recorded has none, so it is fetched once more.
+  const agendaRevisions = writer.storedAgendaRevisions(config.session);
+  const revised = new Set(
+    refreshed
+      .filter((link) => link.agendaRevision !== undefined && agendaRevisions.get(link.id) !== link.agendaRevision)
+      .map((link) => link.id),
+  );
+  for (const link of links) {
+    if (stored.has(link.id) && !revised.has(link.id)) continue;
+    const fetched = await fetchAndRead(olis, link, deps.signal);
+    if (fetched.kind === "left_out") {
+      // A revised agenda that cannot be fetched stays as it was stored (ADR-0041): the index holds it, so it is not
+      // a document the index lacks.
+      if (!revised.has(link.id)) notFetched.push({ id: link.id, source_url: link.sourceUrl, reason: fetched.reason });
+      continue;
+    }
+    const entry = searchEntryOf(link, committeeNames);
+    const passages = splitPassages(fetched.pdf.text, deps.embedder);
+    const vectors = await vectorsForNewPassages(writer, deps.embedder, entry, passages, passageCounts);
+    const document = {
+      ...link,
+      retrievedAt: formatPacific(deps.clock.now()),
+      contentHash: createHash("sha256").update(fetched.bytes).digest("hex"),
+      textHash: createHash("sha256").update(fetched.pdf.text).digest("hex"),
+      pageCount: fetched.pdf.pageCount,
+      hasTextLayer: fetched.pdf.hasTextLayer,
+      text: fetched.pdf.text,
+    };
+    const search = { entry, passages, citations: findCitations(fetched.pdf.text, config.session), vectors };
+    if (revised.has(link.id)) writer.replaceDocument(config.session, document, search);
+    else writer.storeDocument(config.session, document, search);
+    stored.add(link.id);
+    documentsFetched += 1;
+  }
+  if (!readLinks) return documentsFetched;
+  // The Statute Links of every stored Version and posting not yet read with this snapshot, from the text the store
+  // holds: the files are not fetched again. Postings that share a file are read once (ADR-0015). A snapshot that has
+  // changed since a file was read makes it unread, because its ranges are expanded against the snapshot's section
+  // list, and this comes before the Agency Links below, which are made from these links (ADR-0035).
+  for (const file of writer.unreadStatuteFiles(config.session, snapshot.version)) {
+    writer.storeStatuteParse(
+      statuteParseOf(file, writer.storedText(file.documentId), snapshot.orsSections),
+      snapshot.version,
+    );
+  }
+  // The Agency Links of every stored Fiscal Impact Statement, Version and posting not yet read with this snapshot, from
+  // the text the store holds and the Statute Links read from it just above (ADR-0027). A snapshot that has changed since
+  // a document was read makes it unread: the index reports the snapshot of this pull, so every link in it is made with it.
+  for (const document of writer.unreadAgencyDocuments(config.session, snapshot.version)) {
+    writer.storeAgencyRead(
+      agencyReadOf(
+        document,
+        writer.storedText(document.documentId),
+        writer.statuteLinksOf(document.documentId),
+        snapshot,
+      ),
+      snapshot.version,
+    );
+  }
+  // The index reports this snapshot only now, when every link in it has been read with it, and a pull that stopped
+  // before this line leaves the snapshot of the last pull that finished (ADR-0035). The Agencies' parents go with it.
+  writer.recordSnapshotRead(
+    config.session,
+    snapshot.version,
+    [...snapshot.agencyParents].map(([agency, parent]) => ({ agency, parent })),
+  );
+  return documentsFetched;
+}
+
+/** Everything one run read of the feed, before it is resolved and stored. */
+type FeedRead = {
+  measures: Awaited<ReturnType<OlisClient["readMeasures"]>>;
+  legislatorRows: Awaited<ReturnType<OlisClient["readLegislators"]>>;
+  sponsorships: Awaited<ReturnType<OlisClient["readSponsorships"]>>;
+  history: Awaited<ReturnType<OlisClient["readHistoryActions"]>>;
+  committeeVotes: Awaited<ReturnType<OlisClient["readCommitteeVotes"]>>;
+  floorVotes: Awaited<ReturnType<OlisClient["readFloorVotes"]>>;
+  committees: Awaited<ReturnType<OlisClient["readCommittees"]>>;
+  meetings: Awaited<ReturnType<OlisClient["readMeetings"]>>;
+  agendaItems: Awaited<ReturnType<OlisClient["readAgendaItems"]>>;
+  committeeMembers: Awaited<ReturnType<OlisClient["readCommitteeMembers"]>>;
+  /** The floor convenings and the Session's begin and end dates: read by a full pull, empty in an increment (ADR-0042). */
+  convenings: Awaited<ReturnType<OlisClient["readConvenings"]>>;
+  sessionDates: Awaited<ReturnType<OlisClient["readSessionDates"]>>;
+  /** Every document the feed links in what was read, the meetings' agendas included. */
+  links: DocumentLink[];
+};
+
+/** Reads the sets a pull and an increment store, from the client given: a whole Session's rows, or an increment's. */
+async function readFeed(
+  olis: OlisClient,
+  config: IngestConfig,
+  deps: IngestDeps,
+  kind: "full_pull" | "increment",
+): Promise<FeedRead> {
+  const measures = await olis.readMeasures(config.session, deps.signal);
+  const legislatorRows = await olis.readLegislators(config.session, deps.signal);
+  const sponsorships = await olis.readSponsorships(config.session, deps.signal);
+  const history = await olis.readHistoryActions(config.session, deps.signal);
+  const committeeVotes = await olis.readCommitteeVotes(config.session, deps.signal);
+  const floorVotes = await olis.readFloorVotes(config.session, deps.signal);
+  const committees = await olis.readCommittees(config.session, deps.signal);
+  const meetings = await olis.readMeetings(config.session, deps.signal);
+  const agendaItems = await olis.readAgendaItems(config.session, deps.signal);
+  const committeeMembers = await olis.readCommitteeMembers(config.session, deps.signal);
+  // The sets the schedule reads (ADR-0042) are whole-Session sets the full pull counts; an increment does not read them.
+  const convenings = kind === "full_pull" ? await olis.readConvenings(config.session, deps.signal) : [];
+  const sessionDates = kind === "full_pull" ? await olis.readSessionDates(config.session, deps.signal) : undefined;
+  const links = [
+    ...(await olis.readDocumentLinks(config.session, deps.signal)),
+    ...meetings.flatMap((meeting) => (meeting.agenda === null ? [] : [meeting.agenda])),
+  ];
+  return {
+    measures,
+    legislatorRows,
+    sponsorships,
+    history,
+    committeeVotes,
+    floorVotes,
+    committees,
+    meetings,
+    agendaItems,
+    committeeMembers,
+    convenings,
+    sessionDates,
+    links,
+  };
+}
+
+/** What a run stores of what it read: the rows, with each Legislator Code resolved. */
+function feedRecordOf(
+  config: IngestConfig,
+  deps: IngestDeps,
+  snapshot: Snapshot,
+  feed: FeedRead,
+): { record: FullPullRecord; resolver: LegislatorResolver; committeeNames: Map<CommitteeId, string> } {
+  const { measures, legislatorRows, sponsorships, history, committeeVotes, floorVotes, committees } = feed;
+  const { meetings, agendaItems, committeeMembers, convenings, sessionDates, links } = feed;
+  // A Member sponsor and the voter of a vote entry each name a Legislator by a Legislator Code; the
+  // resolver says who that is.
+  const resolver = createLegislatorResolver({
+    session: config.session,
+    rows: legislatorRows,
+    aliases: deps.legislatorAliases,
+  });
+  const sponsors = sponsorships.map((sponsorship) => sponsorRecordOf(sponsorship, resolver));
+  // A CommitteeMembers row names a person by a Legislator Code, but a task force's members are not all Legislators
+  // ("Shanbo Zhang", olis-odata.md gotcha 5): the code is stored as the feed writes it, and one that names no
+  // Legislator is reported with the others, never an error.
+  for (const member of committeeMembers) resolver.resolve("CommitteeMembers", member.legislatorCode);
+  const floorVoteRecords = floorVotes.map((entry) => floorVoteRecordOf(entry, resolver));
+  const committeeVoteRecords = committeeVotes.map((entry) => committeeVoteRecordOf(entry, resolver));
+
+  const committeeNames = new Map<CommitteeId, string>(committees.map((committee) => [committee.id, committee.name]));
+  const record: FullPullRecord = {
+    measures,
+    history,
+    legislatorRows,
+    legislators: resolver.people,
+    legislatorCodes: resolver.codes.map(({ code, legislator }) => ({ code, legislatorId: legislator.id })),
+    sponsors,
+    floorVotes: floorVoteRecords,
+    committeeVotes: committeeVoteRecords,
+    committees,
+    meetings,
+    agendaItems,
+    documentLinks: links,
+    testimony: testimonyRecordsOf(links, snapshot),
+    committeeMembers,
+    convenings,
+    sessionDates,
+  };
+  return { record, resolver, committeeNames };
+}
+
 export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promise<FullPullResult> {
   // The snapshot is read before OLIS is: a build with no usable snapshot fails at once, naming the file.
   const snapshot = await loadSnapshot(config.snapshotPath);
@@ -308,20 +540,8 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       pause: deps.pause,
     },
   });
-  const measures = await olis.readMeasures(config.session, deps.signal);
-  const legislatorRows = await olis.readLegislators(config.session, deps.signal);
-  const sponsorships = await olis.readSponsorships(config.session, deps.signal);
-  const history = await olis.readHistoryActions(config.session, deps.signal);
-  const committeeVotes = await olis.readCommitteeVotes(config.session, deps.signal);
-  const floorVotes = await olis.readFloorVotes(config.session, deps.signal);
-  const committees = await olis.readCommittees(config.session, deps.signal);
-  const meetings = await olis.readMeetings(config.session, deps.signal);
-  const agendaItems = await olis.readAgendaItems(config.session, deps.signal);
-  const committeeMembers = await olis.readCommitteeMembers(config.session, deps.signal);
-  const links = [
-    ...(await olis.readDocumentLinks(config.session, deps.signal)),
-    ...meetings.flatMap((meeting) => (meeting.agenda === null ? [] : [meeting.agenda])),
-  ];
+  const feed = await readFeed(olis, config, deps, "full_pull");
+  const { measures, links } = feed;
 
   // The pull is complete only when every set it read came with as many rows as the feed counted. One that is not
   // stores nothing: the index goes on answering from the last complete pull, and no row is marked as missed by it.
@@ -338,110 +558,28 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     throw new Error(`The full pull is incomplete, so it stored nothing. ${which.join("; ")}`);
   }
 
-  // A Member sponsor and the voter of a vote entry each name a Legislator by a Legislator Code; the
-  // resolver says who that is.
-  const resolver = createLegislatorResolver({
-    session: config.session,
-    rows: legislatorRows,
-    aliases: deps.legislatorAliases,
-  });
-  const sponsors = sponsorships.map((sponsorship) => sponsorRecordOf(sponsorship, resolver));
-  // A CommitteeMembers row names a person by a Legislator Code, but a task force's members are not all Legislators
-  // ("Shanbo Zhang", olis-odata.md gotcha 5): the code is stored as the feed writes it, and one that names no
-  // Legislator is reported with the others, never an error.
-  for (const member of committeeMembers) resolver.resolve("CommitteeMembers", member.legislatorCode);
-  const floorVoteRecords = floorVotes.map((entry) => floorVoteRecordOf(entry, resolver));
-  const committeeVoteRecords = committeeVotes.map((entry) => committeeVoteRecordOf(entry, resolver));
-
-  const committeeNames = new Map<CommitteeId, string>(committees.map((committee) => [committee.id, committee.name]));
+  const { record, resolver, committeeNames } = feedRecordOf(config, deps, snapshot, feed);
   const writer = openIndexWriter(config.databasePath);
-  let documentsFetched = 0;
+  let documentsFetched: number;
   const passageCounts: PassageCounts = { passages: 0, keywordOnly: 0, embedded: 0, reused: 0 };
   const notFetched: BuildReport["documents_not_fetched"] = [];
   try {
     // What each meeting lists and which analysis documents each Measure has are the feed's, so they are
     // stored with the rest of it before any file is fetched: a file that fails to come is still listed,
     // and the server can say a Measure has a statement it does not hold yet.
-    writer.recordFullPull(config.session, asOf, {
-      measures,
-      history,
-      legislatorRows,
-      legislators: resolver.people,
-      legislatorCodes: resolver.codes.map(({ code, legislator }) => ({ code, legislatorId: legislator.id })),
-      sponsors,
-      floorVotes: floorVoteRecords,
-      committeeVotes: committeeVoteRecords,
-      snapshot: snapshot.version,
-      agencyParents: [...snapshot.agencyParents].map(([agency, parent]) => ({ agency, parent })),
-      committees,
-      meetings,
-      agendaItems,
-      documentLinks: links,
-      testimony: testimonyRecordsOf(links, snapshot),
-      committeeMembers,
+    writer.recordFullPull(config.session, asOf, record);
+    documentsFetched = await storeLinkedDocuments({
+      config,
+      deps,
+      writer,
+      olis,
+      snapshot,
+      links,
+      committeeNames,
+      passageCounts,
+      notFetched,
+      readLinks: true,
     });
-    const stored = writer.storedDocumentIds(config.session);
-    // A fetched file is unchanging (ADR-0005) but its feed row is not: OLIS changes a posting's Meaning,
-    // a Testimony's Measure. What the row says about a stored document is refreshed without fetching it.
-    const refreshed = links.filter((link) => stored.has(link.id));
-    const refreshedEntries = new Map(refreshed.map((link) => [link.id, searchEntryOf(link, committeeNames)]));
-    // A document OLIS now files as embeddable that the index holds as keyword-only (a list relabelled as material)
-    // has passages and no vectors. They are embedded in this pull, before the document is refiled, so that it is
-    // never filed as embeddable without them. The other direction needs nothing: the vectors of a keyword-only
-    // document are never loaded.
-    const keywordOnlyBefore = writer.keywordOnlyDocumentIds(config.session);
-    for (const [id, entry] of refreshedEntries) {
-      if (!keywordOnlyBefore.has(id) || entry.keywordOnly) continue;
-      writer.storeVectors(
-        await vectorsForNewPassages(writer, deps.embedder, entry, writer.passagesOf(id), passageCounts),
-      );
-    }
-    writer.refreshDocuments(config.session, refreshed, refreshedEntries);
-    for (const link of links) {
-      if (stored.has(link.id)) continue;
-      const fetched = await fetchAndRead(olis, link, deps.signal);
-      if (fetched.kind === "left_out") {
-        notFetched.push({ id: link.id, source_url: link.sourceUrl, reason: fetched.reason });
-        continue;
-      }
-      const entry = searchEntryOf(link, committeeNames);
-      const passages = splitPassages(fetched.pdf.text, deps.embedder);
-      const vectors = await vectorsForNewPassages(writer, deps.embedder, entry, passages, passageCounts);
-      writer.storeDocument(
-        config.session,
-        {
-          ...link,
-          retrievedAt: formatPacific(deps.clock.now()),
-          contentHash: createHash("sha256").update(fetched.bytes).digest("hex"),
-          textHash: createHash("sha256").update(fetched.pdf.text).digest("hex"),
-          pageCount: fetched.pdf.pageCount,
-          hasTextLayer: fetched.pdf.hasTextLayer,
-          text: fetched.pdf.text,
-        },
-        { entry, passages, citations: findCitations(fetched.pdf.text, config.session), vectors },
-      );
-      stored.add(link.id);
-      documentsFetched += 1;
-    }
-    // The Statute Links of every stored Version and posting not yet read, from the text the store holds: the
-    // files are not fetched again. Postings that share a file are read once (ADR-0015).
-    for (const file of writer.unreadStatuteFiles(config.session)) {
-      writer.storeStatuteParse(statuteParseOf(file, writer.storedText(file.documentId), snapshot.orsSections));
-    }
-    // The Agency Links of every stored Fiscal Impact Statement, Version and posting not yet read with this snapshot, from
-    // the text the store holds and the Statute Links read from it just above (ADR-0027). A snapshot that has changed since
-    // a document was read makes it unread: the index reports the snapshot of this pull, so every link in it is made with it.
-    for (const document of writer.unreadAgencyDocuments(config.session, snapshot.version)) {
-      writer.storeAgencyRead(
-        agencyReadOf(
-          document,
-          writer.storedText(document.documentId),
-          writer.statuteLinksOf(document.documentId),
-          snapshot,
-        ),
-        snapshot.version,
-      );
-    }
     const listingCounts = new Map(writer.listingCounts(config.session).map((count) => [count.entitySet, count]));
     const unresolvedMemberCodes = new Set(
       resolver
@@ -499,4 +637,114 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     documentsNotFetched: notFetched.length,
     unresolvedLegislatorCodes: resolver.unresolved(),
   };
+}
+
+export type IncrementResult = {
+  asOf: Timestamp;
+  /** Documents fetched by this increment: the ones the store already held are not fetched again. */
+  documentsFetched: number;
+  documentsNotFetched: number;
+};
+
+/** How far before the last run an increment starts reading (ADR-0005, ADR-0039): rows OLIS wrote while that run read. */
+const INCREMENT_OVERLAP_HOURS = 2;
+
+/**
+ * An increment (ADR-0005, ADR-0039): reads the rows OLIS created or modified since the last run, less a two-hour
+ * overlap (`CreatedDate gt X or ModifiedDate gt X`), stores them, and fetches the documents they link that the store
+ * does not hold. It is not a complete pull: it lists nothing and marks nothing no longer listed (ADR-0030). A short read
+ * stores nothing and throws.
+ */
+export async function runIncrement(config: IngestConfig, deps: IngestDeps): Promise<IncrementResult> {
+  const snapshot = await loadSnapshot(config.snapshotPath);
+  const asOf = formatPacific(deps.clock.now());
+  const writer = openIndexWriter(config.databasePath);
+  try {
+    const runs = writer.lastRuns(config.session);
+    const lastRun = [runs.fullPull, runs.increment]
+      .filter((at): at is Timestamp => at !== undefined)
+      .toSorted(compareTimestamps)
+      .at(-1);
+    if (lastRun === undefined)
+      throw new Error("An increment needs a complete full pull before it: the index holds none");
+    const since = pacificTimestampOf(Temporal.Instant.from(lastRun).subtract({ hours: INCREMENT_OVERLAP_HOURS }));
+    const olis = createOlisClient({
+      baseUrl: config.olisBaseUrl,
+      fetch: deps.fetch,
+      changedSince: since,
+      documents: {
+        origin: config.olisDocumentOrigin,
+        timeoutMs: deps.documentTimeoutMs ?? DEFAULT_DOCUMENT_TIMEOUT_MS,
+        pause: deps.pause,
+      },
+    });
+    const feed = await readFeed(olis, config, deps, "increment");
+    const { record, committeeNames } = feedRecordOf(config, deps, snapshot, feed);
+    writer.recordIncrement(config.session, asOf, record);
+    const passageCounts: PassageCounts = { passages: 0, keywordOnly: 0, embedded: 0, reused: 0 };
+    const notFetched: BuildReport["documents_not_fetched"] = [];
+    const documentsFetched = await storeLinkedDocuments({
+      config,
+      deps,
+      writer,
+      olis,
+      snapshot,
+      links: feed.links,
+      committeeNames,
+      passageCounts,
+      notFetched,
+      readLinks: writer.reportedSnapshotCommit(config.session) === snapshot.version.commit,
+    });
+    return { asOf, documentsFetched, documentsNotFetched: notFetched.length };
+  } finally {
+    writer.close();
+  }
+}
+
+export type { HashSampleReport };
+export { hashSampleReportPath, lastHashSampleAt };
+
+/**
+ * The nightly hash sample (ticket #20, ADR-0040): fetches `config.hashSampleSize` random stored documents again and
+ * compares their hashes with the stored ones. It stores nothing; it writes `hash-sample-report.json` beside the
+ * database, a report every time it runs, empty or not. `random` draws the documents; no document is fetched at or
+ * after `deadline`.
+ */
+export async function runHashSample(
+  config: IngestConfig,
+  deps: IngestDeps & { random: () => number },
+  deadline: Timestamp | undefined,
+): Promise<HashSampleReport> {
+  const olis = createOlisClient({
+    baseUrl: config.olisBaseUrl,
+    fetch: deps.fetch,
+    documents: {
+      origin: config.olisDocumentOrigin,
+      timeoutMs: deps.documentTimeoutMs ?? DEFAULT_DOCUMENT_TIMEOUT_MS,
+      pause: deps.pause,
+    },
+  });
+  const writer = openIndexWriter(config.databasePath);
+  let documents: StoredDocumentHash[];
+  try {
+    documents = writer.documentsToSample(config.session);
+  } finally {
+    writer.close();
+  }
+  const untilDeadline =
+    deadline === undefined ? undefined : Temporal.Instant.from(deadline).epochMilliseconds - deps.clock.now().getTime();
+  const report = await sampleHashes({
+    session: config.session,
+    documents,
+    size: config.hashSampleSize,
+    random: deps.random,
+    olis,
+    clock: deps.clock,
+    signal: deps.signal,
+    deadline,
+    ...(untilDeadline === undefined ? {} : { windowSignal: AbortSignal.timeout(Math.max(untilDeadline, 1)) }),
+    previous: readHashSampleReport(config.databasePath)?.mismatches ?? [],
+  });
+  writeHashSampleReport(hashSampleReportPath(config.databasePath), report);
+  return report;
 }

@@ -1,9 +1,10 @@
 // A MADE-UP OregonAI snapshot file for tests that need a snapshot with a version of their own. It is
 // valid in every way the worker checks and holds nothing true: the committed fixture
 // (test/fixtures/oregonai-snapshot/) is the real data, trimmed.
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { snapshotFixturePath } from "./oregonai-snapshot.ts";
 
 export type MadeUpSnapshotVersion = { source: string; commit: string; commitDate: string };
 
@@ -52,6 +53,48 @@ export function createMadeUpSnapshot(version: Partial<MadeUpSnapshotVersion> = {
     path,
     rewrite: (replacement) => {
       writeFileSync(path, fileText({ ...madeUpSnapshotVersion, ...replacement }));
+    },
+    remove: () => {
+      rmSync(directory, { recursive: true, force: true });
+    },
+  };
+}
+
+/** The parts of the snapshot file a test changes. */
+export type FixtureSnapshot = {
+  version: MadeUpSnapshotVersion;
+  orsSections: string[];
+  agencies: { slug: string; aliases: string[] }[];
+};
+
+export type FixtureCopy = {
+  path: string;
+  /** Rewrites the copy: the made-up version in place of the fixture's, and whatever `change` does to the rest. */
+  changeIt: () => void;
+  remove: () => void;
+};
+
+/**
+ * A MADE-UP copy of the committed snapshot fixture in a folder of its own, for a test that pulls twice: the first pull
+ * reads it as it is, and `changeIt()` rewrites it with a version of its own (`madeUpSnapshotVersion`'s commit, dated
+ * 2026-10-01) and whatever `change` does to the parsed file. Nothing in the rewritten file is true.
+ */
+export function createFixtureCopy(change: (snapshot: FixtureSnapshot) => void): FixtureCopy {
+  const directory = mkdtempSync(join(tmpdir(), "made-up-snapshot-copy-"));
+  const path = join(directory, "snapshot.json");
+  const original = readFileSync(snapshotFixturePath, "utf8");
+  writeFileSync(path, original);
+  return {
+    path,
+    changeIt: () => {
+      const snapshot = JSON.parse(original) as FixtureSnapshot;
+      snapshot.version = {
+        ...snapshot.version,
+        commit: madeUpSnapshotVersion.commit,
+        commitDate: "2026-10-01T09:00:00-07:00",
+      };
+      change(snapshot);
+      writeFileSync(path, `${JSON.stringify(snapshot, null, 2)}\n`);
     },
     remove: () => {
       rmSync(directory, { recursive: true, force: true });
