@@ -9,6 +9,7 @@
 // once on any calendar date, however late the worker started. The part of the night before midnight runs the night's
 // increment (`daily`), on nights that are not a full-pull night.
 import type { FullPullSetting, IncrementsSetting } from "#/packages/config/index.ts";
+import type { SessionSpan } from "#/packages/domain/documents.ts";
 import { atPacificLocalTime, compareTimestamps, type Timestamp } from "#/packages/time/pacific.ts";
 
 export type Settings = { increments: IncrementsSetting; fullPull: FullPullSetting };
@@ -17,17 +18,27 @@ export type Settings = { increments: IncrementsSetting; fullPull: FullPullSettin
 export type SessionSchedule = {
   /** Pacific dates (YYYY-MM-DD) with a committee meeting or a floor convening (ConveneTimes) scheduled. */
   meetingDays: ReadonlySet<string>;
-  /** Whether the Session is in progress: then every weekday is a day the Session meets. */
-  inProgress: boolean;
+  /** The Session's begin and end dates, or undefined while the index holds no row. A weekday between them is a day the Session meets. */
+  session: SessionSpan | undefined;
 };
 
 /**
- * What the Session has scheduled, from the days the index holds a committee meeting on (ADR-0039). ConveneTimes and the
- * Session's BeginDate and EndDate are not read yet, so no Session is "in progress" here. The worker and the server both
- * build the schedule this way, so the day the Session meets means the same to the schedule and to the staleness rule.
+ * What the Session has scheduled, from the three things the index holds (ADR-0039, ADR-0042): the days with a committee
+ * meeting, the days with a floor convening (ConveneTimes), and the Session's begin and end dates (LegislativeSessions).
+ * A day the Session meets is a day with either, or a weekday while the Session is in progress: `sessionMeetsOn`
+ * decides that for the date it is asked about, from the begin date to the end date, both included. A Session whose end date the feed leaves null is in progress from its begin date on, and one with no
+ * row at all is not in progress. The worker and the server both build the schedule this way, so the day the Session
+ * meets means the same to the schedule and to the staleness rule.
  */
-export function sessionScheduleOf(meetingDays: readonly string[]): SessionSchedule {
-  return { meetingDays: new Set(meetingDays), inProgress: false };
+export function sessionScheduleOf(input: {
+  /** Pacific dates (YYYY-MM-DD) with a committee meeting. */
+  committeeMeetingDays: readonly string[];
+  /** Pacific dates (YYYY-MM-DD) with a floor convening. */
+  conveneDays: readonly string[];
+  /** The Session's begin and end dates (Pacific, YYYY-MM-DD), or undefined while the index holds no row. */
+  session: SessionSpan | undefined;
+}): SessionSchedule {
+  return { meetingDays: new Set([...input.committeeMeetingDays, ...input.conveneDays]), session: input.session };
 }
 
 /**
@@ -77,7 +88,10 @@ export function isFullPullDate(date: Temporal.PlainDate, setting: FullPullSettin
 
 /** Whether the Session meets on this date: a meeting or convening is scheduled, or it is a weekday of a Session in progress. */
 export function sessionMeetsOn(date: Temporal.PlainDate, schedule: SessionSchedule): boolean {
-  return schedule.meetingDays.has(date.toString()) || (schedule.inProgress && date.dayOfWeek <= 5);
+  const day = date.toString();
+  const { session } = schedule;
+  const inProgress = session !== undefined && session.begin <= day && (session.end === null || day <= session.end);
+  return schedule.meetingDays.has(day) || (inProgress && date.dayOfWeek <= 5);
 }
 
 export function whatRunsAt(at: Timestamp, settings: Settings, schedule: SessionSchedule): Due {

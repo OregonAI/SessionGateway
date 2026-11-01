@@ -16,15 +16,17 @@ import {
   fullPullDeadline,
   hashSampleAt,
   hashSampleDeadline,
+  sessionScheduleOf,
   whatRunsAt,
   type Due,
   type HashSampleDue,
   type SessionSchedule,
 } from "../schedule.ts";
 
-const noMeetings: SessionSchedule = { meetingDays: new Set(), inProgress: false };
-const meets = (...days: string[]): SessionSchedule => ({ meetingDays: new Set(days), inProgress: false });
-const inProgress: SessionSchedule = { meetingDays: new Set(), inProgress: true };
+const noMeetings: SessionSchedule = { meetingDays: new Set(), session: undefined };
+const meets = (...days: string[]): SessionSchedule => ({ meetingDays: new Set(days), session: undefined });
+// A Session in progress for every date the table asks about.
+const inProgress: SessionSchedule = { meetingDays: new Set(), session: { begin: "2000-01-01", end: null } };
 
 const nothing: Due = { kind: "nothing" };
 const increment = (slot: string): Due => ({ kind: "increment", slot });
@@ -583,6 +585,126 @@ describe("what runs at a Pacific time", () => {
   });
 });
 
+// Ticket #67: the schedule built from the three things the index holds, through `sessionScheduleOf`: the days with a
+// committee meeting, the days with a floor convening (ConveneTimes) and the Session's begin and end dates. The days are
+// MADE UP inputs; the calendar facts are the ones in the header (2025-01-06 is a Monday, 2025-01-11 a Saturday,
+// 2025-01-13 a Monday, 2025-03-14 a Friday, 2025-03-17 a Monday). Every row asks at noon with `15min`.
+type BuiltRow = {
+  name: string;
+  at: string;
+  committeeDays?: string[];
+  conveneDays?: string[];
+  session?: { begin: string; end: string | null };
+  expected: Due;
+};
+
+const builtRows: BuiltRow[] = [
+  {
+    name: "a convening-only day (a Monday) runs",
+    at: "2025-01-06T12:00:00-08:00",
+    conveneDays: ["2025-01-06"],
+    expected: increment("2025-01-06T12:00"),
+  },
+  {
+    name: "a convening-only Saturday runs",
+    at: "2025-01-11T12:00:00-08:00",
+    conveneDays: ["2025-01-11"],
+    expected: increment("2025-01-11T12:00"),
+  },
+  {
+    name: "a convening on another day does not make this one a meeting day",
+    at: "2025-01-06T12:00:00-08:00",
+    conveneDays: ["2025-01-07"],
+    expected: nothing,
+  },
+  {
+    name: "a committee-meeting-only day still runs",
+    at: "2025-01-06T12:00:00-08:00",
+    committeeDays: ["2025-01-06"],
+    expected: increment("2025-01-06T12:00"),
+  },
+  {
+    name: "in progress: a weekday between the begin and end dates with no meeting runs",
+    at: "2025-02-05T12:00:00-08:00",
+    session: { begin: "2025-01-13", end: "2025-03-14" },
+    expected: increment("2025-02-05T12:00"),
+  },
+  {
+    name: "in progress: a Saturday between them with no meeting does not",
+    at: "2025-02-01T12:00:00-08:00",
+    session: { begin: "2025-01-13", end: "2025-03-14" },
+    expected: nothing,
+  },
+  {
+    name: "in progress: a Sunday between them with no meeting does not",
+    at: "2025-02-02T12:00:00-08:00",
+    session: { begin: "2025-01-13", end: "2025-03-14" },
+    expected: nothing,
+  },
+  {
+    name: "in progress: the begin date itself (a Monday) runs",
+    at: "2025-01-13T12:00:00-08:00",
+    session: { begin: "2025-01-13", end: "2025-03-14" },
+    expected: increment("2025-01-13T12:00"),
+  },
+  {
+    name: "in progress: the end date itself (a Friday) runs",
+    at: "2025-03-14T12:00:00-07:00",
+    session: { begin: "2025-01-13", end: "2025-03-14" },
+    expected: increment("2025-03-14T12:00"),
+  },
+  {
+    name: "in progress: the weekday before the begin date does not",
+    at: "2025-01-10T12:00:00-08:00",
+    session: { begin: "2025-01-13", end: "2025-03-14" },
+    expected: nothing,
+  },
+  {
+    name: "in progress: the weekday after the end date does not",
+    at: "2025-03-17T12:00:00-07:00",
+    session: { begin: "2025-01-13", end: "2025-03-14" },
+    expected: nothing,
+  },
+  {
+    name: "in progress: a weekday after the end date with a committee meeting still runs",
+    at: "2025-03-17T12:00:00-07:00",
+    committeeDays: ["2025-03-17"],
+    session: { begin: "2025-01-13", end: "2025-03-14" },
+    expected: increment("2025-03-17T12:00"),
+  },
+  {
+    name: "in progress: a Session with no end date yet is in progress from its begin date, on a weekday",
+    at: "2025-06-04T12:00:00-07:00",
+    session: { begin: "2025-01-13", end: null },
+    expected: increment("2025-06-04T12:00"),
+  },
+  {
+    name: "in progress: a Session with no end date is not in progress before its begin date",
+    at: "2025-01-10T12:00:00-08:00",
+    session: { begin: "2025-01-13", end: null },
+    expected: nothing,
+  },
+  {
+    name: "no Session row at all: a weekday with no meeting does not run",
+    at: "2025-02-05T12:00:00-08:00",
+    expected: nothing,
+  },
+];
+
+describe("what runs at a Pacific time, with the schedule built from the index's three inputs", () => {
+  test.for(builtRows)("$name", ({ at, committeeDays, conveneDays, session, expected }) => {
+    const timestamp = readTimestamp(at);
+    if (timestamp === undefined) throw new Error(`The row's time ${at} is not a time`);
+    const schedule = sessionScheduleOf({
+      committeeMeetingDays: committeeDays ?? [],
+      conveneDays: conveneDays ?? [],
+      session,
+    });
+
+    expect(whatRunsAt(timestamp, { increments: "15min", fullPull: "weekly" }, schedule)).toEqual(expected);
+  });
+});
+
 // The moment a full pull must be over: 6 am of the date its night ends on, on the clock. Written out from the rule.
 test.for([
   { name: "just after midnight", at: "2025-01-19T00:00:00-08:00", expected: "2025-01-19T06:00:00-08:00" },
@@ -952,4 +1074,23 @@ test.for([
   expect(hashSampleDeadline(timestamp, { increments: "daily", fullPull: fullPullSetting })).toBe(
     expected === undefined ? undefined : readTimestamp(expected),
   );
+});
+
+// Ticket #67 review: one schedule, asked about dates other than the moment it was built. The loop builds it once at
+// start-up and asks it about the last run's slot, so "in progress" is decided from the date asked, not the build time.
+test("a schedule built once decides in progress from the date it is asked about", () => {
+  const schedule = sessionScheduleOf({
+    committeeMeetingDays: [],
+    conveneDays: [],
+    session: { begin: "2025-01-13", end: "2025-03-14" },
+  });
+  const settings = { increments: "15min", fullPull: "weekly" } as const;
+  const at = (text: string) => {
+    const timestamp = readTimestamp(text);
+    if (timestamp === undefined) throw new Error(`${text} is not a time`);
+    return timestamp;
+  };
+
+  expect(whatRunsAt(at("2025-02-05T12:00:00-08:00"), settings, schedule)).toEqual(increment("2025-02-05T12:00"));
+  expect(whatRunsAt(at("2025-03-17T12:00:00-07:00"), settings, schedule)).toEqual(nothing);
 });

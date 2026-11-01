@@ -52,7 +52,11 @@ function readState(config: IngestConfig): {
   try {
     const runs = writer.lastRuns(config.session);
     return {
-      schedule: sessionScheduleOf(writer.meetingDays(config.session)),
+      schedule: sessionScheduleOf({
+        committeeMeetingDays: writer.meetingDays(config.session),
+        conveneDays: writer.conveneDays(config.session),
+        session: writer.sessionDates(config.session),
+      }),
       lastRun: { increment: runs.increment, full_pull: runs.fullPull },
       lastFullPullBegun: runs.fullPullAttempt,
     };
@@ -96,8 +100,9 @@ export async function runIngestLoop(config: IngestConfig, deps: LoopDeps): Promi
   }
   while (!deps.signal.aborted) {
     const now = deps.clock.now();
+    const at = formatPacific(now);
     const state = readState(config);
-    const due: Due = whatRunsAt(formatPacific(now), settings, state.schedule);
+    const due: Due = whatRunsAt(at, settings, state.schedule);
     // An increment reads from the last run, so it waits for a first full pull.
     const ready = due.kind !== "increment" || state.lastRun.full_pull !== undefined;
     if (due.kind !== "nothing" && ready && ran[due.kind] !== due.slot) {

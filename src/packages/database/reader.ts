@@ -34,6 +34,7 @@ import {
   type Relation,
   type RelatedNode,
   type TestimonyEntry,
+  type SessionSpan,
 } from "#/packages/domain/documents.ts";
 import {
   measureIdOf,
@@ -77,7 +78,13 @@ import { compareTimestamps, type Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceFromJson, storedEvidenceKinds } from "./lib/agency-evidence.ts";
 import { openReadConnection } from "./lib/connection.ts";
 import { listedOrUnchecked } from "./lib/listing.ts";
-import { readFullPullAsOf, readIncrementAsOf, readMeetingDays } from "./lib/run-state.ts";
+import {
+  readFullPullAsOf,
+  readIncrementAsOf,
+  readMeetingDays,
+  readConveneDays,
+  readSessionDates,
+} from "./lib/run-state.ts";
 import { statuteLinkOfRow, statuteLinkRow, storedTargetOf } from "./lib/statute-link-rows.ts";
 
 /** What a meetings query asks for. Every field given must hold. */
@@ -128,6 +135,10 @@ export type IndexReader = {
   lastIncrement(session: SessionKey): Timestamp | undefined;
   /** The Pacific dates (YYYY-MM-DD) of the Session's committee meetings the index holds: days the Session meets. */
   meetingDays(session: SessionKey): string[];
+  /** The Pacific dates (YYYY-MM-DD) of the Session's floor convenings (ConveneTimes) the index holds: days the Session meets (ADR-0042). */
+  conveneDays(session: SessionKey): string[];
+  /** The dates the Session begins and ends on (its LegislativeSessions row), or undefined until a full pull has read the row (ADR-0042). */
+  sessionDates(session: SessionKey): SessionSpan | undefined;
   /** The version of the OregonAI snapshot the last completed full pull built the index with. */
   snapshotVersion(session: SessionKey): SnapshotVersion | undefined;
   /**
@@ -1376,6 +1387,12 @@ export function openIndexReader(path: string): IndexReader {
     lastIncrement: incrementOf,
     meetingDays(session) {
       return readMeetingDays(database, session);
+    },
+    conveneDays(session) {
+      return readConveneDays(database, session);
+    },
+    sessionDates(session) {
+      return readSessionDates(database, session);
     },
     snapshotVersion(session) {
       const row = selectSnapshot.get(session);

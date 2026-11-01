@@ -11,6 +11,8 @@ import type {
   Committee,
   Meeting,
   AgendaItem,
+  Convening,
+  SessionDates,
 } from "#/packages/domain/documents.ts";
 import { measureIdOf, type HistoryAction, type Measure } from "#/packages/domain/index.ts";
 import type { LegislatorRow } from "#/packages/domain/legislators.ts";
@@ -64,6 +66,8 @@ export type ListedSources = {
   agendaItems: readonly AgendaItem[];
   documentLinks: readonly DocumentLink[];
   committeeMembers: readonly CommitteeMember[];
+  convenings: readonly Convening[];
+  sessionDates: SessionDates | undefined;
 };
 
 /** Every row the pull listed, once for each key. */
@@ -83,5 +87,12 @@ export function listedRowsOf(pulled: ListedSources): ListedRow[] {
   for (const item of pulled.agendaItems) add("CommitteeAgendaItems", String(item.itemId));
   for (const link of pulled.documentLinks) add(entitySetOfDocument(link.kind), link.id, link.id);
   for (const member of pulled.committeeMembers) add("CommitteeMembers", member.key);
+  for (const convening of pulled.convenings) add("ConveneTimes", conveningKeyOf(convening));
+  if (pulled.sessionDates !== undefined) add("LegislativeSessions", pulled.sessionDates.session);
   return rows;
+}
+
+/** A ConveneTimes row's key in the feed: its Session, date and Chamber (the metadata's key, olis-odata.md section 2). */
+export function conveningKeyOf(convening: Convening): string {
+  return `${convening.at} ${convening.chamber}`;
 }

@@ -428,12 +428,20 @@ type FeedRead = {
   meetings: Awaited<ReturnType<OlisClient["readMeetings"]>>;
   agendaItems: Awaited<ReturnType<OlisClient["readAgendaItems"]>>;
   committeeMembers: Awaited<ReturnType<OlisClient["readCommitteeMembers"]>>;
+  /** The floor convenings and the Session's begin and end dates: read by a full pull, empty in an increment (ADR-0042). */
+  convenings: Awaited<ReturnType<OlisClient["readConvenings"]>>;
+  sessionDates: Awaited<ReturnType<OlisClient["readSessionDates"]>>;
   /** Every document the feed links in what was read, the meetings' agendas included. */
   links: DocumentLink[];
 };
 
 /** Reads the sets a pull and an increment store, from the client given: a whole Session's rows, or an increment's. */
-async function readFeed(olis: OlisClient, config: IngestConfig, deps: IngestDeps): Promise<FeedRead> {
+async function readFeed(
+  olis: OlisClient,
+  config: IngestConfig,
+  deps: IngestDeps,
+  kind: "full_pull" | "increment",
+): Promise<FeedRead> {
   const measures = await olis.readMeasures(config.session, deps.signal);
   const legislatorRows = await olis.readLegislators(config.session, deps.signal);
   const sponsorships = await olis.readSponsorships(config.session, deps.signal);
@@ -444,6 +452,9 @@ async function readFeed(olis: OlisClient, config: IngestConfig, deps: IngestDeps
   const meetings = await olis.readMeetings(config.session, deps.signal);
   const agendaItems = await olis.readAgendaItems(config.session, deps.signal);
   const committeeMembers = await olis.readCommitteeMembers(config.session, deps.signal);
+  // The sets the schedule reads (ADR-0042) are whole-Session sets the full pull counts; an increment does not read them.
+  const convenings = kind === "full_pull" ? await olis.readConvenings(config.session, deps.signal) : [];
+  const sessionDates = kind === "full_pull" ? await olis.readSessionDates(config.session, deps.signal) : undefined;
   const links = [
     ...(await olis.readDocumentLinks(config.session, deps.signal)),
     ...meetings.flatMap((meeting) => (meeting.agenda === null ? [] : [meeting.agenda])),
@@ -459,6 +470,8 @@ async function readFeed(olis: OlisClient, config: IngestConfig, deps: IngestDeps
     meetings,
     agendaItems,
     committeeMembers,
+    convenings,
+    sessionDates,
     links,
   };
 }
@@ -471,7 +484,7 @@ function feedRecordOf(
   feed: FeedRead,
 ): { record: FullPullRecord; resolver: LegislatorResolver; committeeNames: Map<CommitteeId, string> } {
   const { measures, legislatorRows, sponsorships, history, committeeVotes, floorVotes, committees } = feed;
-  const { meetings, agendaItems, committeeMembers, links } = feed;
+  const { meetings, agendaItems, committeeMembers, convenings, sessionDates, links } = feed;
   // A Member sponsor and the voter of a vote entry each name a Legislator by a Legislator Code; the
   // resolver says who that is.
   const resolver = createLegislatorResolver({
@@ -503,6 +516,8 @@ function feedRecordOf(
     documentLinks: links,
     testimony: testimonyRecordsOf(links, snapshot),
     committeeMembers,
+    convenings,
+    sessionDates,
   };
   return { record, resolver, committeeNames };
 }
@@ -525,7 +540,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       pause: deps.pause,
     },
   });
-  const feed = await readFeed(olis, config, deps);
+  const feed = await readFeed(olis, config, deps, "full_pull");
   const { measures, links } = feed;
 
   // The pull is complete only when every set it read came with as many rows as the feed counted. One that is not
@@ -663,7 +678,7 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
         pause: deps.pause,
       },
     });
-    const feed = await readFeed(olis, config, deps);
+    const feed = await readFeed(olis, config, deps, "increment");
     const { record, committeeNames } = feedRecordOf(config, deps, snapshot, feed);
     writer.recordIncrement(config.session, asOf, record);
     const passageCounts: PassageCounts = { passages: 0, keywordOnly: 0, embedded: 0, reused: 0 };
