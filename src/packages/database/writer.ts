@@ -77,7 +77,12 @@ export type CommitteeVoteRecord = CommitteeVoteEntry & { legislatorId: Legislato
  */
 export type TestimonyRecord = {
   link: DocumentLink & { testimony: TestimonyDetails };
-  agencyId: AgencyId | null;
+  /**
+   * The Agency the row's `Organization` names, or null when it names none. `undefined` when the run did not match the
+   * row, because an increment's snapshot file is not the one the index reports (ADR-0047): the row's stored Agency stays
+   * as it is, and a row new to the index is stored with none.
+   */
+  agencyId: AgencyId | null | undefined;
 };
 
 /**
@@ -244,7 +249,8 @@ export type IndexWriter = {
    * the two-pull rule (ADR-0030): it writes no `feed_pull` and no `feed_row`, so a row a complete pull has seen keeps the
    * number of the latest complete pull that listed it, and a row it sees first has no listing row (read as listed, not yet
    * checked). It never marks anything no longer listed, and it replaces no listing: the Versions it reads are added to the
-   * listing of Versions, none removed.
+   * listing of Versions, none removed. A Testimony row it gives no Agency (`agencyId` undefined, ADR-0047) keeps the
+   * Agency the index holds for it, and a row new to the index is stored with none.
    */
   recordIncrement(session: SessionKey, asOf: Timestamp, pulled: FullPullRecord): void;
   /**
@@ -599,6 +605,20 @@ export function openIndexWriter(path: string): IndexWriter {
            committee_id = excluded.committee_id, committee_code = excluded.committee_code,
            meeting_at = excluded.meeting_at, agency_id = excluded.agency_id`,
     );
+    // The same row without its Agency: an increment under a changed snapshot leaves the stored one (ADR-0047), and a row
+    // new to the index has none (`agency_id` has no default, so it is NULL).
+    const upsertTestimonyKeepingAgency = database.prepare(
+      `INSERT INTO testimony (document_id, session_key, comm_test_id, measure_id, source_url, document_description,
+                                position_id, submitter, behalf_of, organization, committee_id, committee_code,
+                                meeting_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (document_id) DO UPDATE SET
+           comm_test_id = excluded.comm_test_id, measure_id = excluded.measure_id, source_url = excluded.source_url,
+           document_description = excluded.document_description, position_id = excluded.position_id,
+           submitter = excluded.submitter, behalf_of = excluded.behalf_of, organization = excluded.organization,
+           committee_id = excluded.committee_id, committee_code = excluded.committee_code,
+           meeting_at = excluded.meeting_at`,
+    );
     const upsertFloorLetter = database.prepare(
       `INSERT INTO floor_letter (document_id, session_key, floor_letter_id, measure_id, source_url, chamber, letter_date,
                                    title, description)
@@ -781,7 +801,7 @@ export function openIndexWriter(path: string): IndexWriter {
       for (const { link, agencyId } of pulled.testimony) {
         const committee = link.relations.find((relation) => relation.relation === "committee");
         if (committee === undefined) throw new Error(`The Testimony ${link.id} names no committee`);
-        upsertTestimony.run(
+        const fields = [
           link.id,
           session,
           link.testimony.commTestId,
@@ -795,8 +815,9 @@ export function openIndexWriter(path: string): IndexWriter {
           committee.to,
           link.testimony.committeeCode,
           link.testimony.meetingAt,
-          agencyId,
-        );
+        ];
+        if (agencyId === undefined) upsertTestimonyKeepingAgency.run(...fields);
+        else upsertTestimony.run(...fields, agencyId);
       }
       // Every Floor Letter row as the feed says it, whether or not its file is fetched (ADR-0045).
       for (const link of pulled.documentLinks) {
