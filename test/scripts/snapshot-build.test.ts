@@ -426,7 +426,7 @@ describe("the snapshot build script with --trim-to the 2025R1 fixture", () => {
     expect(recorded["of"]).toEqual({ agencies: 3, orsSections: 6, chaptersWithAgencies: 2 });
     // The SHA-256 of the output file, as `sha256sum` prints it for it.
     expect(recorded["snapshotSha256"]).toBe("854152c49b5349bd7d14437530b4aed8eb8e0b1efb4b0816a4b442ea8971206e");
-  }, 30_000);
+  });
 
   it("keeps a chapter that the fixture cites only in a table, where no ORS stands before the section number", () => {
     // Exhibit 295037 of the fixture (SB 121's "Tax Credit Report 2025", LRO) lists "1.431 Crop Donations
@@ -470,7 +470,7 @@ describe("the snapshot build script with --trim-to the 2025R1 fixture", () => {
     expect(trimmed["orsSections"]).toEqual(["ors-318.031"]);
     expect(trimmed["chapterAgencies"]).toEqual({ "ors-chapter-318": ["made-up-revenue"] });
     expect((readJson(record) as Record<string, unknown>)["orsChaptersCited"]).toContain("ors-chapter-318");
-  }, 30_000);
+  });
 
   it("keeps the parent of an Agency it keeps, though nothing in the fixture names the parent and no rule of its own implements a kept chapter", () => {
     // The fixture cites ORS 409.711 (HB 3795), so chapter 409 is kept, and made-up-sub-office's rule implements it.
@@ -531,5 +531,5 @@ describe("the snapshot build script with --trim-to the 2025R1 fixture", () => {
       orsSections: 1,
       chaptersWithAgencies: 1,
     });
-  }, 30_000);
+  });
 });

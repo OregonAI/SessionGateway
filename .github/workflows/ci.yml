@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   # The gate is three kinds of job. `static` runs every step of `npm run check` except the tests, once.
-  # `test` runs the tests split over SHARDS parallel jobs (Vitest's --shard: each test file runs in
+  # `test` runs the tests split over parallel jobs, one per matrix entry (Vitest's --shard: each test file runs in
   # exactly one). `check`, named as it always was, is the one result that branch rules and humans read:
   # it fails when `static` or any shard did not succeed. The suite alone took 18 minutes in one job.
   static:
@@ -42,7 +42,7 @@ jobs:
       - run: npm run check:static
 
   test:
-    name: tests (shard ${{ matrix.shard }}/4)
+    name: tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -65,14 +65,14 @@ jobs:
           path: .cache/models
           key: model-${{ hashFiles('src/packages/embedder/data/model-lock.json') }}
       - run: npm run model:fetch
-      - run: npx vitest run --shard=${{ matrix.shard }}/4
+      - run: npx vitest run --shard=${{ matrix.shard }}/${{ strategy.job-total }}
 
   check:
     name: npm run check
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: [static, test]
-    if: ${{ always() }}
+    if: ${{ !cancelled() }}
     steps:
       - name: Every step and every shard passed
         env:

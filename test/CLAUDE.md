@@ -65,7 +65,7 @@ Seam 1 and the harness span packages, so they live at the top. Every test import
 
 ## Timeouts under load
 
-Seam-1 tests pull the fixture, which takes seconds alone and much longer when two suites share a machine (load 30-40 on 2026-10-31 and 11-01: a different set of files timed out at Vitest's 5 s default each time, and each passed alone). `vitest.config.ts` therefore sets `testTimeout` and `hookTimeout` to 60 s for every file, and the worker's pull signal in `startSystem` is 120 s. A file that needs more still raises it with `vi.setConfig`. These are limits on a hang, not budgets: a test that waits on a document that hangs shortens that wait with `documentTimeoutMs`, which no timeout here changes.
+Seam-1 tests pull the fixture, which takes seconds alone and much longer when two suites share a machine (load 30-40 on 2026-10-31 and 11-01: a different set of files timed out at Vitest's 5 s default each time, and each passed alone). `vitest.config.ts` therefore sets `testTimeout` and `hookTimeout` to 60 s for every file, and the worker's pull signal in `startSystem` is 120 s. A test sets no limit below 60 s of its own, because a per-test value overrides the config and brings the old failure back; one that needs more raises it with `vi.setConfig` or a per-test timeout above 60 s. These are limits on a hang, not budgets: a test that waits on a document that hangs shortens that wait with `documentTimeoutMs`, which no timeout here changes.
 
 ## Speed and property tests
 

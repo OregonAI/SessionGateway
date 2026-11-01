@@ -146,7 +146,7 @@ describe("the entry scripts", () => {
       location: { status: "unchanged" },
     });
     expect(await exited).toBe(0);
-  }, 20_000);
+  });
 
   // Ticket #17, ADR-0039: the two rhythms are configuration, read through the config schema at start-up.
   describe.for([
@@ -161,13 +161,13 @@ describe("the entry scripts", () => {
       const { olis, database } = await fakeOlisAndDatabase();
       const env = { ...workerEnvironment(olis, database.path), [variable]: bad };
 
-      const finished = await run(script, env, 20_000);
+      const finished = await run(script, env);
 
       expect(finished.code).not.toBe(0);
       expect(finished.code).not.toBeNull();
       expect(finished.stderr).toContain(variable);
       expect(finished.stderr).not.toContain(bad);
-    }, 30_000);
+    });
   });
 
   it("src/bin/ingest.ts writes the Legislator Codes it could not resolve to a report beside the database", async () => {
@@ -189,7 +189,7 @@ describe("the entry scripts", () => {
       as_of: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-0[78]:00$/) as unknown,
       unresolved_legislator_codes: [{ code: "Rep Fahey", references: [{ source: "MeasureSponsors", count: 1 }] }],
     });
-  }, 20_000);
+  });
 
   it("fetch and serve documents: ingest.ts pulls from OLIS_DOCUMENT_ORIGIN, then server.ts serves the text", async () => {
     // The documents are served only because this test asks. The clock is 2025-01-10 13:30 Pacific, when the
@@ -253,7 +253,7 @@ describe("the entry scripts", () => {
     expect(finished.stderr).toContain("Serverless PDF.js bundle could not be resolved");
     expect(finished.stderr).toContain("version-2025r1-");
     expect(existsSync(join(dirname(database.path), "build-report.json"))).toBe(false);
-  }, 30_000);
+  });
 
   describe("src/bin/server.ts logs", () => {
     /** Pulls into a fresh database, starts the server on a free port and waits until it listens. */
@@ -310,7 +310,7 @@ describe("the entry scripts", () => {
         port: server.port,
         path: "/session-gateway/mcp",
       });
-    }, 20_000);
+    });
 
     it("an error the Node adapter reports as a JSON line with the error and its stack, not text on stderr", async () => {
       const server = await runningServer();
@@ -332,7 +332,7 @@ describe("the entry scripts", () => {
       const failure = jsonLines(server.stdout()).find((line) => line["level"] === 50);
       expect(failure).toMatchObject({ msg: "The MCP adapter reported an error", err: { message: "aborted" } });
       expect(String((failure?.["err"] as Record<string, unknown> | undefined)?.["stack"])).toContain("aborted");
-    }, 20_000);
+    });
 
     /**
      * Resolves the moment the port accepts a connection: retries at once, where `listening` waits 50 ms.
@@ -390,7 +390,7 @@ describe("the entry scripts", () => {
           port,
         });
       }
-    }, 30_000);
+    });
 
     it("a live lookup that fails, as a JSON line with the Measure and the error, while get_measure answers from the cache", async () => {
       // Nothing listens on this port, so the server's connection to "OLIS" is refused.
@@ -423,7 +423,7 @@ describe("the entry scripts", () => {
         measure: { session: "2025R1", prefix: "SB", number: 69 },
         err: { message: expect.stringContaining("ECONNREFUSED") as unknown },
       });
-    }, 20_000);
+    });
   });
 
   // [script, variable, a value the variable must refuse]
@@ -461,7 +461,6 @@ describe("the entry scripts", () => {
 
   it.for(badVariables)(
     "%s fails at start-up on a bad %s, naming the variable and never its value",
-    { timeout: 20_000 },
     async ([script, variable, value]) => {
       const { olis, database } = await fakeOlisAndDatabase();
       const env = { ...workerEnvironment(olis, database.path), [variable]: value };
@@ -476,7 +475,6 @@ describe("the entry scripts", () => {
 
   it.for(["src/bin/ingest.ts", "src/bin/server.ts"])(
     "%s fails at start-up when MODEL_PATH is not set, naming the variable",
-    { timeout: 20_000 },
     async (script) => {
       const { olis, database } = await fakeOlisAndDatabase();
       const withoutModel: Record<string, string> = workerEnvironment(olis, database.path);
@@ -491,7 +489,6 @@ describe("the entry scripts", () => {
 
   it.for(["src/bin/ingest.ts", "src/bin/server.ts"])(
     "%s fails at start-up when the model's files are not where MODEL_PATH says, and says how to get them",
-    { timeout: 20_000 },
     async (script) => {
       const { olis, database } = await fakeOlisAndDatabase();
       const env = { ...workerEnvironment(olis, database.path), MODEL_PATH: "/nonexistent/model" };
@@ -528,7 +525,6 @@ describe("the entry scripts", () => {
   ])("with $problem in MODEL_PATH", ({ file, change }) => {
     it.for(["src/bin/ingest.ts", "src/bin/server.ts"])(
       "%s fails at start-up, naming the file and the variable, and never the directory",
-      { timeout: 30_000 },
       async (script) => {
         const lock = readModelLock(modelLockPath);
         const directory = mkdtempSync(join(tmpdir(), "sg-model-"));
@@ -573,7 +569,7 @@ describe("the entry scripts", () => {
 
     expect(finished.code).not.toBe(0);
     expect(finished.stderr).toContain("SNAPSHOT_PATH");
-  }, 20_000);
+  });
 
   it("src/bin/ingest.ts refuses a database that cannot run in WAL mode, instead of writing in another mode", async () => {
     // SQLite answers a request for WAL without an error and keeps the journal mode it had when it cannot
@@ -585,5 +581,5 @@ describe("the entry scripts", () => {
 
     expect(finished.code).not.toBe(0);
     expect(finished.stderr).toContain("WAL");
-  }, 20_000);
+  });
 });
