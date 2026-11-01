@@ -30,6 +30,31 @@ const afterTheLetters = "2025-01-18T02:00:00Z";
 
 const letter = "testimony-2025r1-117165";
 
+// MADE UP Testimony rows for HB 3131's meeting of HALNRW on 2025-01-22, which the cases that add rows to the fake write
+// with `row`, each served the file of a real letter at `download`'s path.
+const olisRoot = "https://olis.oregonlegislature.gov/liz/2025R1";
+const download = (commTestId: number): string => `/liz/2025R1/Downloads/PublicTestimonyDocument/${commTestId}`;
+
+function row(
+  commTestId: number,
+  dates: { CreatedDate: string | null; ModifiedDate: string | null },
+): Record<string, unknown> {
+  return {
+    SessionKey: "2025R1",
+    CommTestId: commTestId,
+    SubmitterFirstName: "Made",
+    SubmitterLastName: `Up ${commTestId}`,
+    PositionOnMeasureId: 3983,
+    CommitteeCode: "HALNRW",
+    MeetingDate: "2025-01-22T08:00:00",
+    DocumentDescription: "Testimony",
+    MeasurePrefix: "HB",
+    MeasureNumber: 3131,
+    DocumentUrl: olisRoot,
+    ...dates,
+  };
+}
+
 async function start(clockAt: string = beforeTheLetters): Promise<System> {
   const system = await startSystem({ clockAt, documents: true });
   started.push(system);
@@ -99,29 +124,6 @@ describe("an increment", () => {
     // MADE UP: four Testimony rows for HB 3131's meeting of HALNRW on 2025-01-22, added to the fake after the pull
     // (14:00), and read at 18:00. Each is served the file of one of the real letters. The increment asks for rows
     // created or modified after 12:00, two hours before the pull.
-    const olisRoot = "https://olis.oregonlegislature.gov/liz/2025R1";
-    const download = (commTestId: number): string => `/liz/2025R1/Downloads/PublicTestimonyDocument/${commTestId}`;
-
-    function row(
-      commTestId: number,
-      dates: { CreatedDate: string | null; ModifiedDate: string | null },
-    ): Record<string, unknown> {
-      return {
-        SessionKey: "2025R1",
-        CommTestId: commTestId,
-        SubmitterFirstName: "Made",
-        SubmitterLastName: `Up ${commTestId}`,
-        PositionOnMeasureId: 3983,
-        CommitteeCode: "HALNRW",
-        MeetingDate: "2025-01-22T08:00:00",
-        DocumentDescription: "Testimony",
-        MeasurePrefix: "HB",
-        MeasureNumber: 3131,
-        DocumentUrl: olisRoot,
-        ...dates,
-      };
-    }
-
     async function startWithFiles(): Promise<System> {
       const system = await startSystem({
         clockAt: beforeTheLetters,
