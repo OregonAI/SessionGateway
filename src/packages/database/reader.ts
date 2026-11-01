@@ -19,6 +19,8 @@ import {
   type DocumentId,
   type DocumentKind,
   type DocumentView,
+  type FloorLetterDetails,
+  type FloorLetterEntry,
   type IndexCounts,
   type Listing,
   type ListedAgendaItem,
@@ -208,6 +210,13 @@ export type IndexReader = {
    */
   findTestimony(key: MeasureKey): TestimonyEntry[];
   /**
+   * Every Floor Letter whose row names this Measure (ADR-0045), by `LetterDate` and then `FloorLetterId`, whether or not
+   * its file is fetched.
+   */
+  findFloorLetters(key: MeasureKey): FloorLetterEntry[];
+  /** What the row of the Floor Letter with this document id says, or undefined when the id names no Floor Letter. */
+  floorLetterDetails(id: DocumentId): FloorLetterDetails | undefined;
+  /**
    * Whether the feed lists a Testimony with this id, whether or not its file is fetched, and when it last did;
    * undefined when the index holds no Testimony row with this id. A Testimony that is listed and whose file the store lacks is one
    * `findDocument` does not resolve yet: the next pull fetches it. One that is no longer listed is not fetched by
@@ -224,6 +233,29 @@ export type IndexReader = {
   measureListing(key: MeasureKey): Listing;
   close(): void;
 };
+
+const floorLetterRow = z.object({
+  id: z.string(),
+  floor_letter_id: z.number(),
+  source_url: z.string(),
+  chamber: z.enum(["house", "senate"]),
+  letter_date: z.string(),
+  title: z.string().nullable(),
+  description: z.string().nullable(),
+  fetched: z.number().optional(),
+  listed: z.number().optional(),
+  has_text_layer: z.number().nullable().optional(),
+});
+
+function floorLetterDetailsOf(row: z.infer<typeof floorLetterRow>): FloorLetterDetails {
+  return {
+    floorLetterId: row.floor_letter_id,
+    chamber: row.chamber,
+    letterDate: row.letter_date as Timestamp,
+    title: row.title,
+    description: row.description,
+  };
+}
 
 const measureRow = z.object({
   catchline: z.string().nullable(),
@@ -611,6 +643,19 @@ export function openIndexReader(path: string): IndexReader {
        LEFT JOIN document d ON d.id = t.document_id
        LEFT JOIN feed_row_state fr ON fr.document_id = t.document_id
      WHERE t.measure_id = ? ORDER BY t.comm_test_id`,
+  );
+  // The Floor Letters whose row names a Measure, and whether the document table holds each file yet (ADR-0045).
+  const selectFloorLetters = database.prepare(
+    `SELECT f.document_id AS id, f.floor_letter_id, f.source_url, f.chamber, f.letter_date, f.title, f.description,
+            d.id IS NOT NULL AS fetched, ${listedOrUnchecked} AS listed, d.has_text_layer
+     FROM floor_letter f
+       LEFT JOIN document d ON d.id = f.document_id
+       LEFT JOIN feed_row_state fr ON fr.document_id = f.document_id
+     WHERE f.measure_id = ? ORDER BY f.letter_date, f.floor_letter_id`,
+  );
+  const selectFloorLetter = database.prepare(
+    `SELECT document_id AS id, floor_letter_id, source_url, chamber, letter_date, title, description
+     FROM floor_letter WHERE document_id = ?`,
   );
   const selectTestimonyListing = database.prepare(
     `SELECT fr.listed, fr.last_listed_at FROM testimony t
@@ -1270,6 +1315,24 @@ export function openIndexReader(path: string): IndexReader {
     },
     measureListing(key) {
       return listingOf(selectMeasureListing.get(key.session, measuresSet, measureIdOf(key)));
+    },
+    findFloorLetters(key) {
+      return selectFloorLetters.all(measureIdOf(key)).map((row): FloorLetterEntry => {
+        const stored = floorLetterRow.parse(row);
+        return {
+          ...floorLetterDetailsOf(stored),
+          id: stored.id as DocumentId,
+          sourceUrl: stored.source_url,
+          fetched: stored.fetched === 1,
+          listed: stored.listed === 1,
+          hasTextLayer:
+            stored.has_text_layer === null || stored.has_text_layer === undefined ? null : stored.has_text_layer === 1,
+        };
+      });
+    },
+    floorLetterDetails(id) {
+      const row = selectFloorLetter.get(id);
+      return row === undefined ? undefined : floorLetterDetailsOf(floorLetterRow.parse(row));
     },
     findTestimony(key) {
       return selectTestimony.all(measureIdOf(key)).map((row): TestimonyEntry => {

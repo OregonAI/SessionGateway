@@ -12,6 +12,7 @@ import type { AgendaItem } from "#/packages/domain/schedule.ts";
 import type { CommitteeVote, FloorVote, LegislatorVote } from "#/packages/domain/votes.ts";
 import { agencyLinksOf, agencyLinksOutput } from "./agency-links.ts";
 import { analysisDocumentsOf, analysisDocumentsOutput } from "./analysis.ts";
+import { floorLettersOutput, floorLettersShown } from "./floor-letters.ts";
 import { measureListingOutput, listingShown } from "./listing.ts";
 import { statuteLinksBySourceOf, versionsWithSameLinksAs } from "./statute-links.ts";
 import { statuteLinksBySourceWithTable, statuteLinksBySourceWithTableOutput } from "./statutes-affected-table.ts";
@@ -171,6 +172,7 @@ export const getMeasureOutput = z.object({
       "The Measure's digest and summary exactly as OLIS publishes it (the feed's MeasureSummary), with its tabs, newlines and markup: <b> marks new text and [<i>...</i>] marks text deleted from the prior Version. Null when OLIS publishes none.",
     ),
   analysis_documents: analysisDocumentsOutput,
+  floor_letters: floorLettersOutput,
   statute_links_by_source: statuteLinksBySourceWithTableOutput.describe(
     "The Measure's Statute Links by the Version or Proposed Amendment they were read from, each with its measure section.",
   ),
@@ -376,6 +378,7 @@ export async function getMeasure(
         reader.analysisDocuments(measure),
         reader.analysisNotHeld(measure),
       ),
+      floor_letters: floorLettersShown(reader.findFloorLetters(measure)),
       statute_links_by_source: { ...withTable, versions: versionsWithSameLinksAs(withTable.versions) },
       agency_links: agencyLinksOf(reader.findAgencyLinks(session, { measure }), reader.findUnresolvedUnits(measure), {
         parents: reader.agencyParents(),
