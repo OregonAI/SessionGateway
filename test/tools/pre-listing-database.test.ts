@@ -2,7 +2,9 @@
 // by pulls that kept no record of listing them, and the worker that upgrades the file creates the tables empty. A row
 // that no complete pull has listed is read as listed, not yet checked: it is searchable, the tools show it with no flag,
 // and nothing throws for it. `forgetListing` (test/support/old-database.ts) arranges the file; the assertions are the
-// tools', read with both kinds of MCP client from one system for each case.
+// tools', read with both kinds of MCP client from one system for each case: a copy of the run's template for the clock,
+// which
+// is the state the first pull leaves (test/CLAUDE.md, "Templates"); the pulls after `forgetListing` are the subject.
 //
 // The rows are real ones of the fixture: HB 3131's Testimony 117165 (the Oregon Climate and Agriculture Network's
 // letter, created 2025-01-17 15:16 Pacific) and 117166 (American Farmland Trust's, created 16:17), and SB 69's
@@ -10,7 +12,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { forgetListing } from "../support/old-database.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 import { stopListing } from "../support/unlisted-rows.ts";
 
 const started: System[] = [];
@@ -31,7 +33,7 @@ const afterPostings = "2025-02-01T18:00:00Z";
 const letter = "testimony-2025r1-117165";
 
 async function start(clockAt: string, documents: boolean): Promise<System> {
-  const system = await startSystem({ clockAt, documents });
+  const system = await startCopiedSystem({ clockAt, documents });
   started.push(system);
   return system;
 }

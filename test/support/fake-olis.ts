@@ -135,6 +135,11 @@ export type FakeOlis = {
    */
   serveDocument(path: string, bytes: Uint8Array): void;
   /**
+   * From now on, serves fixture files at these paths, as `strayDocuments` does from the start: for a case that starts
+   * from a copy of a template and then adds the rows that link them (ticket #47). Served only when `documents` is on.
+   */
+  addStrayDocuments(strayDocuments: Record<string, string>): void;
+  /**
    * From now on, adds these failures to the ones the document at this `source_url` has still to give before it is
    * served (see `documentFailures`): `[404]` makes the next request answer Not Found, as a document withdrawn does.
    */
@@ -533,6 +538,11 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
     documentRequests: () => [...documentRequests],
     serveDocument: (path, bytes) => {
       servedBytes.set(path, bytes);
+    },
+    addStrayDocuments: (strayDocuments) => {
+      for (const [path, file] of Object.entries(strayDocuments)) {
+        documentPaths.set(path, new URL(`documents/${file}`, fixtureDirectory));
+      }
     },
     failDocuments: (sourceUrl, more) => {
       const path = new URL(sourceUrl).pathname;

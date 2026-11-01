@@ -12,7 +12,7 @@ import { createFakeEmbedder } from "../support/fake-embedder.ts";
 import { startFakeOlis } from "../support/fake-olis.ts";
 import { callTool, connectClient, eras } from "../support/mcp-clients.ts";
 import { createMadeUpSnapshot, type MadeUpSnapshot } from "../support/made-up-snapshot.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, startSystem, type System } from "../support/system.ts";
 import { createTempDatabase } from "../support/temp-database.ts";
 
 const cleanups: (() => Promise<void> | void)[] = [];
@@ -77,7 +77,7 @@ describe("a build with the committed snapshot fixture", () => {
   // checkout at commit 6c41efefb5683a35437c9db6baf235c2051cef4b (ERF PR #455, ticket #49), which `git log -1` there
   // dates 2026-10-31T07:13:00-07:00.
   it("reports the version of the ERF checkout it was taken from", async () => {
-    const system = await startSystem({ clockAt: "2025-01-29T17:00:00Z" });
+    const system = await startCopiedSystem({ clockAt: "2025-01-29T17:00:00Z" });
     cleanups.push(() => system.stop());
 
     const connected = await connectClient("2026-07-28", system.handler);

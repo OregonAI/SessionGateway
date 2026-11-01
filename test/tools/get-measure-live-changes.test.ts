@@ -8,12 +8,13 @@
 //
 // The pull and the read are at one clock (2026-08-01, after every row of the fixture exists), so with
 // the fake OLIS as the pull left it, OLIS gives exactly what the Index holds. A case then changes what
-// the fake says, with rows MADE UP for the case. Each case builds its own system, and is read with both
-// kinds of client.
+// the fake says, with rows MADE UP for the case. Each case has a system of its own, and is read with both
+// kinds of client. The pull is not the subject, so each case copies the run's template for this clock (test/CLAUDE.md,
+// "Templates") and changes the fake after the copy.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { liveStatusOf, type ToolLiveStatus } from "../support/live-status.ts";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 import { floorVoteRow, tuplesOf } from "../support/votes.ts";
 
 const clockAt = "2026-08-01T17:00:00Z";
@@ -69,7 +70,7 @@ describe("OLIS giving one more History action and one more floor vote than the I
   ];
 
   beforeAll(async () => {
-    system = await startSystem({ clockAt });
+    system = await startCopiedSystem({ clockAt });
     system.olis.addRows("MeasureHistoryActions", [
       madeUpHistoryRow(900002, "2025-06-10T10:00:00", "MADE UP: Reconsidered. Passed."),
     ]);
@@ -113,7 +114,7 @@ describe("OLIS giving a History that differs before its end", () => {
   let system: System;
 
   beforeAll(async () => {
-    system = await startSystem({ clockAt });
+    system = await startCopiedSystem({ clockAt });
     // An earlier action changes: SB 69's "Referred to Labor and Workplace Standards." (2025-02-12) is
     // reworded at OLIS. The wording is MADE UP.
     system.olis.amendRows(
@@ -157,7 +158,7 @@ describe("OLIS giving a History that is not the top level's with more after it",
     row["MeasurePrefix"] === "SB" && row["MeasureNumber"] === 69;
 
   it("shows OLIS's whole History when it gives fewer entries than the Index holds", async () => {
-    const system = await startSystem({ clockAt });
+    const system = await startCopiedSystem({ clockAt });
     try {
       // MADE UP: OLIS no longer gives SB 69's last action (the row now belongs to a Measure the Index does not
       // hold), so it gives 19 actions where the Index holds 20.
@@ -185,7 +186,7 @@ describe("OLIS giving a History that is not the top level's with more after it",
   });
 
   it("shows OLIS's whole History when it gives the same actions in another order", async () => {
-    const system = await startSystem({ clockAt });
+    const system = await startCopiedSystem({ clockAt });
     try {
       // MADE UP: two actions of SB 69 swap their dates at OLIS, so the same 20 actions come in a different
       // order (the later one now comes first).
@@ -218,7 +219,7 @@ describe("a lookup that fails", () => {
   let system: System;
 
   beforeAll(async () => {
-    system = await startSystem({ clockAt });
+    system = await startCopiedSystem({ clockAt });
     system.olis.behave({ kind: "fail", status: 503 });
   });
 
@@ -255,7 +256,7 @@ describe("what the output schema tells an agent about the live block", () => {
   let system: System;
 
   beforeAll(async () => {
-    system = await startSystem({ clockAt });
+    system = await startCopiedSystem({ clockAt });
   });
 
   afterAll(async () => {

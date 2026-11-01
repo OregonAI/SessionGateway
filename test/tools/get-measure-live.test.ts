@@ -9,7 +9,9 @@
 // (test/fixtures/olis-2025R1/feed/), the same ones get-measure-location.test.ts and
 // get-measure-votes.test.ts read.
 //
-// Each describe pulls once, on 2025-04-10, and its cases share that system. It covers the fixture as it stands,
+// The pull of 2025-04-10 is built once for the run and each describe starts a copy of it (test/CLAUDE.md, "Templates"),
+// whose cases share that
+// system. It covers the fixture as it stands,
 // with OLIS answering exactly as the Index does.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -24,7 +26,7 @@ import {
 import { liveCommitteeVotesOf, liveFloorVotesOf, liveHistoryOf, liveStatusOf } from "../support/live-status.ts";
 import type { FakeOlis, FakeOlisBehavior } from "../support/fake-olis.ts";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 import { committeeVotesOf, floorVotesOf, tuplesOf } from "../support/votes.ts";
 import type { ToolOutcome } from "../support/mcp-clients.ts";
 
@@ -39,7 +41,7 @@ describe("the live status with OLIS answering", () => {
   let system: System;
 
   beforeAll(async () => {
-    system = await startSystem({ clockAt: pulledAt });
+    system = await startCopiedSystem({ clockAt: pulledAt });
     system.clock.set(readAt);
   });
 
@@ -151,7 +153,7 @@ describe("the live status with OLIS answering exactly as the Index", () => {
   let system: System;
 
   beforeAll(async () => {
-    system = await startSystem({ clockAt: sameClock });
+    system = await startCopiedSystem({ clockAt: sameClock });
   });
 
   afterAll(async () => {
@@ -203,7 +205,7 @@ describe("the schedule with OLIS answering", () => {
   let system: System;
 
   beforeAll(async () => {
-    system = await startSystem({ clockAt: pulledAt });
+    system = await startCopiedSystem({ clockAt: pulledAt });
   });
 
   afterAll(async () => {
@@ -328,7 +330,7 @@ describe("acceptance case (f) with OLIS answering", () => {
   let system: System;
 
   beforeAll(async () => {
-    system = await startSystem({ clockAt: pulledAt });
+    system = await startCopiedSystem({ clockAt: pulledAt });
     system.clock.set(readAt);
     moveLocationsAtOlis(system.olis);
   });
@@ -383,7 +385,7 @@ describe.for(failures)("the live status when OLIS %s", ([, behavior, timeoutMs, 
   let system: System;
 
   beforeAll(async () => {
-    system = await startSystem({
+    system = await startCopiedSystem({
       clockAt: pulledAt,
       ...(timeoutMs === undefined ? {} : { serverEnv: { OLIS_LIVE_TIMEOUT_MS: timeoutMs } }),
     });
@@ -450,7 +452,7 @@ describe("the bound on a live lookup", () => {
   // OLIS_LIVE_TIMEOUT_MS is not set here, so this is the bound a deployment gets: the tool still answers
   // promptly when OLIS accepts the request and never replies. It takes that long, once.
   it("is 5 seconds unless the deployment sets another: then the cache answers", async () => {
-    const system = await startSystem({ clockAt: pulledAt });
+    const system = await startCopiedSystem({ clockAt: pulledAt });
     try {
       system.clock.set(readAt);
       system.olis.behave({ kind: "hang" });

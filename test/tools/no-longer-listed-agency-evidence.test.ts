@@ -21,9 +21,12 @@
 // The second Testimony row is MADE UP: CommTestId 900001 for SB 983 with the Organization "Oregon State Treasury" (the
 // registry's name, snapshot fixture), added with `addRows`. The fixture gives the Treasury no link on SB 983 (asserted
 // before the change), so the Testimony is the Treasury's only evidence on that Measure.
+// Which cases copy (test/CLAUDE.md, "Templates"): the first pull of each case, the state before the feed stops listing
+// a row, is a copy of the run's template for its clock; the pulls after the change are real pulls, because the two-pull
+// rule is the subject.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 import { madeUpTestimonyRow } from "../support/testimony.ts";
 import { stopListing } from "../support/unlisted-rows.ts";
 
@@ -109,7 +112,7 @@ describe("the Fiscal Impact Statement 85414 the feed no longer lists", () => {
   const key = (era: string, agency: string): string => `${era} ${agency}`;
 
   beforeAll(async () => {
-    system = await startSystem({
+    system = await startCopiedSystem({
       clockAt: "2026-08-01T17:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "100000" },
@@ -247,7 +250,7 @@ describe("Testimony the feed no longer lists", () => {
   const key = (era: string, agency: string): string => `${era} ${agency}`;
 
   beforeAll(async () => {
-    system = await startSystem({
+    system = await startCopiedSystem({
       clockAt: "2026-08-01T17:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "100000" },
@@ -349,7 +352,7 @@ describe("Testimony the feed no longer lists, beside Testimony it still lists", 
   const after = new Map<string, Read>();
 
   beforeAll(async () => {
-    system = await startSystem({
+    system = await startCopiedSystem({
       clockAt: "2026-08-01T17:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "100000" },
@@ -414,7 +417,7 @@ describe("a statement named only by an unresolved unit that the feed no longer l
   const after = new Map<string, Measure>();
 
   beforeAll(async () => {
-    system = await startSystem({
+    system = await startCopiedSystem({
       clockAt: "2026-08-01T17:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "100000" },

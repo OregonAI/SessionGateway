@@ -9,10 +9,13 @@
 // text (find-measures.test.ts); the Version amends ORS 653.616 in SECTION 8; and its links are the A-Engrossed Version's,
 // to the last measure section (get-measure-statute-links.test.ts). The embedder is the fake (search-agency.test.ts): which
 // documents a filter keeps does not depend on how a meaning ranks.
+// Which cases copy (test/CLAUDE.md, "Templates"): the first pull of each case, the state before the feed stops listing
+// a row, is a copy of the run's template for its clock; the pulls after the change are real pulls, because the two-pull
+// rule is the subject.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import type { StatuteLinks } from "../support/statute-links.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 import { stopListing } from "../support/unlisted-rows.ts";
 
 // The system serves the documents, which pulls the fixture's 278 files: seconds, more beside the other files' workers.
@@ -60,7 +63,7 @@ async function readAll(client: ConnectedClient): Promise<Read> {
 }
 
 beforeAll(async () => {
-  system = await startSystem({
+  system = await startCopiedSystem({
     clockAt: "2026-08-01T17:00:00Z",
     documents: true,
     serverEnv: { MCP_RATE_LIMIT: "100000" },
