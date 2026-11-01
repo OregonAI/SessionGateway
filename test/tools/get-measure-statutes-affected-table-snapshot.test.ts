@@ -208,9 +208,9 @@ describe("the Statutes Affected Table after the snapshot changes", () => {
         source_url: tableUrlOn(rig.system.olis.origin),
         outcome: "not_read",
         held: true,
-        reason: expect.any(String),
         entries: 23,
       });
+      expect(typeof refusal?.["reason"]).toBe("string");
 
       // The refusal is remembered: the same bytes with the same snapshot are refused again, and nothing is read again.
       rig.system.clock.set(fourthPull);
@@ -242,11 +242,12 @@ describe("the Statutes Affected Table after the snapshot changes", () => {
       rig.system.clock.set(thirdPull);
       await rig.system.pullAgain();
       const refusal = rig.report();
+      expect(typeof refusal?.["reason"]).toBe("string");
       expect(refusal).toEqual({
         source_url: tableUrlOn(rig.system.olis.origin),
         outcome: "not_read",
         held: true,
-        reason: expect.any(String),
+        reason: refusal?.["reason"],
       });
       expect(await rig.seen()).toMatchObject({ count: 22, retrievedAt: secondPullPacific });
 
