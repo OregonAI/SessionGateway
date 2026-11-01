@@ -81,6 +81,8 @@ export type FakeOlisOptions = {
    * A test adds the feed row that links one through `strayRows`.
    */
   strayDocuments?: Record<string, string>;
+  /** Called at the start of every request, feed or document: how a test makes OLIS take time on the simulated clock. */
+  onRequest?: () => void;
 };
 
 /** One request the fake OLIS received, as the feed's own URL words it. */
@@ -398,6 +400,7 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
   }
 
   function handle(request: IncomingMessage, response: ServerResponse): void {
+    options.onRequest?.();
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     const documentPath = url.pathname.toLowerCase();
     if (request.method === "GET" && (documentPath.startsWith("/liz/") || documentPath.startsWith("/autopubs/"))) {

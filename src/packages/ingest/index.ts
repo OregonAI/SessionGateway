@@ -20,6 +20,7 @@ import {
   type FullPullRecord,
   type FloorVoteRecord,
   type IndexWriter,
+  type StoredDocumentHash,
   type SearchRecord,
   type SponsorRecord,
   type TestimonyRecord,
@@ -52,6 +53,14 @@ import type { Clock } from "#/packages/time/clock.ts";
 import { compareTimestamps, formatPacific, pacificTimestampOf, type Timestamp } from "#/packages/time/pacific.ts";
 import { agencyReadOf } from "./lib/agency-links.ts";
 import { buildReportPath, writeBuildReport, type BuildReport, type SetReport } from "./lib/build-report.ts";
+import {
+  hashSampleReportPath,
+  lastHashSampleAt,
+  readHashSampleReport,
+  sampleHashes,
+  writeHashSampleReport,
+  type HashSampleReport,
+} from "./lib/hash-sample.ts";
 import { loadStatutesAffectedTable } from "./lib/statutes-affected-table.ts";
 
 export type IngestDeps = {
@@ -675,4 +684,52 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
   } finally {
     writer.close();
   }
+}
+
+export type { HashSampleReport };
+export { hashSampleReportPath, lastHashSampleAt };
+
+/**
+ * The nightly hash sample (ticket #20, ADR-0040): fetches `config.hashSampleSize` random stored documents again and
+ * compares their hashes with the stored ones. It stores nothing; it writes `hash-sample-report.json` beside the
+ * database, a report every time it runs, empty or not. `random` draws the documents; no document is fetched at or
+ * after `deadline`.
+ */
+export async function runHashSample(
+  config: IngestConfig,
+  deps: IngestDeps & { random: () => number },
+  deadline: Timestamp | undefined,
+): Promise<HashSampleReport> {
+  const olis = createOlisClient({
+    baseUrl: config.olisBaseUrl,
+    fetch: deps.fetch,
+    documents: {
+      origin: config.olisDocumentOrigin,
+      timeoutMs: deps.documentTimeoutMs ?? DEFAULT_DOCUMENT_TIMEOUT_MS,
+      pause: deps.pause,
+    },
+  });
+  const writer = openIndexWriter(config.databasePath);
+  let documents: StoredDocumentHash[];
+  try {
+    documents = writer.documentsToSample(config.session);
+  } finally {
+    writer.close();
+  }
+  const untilDeadline =
+    deadline === undefined ? undefined : Temporal.Instant.from(deadline).epochMilliseconds - deps.clock.now().getTime();
+  const report = await sampleHashes({
+    session: config.session,
+    documents,
+    size: config.hashSampleSize,
+    random: deps.random,
+    olis,
+    clock: deps.clock,
+    signal: deps.signal,
+    deadline,
+    ...(untilDeadline === undefined ? {} : { windowSignal: AbortSignal.timeout(Math.max(untilDeadline, 1)) }),
+    previous: readHashSampleReport(config.databasePath)?.mismatches ?? [],
+  });
+  writeHashSampleReport(hashSampleReportPath(config.databasePath), report);
+  return report;
 }

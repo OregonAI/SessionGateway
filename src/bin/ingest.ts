@@ -58,11 +58,19 @@ if (process.argv.includes("--once")) {
 } else {
   await runIngestLoop(config, {
     ...deps,
+    // The nightly hash sample draws its documents with this (ADR-0040).
+    random: Math.random,
     // The sleep ends early on shutdown, and the loop then ends: a signal is not an error.
     sleep: (milliseconds, signal) => sleep(milliseconds, undefined, { signal }).catch(() => undefined),
     onRunFailed: (run, error) => {
       logger.error({ run, err: error }, `The ${run} failed; the index goes on answering from the last good run`);
     },
     afterFullPull: writeUnresolvedCodesReport,
+    // The report file beside the database is the operator's; each replaced file is also a line in the log.
+    afterHashSample: (report) => {
+      for (const mismatch of report.mismatches) {
+        logger.warn({ mismatch }, "A document's file changed behind the same URL; the index keeps the file it fetched");
+      }
+    },
   });
 }

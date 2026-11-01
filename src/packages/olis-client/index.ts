@@ -6,7 +6,13 @@ import type { LegislatorRow, Sponsorship } from "#/packages/domain/legislators.t
 import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
 import { readCommitteeMembers } from "./lib/committee-members.ts";
 import { readCommitteeVoteRows } from "./lib/committee-votes.ts";
-import { downloadDocument, downloadFile, readDocumentLinks, type Download } from "./lib/documents.ts";
+import {
+  downloadDocument,
+  downloadFile,
+  downloadStoredDocument,
+  readDocumentLinks,
+  type Download,
+} from "./lib/documents.ts";
 import { readFloorVoteRows } from "./lib/floor-votes.ts";
 import { readHistoryActionRows } from "./lib/history.ts";
 import { readLegislatorRows } from "./lib/legislators.ts";
@@ -52,6 +58,8 @@ export type OlisClient = {
   readDocumentLinks(session: SessionKey, signal: AbortSignal): Promise<DocumentLink[]>;
   /** Fetches one document from OLIS. */
   downloadDocument(link: DocumentLink, signal: AbortSignal): Promise<Download>;
+  /** `downloadDocument` for a document the store holds, which is known by its `source_url` alone (the hash sample, ticket #20). */
+  downloadStoredDocument(sourceUrl: string, signal: AbortSignal): Promise<Download>;
   /**
    * Fetches a file by its address, with the retries a document gets: the Statutes Affected Table, which Legislative
    * Counsel publishes on its own site and the deployment names. A file that is not there is a failed download with status 404.
@@ -74,6 +82,7 @@ export function createOlisClient(options: OlisClientOptions): OlisClient {
     readCommitteeMembers: (session, signal) => readCommitteeMembers(options, session, signal),
     readDocumentLinks: (session, signal) => readDocumentLinks(options, session, signal),
     downloadDocument: (link, signal) => downloadDocument(options, link, signal),
+    downloadStoredDocument: (sourceUrl, signal) => downloadStoredDocument(options, sourceUrl, signal),
     downloadFile: (url, signal) => downloadFile(options, url, signal),
   };
 }
