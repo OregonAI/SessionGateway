@@ -110,7 +110,8 @@ export const entitySets: Record<string, EntitySpec> = {
     refs: [committee("ParentCommitteeCode")],
   },
   // The declared key is not unique (olis-odata.md section 8, gotcha 5), so nothing may point at
-  // a CommitteeMembers row, and nothing in this table does.
+  // a CommitteeMembers row, and nothing in this table does. build.ts adds the rows of the
+  // committees it keeps (ticket #81) and follows these references from them.
   CommitteeMembers: {
     key: ["CommitteeCode", "CreatedDate", "Title"],
     aboutMeasure: false,
@@ -395,8 +396,9 @@ export type Unresolved = {
 // and "Sen Woods", which 2025R1 votes, sponsorships and floor carriers use, have no row
 // (docs/research/olis-odata.md section 8, gotcha 4). A scan of every reference in every row of the
 // full 2025R1 feed cache on 2026-10-29 (791,744 of them) found no other that fails, apart from
-// the non-legislator names in CommitteeMembers.LegislatorCode (gotcha 5), which no fixture row
-// reaches. A new gap is for a person to look at: add it here with the evidence.
+// the non-legislator names in CommitteeMembers.LegislatorCode (gotcha 5), none of which is in a
+// committee the fixture keeps (checked on 2026-10-31: the 99 rows of its 12 committees all resolve).
+// A new gap is for a person to look at: add it here with the evidence.
 export const legislatorCodesWithoutRow: readonly string[] = ["Rep Neron", "Sen Woods"];
 
 const legislatorGapReason =

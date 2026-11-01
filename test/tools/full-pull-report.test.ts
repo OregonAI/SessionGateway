@@ -56,8 +56,8 @@ const setsOf = (report: Record<string, unknown>): Record<string, SetReport> => {
 };
 
 // The rows of each set at that clock are the lengths of the fixture's own files (test/fixtures/olis-2025R1/feed/):
-// CommitteePublicTestimonies.json holds 84 rows, 42 of them HB 3131's (spec #1, case (d)). The fixture has no
-// CommitteeMembers file (its README says why), so that set is empty here.
+// CommitteePublicTestimonies.json holds 84 rows, 42 of them HB 3131's (spec #1, case (d)), and CommitteeMembers.json
+// the 99 members of the fixture's 12 committees (ticket #81).
 const fixtureRows = {
   Measures: 8,
   Legislators: 90,
@@ -73,7 +73,7 @@ const fixtureRows = {
   CommitteeMeetingDocuments: 86,
   CommitteeProposedAmendments: 15,
   CommitteePublicTestimonies: 84,
-  CommitteeMembers: 0,
+  CommitteeMembers: 99,
   // The fixture holds no file for either set (its README says why), so the fake serves both empty (ticket #67).
   ConveneTimes: 0,
   LegislativeSessions: 0,
