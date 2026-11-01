@@ -1,0 +1,173 @@
+# The acceptance questions of 2025R1 (spec #1, "The acceptance set" and the Testing Decisions' cases (a) to (f)), as data
+# for `npm run eval` (ticket #23). Each question is the tool calls an agent would make and what must hold in what it
+# sees; scripts/eval/paths.ts says how a path is read. A set for another Session is another file in this folder.
+#
+# Expected values are the literals seam 1 already established from independent sources, named at each question
+# (test/CLAUDE.md, "Expected values"): the fixture's feed rows, the documents as `pdftotext` prints them and the
+# Statutes Affected Table. A check names what its question needs and not incidental counts, so a rebuilt snapshot
+# (ticket #49) or a fuller database (the whole cached Session) does not move it. Lists are checked with `includes`
+# where a fuller database may hold more, and with `equals` where the Session fixes the answer.
+#
+# "$since" in an argument is the run's "since yesterday": the day before the database's own as-of time, or the --since
+# the operator gives. Question (a) needs a database that was pulled just after the posting it asks about (the day after
+# for the default), or a --since of 2025-01-23 for a database pulled later.
+session: 2025R1
+
+questions:
+  # (a), story 1: "what was introduced or posted since yesterday that touches statutes my Agency administers?"
+  # Proposed Amendments SB 69-1 and SB 69-2 were posted on 2025-01-23 (feed/CommitteeProposedAmendments.json, rows 26285
+  # to 26288), and both amend sections of chapters 653, 657B and 659A, which the snapshot gives to the Bureau of Labor
+  # and Industries (find-measures-since.test.ts). The Agency's registry slug is the Bureau's.
+  - id: a-statutes
+    title: What was introduced or posted since yesterday that touches statutes my Agency (BOLI) administers?
+    steps:
+      - tool: find_measures
+        arguments: { agency: bureau-of-labor-and-industries, since: $since }
+        expect:
+          - path: groups[evidence_kind=derived].items[*].id
+            includes: [amendment-2025r1-sb69-2, amendment-2025r1-sb69-1]
+          - path: groups[evidence_kind=derived].items[id=amendment-2025r1-sb69-2].measure_id
+            includes: [measure-2025r1-sb69]
+          - path: groups[evidence_kind=derived].items[id=amendment-2025r1-sb69-2].type
+            includes: [proposed_amendment]
+
+  # (a), story 2: "...or names my Agency in a Fiscal Impact Statement?" SB 69's Fiscal Impact Statement is analysis
+  # 85414, created 2025-01-30 (feed/MeasureAnalysisDocuments.json), and its "Government Unit(s) Affected:" line names the
+  # Bureau of Labor and Industries. The item is the Measure until the A-Engrossed Version exists and the Version after it
+  # (ADR-0013), so the check reads the evidence and not the item's id.
+  - id: a-fiscal
+    title: What was introduced or posted since yesterday that names my Agency (BOLI) in a Fiscal Impact Statement?
+    steps:
+      - tool: find_measures
+        arguments: { agency: bureau-of-labor-and-industries, since: $since }
+        expect:
+          - path: groups[evidence_kind=fiscal-impact-statement].items[*].evidence[*].examples[*].document_id
+            includes: [analysis-2025r1-85414]
+          - path: groups[evidence_kind=fiscal-impact-statement].items[*].evidence[*].examples[document_id=analysis-2025r1-85414].unit
+            includes: [Bureau of Labor and Industries]
+
+  # (b): "what would SB 69-2 change compared with the Version in committee, and in which ORS sections?" SB 69-2 was adopted
+  # by SLB on 2025-01-30; it amends the Introduced Version, and its Statute Links include ORS 653.616 and 659A.159 and
+  # chapter 657B, per the Statutes Affected Table (compare-amendment.test.ts, olis-odata.md section 5). HB 3795-A3 is
+  # the second case: the A-Engrossed Version amends ORS 409.711, and the amendment adds ORS 418.808.
+  - id: b-amendment
+    title: What would SB 69-2 change compared with the Version it amends, and in which ORS sections?
+    steps:
+      - tool: compare_amendment
+        arguments: { amendment: SB 69-2 }
+        expect:
+          - { path: amendment.id, equals: amendment-2025r1-sb69-2 }
+          - { path: "amendment.postings[meaning=Adopted].committee_code", equals: [SLB] }
+          - { path: "amendment.postings[meaning=Adopted].meeting_date", equals: ["2025-01-30T08:00:00-08:00"] }
+          - { path: amended_version.id, equals: version-2025r1-sb69-introduced }
+          - { path: "files[*].statute_links.amends.sections[*].target_id", includes: [ors-653.616, ors-659a.159] }
+          - { path: "files[*].statute_links.adds-to.chapters[*].target_id", includes: [ors-chapter-657b] }
+          - { path: deletions_note, includes: was not evaluated }
+      - tool: compare_amendment
+        arguments: { amendment: HB 3795-A3 }
+        expect:
+          - { path: amended_version.id, equals: version-2025r1-hb3795-a-engrossed }
+          - { path: "files[*].statute_links.amends.sections[*].target_id", includes: [ors-418.808] }
+          - { path: "amended_version.statute_links.amends.sections[*].target_id", includes: [ors-409.711] }
+
+  # (c): "when is the next hearing or work session on SB 69, and which Proposed Amendments are posted for it?" Asked with
+  # the clock at 2025-01-29 (spec #1, case (c)): SLB's Public Hearing and Work Session of 2025-01-30 at 8:00 Pacific,
+  # with -1 and -2 posted (meetings.test.ts, feed/CommitteeAgendaItems.json and CommitteeMeetings.json).
+  - id: c-meeting
+    title: When is the next hearing or work session on SB 69, and which Proposed Amendments are posted for it?
+    clock: "2025-01-29T12:00:00-08:00"
+    steps:
+      - tool: meetings
+        arguments: { measure: SB 69 }
+        expect:
+          - { path: next_meeting_id, equals: meeting-2025r1-slb-2025-01-30-0800 }
+          - { path: "meetings[id=meeting-2025r1-slb-2025-01-30-0800].at", equals: ["2025-01-30T08:00:00-08:00"] }
+          - { path: "meetings[id=meeting-2025r1-slb-2025-01-30-0800].committee.code", equals: [SLB] }
+          - path: "meetings[id=meeting-2025r1-slb-2025-01-30-0800].agenda_items[*].meeting_type"
+            includes: [Public Hearing and Work Session]
+          - path: "meetings[id=meeting-2025r1-slb-2025-01-30-0800].proposed_amendments[*].number"
+            includes: ["-1", "-2"]
+
+  # (d): "who testified on HB 3131, for and against, grouped by organization, with the text?" HB 3131 has 42 Testimony rows:
+  # 41 support (PositionOnMeasureId 3983) and 1 oppose (3982, CommTestId 117368, David Wall of Newberg), and "Portland" is
+  # the most common Organization, eight rows spelled "Portland" or "PORTLAND" (testimony.test.ts, feed/
+  # CommitteePublicTestimonies.json). The text of a letter is read with get_document: 117368's file is at the Legislature's
+  # address in the manifest (test/fixtures/olis-2025R1/manifest.json).
+  - id: d-testimony
+    title: Who testified on HB 3131, for and against, grouped by organization, with the text?
+    steps:
+      - tool: testimony
+        arguments: { measure: HB 3131 }
+        expect:
+          - { path: measure_id, equals: measure-2025r1-hb3131 }
+          - { path: total, equals: 42 }
+          - { path: "position_counts[position=support].count", equals: [41] }
+          - { path: "position_counts[position=oppose].count", equals: [1] }
+          - { path: "positions[position=support].organizations[organization=Portland].count", equals: [8] }
+          - { path: "positions[position=oppose].organizations[*].items[*].id", equals: [testimony-2025r1-117368] }
+      - tool: get_document
+        arguments: { id: testimony-2025r1-117368 }
+        expect:
+          - { path: kind, equals: testimony }
+          - { path: source_url, equals: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/PublicTestimonyDocument/117368" }
+          - { path: has_text_layer, equals: true }
+          - { path: text, present: true }
+
+  # (e): "what do the Fiscal Impact Statement and the revenue impact statement say, for each Version?" By Version, HB 3131's
+  # Introduced Version has Fiscal Impact Statement 85869 and Revenue Impact Statement 85719, and SB 69's A-Engrossed has
+  # 85414 and 85419 (get-measure-analysis.test.ts, feed/MeasureAnalysisDocuments.json). Each id is read with get_document.
+  - id: e-analysis
+    title: What do the Fiscal Impact Statement and the revenue impact statement say, for each Version?
+    steps:
+      - tool: get_measure
+        arguments: { measure: HB 3131 }
+        expect:
+          - path: "analysis_documents.by_version[version=Introduced].documents[id=analysis-2025r1-85869].type"
+            equals: [Fiscal Impact Statement]
+          - path: "analysis_documents.by_version[version=Introduced].documents[id=analysis-2025r1-85719].type"
+            equals: [Revenue Impact Statement]
+      - tool: get_measure
+        arguments: { measure: SB 69 }
+        expect:
+          - path: "analysis_documents.by_version[version=A-Engrossed].documents[id=analysis-2025r1-85414].type"
+            equals: [Fiscal Impact Statement]
+          - path: "analysis_documents.by_version[version=A-Engrossed].documents[id=analysis-2025r1-85419].type"
+            equals: [Revenue Impact Statement]
+      - tool: get_document
+        arguments: { id: analysis-2025r1-85414 }
+        expect:
+          - { path: kind, equals: analysis }
+          - { path: label, equals: Fiscal Impact Statement }
+          - { path: text, present: true }
+
+  # (f): "who sponsored SB 69 and HB 3795, where are they now, and how did the committee vote?" Neither Measure has a
+  # Legislator among its sponsors: SB 69's one row is a presession filing (feed/MeasureSponsors.json 142256) and
+  # HB 3795's is the committee HECHS (151277). Locations are the Measures rows' CurrentLocation. The committee votes
+  # are the CommitteeVotes reports 37391 (SLB, 2025-01-30, Sen Woods excused), 38730 (HLWS, 2025-04-28), 38179 (HECHS,
+  # 2025-04-03) and 39106 (SHS, 2025-05-20, Sen Linthicum Nay) (test/support/expected-votes.ts). The live status block is
+  # there and dated whether or not the lookup could be made; the evaluation never asks OLIS, so it says it failed, and
+  # the cases where OLIS answers are seam 1's (get-measure-live.test.ts).
+  - id: f-status
+    title: Who sponsored SB 69 and HB 3795, where is each now, and how did the committees vote?
+    steps:
+      - tool: get_measure
+        arguments: { measure: SB 69 }
+        expect:
+          - { path: sponsors, equals: [] }
+          - { path: presession_messages, length: 1 }
+          - { path: location.current, equals: Chapter Number Assigned }
+          - { path: "committee_votes[*].committee_code", equals: [SLB, HLWS] }
+          - { path: "committee_votes[committee_code=SLB].meeting_date", equals: ["2025-01-30T08:00:00-08:00"] }
+          - path: "committee_votes[committee_code=SLB].votes[*].legislator_code"
+            equals: [Sen Bonham, Sen Hayden, Sen Pham, Sen Taylor, Sen Woods]
+          - { path: "committee_votes[committee_code=SLB].votes[vote=Excused].legislator_code", equals: [Sen Woods] }
+          - { path: live_status.as_of, present: true }
+      - tool: get_measure
+        arguments: { measure: HB 3795 }
+        expect:
+          - { path: sponsors, equals: [] }
+          - { path: "committee_sponsors[*].committee_code", equals: [HECHS] }
+          - { path: location.current, equals: House Desk - Vetoed }
+          - { path: "committee_votes[*].committee_code", equals: [HECHS, SHS] }
+          - { path: "committee_votes[committee_code=SHS].votes[vote=Nay].legislator_code", equals: [Sen Linthicum] }
+          - { path: live_status.as_of, present: true }

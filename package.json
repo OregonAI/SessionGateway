@@ -23,7 +23,8 @@
     "test": "vitest run",
     "license:check": "node scripts/license-check.ts",
     "model:fetch": "node scripts/model/fetch.ts",
-    "model:verify": "node scripts/model/verify.ts"
+    "model:verify": "node scripts/model/verify.ts",
+    "eval": "node scripts/eval/run.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
