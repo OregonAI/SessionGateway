@@ -274,23 +274,33 @@ describe("the rules that keep OregonAI out of the server path", { timeout: child
 // The same proof for the rules ESLint runs (`npm run lint`): code under src/ except the entry scripts has no
 // way to a network but the `fetch` it is given (src/CLAUDE.md, "Dependencies are passed in"), and the
 // server's one use of node:http is createServer.
-type Lint = { status: number | null; messages: Map<string, string[]>; output: string };
+// `errors` is the rules of the messages that ESLint reports at error severity (2): only those fail `npm run lint`.
+type Lint = { status: number | null; messages: Map<string, string[]>; errors: Map<string, string[]>; output: string };
 
 async function lint(): Promise<Lint> {
   const finished = await runNode(lintTree, "node_modules/eslint/bin/eslint.js", ["--format", "json", "src"]);
   const messages = new Map<string, string[]>();
+  const errors = new Map<string, string[]>();
   try {
-    const report = JSON.parse(finished.stdout) as { filePath: string; messages: { ruleId: string | null }[] }[];
+    const report = JSON.parse(finished.stdout) as {
+      filePath: string;
+      messages: { ruleId: string | null; severity: number }[];
+    }[];
     for (const file of report) {
+      const path = file.filePath.slice(lintTree.length + 1);
       messages.set(
-        file.filePath.slice(lintTree.length + 1),
+        path,
         file.messages.map((message) => message.ruleId ?? "(no rule)"),
+      );
+      errors.set(
+        path,
+        file.messages.filter((message) => message.severity === 2).map((message) => message.ruleId ?? "(no rule)"),
       );
     }
   } catch {
     // The output stays in `output`, and the assertions on `status` and `messages` fail with it.
   }
-  return { status: finished.status, messages, output: `${finished.stdout}${finished.stderr}` };
+  return { status: finished.status, messages, errors, output: `${finished.stdout}${finished.stderr}` };
 }
 
 /** Writes files that do not exist in the copy, runs ESLint, and removes them again. */
@@ -373,14 +383,17 @@ describe(
       expect(clean.messages.get("src/packages/mcp-server/http.ts")).toEqual([]);
     });
 
-    it("fail, naming the rule and the file, for each way to a network that is planted", async () => {
-      const planted = await plantedLint;
+    // Only an error fails `npm run lint`; a rule downgraded to "warn" still names the plant but lets it through,
+    // so each case reads the rule among the file's error-severity messages (ticket #89).
+    it.for(lintPlants)(
+      "fail, naming the rule at error severity and the file, when %s",
+      async ([what, file, , rule]) => {
+        const planted = await plantedLint;
 
-      expect(planted.status).not.toBe(0);
-      for (const [what, file, , rule] of lintPlants) {
-        expect(planted.messages.get(file), what).toContain(rule);
-      }
-    });
+        expect(planted.status).not.toBe(0);
+        expect(planted.errors.get(file), what).toContain(rule);
+      },
+    );
 
     it("pass again once the planted files are gone", async () => {
       const clean = await cleanLintAgain;
