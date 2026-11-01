@@ -127,6 +127,11 @@ export type System = {
    * test runs a day of the worker's schedule at once and no timer runs. A run that fails throws out of this call.
    */
   runSchedule(until: string): Promise<void>;
+  /**
+   * From now on every request to the fake OLIS, feed or document, moves the simulated clock on by this many
+   * milliseconds: OLIS takes time, so a run can be seen to start before a moment and end after it.
+   */
+  everyRequestTakes(milliseconds: number): void;
   stop(): Promise<void>;
 };
 
@@ -269,7 +274,13 @@ export function startCopiedSystem(options: SystemOptions): Promise<System> {
 export async function startSystem(options: SystemOptions, copyOf?: string): Promise<System> {
   assertNotPacific();
   const clock = createSimulatedClock(options.clockAt);
-  const olis = await startFakeOlis({ clock, documents: options.documents ?? false, ...options.olis });
+  let requestTakesMs = 0;
+  const olis = await startFakeOlis({
+    clock,
+    documents: options.documents ?? false,
+    ...options.olis,
+    onRequest: () => clock.advance(requestTakesMs),
+  });
   const database = createTempDatabase();
   if (copyOf !== undefined) cpSync(copyOf, dirname(database.path), { recursive: true });
   const embedder = options.embedder ?? (await createFakeEmbedder());
@@ -342,6 +353,9 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
       pullAgain: pull,
       incrementAgain: increment,
       runSchedule: schedule,
+      everyRequestTakes: (milliseconds) => {
+        requestTakesMs = milliseconds;
+      },
       stop: async () => {
         shutdown.abort();
         await handler.close();

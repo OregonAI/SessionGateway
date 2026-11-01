@@ -56,6 +56,7 @@ import { buildReportPath, writeBuildReport, type BuildReport, type SetReport } f
 import {
   hashSampleReportPath,
   lastHashSampleAt,
+  readHashSampleReport,
   sampleHashes,
   writeHashSampleReport,
   type HashSampleReport,
@@ -706,6 +707,8 @@ export async function runHashSample(
   } finally {
     writer.close();
   }
+  const untilDeadline =
+    deadline === undefined ? undefined : Temporal.Instant.from(deadline).epochMilliseconds - deps.clock.now().getTime();
   const report = await sampleHashes({
     session: config.session,
     documents,
@@ -715,6 +718,8 @@ export async function runHashSample(
     clock: deps.clock,
     signal: deps.signal,
     deadline,
+    ...(untilDeadline === undefined ? {} : { windowSignal: AbortSignal.timeout(Math.max(untilDeadline, 1)) }),
+    previous: readHashSampleReport(config.databasePath)?.mismatches ?? [],
   });
   writeHashSampleReport(hashSampleReportPath(config.databasePath), report);
   return report;

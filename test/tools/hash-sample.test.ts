@@ -199,3 +199,115 @@ describe("the night that holds the full pull", () => {
     expect(counts.filter((request) => request.filter?.includes(" gt datetime") !== true)).toHaveLength(1);
   });
 });
+
+describe("the night window", () => {
+  // Friday 2026-08-07 at 11:45 pm Pacific (PDT): the night that ends on Saturday holds the full pull, so the sample
+  // has until midnight.
+  const lateFriday = "2026-08-08T06:45:00Z";
+  // Midnight Saturday: the run stops there, before the full pull begins.
+  const midnight = "2026-08-08T07:00:00Z";
+
+  it("closes between documents: none is fetched at or after the deadline, and the rest are reported as not checked", async () => {
+    const system = await start({ clockAt: lateFriday, ingest: { hashSampleSize: "1000" } });
+    system.everyRequestTakes(60_000);
+
+    await system.runSchedule(midnight);
+
+    // One minute for each document: the 15 fetched from 11:45 to 11:59 pm.
+    expect(system.olis.documentRequests()).toHaveLength(15);
+    const report = system.hashSampleReport();
+    expect(report).toMatchObject({ sampled: documentsInFixture, checked: 15, mismatches: [] });
+    const notChecked = report["not_checked"] as { reason: string }[];
+    expect(notChecked).toHaveLength(documentsInFixture - 15);
+    expect(notChecked.every((entry) => entry.reason.includes("night window closed"))).toBe(true);
+  });
+
+  it("closes in the middle of a fetch: a document OLIS is slow to give is stopped at the deadline", async () => {
+    // 11:59:59.9 pm: the deadline is 100 ms away and OLIS never answers the first document. The fetch would
+    // otherwise wait out its timeout and its retries, and hold the loop past midnight, when the full pull is due.
+    const system = await start({ clockAt: "2026-08-08T06:59:59.900Z", ingest: { hashSampleSize: "1000" } });
+    system.olis.failDocuments(
+      "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeAgenda/HALNRW/2025-01-22-08-00",
+      ["hang"],
+    );
+    const began = Date.now();
+
+    await system.runSchedule(midnight);
+
+    expect(Date.now() - began).toBeLessThan(10_000);
+    expect(system.olis.documentRequests()).toHaveLength(1);
+    const report = system.hashSampleReport();
+    expect(report).toMatchObject({ sampled: documentsInFixture, checked: 0, mismatches: [] });
+    const notChecked = report["not_checked"] as { reason: string }[];
+    expect(notChecked).toHaveLength(documentsInFixture);
+    expect(notChecked.every((entry) => entry.reason.includes("night window closed"))).toBe(true);
+  });
+
+  it("is judged by the clock after the increment, not before it", async () => {
+    // Monday 2026-08-03 at 5:45 am: the night's daily increment is due, and OLIS takes 5 minutes to answer each of its
+    // requests, so it ends after 6 am. The night is over by then, and no sample begins.
+    const system = await start({
+      clockAt: "2026-08-03T12:45:00Z",
+      ingest: { hashSampleSize: "1000", increments: "daily" },
+    });
+    system.everyRequestTakes(5 * 60_000);
+
+    await system.runSchedule("2026-08-03T14:00:00Z");
+
+    expect(system.olis.documentRequests()).toEqual([]);
+    expect(() => system.hashSampleReport()).toThrow();
+  });
+});
+
+describe("a mismatch found on an earlier night", () => {
+  const sb69Original = readFileSync(
+    new URL("../fixtures/olis-2025R1/documents/measure-documents/SB69/Introduced.pdf", import.meta.url),
+  );
+  const foundOnTheFirstNight = {
+    id: sb69Introduced.id,
+    source_url: sb69Introduced.sourceUrl,
+    stored_hash: sb69Introduced.sha256,
+    new_hash: hb3131Introduced.sha256,
+    checked_at: "2026-08-01T17:00:00-07:00",
+  };
+  // The first night is Saturday's, to 1 am; the second is Sunday's, to 1 am Monday.
+  const secondNight = "2026-08-03T08:00:00Z";
+
+  async function afterTheFirstNight(): Promise<System> {
+    const system = await start({ ingest: { hashSampleSize: "1000", increments: "off" } });
+    system.olis.serveDocument(sb69Introduced.path, hb3131Bytes);
+    await system.runSchedule(afterTheSample);
+    expect(system.hashSampleReport()["mismatches"]).toEqual([foundOnTheFirstNight]);
+    return system;
+  }
+
+  it("stays in the report on a night that does not check that document", async () => {
+    const system = await afterTheFirstNight();
+    system.olis.failDocuments(sb69Introduced.sourceUrl, [404]);
+
+    await system.runSchedule(secondNight);
+
+    const report = system.hashSampleReport();
+    expect(report).toMatchObject({ as_of: "2026-08-02T17:00:00-07:00", checked: documentsInFixture - 1 });
+    expect(report["mismatches"]).toEqual([foundOnTheFirstNight]);
+  });
+
+  it("is dropped when a later night checks the document and finds the file as it was stored", async () => {
+    const system = await afterTheFirstNight();
+    system.olis.serveDocument(sb69Introduced.path, sb69Original);
+
+    await system.runSchedule(secondNight);
+
+    expect(system.hashSampleReport()["mismatches"]).toEqual([]);
+  });
+
+  it("is reported once, with the later night's time, when a later night checks it and the file still differs", async () => {
+    const system = await afterTheFirstNight();
+
+    await system.runSchedule(secondNight);
+
+    expect(system.hashSampleReport()["mismatches"]).toEqual([
+      { ...foundOnTheFirstNight, checked_at: "2026-08-02T17:00:00-07:00" },
+    ]);
+  });
+});

@@ -123,12 +123,15 @@ export async function runIngestLoop(config: IngestConfig, deps: LoopDeps): Promi
         deps.onRunFailed(due.kind, error);
       }
     }
-    // The hash sample runs every night, after the night's increment, once; it needs documents to fetch again.
-    const sample = hashSampleAt(formatPacific(now), settings);
+    // The hash sample runs every night, after the night's increment, once; it needs documents to fetch again. Whether
+    // it is due, and its deadline, are judged at the time it would begin: a full pull or an increment that ran on may
+    // have used up the night since the tick began.
+    const sampleAt = formatPacific(deps.clock.now());
+    const sample = hashSampleAt(sampleAt, settings);
     if (sample.kind === "hash_sample" && state.lastRun.full_pull !== undefined && hashSampleRan !== sample.slot) {
       hashSampleRan = sample.slot;
       try {
-        const report = await runHashSample(config, deps, hashSampleDeadline(formatPacific(now), settings));
+        const report = await runHashSample(config, deps, hashSampleDeadline(sampleAt, settings));
         deps.afterHashSample?.(report);
       } catch (error) {
         deps.onRunFailed("hash_sample", error);

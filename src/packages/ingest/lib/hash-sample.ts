@@ -9,7 +9,7 @@ import { z } from "zod";
 import type { StoredDocumentHash } from "#/packages/database/writer.ts";
 import type { DocumentId } from "#/packages/domain/documents.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
-import type { OlisClient } from "#/packages/olis-client/index.ts";
+import type { Download, OlisClient } from "#/packages/olis-client/index.ts";
 import { compareTimestamps, formatPacific, readTimestamp, type Timestamp } from "#/packages/time/pacific.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 
@@ -56,7 +56,11 @@ export function writeHashSampleReport(path: string, report: HashSampleReport): v
  * Draws `size` of the documents, without repeats, by a partial shuffle: each draw takes the item at an index
  * `random()` picks from those left. `random` returns a number in [0, 1), as `Math.random` does.
  */
-export function drawSample(documents: readonly StoredDocumentHash[], size: number, random: () => number): StoredDocumentHash[] {
+export function drawSample(
+  documents: readonly StoredDocumentHash[],
+  size: number,
+  random: () => number,
+): StoredDocumentHash[] {
   const pool = [...documents];
   const count = Math.min(size, pool.length);
   for (let drawn = 0; drawn < count; drawn += 1) {
@@ -70,6 +74,8 @@ export function drawSample(documents: readonly StoredDocumentHash[], size: numbe
   return pool.slice(0, count);
 }
 
+const NIGHT_WINDOW_CLOSED = "The night window closed before it was fetched";
+
 export async function sampleHashes(input: {
   session: SessionKey;
   documents: readonly StoredDocumentHash[];
@@ -77,9 +83,14 @@ export async function sampleHashes(input: {
   random: () => number;
   olis: OlisClient;
   clock: Clock;
+  /** The worker's shutdown: it ends the sample with an error, as it ends any run. */
   signal: AbortSignal;
   /** The moment the sample must be over: no document is fetched at or after it. */
   deadline: Timestamp | undefined;
+  /** Aborts when `deadline` comes, to stop a fetch that is still going then; its documents are reported as not checked. */
+  windowSignal?: AbortSignal;
+  /** The mismatches the last report held, to keep those tonight's draw does not check. */
+  previous: readonly HashMismatch[];
 }): Promise<HashSampleReport> {
   const { clock, deadline } = input;
   const drawn = drawSample(input.documents, input.size, input.random);
@@ -92,23 +103,34 @@ export async function sampleHashes(input: {
     mismatches: [],
     not_checked: [],
   };
+  const compared = new Set<DocumentId>();
+  const closed = (document: StoredDocumentHash): void => {
+    report.not_checked.push({ id: document.id, source_url: document.sourceUrl, reason: NIGHT_WINDOW_CLOSED });
+  };
+  const fetchSignal =
+    input.windowSignal === undefined ? input.signal : AbortSignal.any([input.signal, input.windowSignal]);
   for (const document of drawn) {
     const now = formatPacific(clock.now());
     if (deadline !== undefined && compareTimestamps(now, deadline) >= 0) {
-      report.not_checked.push({
-        id: document.id,
-        source_url: document.sourceUrl,
-        reason: "The night window closed before it was fetched",
-      });
+      closed(document);
       continue;
     }
-    const download = await input.olis.downloadStoredDocument(document.sourceUrl, input.signal);
+    let download: Download;
+    try {
+      download = await input.olis.downloadStoredDocument(document.sourceUrl, fetchSignal);
+    } catch (error) {
+      // A shutdown is an error; the window closing in the middle of a fetch only leaves the document unchecked.
+      if (input.signal.aborted || input.windowSignal?.aborted !== true) throw error;
+      closed(document);
+      continue;
+    }
     switch (download.kind) {
       case "failed":
         report.not_checked.push({ id: document.id, source_url: document.sourceUrl, reason: download.reason });
         break;
       case "fetched": {
         report.checked += 1;
+        compared.add(document.id);
         const newHash = createHash("sha256").update(download.bytes).digest("hex");
         if (newHash !== document.contentHash) {
           report.mismatches.push({
@@ -125,21 +147,57 @@ export async function sampleHashes(input: {
         download satisfies never;
     }
   }
+  // A mismatch stays in the report until a night compares the document and finds the stored file again: the draw is
+  // about 200 documents of several thousand, so the night that found it may be the only one that checks it.
+  const kept = input.previous.filter((mismatch) => !compared.has(mismatch.id));
+  report.mismatches = [...kept, ...report.mismatches].toSorted((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return report;
+}
+
+const reportSchema = z.object({
+  as_of: z.string(),
+  mismatches: z.array(
+    z.object({
+      id: z.string(),
+      source_url: z.string(),
+      stored_hash: z.string(),
+      new_hash: z.string(),
+      checked_at: z.string(),
+    }),
+  ),
+});
+
+/**
+ * What the last sample left in its report: when it began and the mismatches it held, or undefined while there is no
+ * report. The report is the worker's own file, written whole; one that cannot be read or is not a report is a fault
+ * of the machine and throws, with the cause.
+ */
+export function readHashSampleReport(
+  databasePath: string,
+): { as_of: Timestamp; mismatches: HashMismatch[] } | undefined {
+  const path = hashSampleReportPath(databasePath);
+  if (!existsSync(path)) return undefined;
+  try {
+    const parsed = reportSchema.parse(JSON.parse(readFileSync(path, "utf8")));
+    const asOf = readTimestamp(parsed.as_of);
+    if (asOf === undefined) throw new Error(`as_of is not a time: ${parsed.as_of}`);
+    return {
+      as_of: asOf,
+      mismatches: parsed.mismatches.map((mismatch) => {
+        const checkedAt = readTimestamp(mismatch.checked_at);
+        if (checkedAt === undefined) throw new Error(`checked_at is not a time: ${mismatch.checked_at}`);
+        return { ...mismatch, id: mismatch.id as DocumentId, checked_at: checkedAt };
+      }),
+    };
+  } catch (error) {
+    throw new Error(`The hash sample report cannot be read: ${path}`, { cause: error });
+  }
 }
 
 /**
  * When the last sample began, from the report it left, or undefined while there is none: how a worker that restarts
- * in the night knows the night's sample has run. The report is the worker's own file; one that cannot be read is no
- * sample, and the night's sample runs again.
+ * in the night knows the night's sample has run.
  */
 export function lastHashSampleAt(databasePath: string): Timestamp | undefined {
-  const path = hashSampleReportPath(databasePath);
-  if (!existsSync(path)) return undefined;
-  try {
-    const parsed = z.object({ as_of: z.string() }).safeParse(JSON.parse(readFileSync(path, "utf8")));
-    return parsed.success ? readTimestamp(parsed.data.as_of) : undefined;
-  } catch {
-    return undefined;
-  }
+  return readHashSampleReport(databasePath)?.as_of;
 }
