@@ -186,10 +186,11 @@ Working on a ticket there differs in three ways
   Create PR button or `gh api repos/OregonAI/SessionGateway/pulls`. A cloud session pushes branches only, never
   a tag or a deletion.
 - The mattpocock skills that `CLAUDE.md`'s build flow names (`/implement`, `/tdd`, `/code-review`, `/pr`,
-  `/domain-modeling`) are a plugin each person installs, and a cloud session installs no plugins. Until the
-  repository carries them, a cloud session follows the same loop by hand (test-first, each behaviour box red
-  before green, as `test/CLAUDE.md` describes), and the `/code-review` against `main` that "Done" requires runs
-  from a local checkout before the PR merges.
+  `/domain-modeling`) are committed under `.claude/skills/`, so a cloud session has them as a local checkout
+  does. They were copied with `npx skills@latest add mattpocock/skills --agent claude-code`, and
+  `skills-lock.json` pins each one to a hash of its files; `npx skills@latest update` brings them up to date in
+  a PR of its own, where the diff shows what changed. A skill runs with the agent's permissions, so read a
+  changed one before merging it.
 
 Three things stay on a local machine:
 
