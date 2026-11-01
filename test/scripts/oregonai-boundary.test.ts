@@ -288,17 +288,12 @@ async function lint(): Promise<Lint> {
     }[];
     for (const file of report) {
       const path = file.filePath.slice(lintTree.length + 1);
-      messages.set(
-        path,
-        file.messages.map((message) => message.ruleId ?? "(no rule)"),
-      );
-      errors.set(
-        path,
-        file.messages.filter((message) => message.severity === 2).map((message) => message.ruleId ?? "(no rule)"),
-      );
+      const rule = (message: { ruleId: string | null }): string => message.ruleId ?? "(no rule)";
+      messages.set(path, file.messages.map(rule));
+      errors.set(path, file.messages.filter((message) => message.severity === 2).map(rule));
     }
   } catch {
-    // The output stays in `output`, and the assertions on `status` and `messages` fail with it.
+    // The output stays in `output`, and the assertions on `status`, `messages` and `errors` fail with it.
   }
   return { status: finished.status, messages, errors, output: `${finished.stdout}${finished.stderr}` };
 }
@@ -390,6 +385,7 @@ describe(
       async ([what, file, , rule]) => {
         const planted = await plantedLint;
 
+        // `status` is not the severity check: the other plants keep the exit non-zero even when one rule is "warn".
         expect(planted.status).not.toBe(0);
         expect(planted.errors.get(file), what).toContain(rule);
       },
