@@ -1,15 +1,17 @@
 // Seam 1 (test/CLAUDE.md): the days the Session meets (ticket #67, ADR-0039, ADR-0042). With `15min` increments run on
 // a day with a floor convening (ConveneTimes) scheduled and on any weekday while the Session is in progress (the
 // LegislativeSessions row's BeginDate to EndDate), as well as on a day with a committee meeting; the staleness warning's
-// 15min rule follows the same days. A null EndDate ends at the last convening the index holds (ticket #74, ADR-0043). Each case builds its own system, because the feed it needs is the thing under test:
-// the fixture holds no ConveneTimes or LegislativeSessions file, so every row here is MADE UP, in the feed's shape
+// 15min rule follows the same days. A null EndDate ends at the last convening the index holds (ticket #74, ADR-0043).
+// Each case builds its own system, because the feed it needs is the thing under test: the fixture holds no
+// ConveneTimes or LegislativeSessions file, so every row here is MADE UP, in the feed's shape
 // (docs/research/olis-odata.md section 2), and added with `strayRows` so that the first pull reads it. The worker's loop
 // runs with the harness's sleep (`runSchedule`); the fake OLIS's request log says what ran, as in ingest-schedule.test.ts.
 // The embedder is the fake. The documents are off: nothing here reads one.
 //
 // The fixture's committee meetings fall on 2025-01-21..23, 27, 28 and 30 (feed/CommitteeMeetings.json), none on
-// Wednesday 2025-01-29, Saturday 2025-02-01, Wednesday 2025-03-12 or Wednesday 2025-03-19. 2025-01-29 and 2025-03-19 are Wednesdays and
-// 2025-02-01 is a Saturday. January is UTC-8 and March 19 is UTC-7 (daylight time began on 2025-03-09).
+// Wednesday 2025-01-29, Saturday 2025-02-01, Wednesday 2025-03-12 or Wednesday 2025-03-19. 2025-01-29, 2025-03-12 and
+// 2025-03-19 are Wednesdays and 2025-02-01 is a Saturday. January is UTC-8 and March is UTC-7 from 2025-03-09, when
+// daylight time began.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FakeOlis } from "../support/fake-olis.ts";
 import { callTool, connectClient } from "../support/mcp-clients.ts";
