@@ -279,7 +279,9 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
     clock,
     documents: options.documents ?? false,
     ...options.olis,
-    onRequest: () => clock.advance(requestTakesMs),
+    onRequest: () => {
+      clock.advance(requestTakesMs);
+    },
   });
   const database = createTempDatabase();
   if (copyOf !== undefined) cpSync(copyOf, dirname(database.path), { recursive: true });
