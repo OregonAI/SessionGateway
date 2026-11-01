@@ -53,8 +53,10 @@ point at, and every document they link.
   Testimony row 209256 gives the Organization as "ODHS"; HB 3795's statements say "Department of
   Human Services" in the unit line; and SB 921's statement uses "OBDD" for the Agency its unit
   line calls "Oregon Business Development Department". Whether those count as the registry
-  aliases the spec means can only be settled against the OregonAI agency registry. Meeting the
-  ticket's wording needs one more Measure, found by reading Fiscal Impact Statements outside the
+  aliases the spec means is settled by #49: at ERF 6c41efefb5 "ODHS" is a registry alias of
+  `department-of-human-services` and "OBDD" of `oregon-business-development-department`, so the
+  Testimony Organization and the Digests count, but still not as a Fiscal Impact Statement's
+  unit line. Meeting the ticket's wording needs one more Measure, found by reading Fiscal Impact Statements outside the
   samples, and so one more download run: that is the owner's call.
 
 ## How it was produced

@@ -4,8 +4,8 @@ import type { AgencyLink } from "./types.ts";
 
 /**
  * The Statute Links that derive an Agency Link: the ones that change the law. A citation does not (ADR-0027): a
- * chapter such as 192 (public records) is implemented by 57 Agencies in the fixture's snapshot and 60 or so in the
- * whole one, and a Measure that merely cites a section of it is not about them.
+ * chapter such as 192 (public records) is implemented by dozens of Agencies (63 in the fixture's snapshot at ERF 6c41efefb5),
+ * and a Measure that merely cites a section of it is not about them.
  */
 const changesTheLaw: ReadonlySet<StatuteLinkKind> = new Set<StatuteLinkKind>(["amends", "repeals", "adds-to"]);
 

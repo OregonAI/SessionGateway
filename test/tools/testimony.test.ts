@@ -298,9 +298,8 @@ describe.for(eras)("testimony for a %s client", (era) => {
   // (feed/CommitteePublicTestimonies.json) is the whole of an Agency's name in the committed snapshot's registry
   // (test/fixtures/oregonai-snapshot/snapshot.json): SB 69's 196915 "Bureau of Labor and Industries" is
   // `bureau-of-labor-and-industries` and HB 3027's 122570 "Higher Education Coordinating Commission" is
-  // `higher-education-coordinating-commission`. HB 3795's 209256 gives "ODHS", which the registry does not list as an
-  // alias of the Department of Human Services (its aliases are empty there), so it carries no slug: an open question
-  // for the owner, and no alias is added here.
+  // `higher-education-coordinating-commission`. HB 3795's 209256 gives "ODHS", an alias of the Department of Human
+  // Services in the registry since ERF 6c41efefb5 (ticket #49), so it carries `department-of-human-services`.
   it.for([
     ["SB 69", "testimony-2025r1-196915", "Bureau of Labor and Industries", "bureau-of-labor-and-industries"],
     [
@@ -309,7 +308,7 @@ describe.for(eras)("testimony for a %s client", (era) => {
       "Higher Education Coordinating Commission",
       "higher-education-coordinating-commission",
     ],
-    ["HB 3795", "testimony-2025r1-209256", "ODHS", null],
+    ["HB 3795", "testimony-2025r1-209256", "ODHS", "department-of-human-services"],
   ] as const)("marks %s's Testimony %s from %j with the Agency slug %j", async ([citation, id, organization, slug]) => {
     const outcome = await callTool(connected, "testimony", { measure: citation });
 

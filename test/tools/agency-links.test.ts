@@ -138,20 +138,27 @@ describe.for(eras)("get_measure's Agency Links for a %s client", (era) => {
       ]);
     });
 
-    it("names the registry term that was found", async () => {
+    // The A-Engrossed Version's Digest reads "The Act tells ODHS to study human services" (pdftotext of
+    // measure-documents/HB3795/A-Engrossed.pdf), and "ODHS" is an alias of the Department since ERF 6c41efefb5 (#49),
+    // so its link names both terms, in the order they come in the text. The two Proposed Amendments name only the
+    // Department's name.
+    it("names the registry terms that were found", async () => {
       const links = await agencyLinksOf("HB 3795");
 
       const named = kindOf(links, "department-of-human-services", "named-in-text");
-      expect(named?.examples).toHaveLength(3);
-      for (const example of named?.examples ?? []) expect(example.terms).toEqual(["Department of Human Services"]);
+      expect(named?.examples.map((example) => [example.node_id, example.terms])).toEqual([
+        ["amendment-2025r1-hb3795-1", ["Department of Human Services"]],
+        ["amendment-2025r1-hb3795-a3", ["Department of Human Services"]],
+        ["version-2025r1-hb3795-a-engrossed", ["ODHS", "Department of Human Services"]],
+      ]);
     });
   });
 
   // SB 69's Testimony 196915 (feed/CommitteePublicTestimonies.json) was submitted by Josh Nasbe for HLWS's meeting of
   // 2025-04-21 with Organization "Bureau of Labor and Industries", which is the registry's name for the Agency, so the
   // Measure has an Agency Link to it. The Testimony of SB 64 gives the Organization "Oregon State Senate" (7 rows) and
-  // "Southern Oregon", and HB 3795's 209256 gives "ODHS": the snapshot's registry names none of them (it has no alias
-  // "ODHS", ADR-0012), so they link no Agency.
+  // "Southern Oregon": the snapshot's registry names neither, so they link no Agency. HB 3795's 209256 gives "ODHS",
+  // which it does name (below).
   describe("submitted Testimony", () => {
     it("links SB 69 to the Bureau of Labor and Industries through Testimony 196915, on the Measure", async () => {
       const links = await agencyLinksOf("SB 69");
@@ -169,7 +176,18 @@ describe.for(eras)("get_measure's Agency Links for a %s client", (era) => {
 
     it("links no Agency for an Organization the registry does not name", async () => {
       expect(examplesOf(await agencyLinksOf("SB 64"), "testimony")).toEqual([]);
-      expect(examplesOf(await agencyLinksOf("HB 3795"), "testimony")).toEqual([]);
+    });
+
+    // HB 3795's Testimony 209256 (feed/CommitteePublicTestimonies.json: Organization "ODHS", Michelle Pfeiffer for
+    // SHS's meeting of 2025-05-20) names the Department of Human Services by the alias "ODHS", which the registry has
+    // since ERF 6c41efefb5 (ticket #49; PR #40 question 2: no local alias).
+    it("links HB 3795 to the Department of Human Services through Testimony 209256, whose Organization is the alias ODHS", async () => {
+      const links = await agencyLinksOf("HB 3795");
+
+      expect(examplesOf(links, "testimony")).toEqual([
+        ["department-of-human-services", "testimony-2025r1-209256", "measure-2025r1-hb3795", "measure"],
+      ]);
+      expect(kindOf(links, "department-of-human-services", "testimony")?.examples[0]?.organization).toBe("ODHS");
     });
   });
 
@@ -198,7 +216,7 @@ describe.for(eras)("get_measure's Agency Links for a %s client", (era) => {
   // alone, 657B to it and the Employment Department, and 659A to it, DAS's Chief Human Resources Office, Corrections,
   // DHS's Aging and People with Disabilities and Developmental Disabilities, OHA's Public Employees Benefit Board and
   // the State Treasury. The same text cites ORS chapter 657 ("ORS chapter 657." in 26284.pdf and Enrolled.pdf), whose
-  // Agencies include the Board of Nursing, and the Introduced Version cites ORS 192.245, a chapter 57 Agencies
+  // Agencies include the Board of Nursing, and the Introduced Version cites ORS 192.245, a chapter 63 Agencies
   // implement, among them the Board of Optometry: a citation is not a change, so neither Agency is linked (ADR-0027).
   // The answer lists the links of the two Versions and not of -1 and -2, which amend the Introduced Version and are
   // replaced by A-Engrossed (ADR-0015, get_measure's superseded_amendments).
@@ -364,7 +382,7 @@ describe.for(eras)("get_measure's Agency Links for a %s client", (era) => {
   });
 
   // The ticket's fourth box: "Agency ids are OregonAI registry slugs". The registry is the snapshot fixture's `agencies`
-  // (test/fixtures/oregonai-snapshot/snapshot.json, 114 rows), whose `slug` is OregonAI's id for the Agency
+  // (test/fixtures/oregonai-snapshot/snapshot.json, 129 rows), whose `slug` is OregonAI's id for the Agency
   // (`bureau-of-labor-and-industries`). Every Agency Link of the Measures of the fixture names one of them, and none
   // is a name: "Bureau of Labor and Industries" is the unit a statement writes, not the id. So is each parent.
   describe("Agency ids", () => {
