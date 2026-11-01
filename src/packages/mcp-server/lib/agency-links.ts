@@ -19,7 +19,7 @@ const numbersInOrder = new Intl.Collator("en", { numeric: true });
 
 /**
  * How many sub-units a derived link through them names. A Department can have many (the Department of Agriculture has 24
- * in the registry, 22 of them implementing chapter 192), and the answer is bounded (#16 F6).
+ * in the registry, 21 of them implementing chapter 192, at ERF 6c41efefb5), and the answer is bounded (#16 F6).
  */
 const THROUGH_SHOWN = 2;
 

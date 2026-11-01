@@ -8,13 +8,15 @@
 // checkout had no local edit to it. Each row below copies that row's `slug`, `name` and `aliases`;
 // a row with no `aliases` key in the catalog has an empty list here.
 //
-// One alias is NOT in the catalog and is marked TEST-ONLY: "ODHS". Spec #1 story 33 and ticket #7
-// name it, and the fixture's own documents use it (HB 3795 Testimony 209256, Organization
-// "ODHS"; the Digest of HB 3795 Introduced), but the catalog row for the Department of Human
-// Services has no `aliases` key at that commit. It is added here so the tables can show an alias
-// resolving. The extractor reads aliases only from the registry it is given, so against the
-// catalog as it stands "ODHS" resolves to nothing. Where the product gets it from (the registry's
-// owner adding it, or a supplement merged in when the snapshot is built, #16) is open.
+// One alias is NOT in the catalog at that commit and is marked TEST-ONLY: "ODHS". Spec #1 story 33
+// and ticket #7 name it, and the fixture's own documents use it (HB 3795 Testimony 209256,
+// Organization "ODHS"; the Digest of HB 3795 Introduced), but the catalog row for the Department of
+// Human Services has no `aliases` key at 58e1839. It is added here so the tables can show an alias
+// resolving. Ticket #49 settled where the product gets it from: ERF 6c41efefb5 has "ODHS" as a
+// registry alias of department-of-human-services, so the committed snapshot fixture has it. This
+// table is not rebuilt from the newer registry (it is a literal of 58e1839 rows and reads no
+// snapshot), so the added alias stays in it, and it is still what lets the seam-2 tables show an
+// alias resolving to the Department; nothing else uses it.
 
 import { parseAgencyId, type AgencyId } from "#/packages/domain/oregonai.ts";
 import type { RegistryAgency } from "../index.ts";

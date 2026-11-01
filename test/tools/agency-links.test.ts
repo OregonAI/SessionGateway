@@ -216,7 +216,7 @@ describe.for(eras)("get_measure's Agency Links for a %s client", (era) => {
   // alone, 657B to it and the Employment Department, and 659A to it, DAS's Chief Human Resources Office, Corrections,
   // DHS's Aging and People with Disabilities and Developmental Disabilities, OHA's Public Employees Benefit Board and
   // the State Treasury. The same text cites ORS chapter 657 ("ORS chapter 657." in 26284.pdf and Enrolled.pdf), whose
-  // Agencies include the Board of Nursing, and the Introduced Version cites ORS 192.245, a chapter 57 Agencies
+  // Agencies include the Board of Nursing, and the Introduced Version cites ORS 192.245, a chapter 63 Agencies
   // implement, among them the Board of Optometry: a citation is not a change, so neither Agency is linked (ADR-0027).
   // The answer lists the links of the two Versions and not of -1 and -2, which amend the Introduced Version and are
   // replaced by A-Engrossed (ADR-0015, get_measure's superseded_amendments).
