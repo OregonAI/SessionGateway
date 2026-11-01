@@ -5,6 +5,9 @@
 // changes it. The cases that need the Session after the fact are in meetings-past.test.ts, and the
 // ones that need a database of their own (another clock, a failed fetch, a row the fixture lacks, such
 // as a Recording Log) are in meetings-pull.test.ts.
+//
+// The database is built by this file, with the documents on, and not copied from the template. Its clock is the one
+// of spec #1's case (c).
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";

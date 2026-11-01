@@ -5,6 +5,10 @@
 // Expected values are literals from the fixture's feed rows (test/fixtures/olis-2025R1/feed/), the documents as
 // `pdftotext` prints them (test/fixtures/olis-2025R1/documents/), and the registry slugs of the snapshot fixture
 // (test/fixtures/oregonai-snapshot/snapshot.json).
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates). It covers each kind of evidence with its count and examples, a parent's link through its
+// sub-unit, the units that are not Agencies, what a citation does not derive and the size of the answer.
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";

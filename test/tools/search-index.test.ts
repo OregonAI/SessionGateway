@@ -3,6 +3,9 @@
 // pulls more than once, moving the clock between pulls. The embedder is the fake (test/support/fake-embedder.ts):
 // the cases are about how often a passage is embedded and whether the server sees a new pull, not about how
 // well anything ranks.
+//
+// Each case builds its own system and pulls more than once. It covers passages embedded and reused across pulls,
+// the vector a passage gets, a search in the middle of a pull, a row OLIS changes and an Exhibit OLIS relabels.
 import { afterEach, describe, expect, it } from "vitest";
 import type { Embedder } from "#/packages/embedder/index.ts";
 import { createFakeEmbedder } from "../support/fake-embedder.ts";

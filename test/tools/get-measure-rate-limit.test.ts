@@ -2,6 +2,9 @@
 // default and the limit is set from the environment (src/CLAUDE.md, "MCP"). The limit counts tool calls
 // only, over every caller together, in the injected clock's time. Each case builds its own system
 // because the limit and the clock are what is under test.
+//
+// Each case starts a copy of the run's template with the limit it sets (test/CLAUDE.md, Database, Templates), so no
+// case can change another's.
 import { afterEach, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient, type Era } from "../support/mcp-clients.ts";
 import { startCopiedSystem, type System, type SystemOptions } from "../support/system.ts";

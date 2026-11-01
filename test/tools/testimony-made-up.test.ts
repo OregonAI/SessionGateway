@@ -3,6 +3,9 @@
 // `strayRows` row of the fake OLIS, shaped like feed/CommitteePublicTestimonies.json's, filed under SB 983 unless the
 // case says otherwise) and is said so in the case's comment. The cases that read the fixture as it stands are in
 // testimony.test.ts, and the Measure with more rows than a page is in testimony-large.test.ts.
+//
+// A case that only reads or moves a row starts from a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates); a case whose second pull is the subject pulls for itself.
 import { afterEach, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { startCopiedSystem, startSystem, type System, type SystemOptions } from "../support/system.ts";

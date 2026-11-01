@@ -2,6 +2,13 @@
 // because the feed it needs is the thing under test. A row that a case adds is MADE UP (a `strayRows` row of the fake
 // OLIS, shaped like feed/CommitteePublicTestimonies.json's) and is said so in the case's comment. The cases that read
 // the fixture as it stands are in find-measures.test.ts and find-measures-since.test.ts.
+//
+// A case that only reads, or that moves the clock before a second pull, starts from a copy of the run's template
+// for its options (test/CLAUDE.md, Database, Templates), so that the second pull is what the case measures. It
+// covers made-up Testimony (to page past one page, to cut an item's evidence, to fill a page and measure its size),
+// made-up postings of Proposed Amendments (to date evidence by the postings that hold it, to page across groups, to
+// fill a page with derived evidence), a made-up snapshot (a Department with long-named sub-units), a clock moved
+// before a second pull, and a second pull of the same feed.
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

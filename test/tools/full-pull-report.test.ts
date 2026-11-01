@@ -4,6 +4,10 @@
 // so the index goes on answering from the last complete one (get-measure-feed.test.ts, "a pull that is refused").
 // Each case builds its own system, because the feed it needs is the thing under test; the documents are off, since
 // nothing here reads one.
+//
+// It covers what the report says of the sets a pull read, of a pull it refused, and of one that is short in a set
+// other than the first; and, for the two sets the schedule reads (ticket #67, ADR-0042), MADE UP ConveneTimes and
+// LegislativeSessions rows counted against $count, a pull short in either refused, and the two-pull rule on a convening.
 import { afterEach, describe, expect, it } from "vitest";
 import { callTool, connectClient } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";

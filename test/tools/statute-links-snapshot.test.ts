@@ -11,6 +11,10 @@
 // and with the made-up section 23. Each link that adds to a section of chapter 345 is one of "links_in_chapter" of the
 // derived Agency Links (ADR-0027), so the Agency Links follow by their count: 22 before, 23 after. The made-up section is
 // not any true ORS section.
+//
+// Each case's first pull is a copy of the run's template for the committed snapshot (test/CLAUDE.md, Database,
+// Templates); the pull after the snapshot changes is a real one. It covers the range, the Agency Links derived from
+// it, a pull of the same snapshot and what the overview reports, and a pull that stops part-way.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { createFakeEmbedder } from "../support/fake-embedder.ts";

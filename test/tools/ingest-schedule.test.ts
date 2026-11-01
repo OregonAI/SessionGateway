@@ -5,6 +5,9 @@
 //
 // An increment is a request for a count of Measures with `gt datetime` in its filter; a full pull is one without.
 // All times are Pacific (UTC-8 in January).
+//
+// Each case builds its own system. It covers a night, a full-pull night and a meeting day, as the fake OLIS's
+// request log shows what ran.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { FakeOlis } from "../support/fake-olis.ts";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";

@@ -8,6 +8,10 @@
 // 2025-01-17 15:16 Pacific; feed/CommitteePublicTestimonies.json). The fake OLIS stops listing it with
 // `stopListing` (test/support/unlisted-rows.ts), which changes the row the way OLIS would have, from the pull
 // after. The embedder is the fake: nothing here is about how well a meaning ranks.
+//
+// It covers a Testimony row the fake stops listing and the postings of SB 69-2, seen through `search` and
+// `get_document` on an early clock with the fake embedder. The pulls move the clock an hour or a day at a time, so
+// that each has an as-of time of its own.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { startSystem, type System } from "../support/system.ts";

@@ -11,6 +11,9 @@
 // where they are used), for the cases the fixture lacks: an amendment whose Version is not known, a Version with no
 // text layer, and a Version with no place in the order of printing.
 // Every case runs once with a 2026-07-28 client and once with a legacy client.
+//
+// A case that only reads, or that moves a row, starts from a copy of the run's template for its options
+// (test/CLAUDE.md, Database, Templates); the system with made-up rows pulls for itself.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import {
