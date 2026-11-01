@@ -4,19 +4,25 @@
 // report, not the tools' answers.
 //
 // The command is `npm run eval -- --database <path> [--session <key>] [--since <iso>]`. It runs the question set of the
-// Session the database holds, or of `--session` (scripts/eval/questions/<session>.yml) against any built database, prints the report and exits 1 when any
-// question fails (2 when it cannot run at all). It never runs in `npm test`: the cases below call the runner's function
-// and, for the exit status, the script as a child process, against copies of the run's templates.
+// Session the database holds, or of `--session` (scripts/eval/questions/<session>.yml) against any built database,
+// prints the report and exits 1 when any question fails (2 when it cannot run at all). It never runs in `npm test`: the
+// cases below call the runner's function and, for the exit status, the script as a child process, against copies of the
+// run's templates.
 //
-// Databases (test/CLAUDE.md, Database, Templates). Every case copies a template and only reads it, except the failing
-// case, which changes the fake feed and pulls again so that one answer differs. The templates are the ones
-// find-measures.test.ts and find-measures-since.test.ts already build for the same clocks and options, so a run that
-// holds those files builds nothing more:
+// Databases (test/CLAUDE.md, Database, Templates). Every case copies a template and only reads the copy, except three.
+// The failing case changes the fake feed and pulls again so that one answer differs. The several-Sessions case pulls a
+// second Session (2025S1) into its copy. The no-Session case copies nothing: it makes an empty database with
+// `openIndexWriter`. The 2025R1 templates are the ones find-measures.test.ts and find-measures-since.test.ts already
+// build for the same clocks and options, so a run that holds those files builds nothing more:
 //   - 2026-08-01 10:00 Pacific, documents on: every row of the fixture exists, as in a database built after both
 //     postings. The passing case (with no flags) and the exit-status cases.
 //   - 2025-01-24 12:00 Pacific and 2025-01-31 12:00 Pacific: the days after SB 69's amendments were posted, and after
 //     its Fiscal Impact Statement was. They show that a question fails when the database was built too early to hold
 //     its posting. Each question names the moment it is asked at, so "since yesterday" does not come from these.
+//   - 2026-08-01 10:00 Pacific, documents off, Session 2025S1: a copy of its own template, built once for the file. The
+//     fake feed holds no rows for that Session, so the pull is complete and the database is empty, which is all the
+//     cases for a Session that is not 2025R1 need (ticket #82). They are the one with a MADE UP question set, the one
+//     with no question set, and the command case for a missing set.
 // The embedder is the fake one (test/CLAUDE.md, "The embedder"): no question of the 2025R1 set searches.
 //
 // A question set made up by a case (written to a temp folder and labelled MADE UP) shows that a Session's questions are
@@ -30,7 +36,7 @@ import { formatReport, runEvaluation, type EvaluationReport } from "../../script
 import { createFakeEmbedder } from "../support/fake-embedder.ts";
 import { modelPath } from "../support/real-embedder.ts";
 import { openIndexWriter } from "#/packages/database/writer.ts";
-import { startCopiedSystem, startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 import { createTempDatabase } from "../support/temp-database.ts";
 
 // The first case that needs a template builds it (about 10 seconds for the pull of the fixture's documents).
@@ -340,7 +346,7 @@ questions:
 `;
 
   async function startSpecial(): Promise<System> {
-    const system = await startSystem({ clockAt: "2026-08-01T17:00:00Z", sessionKey: "2025S1" });
+    const system = await startCopiedSystem({ clockAt: "2026-08-01T17:00:00Z", sessionKey: "2025S1" });
     started.push(system);
     return system;
   }
@@ -395,7 +401,7 @@ questions:
   it("refuses a database that holds more than one Session unless one is named, and runs the one that is", async () => {
     const system = await startCopiedSystem(augustOptions);
     started.push(system);
-    await system.pullSessionAgain("2025S1");
+    await system.pullAnotherSession("2025S1");
     const questionsFolder = writeFolder({ "2025S1": special("MADE UP, named by --session") });
 
     const unnamed = evaluate(system, { questionsFolder });
@@ -446,7 +452,7 @@ describe("the command", () => {
 
   // Ticket #82: the default is the database's Session, not 2025R1. A 2025S1 database has no committed question set.
   it("exits 2 and names the missing question set when the database's Session has none", async () => {
-    const system = await startSystem({ clockAt: "2026-08-01T17:00:00Z", sessionKey: "2025S1" });
+    const system = await startCopiedSystem({ clockAt: "2026-08-01T17:00:00Z", sessionKey: "2025S1" });
     started.push(system);
 
     const outcome = run(["--database", system.database.path]);

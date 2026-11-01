@@ -117,10 +117,10 @@ export type System = {
    */
   pullAgain(options?: { embedder?: Embedder }): Promise<FullPullResult>;
   /**
-   * Runs the worker's full pull for another Session into the same database, as a deployment would that was pointed at a
-   * second Session (ticket #82). The server stays configured for the system's own Session.
+   * Runs the worker's full pull for another Session (its first, so it is not an "again") into the same database, as a
+   * deployment would that was pointed at a second Session (ticket #82). The server stays configured for the system's own Session.
    */
-  pullSessionAgain(sessionKey: string): Promise<FullPullResult>;
+  pullAnotherSession(sessionKey: string): Promise<FullPullResult>;
   /**
    * Runs the worker's increment at the clock's time now, into the same database: what a test calls after it moves
    * the clock (and adds rows to the fake) to see what the next increment brings.
@@ -360,7 +360,7 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
       buildReport: () => readReport(database.path, "build-report.json"),
       hashSampleReport: () => readReport(database.path, "hash-sample-report.json"),
       pullAgain: pull,
-      pullSessionAgain: pullSession,
+      pullAnotherSession: pullSession,
       incrementAgain: increment,
       runSchedule: schedule,
       everyRequestTakes: (milliseconds) => {
