@@ -10,7 +10,9 @@
 // of making OLIS stop listing one (test/support/unlisted-rows.ts).
 //
 // On a system of its own it also covers the Versions and postings of `get_measure`'s statute links.
-// Which cases copy (test/CLAUDE.md, "Templates"): the first pull of each case, the state before the feed stops listing a row, is a copy of the run's template for its clock; the pulls after the change are real pulls, because the two-pull rule is the subject.
+// Which cases copy (test/CLAUDE.md, "Templates"): the first pull of each case, the state before the feed stops listing
+// a row, is a copy of the run's template for its clock; the pulls after the change are real pulls, because the two-pull
+// rule is the subject.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";

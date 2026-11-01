@@ -13,7 +13,9 @@
 // complete pulls in a row then miss it.
 //
 // It also covers the `fetched` descriptions of the output schemas.
-// Which cases copy (test/CLAUDE.md, "Templates"): the first pull of each case, the state before the feed stops listing a row, is a copy of the run's template for its clock; the pulls after the change are real pulls, because the two-pull rule is the subject.
+// Which cases copy (test/CLAUDE.md, "Templates"): the first pull of each case, the state before the feed stops listing
+// a row, is a copy of the run's template for its clock; the pulls after the change are real pulls, because the two-pull
+// rule is the subject.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";

@@ -12,7 +12,9 @@
 // It covers a Testimony row the fake stops listing and the postings of SB 69-2, seen through `search` and
 // `get_document` on an early clock with the fake embedder. The pulls move the clock an hour or a day at a time, so
 // that each has an as-of time of its own.
-// Which cases copy (test/CLAUDE.md, "Templates"): the first pull of each case, the state before the feed stops listing a row, is a copy of the run's template for its clock; the pulls after the change are real pulls, because the two-pull rule is the subject.
+// Which cases copy (test/CLAUDE.md, "Templates"): the first pull of each case, the state before the feed stops listing
+// a row, is a copy of the run's template for its clock; the pulls after the change are real pulls, because the two-pull
+// rule is the subject.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { startCopiedSystem, startSystem, type System } from "../support/system.ts";

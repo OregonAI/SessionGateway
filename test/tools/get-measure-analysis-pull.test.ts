@@ -2,8 +2,9 @@
 // only the documents whose files the worker fetched, so that every id get_measure lists resolves in
 // get_document (ADR-0013). The Measure must not read as having no statement when the feed lists one
 // and the worker has not got it, so get_measure counts the feed's analysis documents it does not hold.
-// Cases here change what the fake OLIS answers, so each builds its own system (the two that only read the plain pull copy the run's template); cases that only read the
-// fixture are in get-measure-analysis.test.ts, and cases that add feed rows are in
+// Cases here change what the fake OLIS answers, so each builds its own system, except the two that only read what the
+// plain pull left, which copy the run's template. Cases that only read the fixture are in get-measure-analysis.test.ts,
+// and cases that add feed rows are in
 // get-measure-analysis-labels.test.ts. Every case runs once with each client.
 //
 // It covers an analysis document or a Version that the worker could not fetch.
@@ -30,7 +31,7 @@ async function start(options: Omit<SystemOptions, "clockAt">): Promise<System> {
   return system;
 }
 
-/** A case that only reads what the plain pull left starts from a copy of the run's template (test/CLAUDE.md, "Templates"). */
+/** A case that only reads what the plain pull left starts from a copy of the run's template (test/CLAUDE.md). */
 async function startCopy(options: Omit<SystemOptions, "clockAt">): Promise<System> {
   const system = await startCopiedSystem({ clockAt, ...options });
   started.push(system);

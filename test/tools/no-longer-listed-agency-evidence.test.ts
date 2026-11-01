@@ -21,7 +21,9 @@
 // The second Testimony row is MADE UP: CommTestId 900001 for SB 983 with the Organization "Oregon State Treasury" (the
 // registry's name, snapshot fixture), added with `addRows`. The fixture gives the Treasury no link on SB 983 (asserted
 // before the change), so the Testimony is the Treasury's only evidence on that Measure.
-// Which cases copy (test/CLAUDE.md, "Templates"): the first pull of each case, the state before the feed stops listing a row, is a copy of the run's template for its clock; the pulls after the change are real pulls, because the two-pull rule is the subject.
+// Which cases copy (test/CLAUDE.md, "Templates"): the first pull of each case, the state before the feed stops listing
+// a row, is a copy of the run's template for its clock; the pulls after the change are real pulls, because the two-pull
+// rule is the subject.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";

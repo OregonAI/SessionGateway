@@ -9,7 +9,8 @@
 // (test/fixtures/olis-2025R1/feed/), the same ones get-measure-location.test.ts and
 // get-measure-votes.test.ts read.
 //
-// The pull of 2025-04-10 is built once for the run and each describe starts a copy of it (test/CLAUDE.md, "Templates"), whose cases share that
+// The pull of 2025-04-10 is built once for the run and each describe starts a copy of it (test/CLAUDE.md, "Templates"),
+// whose cases share that
 // system. It covers the fixture as it stands,
 // with OLIS answering exactly as the Index does.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";

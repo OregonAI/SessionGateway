@@ -275,6 +275,22 @@ export function startCopiedSystem(options: SystemOptions): Promise<System> {
   return systemTemplate(options).start();
 }
 
+/**
+ * `startCopiedSystem` for a case that needs made-up feed rows and the files they link but is not about how the pull
+ * reads them: it copies the template of the fixture's pull, adds the rows (`addRows`) and the files
+ * (`addStrayDocuments`), and pulls, which fetches and embeds only what it adds.
+ */
+export async function startCopiedSystemWith(
+  options: SystemOptions,
+  added: { rows?: Record<string, readonly Record<string, unknown>[]>; documents?: Record<string, string> },
+): Promise<System> {
+  const system = await startCopiedSystem(options);
+  for (const [entitySet, rows] of Object.entries(added.rows ?? {})) system.olis.addRows(entitySet, rows);
+  if (added.documents !== undefined) system.olis.addStrayDocuments(added.documents);
+  await system.pullAgain();
+  return system;
+}
+
 /** Starts the fake OLIS, runs the ingest worker's full pull and starts the server's handler. */
 export async function startSystem(options: SystemOptions, copyOf?: string): Promise<System> {
   assertNotPacific();

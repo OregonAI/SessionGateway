@@ -1,6 +1,7 @@
 // Seam 1 (test/CLAUDE.md): a revised agenda (ticket #19, ADR-0005, ADR-0041). A fetched document is treated as
 // unchanging, except an agenda, which is fetched again when the meeting's `AgendaRevisionNumber` changes. Each case
-// starts a copy of the run's template of the first pull (test/CLAUDE.md, "Templates"), because the feed and the clock move
+// starts a copy of the run's template of the first pull (test/CLAUDE.md, "Templates"), because the feed and the clock
+// move
 // after it and the second pull is the subject. The embedder is the fake.
 //
 // The meeting is SLB's of 2025-01-30, the one spec #1's case (c) names. Its row in feed/CommitteeMeetings.json says

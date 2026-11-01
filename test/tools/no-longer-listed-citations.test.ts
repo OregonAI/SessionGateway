@@ -3,7 +3,9 @@
 // `get_document` still serves it. The answer's note must not say the index has no such item, which is false: it names
 // the item's id, says `get_document` still serves it, and gives the time the feed last listed it.
 //
-// Each case has a system of its own: the first pull is a copy of the run's template for its clock (test/CLAUDE.md, "Templates"), and the pulls after what the fake OLIS stops listing are real, because they are the thing under test. The case
+// Each case has a system of its own: the first pull is a copy of the run's template for its clock (test/CLAUDE.md,
+// "Templates"), and the pulls after what the fake OLIS stops listing are real, because they are the thing under test.
+// The case
 // reads it with both kinds of MCP client. The rows are real ones of the fixture: SB 69's Proposed Amendment -2 (postings
 // 26286 and 26288, feed/CommitteeProposedAmendments.json), and the Introduced Versions of SB 69 and SB 921, the only
 // documents of the early Session whose text names ORS 192.245 (`pdftotext -raw`; search.test.ts).

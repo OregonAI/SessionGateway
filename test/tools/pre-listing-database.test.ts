@@ -2,7 +2,8 @@
 // by pulls that kept no record of listing them, and the worker that upgrades the file creates the tables empty. A row
 // that no complete pull has listed is read as listed, not yet checked: it is searchable, the tools show it with no flag,
 // and nothing throws for it. `forgetListing` (test/support/old-database.ts) arranges the file; the assertions are the
-// tools', read with both kinds of MCP client from one system for each case: a copy of the run's template for the clock, which
+// tools', read with both kinds of MCP client from one system for each case: a copy of the run's template for the clock,
+// which
 // is the state the first pull leaves (test/CLAUDE.md, "Templates"); the pulls after `forgetListing` are the subject.
 //
 // The rows are real ones of the fixture: HB 3131's Testimony 117165 (the Oregon Climate and Agriculture Network's
