@@ -254,7 +254,7 @@ The words of a Measure's text that say what it does to the statutes: "Relating t
 _Avoid_: title
 
 **Statutes Affected Table**:
-Legislative Counsel's official table of the ORS sections each Measure amends, repeals or adds to, published after the Session ("artables", `artables2025R1.pdf`: 64 pages dated 8/19/2025). The worker fetches it from the address `STATUTES_AFFECTED_TABLE_URL` names, reads it again when its bytes change or the OregonAI snapshot changes (a series follows the snapshot's section list; when the table cannot be fetched then, the copy it holds is read again), and keeps the last copy it read when the server stops giving it (ADR-0034, ADR-0044). It is a second source for Statute Links: `get_measure` sets its entries beside the links parsed from the Version each names (ADR-0033). It is not a Document.
+Legislative Counsel's official table of the ORS sections each Measure amends, repeals or adds to, published after the Session ("artables", `artables2025R1.pdf`: 64 pages dated 8/19/2025). The worker fetches it from the address `STATUTES_AFFECTED_TABLE_URL` names, reads it again when its bytes change or the OregonAI snapshot changes (a series follows the snapshot's section list; when the table cannot be fetched then, or what the server gives is refused as no table, the copy it holds is read again), and keeps the last copy it read when the server stops giving it (ADR-0034, ADR-0044). It is a second source for Statute Links: `get_measure` sets its entries beside the links parsed from the Version each names (ADR-0033). It is not a Document.
 _Avoid_: artables, the cross-reference table
 
 **Table entry**:

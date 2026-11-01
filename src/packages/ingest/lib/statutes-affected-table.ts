@@ -25,7 +25,8 @@ export type StatutesAffectedTableReport = {
     | "refused_unchanged"; // the bytes are the ones an earlier pull refused as no table, so nothing was read again
   held: boolean;
   /**
-   * For "loaded" and "read_again_from_held_copy": the entries read, the rows of a previous Session's Measures (repassed
+   * For "loaded" and "read_again_from_held_copy", and for "not_read" and "refused_unchanged" when a table is held and
+   * the snapshot changed, so that the held copy was read again (ADR-0044): the entries read, the rows of a previous Session's Measures (repassed
    * over the Governor's veto, “OVP”) kept apart from them, and the lines of the ORS table the parser could not read.
    */
   entries?: number;
@@ -70,8 +71,8 @@ type LoadArguments = {
  * Fetches the Statutes Affected Table and, when its bytes differ from the copy the index holds or the copy was read with
  * another snapshot, reads and stores it (ADR-0034, ADR-0044). Nothing that goes wrong with the table stops the pull or
  * changes the copy the index holds: a table that is not published yet, a failed fetch and a file that is not a table all
- * leave it as it was. When the fetch fails and the snapshot changed, the held copy's text is read again with the new
- * section list, without fetching (ADR-0044). A failure of the PDF extractor itself is a bug and throws, as it does for a
+ * leave it as it was. When the fetch fails, or gives bytes refused as no table, and the snapshot changed, the held
+ * copy's text is read again with the new section list (ADR-0044). A failure of the PDF extractor itself is a bug and throws, as it does for a
  * document.
  */
 export async function loadStatutesAffectedTable(load: LoadArguments): Promise<StatutesAffectedTableReport> {
@@ -107,15 +108,19 @@ export async function loadStatutesAffectedTable(load: LoadArguments): Promise<St
     // The same bytes with another snapshot: their stored text is what extracting them again would give.
     return { ...report, outcome: "loaded", held: true, ...countsOf(load, readHeldAgain(heldTable.text)) };
   }
+  // Refused bytes replace nothing, so the refusal is reported as ever; with another snapshot, the held copy is read
+  // again from its stored text, as when the fetch fails, and its counts are given beside the refusal (ADR-0044).
+  const heldReadAgain = () =>
+    heldTable !== undefined && !readWithThisSnapshot ? countsOf(load, readHeldAgain(heldTable.text)) : {};
   const refused = load.writer.refusedStatutesAffectedTable(load.session);
   if (contentHash === refused?.contentHash) {
-    return { ...report, outcome: "refused_unchanged", held, reason: refused.reason };
+    return { ...report, outcome: "refused_unchanged", held, reason: refused.reason, ...heldReadAgain() };
   }
   // Bytes that are no table are remembered by their hash, so that a server that keeps giving the same placeholder or scan
   // does not have it extracted again at every pull.
   const refuse = (reason: string): StatutesAffectedTableReport => {
     load.writer.refuseStatutesAffectedTable(load.session, { contentHash, reason });
-    return { ...report, outcome: "not_read", held, reason };
+    return { ...report, outcome: "not_read", held, reason, ...heldReadAgain() };
   };
   const extraction = await extractTableText(load.url, download.bytes);
   if (extraction.kind === "unreadable") return refuse(extraction.reason);
