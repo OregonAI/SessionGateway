@@ -193,6 +193,9 @@ export type SearchRecord = {
   vectors: { modelId: string; rows: readonly { hash: string; vector: Int8Array }[] };
 };
 
+/** A stored document with where it came from and the hash of its file: what the hash sample compares (ticket #20). */
+export type StoredDocumentHash = { id: DocumentId; sourceUrl: string; contentHash: string };
+
 export type IndexWriter = {
   /**
    * Stores what a full pull read, when, and the version of the OregonAI snapshot the build used, in one
@@ -280,7 +283,7 @@ export type IndexWriter = {
    */
   storeVectors(vectors: SearchRecord["vectors"]): void;
   /** Every stored document of the Session with where it came from and the hash of its file, by id (the hash sample, ticket #20). */
-  documentsToSample(session: SessionKey): { id: DocumentId; sourceUrl: string; contentHash: string }[];
+  documentsToSample(session: SessionKey): StoredDocumentHash[];
   /** Every stored document of the Session whose file has no text layer, by id. */
   documentsWithoutTextLayer(session: SessionKey): { id: DocumentId; sourceUrl: string }[];
   /**

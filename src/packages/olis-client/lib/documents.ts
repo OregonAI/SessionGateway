@@ -414,19 +414,17 @@ export async function downloadDocument(
   link: DocumentLink,
   signal: AbortSignal,
 ): Promise<Download> {
-  const documents = options.documents;
-  // Only the worker fetches documents; the server's client reads one Measure live and is made without them.
-  if (documents === undefined) throw new Error(`This OLIS client was made without document options: ${link.id}`);
-  return downloadFrom(options, documents, downloadUrlOf(link.sourceUrl, documents.origin), "OLIS", signal);
+  return downloadStoredDocument(options, link.sourceUrl, signal);
 }
 
-/** Fetches a document the store holds again, by the `source_url` it was stored with. */
+/** Fetches a document from OLIS by its `source_url`: a link's, or the one a stored document was stored with (the hash sample, ticket #20). */
 export async function downloadStoredDocument(
   options: OlisClientOptions,
   sourceUrl: string,
   signal: AbortSignal,
 ): Promise<Download> {
   const documents = options.documents;
+  // Only the worker fetches documents; the server's client reads one Measure live and is made without them.
   if (documents === undefined) throw new Error(`This OLIS client was made without document options: ${sourceUrl}`);
   return downloadFrom(options, documents, downloadUrlOf(sourceUrl, documents.origin), "OLIS", signal);
 }

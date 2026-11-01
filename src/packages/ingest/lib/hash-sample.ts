@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
+import type { StoredDocumentHash } from "#/packages/database/writer.ts";
 import type { DocumentId } from "#/packages/domain/documents.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { OlisClient } from "#/packages/olis-client/index.ts";
@@ -51,13 +52,11 @@ export function writeHashSampleReport(path: string, report: HashSampleReport): v
   renameSync(partial, path);
 }
 
-type Stored = { id: DocumentId; sourceUrl: string; contentHash: string };
-
 /**
  * Draws `size` of the documents, without repeats, by a partial shuffle: each draw takes the item at an index
  * `random()` picks from those left. `random` returns a number in [0, 1), as `Math.random` does.
  */
-export function drawSample(documents: readonly Stored[], size: number, random: () => number): Stored[] {
+export function drawSample(documents: readonly StoredDocumentHash[], size: number, random: () => number): StoredDocumentHash[] {
   const pool = [...documents];
   const count = Math.min(size, pool.length);
   for (let drawn = 0; drawn < count; drawn += 1) {
@@ -73,7 +72,7 @@ export function drawSample(documents: readonly Stored[], size: number, random: (
 
 export async function sampleHashes(input: {
   session: SessionKey;
-  documents: readonly Stored[];
+  documents: readonly StoredDocumentHash[];
   size: number;
   random: () => number;
   olis: OlisClient;

@@ -20,6 +20,7 @@ import {
   type FullPullRecord,
   type FloorVoteRecord,
   type IndexWriter,
+  type StoredDocumentHash,
   type SearchRecord,
   type SponsorRecord,
   type TestimonyRecord,
@@ -699,7 +700,7 @@ export async function runHashSample(
     },
   });
   const writer = openIndexWriter(config.databasePath);
-  let documents: ReturnType<IndexWriter["documentsToSample"]>;
+  let documents: StoredDocumentHash[];
   try {
     documents = writer.documentsToSample(config.session);
   } finally {
