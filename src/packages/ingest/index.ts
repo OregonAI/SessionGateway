@@ -349,7 +349,9 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
     if (stored.has(link.id) && !revised.has(link.id)) continue;
     const fetched = await fetchAndRead(olis, link, deps.signal);
     if (fetched.kind === "left_out") {
-      notFetched.push({ id: link.id, source_url: link.sourceUrl, reason: fetched.reason });
+      // A revised agenda that cannot be fetched stays as it was stored (ADR-0041): the index holds it, so it is not
+      // a document the index lacks.
+      if (!revised.has(link.id)) notFetched.push({ id: link.id, source_url: link.sourceUrl, reason: fetched.reason });
       continue;
     }
     const entry = searchEntryOf(link, committeeNames);

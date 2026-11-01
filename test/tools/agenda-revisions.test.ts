@@ -162,4 +162,26 @@ describe.for(eras)("a revised agenda, for a %s client", (era) => {
 
     expect(system.olis.documentRequests().slice(requestsBefore)).toEqual([agendaPath]);
   });
+
+  it("keeps the old agenda when the fetch fails, does not list it as not fetched, and asks again on the next run", async () => {
+    const system = await start();
+    const original = await agendaText(system, era);
+
+    system.clock.set(incrementAt);
+    system.olis.amendRows("CommitteeMeetings", isSlbThirtieth, { AgendaRevisionNumber: 2 });
+    system.olis.serveDocument(agendaPath, revisedAgenda);
+    system.olis.failDocuments(`${system.olis.origin}${agendaPath}`, [404]);
+    const requestsBefore = system.olis.documentRequests().length;
+    await system.pullAgain();
+
+    expect(await agendaText(system, era)).toBe(original);
+    expect(system.olis.documentRequests().slice(requestsBefore)).toEqual([agendaPath]);
+    const listed = JSON.stringify(system.buildReport()["documents_not_fetched"] ?? []);
+    expect(listed).not.toContain(agendaId);
+
+    // The URL answers again, and the old recorded revision makes the next run ask again.
+    await system.pullAgain();
+    expect(await agendaText(system, era)).toContain("MADE UP agenda, revision 2");
+    expect(system.olis.documentRequests().slice(requestsBefore)).toEqual([agendaPath, agendaPath]);
+  });
 });
