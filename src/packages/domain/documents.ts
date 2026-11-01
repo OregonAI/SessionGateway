@@ -2,7 +2,7 @@
 // their ids (src/CLAUDE.md, "Shape"). The forms are spec #1's (Implementation Decisions, "Session graph")
 // and follow ADR-0004's `{kind}-{session}-{key}` shape for what only SessionGateway holds.
 
-import type { MeasureId, MeasureKey, SessionKey } from "./index.ts";
+import type { Chamber, MeasureId, MeasureKey, SessionKey } from "./index.ts";
 import type { AgencyId } from "./oregonai.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 
@@ -560,8 +560,7 @@ export type Convening = {
   session: SessionKey;
   /** When the chamber convenes, with the Pacific offset. */
   at: Timestamp;
-  /** The feed's `Chamber`: "H" or "S". */
-  chamber: string;
+  chamber: Chamber;
 };
 
 /** The Session's own row of LegislativeSessions: the dates the Session is in progress between (ADR-0042). */
@@ -572,6 +571,9 @@ export type SessionDates = {
   /** The Pacific date (YYYY-MM-DD) it ends on, or null while the feed gives none (2025R1's row has none). */
   end: string | null;
 };
+
+/** The span a Session is in progress over: its begin and end dates, as the schedule reads them. */
+export type SessionSpan = Pick<SessionDates, "begin" | "end">;
 
 /** A meeting as a list shows it: when, whose and what the feed says of its status, without its contents. */
 export type MeetingHeader = {

@@ -338,7 +338,7 @@ const schema = `
     PRIMARY KEY (session_key, row_key)
   ) STRICT;
   -- The Session's floor convenings (ConveneTimes, ADR-0042): each day with one is a day the Session meets. at is the
-  -- convening's time with the Pacific offset; a row is told apart by its time and Chamber, the feed's key.
+  -- convening's time with the Pacific offset; a row is told apart by its time and chamber ("house" or "senate"), the feed's key.
   CREATE TABLE IF NOT EXISTS convening (
     session_key TEXT NOT NULL,
     at TEXT NOT NULL,

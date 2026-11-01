@@ -3,6 +3,7 @@
 import { z } from "zod";
 import type { Convening, SessionDates } from "#/packages/domain/documents.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
+import { feedChamber } from "./chamber.ts";
 import { readSessionRows } from "./feed.ts";
 import type { OlisClientOptions } from "./options.ts";
 import { feedTimestamp } from "./timestamps.ts";
@@ -12,7 +13,7 @@ import { feedTimestamp } from "./timestamps.ts";
 const conveneTimeRow = z.looseObject({
   SessionKey: z.string(),
   SessionDate: feedTimestamp,
-  Chamber: z.string(),
+  Chamber: feedChamber,
 });
 
 /** Every floor convening of the Session. */
