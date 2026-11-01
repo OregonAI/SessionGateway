@@ -26,7 +26,7 @@ import {
 const noMeetings: SessionSchedule = { meetingDays: new Set(), session: undefined };
 const meets = (...days: string[]): SessionSchedule => ({ meetingDays: new Set(days), session: undefined });
 // A Session in progress for every date the table asks about.
-const inProgress: SessionSchedule = { meetingDays: new Set(), session: { begin: "2000-01-01", end: null } };
+const inProgress: SessionSchedule = { meetingDays: new Set(), session: { begin: "2000-01-01", end: "2099-12-31" } };
 
 const nothing: Due = { kind: "nothing" };
 const increment = (slot: string): Due => ({ kind: "increment", slot });
@@ -672,11 +672,69 @@ const builtRows: BuiltRow[] = [
     session: { begin: "2025-01-13", end: "2025-03-14" },
     expected: increment("2025-03-17T12:00"),
   },
+  // Ticket #74 (ADR-0043): a null end date means in progress from the begin date up to the last convening the index
+  // holds, both included, or on the begin date only while it holds none. 2025-03-12 is a Wednesday, 2025-03-13 a
+  // Thursday, 2025-03-18 a Tuesday, 2025-01-14 a Tuesday and 2025-01-08 a Wednesday.
   {
-    name: "in progress: a Session with no end date yet is in progress from its begin date, on a weekday",
+    name: "no end date: a weekday after the begin date, before the last convening, with no meeting runs",
+    at: "2025-02-05T12:00:00-08:00",
+    conveneDays: ["2025-01-13", "2025-03-13"],
+    session: { begin: "2025-01-13", end: null },
+    expected: increment("2025-02-05T12:00"),
+  },
+  {
+    name: "no end date: the day before the last convening (a Wednesday) with no meeting runs",
+    at: "2025-03-12T12:00:00-07:00",
+    conveneDays: ["2025-03-13"],
+    session: { begin: "2025-01-13", end: null },
+    expected: increment("2025-03-12T12:00"),
+  },
+  {
+    name: "no end date: a weekday after the last convening with no meeting does not run",
+    at: "2025-03-18T12:00:00-07:00",
+    conveneDays: ["2025-01-13", "2025-03-13"],
+    session: { begin: "2025-01-13", end: null },
+    expected: nothing,
+  },
+  {
+    name: "no end date: a weekday after the last convening with a committee meeting still runs",
+    at: "2025-03-18T12:00:00-07:00",
+    committeeDays: ["2025-03-18"],
+    conveneDays: ["2025-03-13"],
+    session: { begin: "2025-01-13", end: null },
+    expected: increment("2025-03-18T12:00"),
+  },
+  {
+    name: "no end date and no convening held: the begin date (a Monday) runs",
+    at: "2025-01-13T12:00:00-08:00",
+    session: { begin: "2025-01-13", end: null },
+    expected: increment("2025-01-13T12:00"),
+  },
+  {
+    name: "no end date and no convening held: the next weekday with no meeting does not run",
+    at: "2025-01-14T12:00:00-08:00",
+    session: { begin: "2025-01-13", end: null },
+    expected: nothing,
+  },
+  {
+    name: "no end date and no convening held: a weekday months later with no meeting does not run",
     at: "2025-06-04T12:00:00-07:00",
     session: { begin: "2025-01-13", end: null },
-    expected: increment("2025-06-04T12:00"),
+    expected: nothing,
+  },
+  {
+    name: "no end date and convenings only before the begin date: the next weekday after the begin date does not run",
+    at: "2025-01-14T12:00:00-08:00",
+    conveneDays: ["2025-01-08"],
+    session: { begin: "2025-01-13", end: null },
+    expected: nothing,
+  },
+  {
+    name: "an end date is read as before: a convening after it does not stretch the Session",
+    at: "2025-03-17T12:00:00-07:00",
+    conveneDays: ["2025-03-18"],
+    session: { begin: "2025-01-13", end: "2025-03-14" },
+    expected: nothing,
   },
   {
     name: "in progress: a Session with no end date is not in progress before its begin date",
