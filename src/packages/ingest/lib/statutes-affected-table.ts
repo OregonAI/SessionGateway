@@ -81,7 +81,10 @@ export async function loadStatutesAffectedTable(load: LoadArguments): Promise<St
   // the copy (its bytes, hash, address and retrieval time) stays as it was (ADR-0044).
   const readHeldAgain = (text: string): StatutesAffectedTableParse => {
     const parsed = parseStatutesAffectedTable({ text, orsSections: load.orsSections });
-    load.writer.rereadStatutesAffectedTable(load.session, { entries: parsed.entries, snapshotCommit: load.snapshotCommit });
+    load.writer.rereadStatutesAffectedTable(load.session, {
+      entries: parsed.entries,
+      snapshotCommit: load.snapshotCommit,
+    });
     return parsed;
   };
   const download = await load.olis.downloadFile(new URL(load.url), load.signal);

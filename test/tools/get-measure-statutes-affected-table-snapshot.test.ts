@@ -86,8 +86,8 @@ async function openRig(): Promise<Rig> {
       const outcome = await callTool(client, "get_measure", { measure: "HB 3027" });
       expect(outcome.isError, outcome.text).toBe(false);
       const links = (outcome.structured as unknown as Measure).statute_links_by_source;
-      const amends = links.versions.find((version) => version.id === introduced)?.statutes_affected_table
-        ?.only_in_table?.amends;
+      const amends = links.versions.find((version) => version.id === introduced)?.statutes_affected_table?.only_in_table
+        ?.amends;
       answers.push({
         count: (amends?.sections.length ?? 0) + (amends?.sections_not_shown ?? 0),
         shown: (amends?.sections ?? []).map((section) => section.target_id),
