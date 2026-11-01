@@ -179,21 +179,16 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
   if (!existsSync(options.databasePath)) throw new Error(`There is no database at ${options.databasePath}`);
 
   const reader = openIndexReader(options.databasePath);
-  let held: SessionKey[];
-  const asOfs = new Map<SessionKey, string>();
+  let session: SessionKey;
+  let asOf: string | undefined;
   try {
-    held = reader.sessionsHeld();
-    for (const each of held) {
-      const at = reader.asOf(each);
-      if (at !== undefined) asOfs.set(each, at);
-    }
+    session = chooseSession(options.databasePath, reader.sessionsHeld(), given);
+    asOf = reader.asOf(session);
   } finally {
     reader.close();
   }
-  const session = chooseSession(options.databasePath, held, given);
-  const asOf = asOfs.get(session);
-  if (asOf === undefined)
-    throw new Error(`The database at ${options.databasePath} holds no completed full pull of ${session}`);
+  // Cannot happen: a held Session has an index_state row, and that is what asOf reads. It narrows the type.
+  if (asOf === undefined) throw new Error(`The database at ${options.databasePath} has no as-of time for ${session}`);
   const set = loadQuestionSet(options.questions ?? questionSetPath(session, options.questionsFolder), session);
 
   const config = (): ServerConfig =>
