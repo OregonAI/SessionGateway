@@ -128,7 +128,8 @@ npm run eval -- --database data/index.db --since 2025-01-23   # the same, with "
 | `--since` | each question's own | What "since yesterday" means to every question that says `$since` (question (a)): an ISO 8601 date or time, which overrides the question's own. Not needed: each question names the moment it is asked at (`clock`) and "since yesterday" is the Pacific day before it, so (a) is asked on 2025-01-24 and 2025-01-31, the days after its postings, and passes on any database that holds them, a full build included. |
 
 The exit status is 0 when every question passed, 1 when any failed, and 2 when the run could not be made (no
-database at the path, a bad option, a question set that is not valid). `MODEL_PATH` is read as for the server. A
+database at the path, a bad option, a database that holds no Session, several with none named by `--session`, or not the
+one named, a Session with no question set file, a question set that is not valid). `MODEL_PATH` is read as for the server. A
 question set is data: each question has a `clock` (required when it says `$since`, otherwise the database's as-of time), and lists the tool calls and, for each, checks of the form `{ path, equals | includes |
 atLeast | length | present }` over the tool's structured result (`scripts/eval/paths.ts` says how a path is read), so
 2026R1's questions are another file in `scripts/eval/questions/` with no change to the code.
