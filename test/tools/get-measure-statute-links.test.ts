@@ -7,6 +7,9 @@
 // Expected values are literals from the documents as `pdftotext` prints them
 // (test/fixtures/olis-2025R1/documents/measure-documents/), read by hand: the lines with "SECTION n." and
 // "is amended to read", and the references to ORS.
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { chapterTarget, expectedLinks, sectionTarget, triplesOf, type StatuteLinks } from "../support/statute-links.ts";

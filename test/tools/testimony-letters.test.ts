@@ -16,6 +16,9 @@
 //   - 20 rows in "Alpha" that are served 20 more files, so each has a letter of its own: 940200-940219.
 // The summary lists the 10 largest sets, by count and then by the lowest CommTestId: the sets of 5, 4, 4, 3, 3, 3 and
 // the four sets of 2 with the lowest ids. The sets 940109 and 940111 are left out, and their rows are on page 2.
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";

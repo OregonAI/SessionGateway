@@ -3,6 +3,9 @@
 // worker pulls them into a database, and an MCP client calls the tool in-process. One database serves
 // every case in this file because none of them changes it; cases that build their own are in
 // get-document-pull.test.ts.
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";

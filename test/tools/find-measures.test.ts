@@ -5,6 +5,9 @@
 //
 // Expected values are literals from the fixture's feed rows (test/fixtures/olis-2025R1/feed/), the documents as
 // `pdftotext` prints them (test/fixtures/olis-2025R1/documents/) and the snapshot fixture.
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates). It covers ORS section, ORS chapter and Agency, and the calls `find_measures` refuses.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";

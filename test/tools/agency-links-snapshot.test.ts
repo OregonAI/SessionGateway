@@ -11,6 +11,9 @@
 // "the Department of Human Services" (line 14), and in HB 3795's Introduced and A-Engrossed Versions. Before the alias a
 // Version's link of "named in the text" to the Department finds the one term, and after it the two, in the order they
 // come in the text. The Versions are stored and read already, so only a second reading can show the alias.
+//
+// Each case's first pull is a copy of the run's template for the committed snapshot (test/CLAUDE.md, Database,
+// Templates); the pull after the snapshot changes is a real one.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { createFixtureCopy, type FixtureCopy } from "../support/made-up-snapshot.ts";
