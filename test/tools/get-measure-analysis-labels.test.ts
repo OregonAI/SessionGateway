@@ -11,11 +11,14 @@
 // an "INTRO" statement with the highest id of its Measure, so that the order of the Versions is not the
 // order of the ids.
 // Cases that only read the fixture are in get-measure-analysis.test.ts.
+// Which cases copy (test/CLAUDE.md, "Templates"): every case copies the run's template of the fixture's pull, adds its
+// rows and files with `addRows` and `addStrayDocuments`, and pulls, which fetches and embeds only what it adds. The
+// pulls after a label or a flag changes are the subject of the last two describes and are real pulls.
 // The last case is a made-up Measure with no digest and no analysis documents. Every case runs once
 // with a 2026-07-28 client and once with a legacy client (test/CLAUDE.md, "MCP client").
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient, type ToolOutcome } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, startSystem, type System } from "../support/system.ts";
 
 const clockAt = "2026-08-01T17:00:00Z";
 
@@ -103,26 +106,22 @@ describe("labels the fixture has no row for", () => {
   let system: System;
 
   beforeAll(async () => {
-    system = await startSystem({
-      clockAt,
-      documents: true,
-      olis: {
-        strayRows: {
-          MeasureAnalysisDocuments: [
-            ...rows.map(([id, label]) => analysisRow(id, hb3131, label)),
-            analysisRow(900108, hb3795, "C"),
-            // The highest id of SB 921's analysis documents, though it is of the first Version printed.
-            analysisRow(900110, sb921, "INTRO"),
-            ...minorityRows,
-          ],
-          MeasureDocuments: [cEngrossedRow],
-        },
-        strayDocuments: {
-          ...strayFiles([...rows.map(([id]) => id), 900108, 900110, 900111, 900112, 900113, 900114]),
-          "/liz/2025R1/Downloads/MeasureDocument/HB3795/C-Engrossed": "measure-documents/HB3795/B-Engrossed.pdf",
-        },
-      },
+    // The pull is not the subject: the case copies the template of the fixture's pull, adds the made-up rows and
+    // their files, and pulls, which fetches and embeds only what it adds.
+    system = await startCopiedSystem({ clockAt, documents: true });
+    system.olis.addRows("MeasureAnalysisDocuments", [
+      ...rows.map(([id, label]) => analysisRow(id, hb3131, label)),
+      analysisRow(900108, hb3795, "C"),
+      // The highest id of SB 921's analysis documents, though it is of the first Version printed.
+      analysisRow(900110, sb921, "INTRO"),
+      ...minorityRows,
+    ]);
+    system.olis.addRows("MeasureDocuments", [cEngrossedRow]);
+    system.olis.addStrayDocuments({
+      ...strayFiles([...rows.map(([id]) => id), 900108, 900110, 900111, 900112, 900113, 900114]),
+      "/liz/2025R1/Downloads/MeasureDocument/HB3795/C-Engrossed": "measure-documents/HB3795/B-Engrossed.pdf",
     });
+    await system.pullAgain();
   }, 60_000);
 
   afterAll(async () => {
@@ -264,17 +263,15 @@ describe("labels the fixture has no row for", () => {
 describe.for(eras)("a label OLIS changes after the file was fetched, for a %s client", (era) => {
   // The file is unchanging (ADR-0005); its feed row is not. A made-up row, first published with no
   // Version, is given the label "INTRO" by a later pull: get_measure follows the row, without
-  // fetching the file again. The case changes the feed, so it builds its own system.
+  // fetching the file again. The case copies the fixture's template, adds the row and pulls, then changes the row and pulls again.
   it("moves the document onto its Version at the next pull, without fetching the file again", async () => {
     const row = analysisRow(900109, { prefix: "HB", number: 3131 }, "");
-    const system = await startSystem({
-      clockAt,
-      documents: true,
-      olis: {
-        strayRows: { MeasureAnalysisDocuments: [row] },
-        strayDocuments: strayFiles([900109]),
-      },
-    });
+    // The first pull is not the subject, so the case copies the template of the fixture's pull, adds the row and
+    // the file, and pulls: that pull fetches the file once, and the pull after the relabel must not fetch it again.
+    const system = await startCopiedSystem({ clockAt, documents: true });
+    system.olis.addRows("MeasureAnalysisDocuments", [row]);
+    system.olis.addStrayDocuments(strayFiles([900109]));
+    await system.pullAgain();
     const connected = await connectClient(era, system.handler);
     try {
       const before = analysisOf(await callTool(connected, "get_measure", { measure: "HB 3131" }));
@@ -309,14 +306,12 @@ describe.for(eras)("a minority flag OLIS sets after the file was fetched, for a 
   // file again.
   it("moves the document off its Version at the next pull", async () => {
     const row = analysisRow(900115, { prefix: "SB", number: 69 }, "A", { type: "Staff Measure Summary" });
-    const system = await startSystem({
-      clockAt,
-      documents: true,
-      olis: {
-        strayRows: { MeasureAnalysisDocuments: [row] },
-        strayDocuments: strayFiles([900115]),
-      },
-    });
+    // The first pull is not the subject, so the case copies the template of the fixture's pull, adds the row and
+    // the file, and pulls: that pull fetches the file once, and the pull after the flag must not fetch it again.
+    const system = await startCopiedSystem({ clockAt, documents: true });
+    system.olis.addRows("MeasureAnalysisDocuments", [row]);
+    system.olis.addStrayDocuments(strayFiles([900115]));
+    await system.pullAgain();
     const connected = await connectClient(era, system.handler);
     try {
       const before = analysisOf(await callTool(connected, "get_measure", { measure: "SB 69" }));

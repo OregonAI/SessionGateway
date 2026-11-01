@@ -10,9 +10,10 @@
 // of making OLIS stop listing one (test/support/unlisted-rows.ts).
 //
 // On a system of its own it also covers the Versions and postings of `get_measure`'s statute links.
+// Which cases copy (test/CLAUDE.md, "Templates"): the first pull of each case, the state before the feed stops listing a row, is a copy of the run's template for its clock; the pulls after the change are real pulls, because the two-pull rule is the subject.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 import { stopListing } from "../support/unlisted-rows.ts";
 
 // The analysis document is listed only once its file is fetched, so the system serves the documents: the files that
@@ -50,7 +51,7 @@ describe.for(eras)("a list tool, for a %s client", (era) => {
   // and, of the latter, the item, the Exhibit 288650 and the posting 26287; HB 3131's Testimony 117165 (the Oregon
   // Climate and Agriculture Network's letter) and Fiscal Impact Statement 85869; and the Measures row of SB 983.
   beforeAll(async () => {
-    system = await startSystem({ clockAt: firstPull, documents: true });
+    system = await startCopiedSystem({ clockAt: firstPull, documents: true });
     await twoPullsWithout(system, () => {
       const olis = system.olis;
       stopListing(olis, "CommitteePublicTestimonies", (row) => row["CommTestId"] === 117165);
@@ -153,7 +154,7 @@ describe.for(eras)("get_document on a Testimony no pull fetched, for a %s client
   // holds no file for. While the feed lists it, get_document says the next pull fetches it (testimony-made-up.test.ts);
   // once the feed does not, no pull will, and it says that instead.
   it("says plainly that a Testimony the feed no longer lists was never fetched", async () => {
-    const system = await startSystem({ clockAt: firstPull });
+    const system = await startCopiedSystem({ clockAt: firstPull });
     try {
       await twoPullsWithout(system, () => {
         stopListing(system.olis, "CommitteePublicTestimonies", (row) => row["CommTestId"] === 117165);
@@ -186,7 +187,7 @@ describe("get_measure's statute links, when the feed stops listing a Version and
   const days = ["2025-02-01T18:00:00Z", "2025-02-02T18:00:00Z", "2025-02-03T18:00:00Z"] as const;
 
   it("flags the Version and the posting, and no other", async () => {
-    const system = await startSystem({ clockAt: days[0], documents: true });
+    const system = await startCopiedSystem({ clockAt: days[0], documents: true });
     try {
       stopListing(
         system.olis,

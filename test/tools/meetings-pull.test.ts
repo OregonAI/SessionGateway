@@ -1,11 +1,11 @@
 // Seam 1 (test/CLAUDE.md): `meetings` where a case needs a database of its own: a clock the shared
 // databases of meetings.test.ts and meetings-past.test.ts do not have, a clock moved after the pull, or a
-// row the committed fixture lacks. Each case builds its own system, and the harness serves a made-up row
+// row the committed fixture lacks. A case that adds rows or failures builds its own system, and one that does not copies the run's template; the harness serves a made-up row
 // to that one worker; the committed fixture is never edited by hand (test/fixtures/CLAUDE.md). Every
 // case runs for both kinds of MCP client, so the schema check of each one sees every shape here.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient, type Era } from "../support/mcp-clients.ts";
-import { startSystem, type System, type SystemOptions } from "../support/system.ts";
+import { startCopiedSystem, startSystem, type System, type SystemOptions } from "../support/system.ts";
 
 const started: { system: System; connected: ConnectedClient }[] = [];
 
@@ -14,7 +14,9 @@ const started: { system: System; connected: ConnectedClient }[] = [];
 vi.setConfig({ testTimeout: 60_000 });
 
 async function start(era: Era, options: SystemOptions): Promise<{ system: System; connected: ConnectedClient }> {
-  const system = await startSystem(options);
+  // A case that gives the fake no rows of its own, and no failures, starts from a copy of the run's template for its
+  // clock (test/CLAUDE.md, "Templates"): what it measures is a read, or a pull after it moves the clock.
+  const system = options.olis === undefined ? await startCopiedSystem(options) : await startSystem(options);
   const entry = { system, connected: await connectClient(era, system.handler) };
   started.push(entry);
   return entry;

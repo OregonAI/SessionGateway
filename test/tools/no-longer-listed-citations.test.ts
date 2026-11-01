@@ -3,13 +3,13 @@
 // `get_document` still serves it. The answer's note must not say the index has no such item, which is false: it names
 // the item's id, says `get_document` still serves it, and gives the time the feed last listed it.
 //
-// Each case builds its own system, because the pulls and what the fake OLIS lists at each are the thing under test, and
+// Each case has a system of its own: the first pull is a copy of the run's template for its clock (test/CLAUDE.md, "Templates"), and the pulls after what the fake OLIS stops listing are real, because they are the thing under test. The case
 // reads it with both kinds of MCP client. The rows are real ones of the fixture: SB 69's Proposed Amendment -2 (postings
 // 26286 and 26288, feed/CommitteeProposedAmendments.json), and the Introduced Versions of SB 69 and SB 921, the only
 // documents of the early Session whose text names ORS 192.245 (`pdftotext -raw`; search.test.ts).
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 import { stopListing } from "../support/unlisted-rows.ts";
 
 const started: System[] = [];
@@ -46,7 +46,7 @@ describe("a Proposed Amendment the index holds and the feed no longer lists", ()
   const days = ["2025-02-01T18:00:00Z", "2025-02-02T18:00:00Z", "2025-02-03T18:00:00Z"] as const;
 
   async function startOnFirstDay(): Promise<System> {
-    const system = await startSystem({ clockAt: days[0], documents: true });
+    const system = await startCopiedSystem({ clockAt: days[0], documents: true });
     started.push(system);
     return system;
   }
@@ -98,7 +98,7 @@ describe("an ORS section that only documents the feed no longer lists name", () 
     row["MeasurePrefix"] === "SB" && row["MeasureNumber"] === number && row["VersionDescription"] === "Introduced";
 
   it("is cited in a note only once none of the documents that name it is listed", async () => {
-    const system = await startSystem({ clockAt: hours[0], documents: true });
+    const system = await startCopiedSystem({ clockAt: hours[0], documents: true });
     started.push(system);
 
     // SB 69's Introduced Version goes first. SB 921's still names the section and is listed.

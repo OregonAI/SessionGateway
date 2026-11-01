@@ -1,6 +1,7 @@
 // Seam 1 (test/CLAUDE.md): a revised agenda (ticket #19, ADR-0005, ADR-0041). A fetched document is treated as
 // unchanging, except an agenda, which is fetched again when the meeting's `AgendaRevisionNumber` changes. Each case
-// builds its own system, because the feed and the clock move after the pull. The embedder is the fake.
+// starts a copy of the run's template of the first pull (test/CLAUDE.md, "Templates"), because the feed and the clock move
+// after it and the second pull is the subject. The embedder is the fake.
 //
 // The meeting is SLB's of 2025-01-30, the one spec #1's case (c) names. Its row in feed/CommitteeMeetings.json says
 // `AgendaRevisionNumber` 1, created 2025-01-23T07:44:41 and modified 2025-01-29T09:14:12; its agenda item 202165
@@ -16,7 +17,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { madeUpPdf } from "../support/made-up-pdf.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -37,7 +38,7 @@ const revisedAgenda = madeUpPdf([
 ]);
 
 async function start(): Promise<System> {
-  const system = await startSystem({ clockAt: pulledAt, documents: true });
+  const system = await startCopiedSystem({ clockAt: pulledAt, documents: true });
   started.push(system);
   return system;
 }

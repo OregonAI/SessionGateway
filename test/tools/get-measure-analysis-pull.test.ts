@@ -2,14 +2,14 @@
 // only the documents whose files the worker fetched, so that every id get_measure lists resolves in
 // get_document (ADR-0013). The Measure must not read as having no statement when the feed lists one
 // and the worker has not got it, so get_measure counts the feed's analysis documents it does not hold.
-// Cases here change what the fake OLIS answers, so each builds its own system; cases that only read the
+// Cases here change what the fake OLIS answers, so each builds its own system (the two that only read the plain pull copy the run's template); cases that only read the
 // fixture are in get-measure-analysis.test.ts, and cases that add feed rows are in
 // get-measure-analysis-labels.test.ts. Every case runs once with each client.
 //
 // It covers an analysis document or a Version that the worker could not fetch.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
-import { startSystem, type System, type SystemOptions } from "../support/system.ts";
+import { startCopiedSystem, startSystem, type System, type SystemOptions } from "../support/system.ts";
 
 // 2026-08-01 10:00 in Oregon: every row of the fixture exists by then.
 const clockAt = "2026-08-01T17:00:00Z";
@@ -26,6 +26,13 @@ afterEach(async () => {
 
 async function start(options: Omit<SystemOptions, "clockAt">): Promise<System> {
   const system = await startSystem({ clockAt, ...options });
+  started.push(system);
+  return system;
+}
+
+/** A case that only reads what the plain pull left starts from a copy of the run's template (test/CLAUDE.md, "Templates"). */
+async function startCopy(options: Omit<SystemOptions, "clockAt">): Promise<System> {
+  const system = await startCopiedSystem({ clockAt, ...options });
   started.push(system);
   return system;
 }
@@ -67,14 +74,14 @@ describe.for(eras)("analysis documents the worker does not hold, for a %s client
   // HB 3131 has 3 rows in the feed (85719, 85869 and 85989), and SB 69 has 4 (85414, 85419, 85482, 91380):
   // test/fixtures/olis-2025R1/feed/MeasureAnalysisDocuments.json.
   it("counts the documents the feed lists and the index does not hold, instead of reading as none", async () => {
-    const system = await start({});
+    const system = await startCopy({});
 
     expect(await analysisOf(system, era, "HB 3131")).toEqual({ by_version: [], unmapped: [], not_held: 3 });
     expect(await analysisOf(system, era, "SB 69")).toEqual({ by_version: [], unmapped: [], not_held: 4 });
   });
 
   it("counts none when the index holds every document", async () => {
-    const system = await start({ documents: true });
+    const system = await startCopy({ documents: true });
 
     expect((await analysisOf(system, era, "HB 3131")).not_held).toBe(0);
   });

@@ -6,10 +6,11 @@
 // and the file it is served with are not the feed's. What is real is each file: it is a fixture document, and what
 // compare_amendment reads of it is what it reads of the fixture's own. Cases that only read the fixture are in
 // compare-amendment.test.ts. Every case runs once with a 2026-07-28 client and once with a legacy client.
+// Which cases copy (test/CLAUDE.md, "Templates"): the two describes that add made-up rows and read them copy the run's template of the fixture's pull, add the rows (and their files) with `addRows` and `addStrayDocuments`, and pull, which fetches only what they add. The two whose subject is a file that fails to come keep a real pull.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { noLinks, sectionTarget, triplesOf, type StatuteLinks } from "../support/statute-links.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, startSystem, type System } from "../support/system.ts";
 
 const clockAt = "2026-08-01T17:00:00Z";
 
@@ -102,20 +103,17 @@ describe("amendments the fixture has no row for", () => {
   let system: System;
 
   beforeAll(async () => {
-    system = await startSystem({
-      clockAt,
-      documents: true,
-      serverEnv: { MCP_RATE_LIMIT: "1000" },
-      olis: {
-        strayRows: { CommitteeProposedAmendments: madeUp },
-        strayDocuments: {
-          "/liz/2025R1/Downloads/ProposedAmendment/990004": "committee-meeting-documents/288141.pdf",
-          "/liz/2025R1/Downloads/ProposedAmendment/990007": "committee-meeting-documents/288141.pdf",
-          "/liz/2025R1/Downloads/ProposedAmendment/990008": "testimony/148731.pdf",
-          "/liz/2025R1/Downloads/ProposedAmendment/990009": "committee-meeting-documents/288141.pdf",
-        },
-      },
+    // The pull is not the subject: the case copies the template of the fixture's pull, adds the made-up rows and
+    // their files, and pulls, which fetches and embeds only what it adds.
+    system = await startCopiedSystem({ clockAt, documents: true, serverEnv: { MCP_RATE_LIMIT: "1000" } });
+    system.olis.addRows("CommitteeProposedAmendments", madeUp);
+    system.olis.addStrayDocuments({
+      "/liz/2025R1/Downloads/ProposedAmendment/990004": "committee-meeting-documents/288141.pdf",
+      "/liz/2025R1/Downloads/ProposedAmendment/990007": "committee-meeting-documents/288141.pdf",
+      "/liz/2025R1/Downloads/ProposedAmendment/990008": "testimony/148731.pdf",
+      "/liz/2025R1/Downloads/ProposedAmendment/990009": "committee-meeting-documents/288141.pdf",
     });
+    await system.pullAgain();
   }, 60_000);
 
   afterAll(async () => {
@@ -305,12 +303,9 @@ describe("an amendment number the feed spells in more than one way", () => {
   let system: System;
 
   beforeAll(async () => {
-    system = await startSystem({
-      clockAt,
-      documents: true,
-      serverEnv: { MCP_RATE_LIMIT: "1000" },
-      olis: { strayRows: { CommitteeProposedAmendments: madeUp } },
-    });
+    system = await startCopiedSystem({ clockAt, documents: true, serverEnv: { MCP_RATE_LIMIT: "1000" } });
+    system.olis.addRows("CommitteeProposedAmendments", madeUp);
+    await system.pullAgain();
   }, 60_000);
 
   afterAll(async () => {

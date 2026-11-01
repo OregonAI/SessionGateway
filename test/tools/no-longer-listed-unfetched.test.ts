@@ -13,9 +13,10 @@
 // complete pulls in a row then miss it.
 //
 // It also covers the `fetched` descriptions of the output schemas.
+// Which cases copy (test/CLAUDE.md, "Templates"): the first pull of each case, the state before the feed stops listing a row, is a copy of the run's template for its clock; the pulls after the change are real pulls, because the two-pull rule is the subject.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
-import { startSystem, type System } from "../support/system.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 import { stopListing } from "../support/unlisted-rows.ts";
 
 const started: System[] = [];
@@ -30,7 +31,7 @@ const days = ["2025-02-01T18:00:00Z", "2025-02-02T18:00:00Z", "2025-02-03T18:00:
 
 /** A system on the first day whose feed stops listing some rows, and two complete pulls in a row that miss them. */
 async function afterTwoMissedPulls(documents: boolean, stop: (olis: System["olis"]) => void): Promise<System> {
-  const system = await startSystem({ clockAt: days[0], documents });
+  const system = await startCopiedSystem({ clockAt: days[0], documents });
   started.push(system);
   stop(system.olis);
   for (const day of days.slice(1)) {
@@ -144,7 +145,7 @@ describe("the output schemas of testimony and meetings", () => {
   }
 
   it("say, for every fetched flag, that no pull fetches the file of a row the feed no longer lists", async () => {
-    const system = await startSystem({ clockAt: days[0], documents: false });
+    const system = await startCopiedSystem({ clockAt: days[0], documents: false });
     started.push(system);
     for (const era of eras) {
       const connected = await connectClient(era, system.handler);
@@ -182,7 +183,7 @@ describe("the not-held count of a Measure's analysis documents", () => {
   }
 
   it("is unchanged by one pull that misses a row, and drops the row once two in a row have", async () => {
-    const system = await startSystem({ clockAt: hours[0], documents: false });
+    const system = await startCopiedSystem({ clockAt: hours[0], documents: false });
     started.push(system);
     await everyClient(async (era) => {
       expect(await notHeld(system, era)).toBe(2);
