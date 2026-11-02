@@ -9,8 +9,10 @@
 // what the feed says about the documents it already holds, fetches every linked document the store does
 // not hold yet, once each, keeps its text, and writes the build report
 // (docs/adr/0011-an-amendment-is-a-node-and-its-postings-are-documents.md). The Snapshot read (`snapshot-read.ts`) then
-// reads the Statute Links and the Agency Links of what is stored with the OregonAI snapshot and records the snapshot the
-// index reports (docs/adr/0035-statute-links-are-read-again-when-the-snapshot-changes-before-the-agency-links.md).
+// reads the Statute Links and the Agency Links of what is stored with the OregonAI snapshot and, in a full pull, the
+// series of the Statutes Affected Table the deployment names, and records the snapshot the index reports
+// (docs/adr/0035-statute-links-are-read-again-when-the-snapshot-changes-before-the-agency-links.md,
+// docs/adr/0044-the-held-statutes-affected-table-is-read-again-when-the-snapshot-changes-from-the-held-copy-if-it-cannot-be-fetched.md).
 import { createHash } from "node:crypto";
 import type { IngestConfig } from "#/packages/config/index.ts";
 import {
@@ -53,7 +55,12 @@ import {
   writeHashSampleReport,
   type HashSampleReport,
 } from "./lib/hash-sample.ts";
-import { beginSnapshotRead, type SnapshotRead, type StatutesAffectedTableFetch } from "./snapshot-read.ts";
+import {
+  beginFullPullSnapshotRead,
+  beginIncrementSnapshotRead,
+  type SnapshotRead,
+  type StatutesAffectedTableFetch,
+} from "./snapshot-read.ts";
 
 export type IngestDeps = {
   fetch: typeof fetch;
@@ -462,7 +469,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
   const passageCounts: PassageCounts = { passages: 0, keywordOnly: 0, embedded: 0, reused: 0 };
   const notFetched: BuildReport["documents_not_fetched"] = [];
   try {
-    const snapshotRead = beginSnapshotRead({ writer, session: config.session, snapshot, pull: "full_pull" });
+    const snapshotRead = beginFullPullSnapshotRead({ writer, session: config.session, snapshot });
     const { record, resolver, committeeNames } = feedRecordOf(config, deps, feed, snapshotRead);
     // What each meeting lists and which analysis documents each Measure has are the feed's, so they are
     // stored with the rest of it before any file is fetched: a file that fails to come is still listed,
@@ -491,8 +498,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
           };
     // The Statute Links and Agency Links of what is stored, and the table's series, with this pull's snapshot; then the
     // index reports the snapshot.
-    const snapshotReading = await snapshotRead.finish(table);
-    const statutesAffectedTable = snapshotReading.kind === "read" ? snapshotReading.statutesAffectedTable : undefined;
+    const { statutesAffectedTable } = await snapshotRead.finish(table);
     const listingCounts = new Map(writer.listingCounts(config.session).map((count) => [count.entitySet, count]));
     const unresolvedMemberCodes = new Set(
       resolver
@@ -580,7 +586,7 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
       },
     });
     const feed = await readFeed(olis, config, deps, "increment", writer.highestFloorLetterId(config.session));
-    const snapshotRead = beginSnapshotRead({ writer, session: config.session, snapshot, pull: "increment" });
+    const snapshotRead = beginIncrementSnapshotRead({ writer, session: config.session, snapshot });
     const { record, committeeNames } = feedRecordOf(config, deps, feed, snapshotRead);
     writer.recordIncrement(config.session, asOf, record);
     const passageCounts: PassageCounts = { passages: 0, keywordOnly: 0, embedded: 0, reused: 0 };
@@ -595,7 +601,8 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
       passageCounts,
       notFetched,
     });
-    await snapshotRead.finish(undefined);
+    // Whether the Increment read or left it to the next Full pull, it has nothing more to do or to report.
+    await snapshotRead.finish();
     return { asOf, documentsFetched, documentsNotFetched: notFetched.length };
   } finally {
     writer.close();

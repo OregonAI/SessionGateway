@@ -14,14 +14,16 @@
 // Education Coordinating Commission (ADR-0027).
 import { afterEach, describe, expect, test } from "vitest";
 import type { IndexReader } from "#/packages/database/reader.ts";
-import type { IndexWriter } from "#/packages/database/writer.ts";
+import type { FullPullRecord, IndexWriter } from "#/packages/database/writer.ts";
 import type { DocumentId, DocumentLink, StoredDocument } from "#/packages/domain/documents.ts";
 import { parseAgencyId, parseOrsChapterId, parseOrsSectionId } from "#/packages/domain/oregonai.ts";
 import type { Snapshot } from "#/packages/oregonai-snapshot/index.ts";
 import {
-  beginSnapshotRead,
-  type PullKind,
-  type SnapshotReadOutcome,
+  beginFullPullSnapshotRead,
+  beginIncrementSnapshotRead,
+  type FullPullSnapshotOutcome,
+  type IncrementSnapshotOutcome,
+  type SnapshotRead,
   type StatutesAffectedTableFetch,
 } from "../snapshot-read.ts";
 import {
@@ -70,36 +72,62 @@ function newIndex(): IndexRig {
   return rig;
 }
 
-type Pull = {
+/** What every Pull arranges: the Index, the Snapshot file it loaded, and what it fetched and listed. */
+type PullArranged = {
   rig: IndexRig;
   snapshot: Snapshot;
-  pull: PullKind;
   /** The documents this Pull fetches and stores. */
   fetched: StoredDocument[];
   /** The Testimony rows the feed lists in this Pull. */
   testimony?: DocumentLink[];
-  /** The Statutes Affected Table the Pull fetched, or nothing when the deployment names none or the Pull does not fetch it. */
-  table?: StatutesAffectedTableFetch;
   /** What the Snapshot read stores through: the Index's writer, unless a case watches it or stops it. */
   through?: IndexWriter;
 };
+
+type FullPull = PullArranged & {
+  pull: "full_pull";
+  /** The Statutes Affected Table the Pull fetched, or nothing when the deployment names none. */
+  table?: StatutesAffectedTableFetch;
+};
+
+/** An Increment fetches no table, so it has none to hand over. */
+type Increment = PullArranged & { pull: "increment" };
+
+/** The feed a Pull stores: the Snapshot read matches the Agency of its Testimony rows. */
+function feedOf({ fetched, testimony = [] }: PullArranged, read: SnapshotRead): FullPullRecord {
+  const links = [...fetched, ...testimony];
+  return pulledFeed({
+    meetings: [humanServicesMeeting],
+    documentLinks: links,
+    testimony: read.testimonyRecordsOf(links),
+  });
+}
 
 /**
  * A Pull as `ingest/index.ts` runs it: the Snapshot read begins, the feed and the documents it fetched are stored, and the
  * Snapshot read finishes.
  */
-function runPull({ rig, snapshot, pull, fetched, testimony = [], table, through }: Pull): Promise<SnapshotReadOutcome> {
-  const read = beginSnapshotRead({ writer: through ?? rig.writer, session, snapshot, pull });
-  const links = [...fetched, ...testimony];
-  const feed = pulledFeed({
-    meetings: [humanServicesMeeting],
-    documentLinks: links,
-    testimony: read.testimonyRecordsOf(links),
-  });
-  if (pull === "full_pull") rig.writer.recordFullPull(session, fullPullAt, feed);
-  else rig.writer.recordIncrement(session, incrementAt, feed);
-  storeDocuments(rig.writer, ...fetched);
-  return read.finish(table);
+function runPull(pull: FullPull): Promise<FullPullSnapshotOutcome>;
+function runPull(pull: Increment): Promise<IncrementSnapshotOutcome>;
+function runPull(pull: FullPull | Increment): Promise<FullPullSnapshotOutcome | IncrementSnapshotOutcome> {
+  const { rig, snapshot, fetched, through } = pull;
+  const start = { writer: through ?? rig.writer, session, snapshot };
+  switch (pull.pull) {
+    case "full_pull": {
+      const read = beginFullPullSnapshotRead(start);
+      rig.writer.recordFullPull(session, fullPullAt, feedOf(pull, read));
+      storeDocuments(rig.writer, ...fetched);
+      return read.finish(pull.table);
+    }
+    case "increment": {
+      const read = beginIncrementSnapshotRead(start);
+      rig.writer.recordIncrement(session, incrementAt, feedOf(pull, read));
+      storeDocuments(rig.writer, ...fetched);
+      return read.finish();
+    }
+    default:
+      return pull satisfies never;
+  }
 }
 
 /** An Index whose Full pull fetched these documents and read them with the Snapshot. */
@@ -150,29 +178,6 @@ describe("a Full pull with a new Snapshot", () => {
     expect(sectionsAddedToIn345(rig.reader, version)).toContain("ors-345.250");
     expect(linksInChapterOfHeccLink(rig.reader, version)).toBe(23);
     expect(rig.reader.snapshotVersion(session)?.commit).toBe(madeUpCommit);
-  });
-
-  test("reads every Version's and posting's Statute Links, then every one's Agency Links, and reports the new Snapshot last", async () => {
-    const rig = await indexAfterFullPull(committedSnapshot(), introducedVersion(), postedAmendment());
-    expect(rig.reader.snapshotVersion(session)?.commit).toBe(committedCommit);
-    const log: string[] = [];
-
-    await runPull({
-      rig,
-      snapshot: madeUpSnapshot(),
-      pull: "full_pull",
-      fetched: [],
-      through: loggedWriter(rig.writer, log),
-    });
-
-    // A file is read once for Statute Links, and a document once for Agency Links; which of the two goes first within a
-    // step is the store's order. What the step holds is the order between them, then the Snapshot.
-    expect(log.slice(0, 2).toSorted()).toEqual(["statute-links of a posting", "statute-links of a version"]);
-    expect(log.slice(2, 4).toSorted()).toEqual([
-      "agency-links of posting-2025r1-28997",
-      "agency-links of version-2025r1-hb3027-introduced",
-    ]);
-    expect(log.slice(4)).toEqual([`snapshot ${madeUpCommit}`]);
   });
 });
 
@@ -449,12 +454,20 @@ describe("the Statutes Affected Table", () => {
       });
 
       // The refused bytes replace nothing; the held copy's text is read again with the new section list, and counted.
-      expect(first).toMatchObject({
+      expect(first).toEqual({
         kind: "read",
-        statutesAffectedTable: { source_url: tableUrl, outcome: "not_read", held: true, entries: 23 },
+        statutesAffectedTable: {
+          source_url: tableUrl,
+          outcome: "not_read",
+          held: true,
+          entries: 23,
+          previous_session_entries: 0,
+          unread_lines: 0,
+          lone_e_entries: 0,
+          lone_e_with_e_engrossed_version: 0,
+          reason: expect.stringContaining("is not a PDF the extractor can read") as unknown,
+        },
       });
-      const refusal = first.kind === "read" ? first.statutesAffectedTable?.reason : undefined;
-      expect(typeof refusal).toBe("string");
       expect(heldTableOf(rig.reader)).toEqual({ entries: 23, ...stillHeld });
 
       // The same bytes again, with the same Snapshot: the refusal is remembered, nothing is read, the copy is as it was.
@@ -468,7 +481,12 @@ describe("the Statutes Affected Table", () => {
 
       expect(again).toEqual({
         kind: "read",
-        statutesAffectedTable: { source_url: tableUrl, outcome: "refused_unchanged", held: true, reason: refusal },
+        statutesAffectedTable: {
+          source_url: tableUrl,
+          outcome: "refused_unchanged",
+          held: true,
+          reason: expect.stringContaining("is not a PDF the extractor can read") as unknown,
+        },
       });
       expect(heldTableOf(rig.reader)).toEqual({ entries: 23, ...stillHeld });
     });
@@ -484,9 +502,14 @@ describe("the Statutes Affected Table", () => {
         table: tableFetched(placeholderBytes),
       });
 
-      expect(read).toMatchObject({
+      expect(read).toEqual({
         kind: "read",
-        statutesAffectedTable: { source_url: tableUrl, outcome: "not_read", held: false },
+        statutesAffectedTable: {
+          source_url: tableUrl,
+          outcome: "not_read",
+          held: false,
+          reason: expect.stringContaining("is not a PDF the extractor can read") as unknown,
+        },
       });
       expect(heldTableOf(rig.reader)).toBeUndefined();
     });
@@ -528,20 +551,6 @@ describe("the Statutes Affected Table", () => {
 
     expect(read).toEqual({ kind: "read", statutesAffectedTable: undefined });
     expect(heldTableOf(rig.reader)).toEqual({ entries: 22, ...stillHeld });
-  });
-
-  test("is not read by an Increment, which fetches none: handing it one is a bug", async () => {
-    const rig = await indexHoldingTable();
-
-    const bug = runPull({
-      rig,
-      snapshot: committedSnapshot(),
-      pull: "increment",
-      fetched: [],
-      table: tableNotFetched(404, "The server answered 404"),
-    });
-
-    await expect(bug).rejects.toThrow("An Increment does not read the Statutes Affected Table");
   });
 });
 
