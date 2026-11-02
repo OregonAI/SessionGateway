@@ -1,24 +1,22 @@
 // How Statute Links are shown to an agent, by compare_amendment and by get_measure (ticket #13): one shape
 // for a link, one order, and one way to say that a file's links were not read.
 import { z } from "zod";
+import type { AmendmentPosting } from "#/packages/domain/documents.ts";
 import {
-  placeAmendment,
-  versionRankOf,
-  type AmendmentPlacement,
-  type AmendmentPosting,
-} from "#/packages/domain/documents.ts";
-import type { MeasureKey } from "#/packages/domain/index.ts";
-import {
-  compareMeasureSections,
   statuteLinkKinds,
   type AmendmentFile,
   type RelatingClauseEdit,
   type StatuteLink,
   type StatuteLinkKind,
   type StatuteParse,
-  type StoredAmendment,
-  type StoredVersion,
 } from "#/packages/domain/statute-links.ts";
+import {
+  statuteLinksByKind,
+  type PlacedAmendment,
+  type StatuteLinksOfMeasure,
+  type SupersededAmendment,
+  type VersionLinks,
+} from "#/packages/statute-links/measure.ts";
 import { noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 
 /** The measure sections a target is linked in: null stands for text with no numbered sections. */
@@ -56,7 +54,7 @@ export const targetsOutput = z.object({
  * is linked in, so that a section a long range cites is not repeated for every link (finding F6). Nothing is left
  * out: a target under two kinds (an amendment that amends a section and also cites it) is under both.
  */
-export const statuteLinksOutput = z.object(
+const statuteLinksOutput = z.object(
   Object.fromEntries(statuteLinkKinds.map((kind) => [kind, targetsOutput])) as Record<
     StatuteLinkKind,
     typeof targetsOutput
@@ -74,37 +72,27 @@ export const relatingClauseEditOutput = z.object({
     .describe("The ORS sections the inserted words name, with ranges expanded, each once, in order."),
 });
 
-export type StatuteLinksOutput = z.infer<typeof statuteLinksOutput>;
-export type RelatingClauseEditOutput = z.infer<typeof relatingClauseEditOutput>;
+type StatuteLinksOutput = z.infer<typeof statuteLinksOutput>;
+type RelatingClauseEditOutput = z.infer<typeof relatingClauseEditOutput>;
 
 /**
- * The links by kind (spec #1, story 24: the changes first, then the mentions, which the order of the keys
- * says), each target once under its kind with the measure sections it is linked in. Targets are listed in the
- * order of their first measure section, and within a section in the order the text names them.
+ * The links by kind (spec #1, story 24: the changes first, then the mentions, which the order of the keys says), each
+ * target once under its kind with the measure sections it is linked in (`statuteLinksByKind` groups them).
  */
 export function statuteLinksShown(links: readonly StatuteLink[]): StatuteLinksOutput {
-  const inSectionOrder = links.toSorted((a, b) => compareMeasureSections(a.measureSection, b.measureSection));
-  const shown = (kind: StatuteLinkKind): z.infer<typeof targetsOutput> => {
-    const targets = new Map<string, { link: StatuteLink; sections: (string | null)[] }>();
-    for (const link of inSectionOrder.filter((candidate) => candidate.kind === kind)) {
-      const target = targets.get(link.target.id) ?? { link, sections: [] };
-      target.sections.push(link.measureSection);
-      targets.set(link.target.id, target);
-    }
-    const listed = [...targets.values()];
-    return {
-      sections: listed
-        .filter(({ link }) => link.target.type === "section")
-        .map(({ link, sections }) => ({ target_id: link.target.id, measure_sections: sections })),
-      chapters: listed
-        .filter(({ link }) => link.target.type === "chapter")
-        .map(({ link, sections }) => ({
-          target_id: link.target.id,
-          resolvable_on_oregonai: link.target.resolvableOnOregonAi,
-          measure_sections: sections,
-        })),
-    };
-  };
+  const byKind = statuteLinksByKind(links);
+  const shown = (kind: StatuteLinkKind): z.infer<typeof targetsOutput> => ({
+    sections: byKind[kind]
+      .filter(({ target }) => target.type === "section")
+      .map(({ target, measureSections }) => ({ target_id: target.id, measure_sections: measureSections })),
+    chapters: byKind[kind]
+      .filter(({ target }) => target.type === "chapter")
+      .map(({ target, measureSections }) => ({
+        target_id: target.id,
+        resolvable_on_oregonai: target.resolvableOnOregonAi,
+        measure_sections: measureSections,
+      })),
+  });
   return Object.fromEntries(statuteLinkKinds.map((kind) => [kind, shown(kind)])) as StatuteLinksOutput;
 }
 
@@ -121,7 +109,7 @@ export function relatingClauseEditShown(edit: RelatingClauseEdit): RelatingClaus
 }
 
 /** Why a file's Statute Links are an empty list, when they are empty because the file was not read. */
-export function notReadReasonOf(parse: StatuteParse): string | null {
+function notReadReasonOf(parse: StatuteParse): string | null {
   return parse.textRead
     ? null
     : "This index did not read the file for Statute Links: it has no text layer (a scan or a photograph), or the index has not read it yet. The empty list does not mean the document has none.";
@@ -134,7 +122,7 @@ const textReadDescription =
  * What was read of one document (a Version, or a file posted for a Proposed Amendment), as three fields. The one
  * block every tool that shows a reading takes its fields from, with `parseResultShown` as the one renderer.
  */
-export const parseResultFields = {
+const parseResultFields = {
   text_read: z.boolean().describe(textReadDescription),
   not_read_reason: z
     .string()
@@ -144,7 +132,13 @@ export const parseResultFields = {
     "The document's Statute Links, by kind (amends, repeals, adds-to, cites), each target once with the measure sections it is linked in. For a Proposed Amendment they are the links in the sections it inserts: a link of the Version that the amendment deletes is not among them.",
   ),
 };
-export const parseResultOutput = z.object(parseResultFields);
+
+/** What `parseResultFields` describe, as one value. */
+type ParseResultOutput = {
+  text_read: boolean;
+  not_read_reason: string | null;
+  statute_links: StatuteLinksOutput;
+};
 
 /** The same fields for a Version that may not be known: nothing was read then, so text_read is null. */
 export const maybeParseResultFields = {
@@ -152,7 +146,7 @@ export const maybeParseResultFields = {
   text_read: z.boolean().nullable().describe(`${textReadDescription} Null when the Version is not known.`),
 };
 
-export function parseResultShown(parse: StatuteParse): z.infer<typeof parseResultOutput> {
+export function parseResultShown(parse: StatuteParse): ParseResultOutput {
   return {
     text_read: parse.textRead,
     not_read_reason: notReadReasonOf(parse),
@@ -214,43 +208,22 @@ export const amendedVersionOutput = z.object({
   reason: z.string().describe("How the Version was read, or why it is not known."),
 });
 
-/** The Version an amendment amends, from its files' headers, its number and the Versions the store holds. */
-export function placeStoredAmendment(
-  amendment: StoredAmendment,
-  key: MeasureKey,
-  versions: readonly StoredVersion[],
-): { placement: AmendmentPlacement; version: StoredVersion | undefined; shown: z.infer<typeof amendedVersionOutput> } {
-  const placement = placeAmendment(
-    key,
-    amendment.spellings,
-    amendment.files.map((file) => file.parse.amendedVersionHeader),
-    (versionId) => versions.some((version) => version.id === versionId),
-  );
-  switch (placement.kind) {
-    case "version": {
-      const version = versions.find((held) => held.id === placement.versionId);
-      if (version === undefined) throw new Error(`The Version ${placement.versionId} was placed but is not held`);
+/** The Version a Proposed Amendment amends, as the entry point placed it from the amendment's headers, number and the Versions held. */
+export function amendedVersionShown(placed: PlacedAmendment): z.infer<typeof amendedVersionOutput> {
+  switch (placed.kind) {
+    case "version":
       return {
-        placement,
-        version,
-        shown: {
-          known: true,
-          id: version.id,
-          label: version.label,
-          source_url: version.sourceUrl,
-          reason: placement.reason,
-        },
+        known: true,
+        id: placed.version.id,
+        label: placed.version.label,
+        source_url: placed.version.sourceUrl,
+        reason: placed.reason,
       };
-    }
     case "not_held":
     case "unknown":
-      return {
-        placement,
-        version: undefined,
-        shown: { known: false, id: null, label: null, source_url: null, reason: placement.reason },
-      };
+      return { known: false, id: null, label: null, source_url: null, reason: placed.reason };
     default:
-      return placement satisfies never;
+      return placed satisfies never;
   }
 }
 
@@ -360,134 +333,68 @@ export const statuteLinksBySourceOutput = z.object({
   note: z.string().describe("Says when a Proposed Amendment's Statute Links are listed here and where the rest are."),
 });
 
-export type StatuteLinksBySourceOutput = z.infer<typeof statuteLinksBySourceOutput>;
+type StatuteLinksBySourceOutput = z.infer<typeof statuteLinksBySourceOutput>;
 
 /** What `note` says. */
-export const SUPERSEDED_AMENDMENTS_NOTE =
+const SUPERSEDED_AMENDMENTS_NOTE =
   "A Proposed Amendment's Statute Links are listed under proposed_amendments only while this index holds no Version later than the one the amendment amends, because the next Version's own Statute Links replace them. The amendments left out are in superseded_amendments, and compare_amendment still answers for each. An amendment whose Version cannot be named stays in proposed_amendments.";
 
-/** A Version in the order they were printed in; one with no place in that order after the others, by name. */
-function compareVersions(a: StoredVersion, b: StoredVersion): number {
-  const left = versionRankOf(a.label) ?? Number.POSITIVE_INFINITY;
-  const right = versionRankOf(b.label) ?? Number.POSITIVE_INFINITY;
-  return left === right ? a.label.localeCompare(b.label) : left < right ? -1 : 1;
-}
-
-/**
- * The next Version after the one at `rank` that the store holds, or undefined if it holds none. A Version with
- * no place in the order of printing is later than none.
- */
-function nextVersionAfter(rank: number, versions: readonly StoredVersion[]): StoredVersion | undefined {
-  return versions
-    .filter((version) => (versionRankOf(version.label) ?? Number.NEGATIVE_INFINITY) > rank)
-    .toSorted(compareVersions)[0];
-}
-
-/**
- * The Version an amendment's evidence names, held or not, and where it sits in the order of printing. Undefined
- * when the evidence names none, or a Version that sits nowhere in that order.
- */
-function namedVersionOf(placement: AmendmentPlacement): { description: string; rank: number } | undefined {
-  switch (placement.kind) {
-    case "version":
-    case "not_held": {
-      const rank = versionRankOf(placement.description);
-      return rank === undefined ? undefined : { description: placement.description, rank };
-    }
-    case "unknown":
-      return undefined;
-    default:
-      return placement satisfies never;
-  }
-}
-
-/**
- * The Measure's Statute Links by the Version or Proposed Amendment they were read from. A Proposed Amendment's
- * links are listed while the store holds no Version later than the one it amends, and not after: the next
- * Version's own links replace them (ADR-0001, ADR-0015). The Version an amendment amends is the one its header
- * and number name, whether or not the store holds that Version's file. One whose Version is not known stays listed.
- */
-export function statuteLinksBySourceOf(
-  key: MeasureKey,
-  versions: readonly StoredVersion[],
-  amendments: readonly StoredAmendment[],
-): StatuteLinksBySourceOutput {
-  const current: StatuteLinksBySourceOutput["proposed_amendments"] = [];
-  const superseded: StatuteLinksBySourceOutput["superseded_amendments"] = [];
-  for (const amendment of amendments) {
-    const { placement, version, shown } = placeStoredAmendment(amendment, key, versions);
-    const named = namedVersionOf(placement);
-    const later = named === undefined ? undefined : nextVersionAfter(named.rank, versions);
-    if (named !== undefined && later !== undefined) {
-      superseded.push({
-        id: amendment.id,
-        number: amendment.number,
-        amended_version: {
-          id: version?.id ?? null,
-          label: named.description,
-          source_url: version?.sourceUrl ?? null,
-        },
-        later_version: { id: later.id, label: later.label, source_url: later.sourceUrl },
-      });
-      continue;
-    }
-    current.push({
-      id: amendment.id,
-      number: amendment.number,
-      amended_version: shown,
-      postings: amendment.postings.map(postingShown),
-      files: amendment.files.map(fileShown),
-    });
-  }
+/** A Proposed Amendment whose Statute Links apply now, with the postings and files it was read from. */
+function currentAmendmentShown(placed: PlacedAmendment): StatuteLinksBySourceOutput["proposed_amendments"][number] {
+  const { amendment } = placed;
   return {
-    versions: versions.toSorted(compareVersions).map((version) => ({
-      id: version.id,
-      label: version.label,
-      source_url: version.sourceUrl,
-      ...noLongerListedFlag(version.listing),
-      ...parseResultShown(version.parse),
-    })),
-    proposed_amendments: current,
-    superseded_amendments: superseded,
+    id: amendment.id,
+    number: amendment.number,
+    amended_version: amendedVersionShown(placed),
+    postings: amendment.postings.map(postingShown),
+    files: amendment.files.map(fileShown),
+  };
+}
+
+/** A Superseded amendment, with the Version it amends (which may not be held) and the Version that replaces it. */
+function supersededAmendmentShown(
+  superseded: SupersededAmendment,
+): StatuteLinksBySourceOutput["superseded_amendments"][number] {
+  const { amendment, amendedVersion, laterVersion } = superseded;
+  return {
+    id: amendment.id,
+    number: amendment.number,
+    amended_version: {
+      id: amendedVersion.held?.id ?? null,
+      label: amendedVersion.description,
+      source_url: amendedVersion.held?.sourceUrl ?? null,
+    },
+    later_version: { id: laterVersion.id, label: laterVersion.label, source_url: laterVersion.sourceUrl },
+  };
+}
+
+/** The Proposed Amendments of a Measure, those whose Statute Links apply now and those a later Version replaces (ADR-0015). */
+export function amendmentsShown(
+  links: Pick<StatuteLinksOfMeasure, "currentAmendments" | "supersededAmendments">,
+): Pick<StatuteLinksBySourceOutput, "proposed_amendments" | "superseded_amendments" | "note"> {
+  return {
+    proposed_amendments: links.currentAmendments.map(currentAmendmentShown),
+    superseded_amendments: links.supersededAmendments.map(supersededAmendmentShown),
     note: SUPERSEDED_AMENDMENTS_NOTE,
   };
 }
 
-/** The fields of a Version's entry that say what was read of its text: what `same_links_as` compares and leaves out. */
-const readingFields = ["text_read", "not_read_reason", "statute_links"] as const;
-type Reading = Pick<VersionEntry, (typeof readingFields)[number]>;
-const readingFieldSet: ReadonlySet<string> = new Set(readingFields);
-
-/** A Version's entry without its reading, which is the Version before it's: everything else is the Version's own. */
-type SameLinksAsEntry<Entry extends VersionEntry> = Omit<Entry, keyof Reading> & { same_links_as: string };
-
-/** What was read of a Version's text, as one string to compare with another Version's. */
-function readingKeyOf(entry: VersionEntry): string {
-  return JSON.stringify(readingFields.map((field) => entry[field]));
-}
-
-/** A Version's entry with its reading left out. */
-function withoutReading<Entry extends VersionEntry>(entry: Entry): Omit<Entry, keyof Reading> {
-  return Object.fromEntries(Object.entries(entry).filter(([field]) => !readingFieldSet.has(field))) as Omit<
-    Entry,
-    keyof Reading
-  >;
-}
-
 /**
- * The Versions in print order, each with its reading or as `same_links_as` the Version before it (ADR-0036). A Version
- * whose reading is exactly that of the Version before it says `same_links_as` that Version's id and leaves its reading out,
- * so that an Enrolled Version that repeats the last Engrossed one is not listed twice (15,145 characters of SB 69's answer).
- * Only the reading is compared: the Statutes Affected Table's block that ticket #22 sets beside a Version, and the
- * no_longer_listed flag of ticket #18, are the Version's own and are kept, whatever the Version before it has. A Version
- * that was not read is never the same as another: it has said nothing.
+ * One Version's entry in the order they were printed in, with its reading or as `same_links_as` the Version before it
+ * (ADR-0036): the entry point says which Versions repeat the one before. A Version that does leaves its reading out, so that
+ * an Enrolled Version that repeats the last Engrossed one is not listed twice (15,145 characters of SB 69's answer). `block`
+ * is what a tool sets beside the Version, the Statutes Affected Table's block (ticket #22) among it; it is kept either way, as
+ * is the no_longer_listed flag of ticket #18, because they are the Version's own whatever the Version before it has.
  */
-export function versionsWithSameLinksAs<Entry extends VersionEntry>(
-  entries: readonly Entry[],
-): (Entry | SameLinksAsEntry<Entry>)[] {
-  return entries.map((entry, index) => {
-    const before = entries[index - 1];
-    if (before === undefined || entry.text_read !== true || readingKeyOf(entry) !== readingKeyOf(before)) return entry;
-    return { ...withoutReading(entry), same_links_as: before.id };
-  });
+export function versionEntryShown<Block extends object>(entry: VersionLinks, block: Block): VersionEntry & Block {
+  const { version, sameLinksAs } = entry;
+  const own = {
+    id: version.id,
+    label: version.label,
+    source_url: version.sourceUrl,
+    ...noLongerListedFlag(version.listing),
+  };
+  return sameLinksAs === undefined
+    ? { ...own, ...parseResultShown(version.parse), ...block }
+    : { ...own, ...block, same_links_as: sameLinksAs.id };
 }
