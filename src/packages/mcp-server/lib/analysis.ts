@@ -84,7 +84,7 @@ function entryOf(analysis: StoredAnalysis): Entry {
     version_label: analysis.versionLabel,
     committee_id: analysis.committeeId,
     source_url: analysis.sourceUrl,
-    ...noLongerListedFlag(analysis.listed),
+    ...noLongerListedFlag(analysis.listing.listed),
   };
 }
 

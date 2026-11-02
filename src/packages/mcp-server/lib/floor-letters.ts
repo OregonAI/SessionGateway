@@ -76,6 +76,6 @@ export function floorLettersShown(entries: readonly FloorLetterEntry[]): z.infer
     description: entry.description,
     fetched: entry.fetched,
     has_text_layer: entry.hasTextLayer,
-    ...noLongerListedFlag(entry.listed),
+    ...noLongerListedFlag(entry.listing.listed),
   }));
 }

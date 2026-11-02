@@ -2,7 +2,7 @@
 // their ids (src/CLAUDE.md, "Shape"). The forms are spec #1's (Implementation Decisions, "Session graph")
 // and follow ADR-0004's `{kind}-{session}-{key}` shape for what only SessionGateway holds.
 
-import type { Chamber, MeasureId, MeasureKey, SessionKey } from "./index.ts";
+import type { Chamber, Measure, MeasureId, MeasureKey, SessionKey } from "./index.ts";
 import type { AgencyId } from "./oregonai.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 
@@ -424,8 +424,8 @@ export type FloorLetterEntry = FloorLetterDetails & {
   sourceUrl: string;
   /** Whether the store holds the file. The feed lists the letter either way. */
   fetched: boolean;
-  /** False once two complete full pulls in a row have not listed the row (ADR-0030). The row is kept and shown. */
-  listed: boolean;
+  /** Whether the feed lists the row (ADR-0030). A row it no longer lists is kept and shown. */
+  listing: Listing;
   /** False when the file has no text layer (a scan); null while the store does not hold the file. */
   hasTextLayer: boolean | null;
 };
@@ -535,6 +535,9 @@ export type Listing =
   /** Two complete full pulls in a row have not listed the row. `lastListedAt` is the latest pull that did. */
   | { listed: false; lastListedAt: Timestamp };
 
+/** A Measure as the reader hands it out: the Measure's row and whether the feed lists it (ADR-0030). */
+export type StoredMeasure = Measure & { listing: Listing };
+
 /** What `get_document` resolves an id to: a document, and the nodes it (or the amendment's postings) point at. */
 export type DocumentView = {
   /** The document whose text is served: the id asked for, or an amendment's latest posting. */
@@ -580,8 +583,8 @@ export type TestimonyEntry = TestimonyDetails & {
   agencyId: AgencyId | null;
   /** Whether the store holds the file. The feed lists the Testimony either way. */
   fetched: boolean;
-  /** False once two complete full pulls in a row have not listed the row (ADR-0030). The row is kept and shown. */
-  listed: boolean;
+  /** Whether the feed lists the row (ADR-0030). A row it no longer lists is kept and shown. */
+  listing: Listing;
   /** False when the file has no text layer; null while the store does not hold the file. */
   hasTextLayer: boolean | null;
   /** The sha256 of the file's extracted text (`StoredDocument.textHash`); null while the store does not hold the file. */
@@ -626,8 +629,8 @@ export type MeetingHeader = {
   committee: { id: CommitteeId; code: string; name: string };
   at: Timestamp;
   status: string;
-  /** False once two complete full pulls in a row have not listed the meeting (ADR-0030). */
-  listed: boolean;
+  /** Whether the feed lists the meeting (ADR-0030). */
+  listing: Listing;
 };
 
 /** A Proposed Amendment posted to a meeting: the node, and the posting with the text posted there. */
@@ -643,8 +646,8 @@ export type PostedAmendment = {
   sourceUrl: string;
   /** Whether the store holds the posting's file. The feed lists the posting either way. */
   fetched: boolean;
-  /** False once two complete full pulls in a row have not listed the posting (ADR-0030). */
-  listed: boolean;
+  /** Whether the feed lists the posting (ADR-0030). */
+  listing: Listing;
 };
 
 /** One posting of a Proposed Amendment, as the amendment's own view lists it: where it was posted and what the committee did. */
@@ -660,8 +663,8 @@ export type AmendmentPosting = {
   meaning: string | null;
   /** Whether the store holds the posting's file. The feed lists the posting either way. */
   fetched: boolean;
-  /** False once two complete full pulls in a row have not listed the posting (ADR-0030). */
-  listed: boolean;
+  /** Whether the feed lists the posting (ADR-0030). */
+  listing: Listing;
 };
 
 /** A document the feed lists for a meeting, by what the feed calls it. */
@@ -676,8 +679,8 @@ export type MeetingDocument = {
   title: string | null;
   /** Whether the store holds the file. The feed lists the document either way. */
   fetched: boolean;
-  /** False once two complete full pulls in a row have not listed the document (ADR-0030). */
-  listed: boolean;
+  /** Whether the feed lists the document (ADR-0030). */
+  listing: Listing;
 };
 
 /**
@@ -719,7 +722,7 @@ export type AgendaItem = {
 };
 
 /** An agenda item as the server reads it, with whether the feed still lists it (ADR-0030). */
-export type ListedAgendaItem = AgendaItem & { listed: boolean };
+export type ListedAgendaItem = AgendaItem & { listing: Listing };
 
 export type Committee = {
   session: SessionKey;

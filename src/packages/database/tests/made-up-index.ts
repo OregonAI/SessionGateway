@@ -9,12 +9,18 @@ import { mkdtempDisposableSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  agendaIdOf,
   amendmentIdOf,
+  analysisIdOf,
   committeeIdOf,
+  exhibitIdOf,
+  floorLetterIdOf,
   meetingIdOf,
   postingIdOf,
+  recordingLogIdOf,
   testimonyIdOf,
   versionIdOf,
+  type AgendaItem,
   type AmendmentId,
   type Committee,
   type DocumentId,
@@ -150,6 +156,97 @@ export function meetingOn(day: number): Meeting {
     agenda: null,
   };
 }
+
+/** MADE UP: SB 9001's analysis document, placed on its Introduced Version. */
+export function analysisLink(): DocumentLink & { id: DocumentId } {
+  const id = analysisIdOf(session, "1");
+  return {
+    id,
+    nodeId: id,
+    kind: "analysis",
+    label: "Staff Measure Summary",
+    sourceUrl: `https://made-up.example/${id}.pdf`,
+    postedAt: null,
+    date: "2099-01-01T00:00:00-08:00" as Timestamp,
+    versionLabel: "Introduced",
+    isMinority: false,
+    relations: [
+      { relation: "measure", to: measureId, meaning: null, provenance: "MADE UP MeasureAnalysisDocuments row" },
+      { relation: "committee", to: committee.id, meaning: null, provenance: "MADE UP MeasureAnalysisDocuments row" },
+    ],
+  };
+}
+
+/** MADE UP: a document the meeting on day 10 lists (an Exhibit, a Recording Log, the agenda). */
+function meetingDocumentLink(
+  id: DocumentId,
+  kind: "exhibit" | "recording_log" | "agenda",
+  label: string,
+): DocumentLink & { id: DocumentId } {
+  const meeting = meetingOn(10);
+  return {
+    id,
+    nodeId: id,
+    kind,
+    label,
+    sourceUrl: `https://made-up.example/${id}.pdf`,
+    postedAt: null,
+    date: meeting.at,
+    relations: [
+      { relation: "meeting", to: meeting.id, meaning: null, provenance: "MADE UP CommitteeMeetingDocuments row" },
+      { relation: "committee", to: committee.id, meaning: null, provenance: "MADE UP CommitteeMeetingDocuments row" },
+    ],
+  };
+}
+
+export function exhibitLink(): DocumentLink & { id: DocumentId } {
+  return meetingDocumentLink(exhibitIdOf(session, 1), "exhibit", "Meeting Material");
+}
+
+export function recordingLogLink(): DocumentLink & { id: DocumentId } {
+  return meetingDocumentLink(recordingLogIdOf(session, 2), "recording_log", "Recording Log");
+}
+
+export function agendaLink(): DocumentLink & { id: DocumentId } {
+  const meeting = meetingOn(10);
+  return meetingDocumentLink(agendaIdOf(session, committee.code, meeting.at), "agenda", "Agenda");
+}
+
+/** MADE UP: a Floor Letter that names SB 9001. */
+export function floorLetterLink(): DocumentLink & { id: DocumentId } {
+  const id = floorLetterIdOf(session, 1);
+  const letterDate = "2099-01-05T00:00:00-08:00" as Timestamp;
+  return {
+    id,
+    nodeId: id,
+    kind: "floor_letter",
+    label: "Letter",
+    sourceUrl: `https://made-up.example/${id}.pdf`,
+    postedAt: null,
+    date: letterDate,
+    floorLetter: {
+      floorLetterId: 1,
+      chamber: "senate",
+      letterDate,
+      title: "A made-up letter",
+      description: null,
+    },
+    relations: [{ relation: "measure", to: measureId, meaning: null, provenance: "MADE UP FloorLetters row" }],
+  };
+}
+
+/** MADE UP: the one agenda item of the meeting on day 10, about SB 9001. */
+export const agendaItem: AgendaItem = {
+  itemId: 7001,
+  meetingId: meetingOn(10).id,
+  measure: measureKey,
+  meetingType: "Public Hearing",
+  action: null,
+  printOrder: "1",
+  comments: null,
+  boardName: null,
+  executiveAppointee: null,
+};
 
 /** MADE UP: the Proposed Amendment SB 9001-1, and its posting number `postingNumber` to the meeting on day `day`. */
 export const amendmentId: AmendmentId = amendmentIdOf(measureKey, "-1");

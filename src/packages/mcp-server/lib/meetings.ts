@@ -261,7 +261,7 @@ function meetingOutputOf(
     committee: meeting.committee,
     at: meeting.at,
     status: meeting.status,
-    ...noLongerListedFlag(meeting.listed),
+    ...noLongerListedFlag(meeting.listing.listed),
     upcoming: meeting.upcoming,
     olis_page_url: olisMeetingPageUrlOf(session, meeting.committee.code, meeting.at),
     agenda:
@@ -272,7 +272,7 @@ function meetingOutputOf(
             label: contents.agenda.label,
             source_url: contents.agenda.sourceUrl,
             fetched: contents.agenda.fetched,
-            ...noLongerListedFlag(contents.agenda.listed),
+            ...noLongerListedFlag(contents.agenda.listing.listed),
           },
     agenda_items: contents.agendaItems.map((item) => ({
       print_order: item.printOrder,
@@ -282,7 +282,7 @@ function meetingOutputOf(
       comments: item.comments,
       board_name: item.boardName,
       executive_appointee: item.executiveAppointee,
-      ...noLongerListedFlag(item.listed),
+      ...noLongerListedFlag(item.listing.listed),
     })),
     exhibits: contents.exhibits.map((exhibit) => ({
       id: exhibit.id,
@@ -291,14 +291,14 @@ function meetingOutputOf(
       measure_id: exhibit.measureId,
       source_url: exhibit.sourceUrl,
       fetched: exhibit.fetched,
-      ...noLongerListedFlag(exhibit.listed),
+      ...noLongerListedFlag(exhibit.listing.listed),
     })),
     recording_logs: contents.recordingLogs.map((log) => ({
       id: log.id,
       label: log.label,
       source_url: log.sourceUrl,
       fetched: log.fetched,
-      ...noLongerListedFlag(log.listed),
+      ...noLongerListedFlag(log.listing.listed),
     })),
     proposed_amendments: contents.amendments.map((amendment) => ({
       id: amendment.id,
@@ -308,7 +308,7 @@ function meetingOutputOf(
       document_id: amendment.documentId,
       source_url: amendment.sourceUrl,
       fetched: amendment.fetched,
-      ...noLongerListedFlag(amendment.listed),
+      ...noLongerListedFlag(amendment.listing.listed),
     })),
   };
 }

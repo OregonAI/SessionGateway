@@ -13,10 +13,13 @@
 // another set adds its rows to that function and to nothing else.
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
+import { agencyLinkKey } from "#/packages/domain/agency-links.ts";
 import type {
+  AmendmentId,
   DocumentId,
   DocumentKind,
   DocumentLink,
+  Listing,
   ListedSet,
   CommitteeMember,
   Committee,
@@ -27,6 +30,7 @@ import type {
 } from "#/packages/domain/documents.ts";
 import { measureIdOf, type HistoryAction, type Measure, type SessionKey } from "#/packages/domain/index.ts";
 import type { LegislatorRow } from "#/packages/domain/legislators.ts";
+import type { AgencyId } from "#/packages/domain/oregonai.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 
 /**
@@ -60,11 +64,105 @@ export function latestCompletePull(database: DatabaseSync, session: SessionKey):
 }
 
 /**
- * The SQL term for whether the feed lists a row, over a LEFT JOIN of `feed_row_state` aliased `fr`. The join finds no
- * row for one that no complete full pull has listed (the index was built before the listing was kept, or an
- * increment stored it): such a row is read as listed, not yet checked (ADR-0030).
+ * A Listing with the number of the complete pull that gave its time, so that the Listings of several rows are told
+ * apart by which pull is later and never by comparing clocks. `pull` is null for a row no complete pull has listed.
  */
-export const listedOrUnchecked = "COALESCE(fr.listed, 1)";
+export type ListingRead = { listing: Listing; pull: number | null };
+
+/**
+ * A row no complete Full pull has checked: an old file's, or one an Increment first stored. It has no row in `feed_row`,
+ * so it is listed with no last listing, not yet checked (ADR-0030). This is the one place that says so.
+ */
+const unchecked: ListingRead = { listing: { listed: true, lastListedAt: null }, pull: null };
+
+/**
+ * The Listing of a thing that rests on several rows: it is listed while any of them is, with the latest listing of the
+ * listed ones (a listed row that no pull has checked has none), and when none is listed, the latest of them all. A
+ * Proposed Amendment rests on its Postings (ADR-0030) and an Agency Link on its evidence Documents (ADR-0037). A thing
+ * that rests on no row is unchecked.
+ */
+export function anyListed(reads: readonly ListingRead[]): ListingRead {
+  const listed = reads.filter((read) => read.listing.listed);
+  const pool = listed.length > 0 ? listed : reads;
+  let latest: ListingRead | undefined;
+  for (const read of pool) {
+    if (latest === undefined || (read.pull ?? -1) > (latest.pull ?? -1)) latest = read;
+  }
+  return latest ?? unchecked;
+}
+
+/**
+ * The Listing of each Agency Link in a set of evidence, by `agencyLinkKey`: the Agency's link to a node is listed while
+ * any Document its evidence was read from is (ADR-0037). The evidence must be all of an Agency's evidence for the nodes it
+ * names, because a link whose other evidence is left out would be judged on part of it.
+ */
+export function agencyLinkListings(
+  evidence: readonly { agency: AgencyId; nodeId: string; read: ListingRead }[],
+): Map<string, Listing> {
+  const byLink = new Map<string, ListingRead[]>();
+  for (const { agency, nodeId, read } of evidence) {
+    const key = agencyLinkKey(agency, nodeId);
+    byLink.set(key, [...(byLink.get(key) ?? []), read]);
+  }
+  return new Map([...byLink].map(([key, reads]) => [key, anyListed(reads).listing]));
+}
+
+const stateRow = z.object({ pull: z.number(), as_of: z.string(), latest: z.number() });
+const documentIdRow = z.object({ document_id: z.string() });
+
+/** What the reader asks of the Listing: the Listing of a row, of the rows that link a Document, and of an amendment's Postings. */
+export type ListingReader = {
+  /** The Listing of the row or rows of the feed that link a Document, whether or not the index holds its file. */
+  ofDocument(id: DocumentId): ListingRead;
+  /** The Listing of a row of the feed, by its entity set and key (a Measure, a meeting, an agenda item). */
+  ofRow(session: SessionKey, entitySet: ListedSet, key: string): ListingRead;
+  /** A Proposed Amendment's: listed while the feed lists any Posting, whether or not a Posting's file is stored. */
+  ofAmendment(id: AmendmentId): ListingRead;
+};
+
+/**
+ * Opens the reading side of the Listing on a connection. A row's Listing is read as the pull that last listed it, its
+ * time, and the Session's latest pull, and the rule (`isListed`) is applied to those, so the reader's queries do not
+ * join the state and do not repeat the rule.
+ */
+export function openListingReader(database: DatabaseSync): ListingReader {
+  const columns = `r.last_listed_pull AS pull, p.as_of,
+         (SELECT MAX(number) FROM feed_pull WHERE session_key = r.session_key) AS latest
+       FROM feed_row r JOIN feed_pull p ON p.session_key = r.session_key AND p.number = r.last_listed_pull`;
+  const selectOfDocument = database.prepare(`SELECT ${columns} WHERE r.document_id = ?`);
+  const selectOfRow = database.prepare(
+    `SELECT ${columns} WHERE r.session_key = ? AND r.entity_set = ? AND r.row_key = ?`,
+  );
+  // The Postings the feed lists for an amendment (meeting_document, written for every link before any file is
+  // fetched) and the ones the store holds, whether or not a Posting's file is stored.
+  const selectPostings = database.prepare(
+    `SELECT document_id FROM meeting_document WHERE node_id = ?1 AND kind = 'proposed_amendment'
+     UNION
+     SELECT id FROM document WHERE node_id = ?1 AND node_id <> id`,
+  );
+  const readOf = (rows: readonly unknown[]): ListingRead =>
+    anyListed(
+      rows.map((row): ListingRead => {
+        const stored = stateRow.parse(row);
+        const lastListedAt = stored.as_of as Timestamp;
+        return isListed(stored.latest, stored.pull)
+          ? { listing: { listed: true, lastListedAt }, pull: stored.pull }
+          : { listing: { listed: false, lastListedAt }, pull: stored.pull };
+      }),
+    );
+  const ofDocument = (id: DocumentId): ListingRead => readOf(selectOfDocument.all(id));
+  return {
+    ofDocument,
+    ofRow(session, entitySet, key) {
+      return readOf(selectOfRow.all(session, entitySet, key));
+    },
+    ofAmendment(id) {
+      return anyListed(
+        selectPostings.all(id).map((row) => ofDocument(documentIdRow.parse(row).document_id as DocumentId)),
+      );
+    },
+  };
+}
 
 /** One row of the feed the index keeps: the entity set it came from, its key there, and the document it links, if any. */
 export type ListedRow = { entitySet: ListedSet; key: string; documentId: DocumentId | null };

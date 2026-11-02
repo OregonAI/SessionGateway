@@ -6,7 +6,7 @@
 // disagree. docs/adr/0013 has the labels of the 2025R1 feed and what each one is read as.
 
 import type { MeasureKey } from "./index.ts";
-import { versionIdOf, type CommitteeId, type DocumentId } from "./documents.ts";
+import { versionIdOf, type CommitteeId, type DocumentId, type Listing } from "./documents.ts";
 
 /** Where an analysis document belongs among its Measure's Versions, or why it belongs on none. */
 export type AnalysisPlacement =
@@ -95,6 +95,6 @@ export type StoredAnalysis = AnalysisFeedMark & {
    * Measure, so this is not the Measure's list of Versions.
    */
   placedVersionId: DocumentId | null;
-  /** False once two complete full pulls in a row have not listed the document (ADR-0030). */
-  listed: boolean;
+  /** Whether the feed lists the document (ADR-0030). */
+  listing: Listing;
 };
