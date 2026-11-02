@@ -22,7 +22,7 @@ The clock, `fetch`, the OLIS base URL, file paths and randomness are parameters.
 
 - **Expected outcomes are values.** An unknown citation, a removed row, or a live lookup that failed and fell back to the cache is a discriminated-union result, handled by an exhaustive `switch` with a `never` default.
 - **Bugs and infrastructure failures throw** an `Error` with a `cause`.
-- **The MCP edge decides what is an error.** An unknown id or citation becomes a tool result with `isError: true` (spec #1: "Errors are reported as MCP errors"). A cache fallback or a row OLIS no longer lists is a normal result with a flag saying so, because the cache still answers (story 44) and a removed row stays fetchable by id (story 47). Only protocol problems become JSON-RPC errors.
+- **The MCP edge decides what is an error.** The tool result envelope turns a tool's fault into it: an unknown id or citation becomes a tool result with `isError: true` (spec #1: "Errors are reported as MCP errors"). A cache fallback or a row OLIS no longer lists is a normal result with a flag saying so, because the cache still answers (story 44) and a removed row stays fetchable by id (story 47). Only protocol problems become JSON-RPC errors.
 - **Async calls are bounded and awaited.** Every `fetch` carries an `AbortSignal` (a timeout combined with shutdown), and every promise is awaited or returned.
 
 ## What every tool result carries
@@ -31,6 +31,8 @@ The clock, `fetch`, the OLIS base URL, file paths and randomness are parameters.
 - the index's "as of" time;
 - the notice that this is not the official record;
 - ids in OregonAI form.
+
+The as-of time and the notice, with the rate limit, the Staleness warning and the MCP result (the content pair, `isError`), belong to the tool result envelope, `mcp-server/envelope.ts`, and to no tool: a tool supplies its name, its schemas (without `as_of` and `notice`, which the envelope folds into the `outputSchema`), a function that returns its answer or a fault, and a message for each fault. The envelope reads the As of once for each call and passes it to the tool; an Index with none answers every tool with one error.
 
 Results are facts only: no predictions, advice or opinions on a Measure's merits.
 
