@@ -1,10 +1,14 @@
 // Seam 1 (test/CLAUDE.md): what a Pull asks OLIS for, entity set by entity set, read from the fake OLIS's request log
-// (ticket #100, ADR-0005, ADR-0039, ADR-0042, ADR-0045). A Full pull reads every set whole. An Increment reads Legislators
-// and Committees whole (they are small and carry the names the rest resolve against), ConveneTimes and LegislativeSessions
-// not at all (ADR-0042 leaves them to the Full pull), FloorLetters above the highest FloorLetterId the Index holds
-// (they carry no dates, ADR-0045), and every other set only for the rows OLIS created or modified since the last run, less
-// two hours. The cases assert the `$filter` of every request to each set, so a set that is read the wrong way, or read at
-// all when it should not be, fails by name.
+// (ticket #100, ADR-0005, ADR-0039, ADR-0042, ADR-0045, ADR-0050). A Full pull reads every set whole. An Increment reads
+// Legislators and Committees whole (they are small and carry the names the rest resolve against), ConveneTimes and
+// LegislativeSessions not at all (ADR-0042 leaves them to the Full pull), FloorLetters above the highest FloorLetterId the
+// Index holds (they carry no dates, ADR-0045), and every other set only for the rows OLIS created or modified since the
+// last run, less two hours. The cases assert the `$filter` of every request to each set, so a set that is read the wrong
+// way, or read at all when it should not be, fails by name.
+//
+// The five sets that link documents are read in one call of the client, in one mode. If the register's entries for them
+// ever differ, the Increment throws (`documentSetsReadOf`, ingest/lib/pull-register.ts), and every case below that runs an
+// Increment fails with that error; the last one is the case that names the rule.
 //
 // Databases. The Full pull's cases are the pull of one system built for the file (the pull is the subject, so it is not a
 // copy of a template). The Increment's cases copy the template of the fixture's pull at 14:00 Pacific on 2025-01-17
@@ -56,26 +60,35 @@ function filtersAsked(system: System, entitySet: string): (string | null)[] {
   ];
 }
 
-/** The 18 entity sets of a Pull, by the feed's own names, and what each kind of Pull asks for. `[]` is a set it never asks for. */
-const sets: readonly { entitySet: string; fullPull: string[]; increment: string[] }[] = [
-  { entitySet: "Measures", fullPull: [whole], increment: [changedSince] },
-  { entitySet: "Legislators", fullPull: [whole], increment: [whole] },
-  { entitySet: "MeasureSponsors", fullPull: [whole], increment: [changedSince] },
-  { entitySet: "MeasureHistoryActions", fullPull: [whole], increment: [changedSince] },
-  { entitySet: "MeasureVotes", fullPull: [whole], increment: [changedSince] },
-  { entitySet: "CommitteeVotes", fullPull: [whole], increment: [changedSince] },
-  { entitySet: "Committees", fullPull: [whole], increment: [whole] },
-  { entitySet: "CommitteeMeetings", fullPull: [whole], increment: [changedSince] },
-  { entitySet: "CommitteeAgendaItems", fullPull: [whole], increment: [changedSince] },
-  { entitySet: "CommitteeMembers", fullPull: [whole], increment: [changedSince] },
-  { entitySet: "MeasureDocuments", fullPull: [whole], increment: [changedSince] },
-  { entitySet: "MeasureAnalysisDocuments", fullPull: [whole], increment: [changedSince] },
-  { entitySet: "CommitteeMeetingDocuments", fullPull: [whole], increment: [changedSince] },
-  { entitySet: "CommitteeProposedAmendments", fullPull: [whole], increment: [changedSince] },
-  { entitySet: "CommitteePublicTestimonies", fullPull: [whole], increment: [changedSince] },
-  { entitySet: "ConveneTimes", fullPull: [whole], increment: [] },
-  { entitySet: "LegislativeSessions", fullPull: [whole], increment: [] },
-  { entitySet: "FloorLetters", fullPull: [whole], increment: [aboveHeld] },
+/** The 18 entity sets of a Pull, by the feed's own names, and what an Increment asks for. `[]` is a set it never asks for. A Full pull asks for every set whole. */
+const sets: readonly { entitySet: string; increment: string[] }[] = [
+  { entitySet: "Measures", increment: [changedSince] },
+  { entitySet: "Legislators", increment: [whole] },
+  { entitySet: "MeasureSponsors", increment: [changedSince] },
+  { entitySet: "MeasureHistoryActions", increment: [changedSince] },
+  { entitySet: "MeasureVotes", increment: [changedSince] },
+  { entitySet: "CommitteeVotes", increment: [changedSince] },
+  { entitySet: "Committees", increment: [whole] },
+  { entitySet: "CommitteeMeetings", increment: [changedSince] },
+  { entitySet: "CommitteeAgendaItems", increment: [changedSince] },
+  { entitySet: "CommitteeMembers", increment: [changedSince] },
+  { entitySet: "MeasureDocuments", increment: [changedSince] },
+  { entitySet: "MeasureAnalysisDocuments", increment: [changedSince] },
+  { entitySet: "CommitteeMeetingDocuments", increment: [changedSince] },
+  { entitySet: "CommitteeProposedAmendments", increment: [changedSince] },
+  { entitySet: "CommitteePublicTestimonies", increment: [changedSince] },
+  { entitySet: "ConveneTimes", increment: [] },
+  { entitySet: "LegislativeSessions", increment: [] },
+  { entitySet: "FloorLetters", increment: [aboveHeld] },
+];
+
+/** The five sets whose rows link documents, which the client reads in one call. */
+const documentSets = [
+  "MeasureDocuments",
+  "MeasureAnalysisDocuments",
+  "CommitteeMeetingDocuments",
+  "CommitteeProposedAmendments",
+  "CommitteePublicTestimonies",
 ];
 
 describe("a Full pull", () => {
@@ -85,8 +98,8 @@ describe("a Full pull", () => {
     started.push(system);
   });
 
-  test.for(sets)("asks OLIS for every row of $entitySet, and only the Session's", ({ entitySet, fullPull }) => {
-    expect(filtersAsked(system, entitySet)).toEqual(fullPull);
+  test.for(sets)("asks OLIS for every row of $entitySet, and only the Session's", ({ entitySet }) => {
+    expect(filtersAsked(system, entitySet)).toEqual([whole]);
   });
 });
 
@@ -119,5 +132,18 @@ describe("an Increment while the Index holds no Floor Letter", () => {
     system.clock.set(incrementAt);
     await system.incrementAgain();
     expect(filtersAsked(system, "FloorLetters")).toEqual([whole]);
+  });
+});
+
+describe("an Increment's read of the five sets that link documents", () => {
+  test("is one read for all five: the Pull register's entries for them agree, or the Increment stops", async () => {
+    const system = await startCopiedSystem({ clockAt: pulledAt });
+    started.push(system);
+    system.olis.forgetRequests();
+    system.clock.set(incrementAt);
+    await system.incrementAgain();
+    expect(documentSets.map((entitySet) => filtersAsked(system, entitySet))).toEqual(
+      documentSets.map(() => [changedSince]),
+    );
   });
 });

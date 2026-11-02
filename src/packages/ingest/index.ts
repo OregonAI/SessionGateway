@@ -28,8 +28,19 @@ import {
 } from "#/packages/database/writer.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
 import { findCitations } from "#/packages/domain/citations.ts";
-import type { CommitteeId, DocumentLink, PulledEntitySet } from "#/packages/domain/documents.ts";
-import type { LegislatorId, Sponsorship } from "#/packages/domain/legislators.ts";
+import type {
+  AgendaItem,
+  Committee,
+  CommitteeId,
+  CommitteeMember,
+  Convening,
+  DocumentLink,
+  Meeting,
+  PulledEntitySet,
+  SessionDates,
+} from "#/packages/domain/documents.ts";
+import type { HistoryAction, Measure } from "#/packages/domain/index.ts";
+import type { LegislatorId, LegislatorRow, Sponsorship } from "#/packages/domain/legislators.ts";
 import type { Passage, SearchEntry } from "#/packages/domain/search.ts";
 import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
 import type { LegislatorAlias } from "#/packages/legislators/aliases.ts";
@@ -62,7 +73,7 @@ import {
   writeHashSampleReport,
   type HashSampleReport,
 } from "./lib/hash-sample.ts";
-import { readOf, type PullRun } from "./lib/pull-register.ts";
+import { documentSetsReadOf, pullReadOf, type PullRun } from "./lib/pull-register.ts";
 import {
   beginFullPullSnapshotRead,
   beginIncrementSnapshotRead,
@@ -337,13 +348,30 @@ const noDocuments: DocumentSets = {
   CommitteePublicTestimonies: [],
 };
 
+/** Everything one Pull read of the feed, before it is resolved and stored: the rows of each entity set, under the feed's name for it. */
+type FeedRead = DocumentSets & {
+  Measures: Measure[];
+  Legislators: LegislatorRow[];
+  MeasureSponsors: Sponsorship[];
+  MeasureHistoryActions: HistoryAction[];
+  MeasureVotes: FloorVoteEntry[];
+  CommitteeVotes: CommitteeVoteEntry[];
+  Committees: Committee[];
+  CommitteeMeetings: Meeting[];
+  CommitteeAgendaItems: AgendaItem[];
+  CommitteeMembers: CommitteeMember[];
+  ConveneTimes: Convening[];
+  LegislativeSessions: SessionDates | undefined;
+  FloorLetters: DocumentLink[];
+};
+
 /**
  * Reads the sets a Pull stores, each the way the register says this kind of Pull reads it (`lib/pull-register.ts`): the
  * Pull's reads are the register's, and this holds no rule about a set. A set the register leaves alone gives no rows. The
  * sets are read in the order the Build report lists them, and the result has one field for each entity set: the compiler
  * refuses a set `pulledEntitySets` names that is not read here.
  */
-async function readFeed(olis: OlisClient, config: IngestConfig, deps: IngestDeps, run: PullRun) {
+async function readFeed(olis: OlisClient, config: IngestConfig, deps: IngestDeps, run: PullRun): Promise<FeedRead> {
   const { session } = config;
   const { signal } = deps;
   const readSet = async <Rows>(
@@ -351,9 +379,11 @@ async function readFeed(olis: OlisClient, config: IngestConfig, deps: IngestDeps
     unread: Rows,
     read: (how: PullRead) => Promise<Rows>,
   ): Promise<Rows> => {
-    const how = readOf(entitySet, run);
+    const how = pullReadOf(entitySet, run);
     return how === undefined ? unread : read(how);
   };
+  // The five sets that link documents are read in one call, in the mode their entries in the register agree on.
+  const documentsRead = documentSetsReadOf(run);
   return {
     Measures: await readSet("Measures", [], (how) => olis.readMeasures(session, how, signal)),
     Legislators: await readSet("Legislators", [], (how) => olis.readLegislators(session, how, signal)),
@@ -373,14 +403,10 @@ async function readFeed(olis: OlisClient, config: IngestConfig, deps: IngestDeps
     LegislativeSessions: await readSet("LegislativeSessions", undefined, (how) =>
       olis.readSessionDates(session, how, signal),
     ),
-    // The five sets that link documents are read in one call (the register gives them one reading).
-    ...(await readSet("MeasureDocuments", noDocuments, (how) => olis.readDocumentLinks(session, how, signal))),
+    ...(documentsRead === undefined ? noDocuments : await olis.readDocumentLinks(session, documentsRead, signal)),
     FloorLetters: await readSet("FloorLetters", [], (how) => olis.readFloorLetters(session, how, signal)),
   } satisfies Record<PulledEntitySet, unknown>;
 }
-
-/** Everything one Pull read of the feed, before it is resolved and stored: the rows of each entity set. */
-type FeedRead = Awaited<ReturnType<typeof readFeed>>;
 
 /** What a run stores of what it read: the rows, with each Legislator Code resolved. */
 function feedRecordOf(
