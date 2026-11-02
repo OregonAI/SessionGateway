@@ -1,6 +1,8 @@
 // Seam 1: what get_measure shows depends on what the feed said and when. Each case here builds its
 // own system, because the feed it serves (the clock time, the page size, the rows served) is the
-// thing under test. Cases that only read are in get-measure.test.ts.
+// thing under test. Cases that only read are in get-measure.test.ts. One case ("takes no row of another Session")
+// pulls a second Session into the same database, because a Session with no complete Full pull has no As of and
+// every tool then answers with that error alone (ticket #98).
 import { afterEach, describe, expect, it } from "vitest";
 import { callTool, connectClient, type ToolOutcome } from "../support/mcp-clients.ts";
 import { startSystem, type System, type SystemOptions } from "../support/system.ts";
@@ -81,6 +83,12 @@ describe("a timestamp the feed does not send", () => {
   });
 });
 
+/** The number of Measures rows the system's latest full pull read, as its build report says. */
+function measuresRead(system: System): number {
+  const pull = system.buildReport()["pull"] as { entity_sets: { entity_set: string; read: number }[] };
+  return pull.entity_sets.find((set) => set.entity_set === "Measures")?.read ?? -1;
+}
+
 describe("the deployment's Session", () => {
   // A Measure of another Session that shares SB 69's prefix and number: measure numbers restart each
   // Session (docs/research/olis-odata.md section 8, gotcha 1). The harness adds it to the fake
@@ -109,17 +117,31 @@ describe("the deployment's Session", () => {
   it("takes no row of another Session into the index: a server for that Session finds nothing", async () => {
     // The worker pulls 2025R1 and the feed serves a 2025S1 row anyway. A server then configured for
     // 2025S1 over the same database must not find that row: the pull never took it.
-    const outcome = await getMeasure(
-      {
-        clockAt: "2025-12-15T17:00:00Z",
-        olis: { strayRows: { Measures: [otherSessionSb69] } },
-        serverEnv: { SESSION_KEY: "2025S1" },
-      },
-      "SB 69",
-    );
+    //
+    // The envelope answers every tool with one error while a Session has no As of (ticket #98), and a Session has
+    // one only after a complete Full pull of it. So the feed stops serving the stray row, the worker pulls 2025S1
+    // (which the feed holds no row of), and the server is asked. A leaked row would survive that pull: a Full
+    // pull never deletes a Measure (ADR-0005), and a row one pull has missed is still listed (ADR-0030).
+    const stray = { Measures: [otherSessionSb69] };
+    const system = await startSystem({
+      clockAt: "2025-12-15T17:00:00Z",
+      olis: { strayRows: stray },
+      serverEnv: { SESSION_KEY: "2025S1" },
+    });
+    started.push(system);
+    // The premise: the 2025R1 pull was served the stray row, along with the fixture's 8 Measures, and read it.
+    expect(measuresRead(system)).toBe(9);
+    stray.Measures.splice(0);
+    await system.pullAnotherSession("2025S1");
+    const connected = await connectClient("2026-07-28", system.handler);
+    try {
+      const outcome = await callTool(connected, "get_measure", { measure: "SB 69" });
 
-    expect(outcome.isError).toBe(true);
-    expect(outcome.text).toContain('No Measure "SB 69" in the 2025S1 Session');
+      expect(outcome.isError).toBe(true);
+      expect(outcome.text).toContain('No Measure "SB 69" in the 2025S1 Session');
+    } finally {
+      await connected.close();
+    }
   });
 
   it("serves the Session the configuration names", async () => {
