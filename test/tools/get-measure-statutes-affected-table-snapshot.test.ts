@@ -8,7 +8,12 @@
 // a system with the table is never copied from a template). Each answer is asked for by a 2026-07-28 client and by a
 // legacy client, and the two must be equal.
 //
-// The table is MADE UP: one series, 345.010 to 345.340, that amends HB 3027 in section 2 (a row the real table does not
+// The table is MADE UP, and stays so after ticket #54 added the real disagreements (HB 3723's and HB 3124's, which
+// get-measure-statutes-affected-table.test.ts reads): the story needs a series of ORS sections that the Measure's text does
+// not change, so that every entry of the series is in `only_in_table` and a changed section list changes the count. HB 3723's
+// entries are single sections and HB 3124's a series of chapters, and the real row for HB 3027's series is confirmed by the
+// text, which the same snapshot expands to the same sections, so a changed section list would move both sides together. The
+// table is one series, 345.010 to 345.340, that amends HB 3027 in section 2 (a row the real table does not
 // have), served in place of the fixture's table from the second pull on. The snapshot is a MADE-UP copy of the fixture's
 // (`createFixtureCopy`), which `changeIt()` rewrites with ors-345.250 added and a version of its own. The fixture's
 // snapshot holds 22 sections from 345.010 to 345.340, so the series gives 22 entries, and with the made-up section 23.

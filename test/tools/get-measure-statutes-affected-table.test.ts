@@ -255,6 +255,77 @@ describe.for(eras)("get_measure's Statutes Affected Table for a %s client", (era
     });
   });
 
+  // HB 3723 (ticket #54), the first REAL disagreement of the fixture. Its Introduced Version is the only one the feed lists, and
+  // the table prints ten rows for it, each ending in an E alone, which is the emergency clause here because the feed lists no
+  // E-Engrossed Version (get-measure-statutes-affected-table-pull.test.ts): "247.002 A §3", "247.012 A §4", "247.014 A §9",
+  // "247.016 R §1", "247.017 A §2", "247.018 R §1", "247.019 A §10", "247.171 A §5", "247.292 A §6" and "247.302 A §7"
+  // (artables2025R1.pdf, pdftotext -layout, pages RS25-T-16 and RS25-T-17). The Version's SECTION 1 reads "ORS 247.016 and
+  // 247.018 and section 9, chapter 492, Oregon Laws 2023, are repealed", and SECTIONS 2 to 10 amend the eight others.
+  describe("HB 3723, whose repeals the parser does not read", () => {
+    // TODAY'S BEHAVIOUR, not the right answer: the parser misses a repeal list that a session-law citation follows, so the
+    // two repeals at §1 are entries the text lacks. Ticket #55 fixes the parser, and then these two move from only_in_table
+    // to parsed_changes.repeals as confirmed, and the Version's repeals list them.
+    it("confirms the eight amendments and lists the two repeals at §1 as the table's alone (today's behaviour; the parser fix is #55)", async () => {
+      const links = await linksOf("HB 3723");
+      const introduced = version(links, "Introduced");
+
+      expect(introduced.statutes_affected_table).toEqual({
+        compared: true,
+        not_compared_reason: null,
+        parsed_changes: expectedParsedChanges({
+          amends: {
+            sections: [
+              confirmed(sectionTarget("ors-247.017", "2")),
+              confirmed(sectionTarget("ors-247.002", "3")),
+              confirmed(sectionTarget("ors-247.012", "4")),
+              confirmed(sectionTarget("ors-247.171", "5")),
+              confirmed(sectionTarget("ors-247.292", "6")),
+              confirmed(sectionTarget("ors-247.302", "7")),
+              confirmed(sectionTarget("ors-247.014", "9")),
+              confirmed(sectionTarget("ors-247.019", "10")),
+            ],
+          },
+        }),
+        only_in_table: expectedChanges({
+          repeals: { sections: [sectionTarget("ors-247.016", "1"), sectionTarget("ors-247.018", "1")] },
+        }),
+        only_in_parsed_links: null,
+        entries_not_compared: null,
+      });
+      // The disagreement is beside the links, never in them: the text's repeals are what the parser reads of it.
+      expect(introduced.statute_links.repeals).toEqual({ sections: [], chapters: [] });
+    });
+
+    it("says the table lists the Measure, and has no entry for any other Version or level", async () => {
+      const table = (await linksOf("HB 3723")).statutes_affected_table;
+
+      expect(table?.lists_measure).toBe(true);
+      expect(table?.other_entries).toEqual([]);
+    });
+  });
+
+  // HB 3124 (ticket #54). Its SECTION 1 reads "Section 2 of this 2025 Act is added to and made a part of the wildlife laws", and
+  // names no ORS chapter, so the parser reads no link that adds to the law. The table prints "Ch. 496 to) Ch. 501 ) Add §1
+  // HB 3124 E" (artables2025R1.pdf, pdftotext -layout, page RS25-T-42): a series of chapters, which is its two ends and the
+  // chapters between them that the snapshot's section list holds (the snapshot fixture holds none of 497 to 500).
+  describe("HB 3124, whose text says 'the wildlife laws' and names no chapter", () => {
+    it("lists the table's addition to ORS chapters 496 and 501 at §1 as the table's alone, and no parsed link that changes the law", async () => {
+      const introduced = version(await linksOf("HB 3124"), "Introduced");
+
+      expect(introduced.statutes_affected_table).toEqual({
+        compared: true,
+        not_compared_reason: null,
+        parsed_changes: null,
+        only_in_table: expectedChanges({
+          "adds-to": { chapters: [chapterTarget("ors-chapter-496", "1"), chapterTarget("ors-chapter-501", "1")] },
+        }),
+        only_in_parsed_links: null,
+        entries_not_compared: null,
+      });
+      expect(introduced.statute_links["adds-to"]).toEqual({ sections: [], chapters: [] });
+    });
+  });
+
   // HB 3131 amends no ORS section, and the table prints no row for it.
   describe("a Measure the table has no row for", () => {
     it("says the table does not list it, and puts no table beside any Version", async () => {

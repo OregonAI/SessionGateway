@@ -27,7 +27,7 @@ const rows: Row[] = [
     name: "ORS [old] new: the new citation after the omitted ones is read. Statutes Affected Table: 247.292 A §6 HB 3723 E",
     documentKind: "version",
     source:
-      "research cache documents-sample-1/MeasureDocuments_20.pdf (HB 3723, not in the committed fixture), lines 720-741",
+      "research cache documents-sample-1/MeasureDocuments_20.pdf (HB 3723, which the committed fixture has since ticket #54), lines 720-741",
     text: `SECTION 6. ORS 247.292, as amended by section 5, chapter 492, Oregon Laws 2023, is amended
 
 23
