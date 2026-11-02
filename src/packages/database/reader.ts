@@ -838,8 +838,8 @@ export function openIndexReader(path: string): IndexReader {
   }
   /**
    * What the index knows of an id it holds no file for: the rows of the feed that link the document, else the postings of
-   * the Proposed Amendment it names, and whether it is a Testimony row. An id no row of the feed names is nothing known,
-   * and a Testimony row is known even to a feed no complete pull has listed it from.
+   * the Proposed Amendment it names, and whether it is a Testimony row. An id no row of the feed names is nothing known;
+   * a Testimony row is known even when no complete pull has listed it yet (an Increment stored it).
    */
   function unheldOf(id: DocumentId | AmendmentId): UnheldDocument | undefined {
     const document = listings.ofDocument(id as DocumentId);
