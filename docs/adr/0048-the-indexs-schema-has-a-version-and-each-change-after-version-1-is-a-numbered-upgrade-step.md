@@ -11,7 +11,7 @@ The database is created by one `CREATE TABLE IF NOT EXISTS` pass, and ADR-0009 l
 - **The file records its schema version** (SQLite's `user_version`).
 - **Today's schema is version 1.** A file with no version gets today's `CREATE TABLE IF NOT EXISTS` pass and is stamped 1, so a file built before this ADR upgrades the way it always has.
 - **Every change after version 1 is a numbered step** that the worker applies in order when it opens the file. A column can be added where it belongs instead of in a table built to avoid a migration.
-- **A wrong version refuses by name.** The server, which opens the file read-only, refuses to start on a file whose version is not the one it knows, naming both versions; ADR-0030 already has it refuse a file the worker has not upgraded. A worker that meets a version newer than it knows refuses too: there is no downgrade.
+- **A wrong version refuses by name.** The server, which opens the file read-only, refuses to start on a file whose version is not the one it knows, naming both versions (a file with no recorded version, and a file that does not exist, are files the worker has not opened yet, and its message says to start the worker first); ADR-0030 already has it refuse a file the worker has not upgraded. A worker that meets a version newer than it knows refuses too: there is no downgrade.
 - **Only the `database` package knows how an old file differs.** Tables where a missing row already means something (`statute_read`, `statutes_affected_read`, `feed_row`, `agenda_revision`) stay as they are.
 
 ## Considered Options

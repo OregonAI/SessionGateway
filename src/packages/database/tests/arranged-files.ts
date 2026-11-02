@@ -2,7 +2,7 @@
 // earlier or later release would have left. This is the package's own tests/ fixture: `database` is the one package
 // that opens SQLite, and a test of it may arrange a file with SQL the way `test/support/old-database.ts` does for the
 // harness. It only arranges. Every assertion goes through the entry points (test/CLAUDE.md, "Seam 4").
-import { mkdtempDisposableSync } from "node:fs";
+import { mkdtempDisposableSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,6 +35,16 @@ function withSql(path: string, statements: string): void {
 /** Stamps the file as another release left it, whatever its tables hold. Close the writer first. */
 export function stampSchemaVersion(path: string, version: number): void {
   withSql(path, `PRAGMA user_version = ${String(version)}`);
+}
+
+/**
+ * Builds a file from the frozen text of version 1 (`version-one-schema.sql`, which is never edited) and stamps it 1, in
+ * WAL mode as the worker leaves a file: the state of a file a release that knew only version 1 deployed. The seam-4
+ * guard opens the current code on it. The file is created by this call, so it must not exist yet.
+ */
+export function buildFrozenVersionOne(path: string): void {
+  const frozen = readFileSync(new URL("./version-one-schema.sql", import.meta.url), "utf8");
+  withSql(path, `PRAGMA journal_mode = WAL;\n${frozen}\nPRAGMA user_version = 1`);
 }
 
 /**

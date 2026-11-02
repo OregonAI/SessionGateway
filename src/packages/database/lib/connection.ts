@@ -1,11 +1,17 @@
+import { existsSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { statuteLinkKinds, tableActions } from "#/packages/domain/statute-links.ts";
 import { storedEvidenceKinds } from "./agency-evidence.ts";
 
-// The only file in the project that imports node:sqlite (src/CLAUDE.md, "Shape"): the API is
-// Stability 1.2, so keeping it here keeps a swap to better-sqlite3 local.
+// The only production file that opens a node:sqlite connection (src/CLAUDE.md, "Shape"; lib/run-state.ts imports its type
+// only): the API is Stability 1.2, so keeping it here keeps a swap to better-sqlite3 local. The tests' arrangers
+// (database/tests/arranged-files.ts, test/support/old-database.ts) also import it, to arrange old files with SQL.
 
-const schema = `
+// FROZEN: a deployed file was built from this text; a change is a new numbered step, never an edit here. Version 1's text
+// includes the three CHECK lists built below from domain constants, so a new member of one of those lists is a change to
+// it too. The seam-4 guard (database/tests/schema-version.test.ts) builds a file from a frozen copy of this text
+// (database/tests/version-one-schema.sql) and opens the current code on it.
+const versionOneSchema = `
   CREATE TABLE IF NOT EXISTS measure (
     session_key TEXT NOT NULL,
     prefix TEXT NOT NULL,
@@ -484,11 +490,11 @@ const schema = `
  * the file, so a file is never left half upgraded. Step 1 is today's schema: its pass of `CREATE ... IF NOT EXISTS`
  * gives a file with no version every table it lacks, so a file built before versions upgrades the way it always has.
  * A change to a table after version 1 is a step appended here with its own test, and a step is never edited once a
- * release has run it: a new file runs every step, so `schema` above stays version 1's text.
+ * release has run it: a new file runs every step, so `versionOneSchema` above stays version 1's text.
  */
 const upgradeSteps: readonly ((database: DatabaseSync) => void)[] = [
   (database) => {
-    database.exec(schema);
+    database.exec(versionOneSchema);
   },
 ];
 
@@ -542,7 +548,8 @@ function upgradeToCurrentVersion(database: DatabaseSync, path: string): void {
     if (found < schemaVersion) database.exec(`PRAGMA user_version = ${String(schemaVersion)}`);
     database.exec("COMMIT");
   } catch (error) {
-    database.exec("ROLLBACK");
+    // SQLite rolls some failures back by itself, and a ROLLBACK with no transaction open would throw over the real error.
+    if (database.isTransaction) database.exec("ROLLBACK");
     throw error;
   }
 }
@@ -557,10 +564,25 @@ function recordedVersionOf(database: DatabaseSync): number {
   return version;
 }
 
-/** The server's connection: it never writes, so it never upgrades a file and refuses one that is not at the version it knows. */
+/**
+ * The server's connection: it never writes, so it never upgrades a file and refuses one that is not at the version it
+ * knows. The worker creates the file and stamps it, so a file that is missing, or that has no version yet, is a server
+ * started before the worker, and the errors say to start the worker first.
+ */
 export function openReadConnection(path: string): DatabaseSync {
+  if (!existsSync(path)) {
+    throw new Error(
+      `The database at "${path}" does not exist: the ingest worker creates it. Start the ingest worker first, then the server.`,
+    );
+  }
   const database = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
   const found = recordedVersionOf(database);
+  if (found === 0) {
+    database.close();
+    throw new Error(
+      `The database at "${path}" has no recorded schema version: the ingest worker has not opened it yet. Start the ingest worker first; it upgrades the file, and the server reads it.`,
+    );
+  }
   if (found !== schemaVersion) {
     database.close();
     throw new Error(

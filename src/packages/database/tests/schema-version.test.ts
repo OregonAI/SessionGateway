@@ -7,21 +7,25 @@ import { afterEach, describe, expect, test } from "vitest";
 import { openIndexReader } from "../reader.ts";
 import { openSearchReader } from "../search.ts";
 import { openIndexWriter } from "../writer.ts";
-import { createIndexFile, leaveAsBeforeVersions, stampSchemaVersion, type IndexFile } from "./arranged-files.ts";
+import {
+  buildFrozenVersionOne,
+  createIndexFile,
+  leaveAsBeforeVersions,
+  stampSchemaVersion,
+  type IndexFile,
+} from "./arranged-files.ts";
 import { nothingPulled, pulledAt, pulledAtText, session } from "./nothing-pulled.ts";
 
 const files: IndexFile[] = [];
 const connections: { close(): void }[] = [];
 
 afterEach(() => {
-  for (const connection of connections.splice(0)) {
-    try {
-      connection.close();
-    } catch {
-      // Closed by the test.
-    }
+  try {
+    // A connection a test closed is no longer in the list, so a close that throws here is a real failure.
+    for (const connection of connections.splice(0)) connection.close();
+  } finally {
+    for (const file of files.splice(0)) file.remove();
   }
-  for (const file of files.splice(0)) file.remove();
 });
 
 function newFile(): IndexFile {
@@ -36,10 +40,16 @@ function writerOn(path: string): ReturnType<typeof openIndexWriter> {
   return writer;
 }
 
+/** Closes a connection the test is done with and takes it off the list that `afterEach` closes. */
+function closed(connection: { close(): void }): void {
+  connection.close();
+  connections.splice(connections.indexOf(connection), 1);
+}
+
 /** A file the writer created and closed: the state a deployment's first worker run leaves. */
 function createdFile(): IndexFile {
   const file = newFile();
-  writerOn(file.path).close();
+  closed(writerOn(file.path));
   return file;
 }
 
@@ -57,11 +67,27 @@ describe.for(readers)("%s", ([, openReader]) => {
     }).not.toThrow();
   });
 
-  test.for([0, 2, 7])("refuses a file at version %i, naming that version and the version 1 it knows", (found) => {
+  test.for([2, 7])("refuses a file at version %i, naming that version and the version 1 it knows", (found) => {
     const file = createdFile();
     stampSchemaVersion(file.path, found);
 
     expect(() => openReader(file.path)).toThrow(new RegExp(`version ${String(found)}\\b.*version 1\\b`));
+  });
+
+  test("refuses a file with no recorded version, saying the worker has not opened it yet and to start the worker first", () => {
+    const file = createdFile();
+    stampSchemaVersion(file.path, 0);
+
+    expect(() => openReader(file.path)).toThrow(
+      /no recorded schema version.*worker has not opened it yet.*start the ingest worker first/is,
+    );
+  });
+
+  test("refuses a file that does not exist, naming the path and saying to start the ingest worker first", () => {
+    const file = newFile();
+
+    expect(() => openReader(file.path)).toThrow(`"${file.path}"`);
+    expect(() => openReader(file.path)).toThrow(/start the ingest worker first/i);
   });
 });
 
@@ -70,11 +96,11 @@ describe("the writer", () => {
     const file = newFile();
     const first = writerOn(file.path);
     first.recordFullPull(session, pulledAt, nothingPulled);
-    first.close();
+    closed(first);
     // The file of a worker that predates the listing tables and the version: no version, and the tables are missing.
     leaveAsBeforeVersions(file.path);
     expect(() => openIndexReader(file.path), "the server refuses it until the worker has upgraded it").toThrow(
-      /version 0\b.*version 1\b/,
+      /no recorded schema version/,
     );
 
     const upgraded = writerOn(file.path);
@@ -82,7 +108,7 @@ describe("the writer", () => {
     // The tables the file lacked are back, empty.
     expect(upgraded.listingCounts(session)).toEqual([]);
     expect(upgraded.committeeMembers(session)).toEqual([]);
-    upgraded.close();
+    closed(upgraded);
     // It is at version 1 now, so the reader opens it, and the row it held is there.
     const reader = openIndexReader(file.path);
     connections.push(reader);
@@ -97,5 +123,30 @@ describe("the writer", () => {
 
     // It was not downgraded or stamped over: the server still sees version 2.
     expect(() => openIndexReader(file.path)).toThrow(/version 2\b.*version 1\b/);
+  });
+});
+
+// The guard on version 1's text (ADR-0048). A deployed file was built from the text in `lib/connection.ts` and is stamped
+// 1, so the worker never runs that text on it again; an edit of the text without a numbered step leaves such a file
+// without what the new code needs. `version-one-schema.sql` is a frozen copy of the text as it was. The writer and both
+// readers prepare their statements when they open, so a statement that needs a table or column the frozen file lacks
+// throws at open, and this test goes red. A test of a step that adds a column or table builds its file from the same
+// frozen text with the step not yet run (ticket #95 adds no step; the first ticket that does adds the test).
+describe("a file built from the frozen text of version 1", () => {
+  test("is opened by the writer, the index reader and the search reader as it stands, and a pull's worth of reads works", () => {
+    const file = newFile();
+    buildFrozenVersionOne(file.path);
+
+    const writer = writerOn(file.path);
+    writer.recordFullPull(session, pulledAt, nothingPulled);
+    closed(writer);
+    const index = openIndexReader(file.path);
+    connections.push(index);
+    const search = openSearchReader(file.path);
+    connections.push(search);
+
+    expect(index.lastFullPull(session)).toBe(pulledAtText);
+    expect(search.generation()).toBe(0);
+    expect(search.vectorCount(session, "no-model")).toBe(0);
   });
 });
