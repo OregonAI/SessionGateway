@@ -10,6 +10,11 @@
 // pull, since the server serves while the worker pulls, ADR-0007), the handler is built over it the way startSystem
 // builds it, and an MCP client calls the tools. One handler serves every case: none of them changes the database.
 //
+// Why the handler is wired here and not by startSystem. startSystem cannot give this state (checked on 2026-11-02): its
+// first pull is part of starting, so a pull the feed refuses (`olis: { withholdLastRows: 1 }`) throws out of
+// startSystem, which removes the database and hands back no system. Its `copyOf` parameter is the template mechanism's,
+// for a copy of a database that was pulled. A Session with no complete Full pull is reached here by never pulling.
+//
 // What the tools did before the envelope (read on 2026-11-02, the commit before this file): get_measure,
 // compare_amendment, get_document and testimony looked their reference up first and answered "No Measure ..." (an
 // unknown id), so an agent on an index that had not been pulled yet was told its id was wrong; meetings with a
