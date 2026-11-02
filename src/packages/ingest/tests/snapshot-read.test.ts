@@ -24,6 +24,7 @@ import {
   type FullPullSnapshotOutcome,
   type IncrementSnapshotOutcome,
   type SnapshotRead,
+  type SnapshotReadStart,
   type StatutesAffectedTableFetch,
 } from "../snapshot-read.ts";
 import {
@@ -272,6 +273,55 @@ describe("an Increment", () => {
     expect(sectionsAddedToIn345(rig.reader, version)).toHaveLength(23);
     expect(documentsAmending418808(rig.reader)).toEqual(["posting-2025r1-28997"]);
     expect(rig.reader.snapshotVersion(session)?.commit).toBe(madeUpCommit);
+  });
+});
+
+// A Pull calls `finish` once. A second call is a bug in the Pull, so it throws and reads nothing more: here a document the
+// Pull stores between the two calls stays unread, whichever way the first call went.
+describe("finish, called a second time", () => {
+  const posting = postedAmendment();
+
+  describe.for([
+    {
+      pull: "a Full pull",
+      snapshot: madeUpSnapshot,
+      finishOf: (start: SnapshotReadStart) => {
+        const read = beginFullPullSnapshotRead(start);
+        return () => read.finish(undefined);
+      },
+    },
+    {
+      pull: "an Increment under the Snapshot the Index reports",
+      snapshot: committedSnapshot,
+      finishOf: (start: SnapshotReadStart) => {
+        const read = beginIncrementSnapshotRead(start);
+        return () => read.finish();
+      },
+    },
+    {
+      pull: "an Increment under another Snapshot",
+      snapshot: madeUpSnapshot,
+      finishOf: (start: SnapshotReadStart) => {
+        const read = beginIncrementSnapshotRead(start);
+        return () => read.finish();
+      },
+    },
+  ])("$pull", ({ snapshot, finishOf }) => {
+    test("throws, and reads nothing the first call did not", async () => {
+      const rig = await indexAfterFullPull(committedSnapshot(), introducedVersion());
+      const finish = finishOf({ writer: rig.writer, session, snapshot: snapshot() });
+      await finish();
+      rig.writer.recordIncrement(
+        session,
+        incrementAt,
+        pulledFeed({ meetings: [humanServicesMeeting], documentLinks: [posting] }),
+      );
+      storeDocuments(rig.writer, posting);
+
+      await expect(finish()).rejects.toThrow("finished already");
+
+      expect(documentsAmending418808(rig.reader)).toEqual([]);
+    });
   });
 });
 

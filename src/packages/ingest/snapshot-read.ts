@@ -75,7 +75,7 @@ export type FullPullSnapshotRead = SnapshotRead & {
   /**
    * Reads what is stored and not yet read with the Snapshot, and reports the Snapshot. Nothing is fetched: it reads the
    * text the store holds. A run that stops part-way rejects, and the Index reports the Snapshot of the last run that
-   * finished; the next run reads what is still unread.
+   * finished; the next run reads what is still unread. Call it once: a second call throws, because it is a bug in the Pull.
    *
    * `table` is the Statutes Affected Table the Pull fetched, or nothing when the deployment names none (then the Index's
    * table, if it holds one, is not read again, ADR-0044).
@@ -89,6 +89,7 @@ export type IncrementSnapshotRead = SnapshotRead & {
    * Reads what is stored and not yet read with the Snapshot and reports it, when the Snapshot file is the one the Index
    * reports, and otherwise reads nothing and leaves it to the next Full pull (ADR-0035, ADR-0047). It takes no table: an
    * Increment fetches none and reads none (ADR-0034). A run that stops part-way rejects, as a Full pull's does.
+   * Call it once: a second call throws, because it is a bug in the Pull.
    */
   finish(): Promise<IncrementSnapshotOutcome>;
 };
@@ -127,6 +128,19 @@ function testimonyRecordsOf(links: readonly DocumentLink[], reading: Reading, sn
           },
         ],
   );
+}
+
+/**
+ * Makes `finish` callable once. The function it returns throws from its second call on, whatever the first one did,
+ * including when the run it began stopped part-way: a Pull that failed to finish begins a new Snapshot read, and a Pull
+ * that calls `finish` twice has a bug.
+ */
+function onlyOnce(): () => void {
+  let called = false;
+  return () => {
+    if (called) throw new Error("The Snapshot read has finished already: a Pull calls `finish` once");
+    called = true;
+  };
 }
 
 /**
@@ -183,9 +197,11 @@ async function readIndexWithSnapshot(
 
 /** Begins a Full pull's Snapshot read, which reads the Index with the Snapshot whatever the Index reports. Call it before the Pull stores any Testimony. */
 export function beginFullPullSnapshotRead(start: SnapshotReadStart): FullPullSnapshotRead {
+  const startFinishing = onlyOnce();
   return {
     testimonyRecordsOf: (links) => testimonyRecordsOf(links, "read", start.snapshot),
     finish: async (table) => {
+      startFinishing();
       const statutesAffectedTable = await readIndexWithSnapshot(start, table);
       return { kind: "read", statutesAffectedTable };
     },
@@ -200,9 +216,11 @@ export function beginFullPullSnapshotRead(start: SnapshotReadStart): FullPullSna
 export function beginIncrementSnapshotRead(start: SnapshotReadStart): IncrementSnapshotRead {
   const reading: Reading =
     start.writer.reportedSnapshotCommit(start.session) === start.snapshot.version.commit ? "read" : "left_to_full_pull";
+  const startFinishing = onlyOnce();
   return {
     testimonyRecordsOf: (links) => testimonyRecordsOf(links, reading, start.snapshot),
     finish: async () => {
+      startFinishing();
       switch (reading) {
         case "read":
           await readIndexWithSnapshot(start, undefined);
