@@ -21,7 +21,7 @@ import { startCopiedSystem, type System } from "../support/system.ts";
 let system: System;
 
 beforeAll(async () => {
-  // 2026-08-01 10:00 in Oregon: every row of the fixture exists by then, so the pull fetches all 278 documents.
+  // 2026-08-01 10:00 in Oregon: every row of the fixture exists by then, so the pull fetches all 280 documents.
   // The simulated clock never moves, so the rate limit's window never ends; the cases make more calls than
   // the default 120 a minute together.
   system = await startCopiedSystem({

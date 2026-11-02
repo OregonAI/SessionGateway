@@ -64,9 +64,9 @@ describe("a file replaced behind the same URL", () => {
   });
 });
 
-// The fixture holds 278 documents (test/CLAUDE.md, "Documents"; the manifest lists 279 files, one of them the Statutes
+// The fixture holds 280 documents (test/CLAUDE.md, "Documents"; the manifest lists 281 files, one of them the Statutes
 // Affected Table, which is not a feed document). A sample of 1000 therefore draws all of them.
-const documentsInFixture = 278;
+const documentsInFixture = 280;
 
 describe("a file that was not replaced", () => {
   it("reports no mismatch, and the sample ran once through the night, fetching each document once", async () => {

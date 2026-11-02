@@ -24,7 +24,7 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 // 10:00 on 2025-02-12 in Oregon, which was on UTC-8, then the next two days: three nightly pulls. By then HB 3131 has
 // all its 42 Testimony rows (the last was created on 2025-01-28), SB 983 exists (created 02-03) and so does the Fiscal
-// Impact Statement 85869 (created 02-11), and the fixture's later rows, and the most of its 278 files, do not.
+// Impact Statement 85869 (created 02-11), and the fixture's later rows, and the most of its 280 files, do not.
 const firstPull = "2025-02-12T18:00:00Z";
 const secondPull = "2025-02-13T18:00:00Z";
 const thirdPull = "2025-02-14T18:00:00Z";

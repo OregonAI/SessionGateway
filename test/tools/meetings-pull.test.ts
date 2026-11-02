@@ -16,7 +16,7 @@ import {
 
 const started: { system: System; connected: ConnectedClient }[] = [];
 
-// A case that serves the documents pulls the fixture's 278 files, about four seconds on its own and more
+// A case that serves the documents pulls the fixture's 280 files, about four seconds on its own and more
 // with the other files' workers running beside it (as get-measure-analysis-pull.test.ts says).
 vi.setConfig({ testTimeout: 60_000 });
 

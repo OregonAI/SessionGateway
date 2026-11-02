@@ -15,7 +15,7 @@ import { startCopiedSystem, type System } from "../support/system.ts";
 let system: System;
 
 beforeAll(async () => {
-  // 2026-08-01 10:00 in Oregon: every row of the fixture exists by then, so the pull fetches all 278 documents.
+  // 2026-08-01 10:00 in Oregon: every row of the fixture exists by then, so the pull fetches all 280 documents.
   system = await startCopiedSystem({
     clockAt: "2026-08-01T17:00:00Z",
     documents: true,

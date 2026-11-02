@@ -59,16 +59,16 @@ const setsOf = (report: Record<string, unknown>): Record<string, SetReport> => {
 // CommitteePublicTestimonies.json holds 84 rows, 42 of them HB 3131's (spec #1, case (d)), and CommitteeMembers.json
 // the 99 members of the fixture's 12 committees (ticket #81).
 const fixtureRows = {
-  Measures: 8,
+  Measures: 10,
   Legislators: 90,
-  MeasureSponsors: 49,
-  MeasureHistoryActions: 144,
+  MeasureSponsors: 63,
+  MeasureHistoryActions: 150,
   CommitteeVotes: 88,
   MeasureVotes: 509,
   Committees: 12,
   CommitteeMeetings: 36,
   CommitteeAgendaItems: 36,
-  MeasureDocuments: 23,
+  MeasureDocuments: 25,
   MeasureAnalysisDocuments: 34,
   CommitteeMeetingDocuments: 86,
   CommitteeProposedAmendments: 15,
@@ -88,7 +88,7 @@ describe("a full pull that is short of the feed's counts", () => {
     const system = await start();
     system.olis.withholdLastRows(1);
 
-    await expect(system.pullAgain()).rejects.toThrow(/counted 8.*read 7/);
+    await expect(system.pullAgain()).rejects.toThrow(/counted 10.*read 9/);
 
     const report = system.buildReport();
     expect(report).toMatchObject({ session: "2025R1", attempted_at: "2026-08-01T10:00:00-07:00" });

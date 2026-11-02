@@ -17,7 +17,7 @@ const clockAt = "2026-08-01T17:00:00Z";
 const root = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads";
 const started: System[] = [];
 
-// A case that serves the documents pulls the fixture's 278 files, about four seconds on its own and more
+// A case that serves the documents pulls the fixture's 280 files, about four seconds on its own and more
 // with the other files' workers running beside it.
 vi.setConfig({ testTimeout: 60_000 });
 

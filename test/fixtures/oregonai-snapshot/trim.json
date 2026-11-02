@@ -6,6 +6,7 @@
     "ors-chapter-184",
     "ors-chapter-192",
     "ors-chapter-244",
+    "ors-chapter-247",
     "ors-chapter-25",
     "ors-chapter-279c",
     "ors-chapter-285a",
@@ -36,7 +37,9 @@
     "ors-chapter-659a",
     "ors-chapter-701",
     "ors-chapter-731",
+    "ors-chapter-801",
     "ors-chapter-805",
+    "ors-chapter-807",
     "ors-chapter-87",
     "ors-chapter-90",
     "ors-chapter-98"
@@ -77,17 +80,18 @@
     "oregon-watershed-enhancement-board",
     "secretary-of-state",
     "state-board-of-education",
+    "state-fish-and-wildlife-commission",
     "water-resources-department"
   ],
   "kept": {
     "agencies": 129,
-    "orsSections": 4392,
-    "chaptersWithAgencies": 39
+    "orsSections": 4693,
+    "chaptersWithAgencies": 42
   },
   "of": {
     "agencies": 231,
     "orsSections": 39002,
     "chaptersWithAgencies": 442
   },
-  "snapshotSha256": "ba13db4b7287aed2f94c5b6b3104e8a3d4d2ec025edb77a0350f25a8adbad839"
+  "snapshotSha256": "e8391416a166b721cf28f23cb2b212af86faf0cff8583afaad27efb448489051"
 }

@@ -57,7 +57,7 @@ export type SystemOptions = {
   snapshot?: string;
   /**
    * Whether the fake OLIS serves the rows that link documents, and the documents. Off by default:
-   * pulling the fixture's 278 documents takes seconds, and a test of `get_measure` reads none.
+   * pulling the fixture's 280 documents takes seconds, and a test of `get_measure` reads none.
    */
   documents?: boolean;
   olis?: Omit<FakeOlisOptions, "clock" | "documents">;

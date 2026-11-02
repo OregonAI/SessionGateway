@@ -26,7 +26,7 @@ import {
 } from "../support/statute-links.ts";
 import { startCopiedSystem, startSystem, type System } from "../support/system.ts";
 
-// A case that builds its own system and serves the documents pulls up to the fixture's 278 files, about four
+// A case that builds its own system and serves the documents pulls up to the fixture's 280 files, about four
 // seconds on its own and more with the other files' workers running beside it (the default is five).
 vi.setConfig({ testTimeout: 60_000 });
 const root = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads";

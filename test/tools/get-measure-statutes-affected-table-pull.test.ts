@@ -4,14 +4,18 @@
 // file that is not a table, refused again without a second reading) until it can; a table that is loaded, fetched again,
 // withdrawn and then changed; a Version whose text could not be read; and made-up tables in shapes the real one never
 // shows (the last describe: a line the parser cannot read, a footer date in November, overturned vetoes, an E alone for a
-// Measure with and without an E-Engrossed Version in the feed). A system pulls the fixture's 278 documents, about four
+// Measure with an E-Engrossed Version in the feed, which the real table never shows: HB 3723 and HB 3124 have an E alone and
+// no E-Engrossed Version, and the case that has one is MADE UP). A system pulls the fixture's 280 documents, about four
 // seconds, so a system serves several cases, which run in the order written and each take the table on from the one
 // before. They are read from the top: a case that comes later relies on what the earlier ones did.
 //
-// The fixture's table agrees with the parsed links of every Version it names (get-measure-statutes-affected-table.test.ts;
-// every Measure of the fixture was looked at for a disagreement, and none has one), so the cases that need a
-// disagreement serve a MADE-UP TABLE in its place: a PDF the test builds (test/support/made-up-pdf.ts), whose rows are
-// SB 69's with some changed, as each row says. Expected values about the real table are literals from `pdftotext -layout`.
+// The fixture's table disagrees with the parsed links of two Measures, both real (ticket #54): HB 3723, whose two repeals
+// at §1 the parser does not read (until #55), and HB 3124, whose text names no chapter where the table adds to two
+// (get-measure-statutes-affected-table.test.ts holds what each shows). Both disagreements are one-sided, entries the text
+// lacks, so the cases that need a shape the real table never shows (a kind that differs, a measure section that differs, an
+// entry at a level that names no Version of the Measure, a list long enough to cut) serve a MADE-UP TABLE in its place: a
+// PDF the test builds (test/support/made-up-pdf.ts), whose rows are SB 69's with some changed, as each row says. Expected
+// values about the real table are literals from `pdftotext -layout`.
 //
 // "Exactly as it is on main" is shown two ways: the answer carries no `statutes_affected_table` anywhere, and it is equal
 // to the answer of a deployment that does not name the table (every other get_measure test runs without the table too).
@@ -38,7 +42,7 @@ import {
 } from "../support/statutes-affected-table.ts";
 import { startSystem, type System, type SystemOptions } from "../support/system.ts";
 
-// A system serves the documents, which pulls the fixture's 278 files: about four seconds on its own and more beside the
+// A system serves the documents, which pulls the fixture's 280 files: about four seconds on its own and more beside the
 // other files' workers (the default timeout is five seconds).
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -268,7 +272,11 @@ describe("a table that cannot be had", () => {
   });
 });
 
-// A MADE-UP TABLE, in place of the real one. Its rows are SB 69's, as the real table prints them ("SB 69 A" is the
+// A MADE-UP TABLE, in place of the real one. WHY IT STAYS (ticket #54): the real table's disagreements, HB 3723's and HB 3124's, are
+// both entries the text lacks (a repeal list the parser misses, a chapter the text does not name). None has a kind that
+// differs from the text's for the same section, a measure section that differs, an entry for a section the Measure cites and
+// does not change, or an entry at a level that names no Version the Measure has, and a case about the shape of one needs a row
+// of that shape. Its rows are SB 69's, as the real table prints them ("SB 69 A" is the
 // A-Engrossed Version), changed one by one:
 //   653.616 R §8      the real table says A (amends): the same section and measure section, another kind
 //   653.626 A §9      as the real table says it
@@ -304,6 +312,35 @@ describe("a table that was loaded", () => {
   it("was retrieved at the pull that found it", () => {
     expect(first.statutes_affected_table?.retrieved_at).toBe(firstPull);
     expect(tableReport(rig.system)).toMatchObject({ outcome: "loaded", held: true });
+  });
+
+  // REAL ROWS (ticket #54), read while the real table is held. HB 3723's table rows repeal ORS 247.016 and 247.018 at §1, and
+  // the text of its Introduced Version, which the parser does not read as a repeal until #55, has no repeal; HB 3124's row adds
+  // to ORS chapters 496 and 501 at §1, and its text names no chapter. A table that overwrote the Version's links would show
+  // in them. The expected links are read from the deployment that names no table, which has the same Versions and never saw one.
+  // HB 3723's half is TODAY'S BEHAVIOUR, not the right answer: once #55 reads its repeal list, its repeals are no longer a
+  // disagreement, the two asserts on it below (no parsed repeals, the repeals in only_in_table) move, and HB 3124 alone carries
+  // the never-overwrite case, which stays true.
+  it("leaves HB 3723's and HB 3124's parsed links as the text has them when the real table says otherwise: the table is beside them, never over them (HB 3723's half is today's behaviour; the parser fix is #55)", async () => {
+    for (const measure of ["HB 3723", "HB 3124"]) {
+      const shown = linksOf(await rig.ask(measure)).versions.map((entry) => [entry.label, entry.statute_links]);
+      const onMain = linksOf(await unset.ask(measure)).versions.map((entry) => [entry.label, entry.statute_links]);
+
+      expect(shown).toEqual(onMain);
+    }
+    const hb3723 = linksOf(await rig.ask("HB 3723")).versions[0];
+    const hb3124 = linksOf(await rig.ask("HB 3124")).versions[0];
+    // TODAY'S BEHAVIOUR (HB 3723, until #55):
+    expect(hb3723?.statute_links.repeals).toEqual(noLinks.repeals);
+    expect(hb3723?.statutes_affected_table?.only_in_table?.repeals.sections.map((target) => target.target_id)).toEqual([
+      "ors-247.016",
+      "ors-247.018",
+    ]);
+    // HB 3124, which stays a disagreement after #55:
+    expect(hb3124?.statute_links["adds-to"]).toEqual(noLinks["adds-to"]);
+    expect(
+      hb3124?.statutes_affected_table?.only_in_table?.["adds-to"].chapters.map((target) => target.target_id),
+    ).toEqual(["ors-chapter-496", "ors-chapter-501"]);
   });
 
   it("is read again only when its bytes change: the same file a day later leaves the retrieval time as it was", async () => {
@@ -404,35 +441,6 @@ describe("a table that was loaded", () => {
     expect(tableReport(rig.system)).toMatchObject({ outcome: "loaded", held: true, entries: 7, unread_lines: 0 });
   });
 
-  // MADE UP: a table that disagrees with the text of SB 69's A-Engrossed Version in three ways, so that a table which
-  // overwrote the Version's links would show in them: it says 653.616 is repealed (the text amends it), 653.626 is
-  // amended in §2 (the text says §9), and an ORS chapter 654 is added to (the text adds to chapter 657B). The expected
-  // links are read from the deployment that names no table, which has the same Version and never saw one.
-  it("leaves the A-Engrossed Version's parsed links as the text has them when the table says otherwise: the table is beside them, never over them (a made-up table)", async () => {
-    rig.system.olis.serveDocument(
-      tablePath,
-      madeUpTable(["653.616 R §8 SB 69 A", "653.626 A §2 SB 69 A", "Ch. 654 Add §1 SB 69 A"]),
-    );
-    rig.system.clock.set("2026-08-05T17:00:00Z");
-    await rig.system.pullAgain();
-
-    const shown = aEngrossed(linksOf(await rig.ask("SB 69")));
-    const onMain = aEngrossed(linksOf(unsetAnswer));
-
-    expect(shown.statute_links).toEqual(onMain.statute_links);
-    expect(shown.statute_links.amends.sections).toEqual(sb69Amends);
-    expect(shown.statute_links.repeals).toEqual(noLinks.repeals);
-    expect(shown.statute_links["adds-to"].chapters).toEqual([chapterTarget("ors-chapter-657b", "1")]);
-    // What the table says is beside them, as the table says it.
-    expect(shown.statutes_affected_table?.only_in_table).toEqual(
-      expectedChanges({
-        amends: { sections: [sectionTarget("ors-653.626", "2")] },
-        repeals: { sections: [sectionTarget("ors-653.616", "8")] },
-        "adds-to": { chapters: [chapterTarget("ors-chapter-654", "1")] },
-      }),
-    );
-  });
-
   // MADE UP: twenty-five rows for SB 69's A-Engrossed Version, for ORS sections its text does not amend (100.001 to
   // 100.025, all in §2). A list shows twenty targets, and says how many it left out.
   it("cuts a long list of the table's entries the text lacks at twenty targets, and says how many it left out (a made-up table)", async () => {
@@ -511,7 +519,8 @@ describe("a table that was loaded", () => {
 // MADE UP, as get-measure-statute-links-pull.test.ts makes them up: rows for a B-Engrossed and a C-Engrossed Version of
 // SB 69 (the feed has neither). B-Engrossed is served with the fixture's scan (Exhibit 288141, a PDF with no text layer), so
 // that the index holds the Version and has read nothing of it. C-Engrossed's file is not served until the second case, and
-// is a PDF the test builds: no Version of the fixture repeals an ORS section, and a repeal is the table's "R". A made-up
+// is a PDF the test builds: no Version of the fixture has a parsed repeal of an ORS section (HB 3723 §1 repeals 247.016 and
+// 247.018, which the parser does not read until #55), and a repeal is the table's "R". A made-up
 // table, served from the pull after, names each Version.
 const versionRowOf = (prefix: string, number: number, description: string): Record<string, unknown> => ({
   SessionKey: "2025R1",
@@ -568,6 +577,10 @@ describe("Versions this index could not read, and one made up to repeal", () => 
   });
 
   it("sets the table's R beside a repeal the text makes, its A beside an amendment, and shows a repeal only the table has", async () => {
+    // MADE UP, and it stays made up (ticket #54): the row "653.646 R §3 SB 69 C" is a repeal only the table has, which HB 3723's
+    // real §1 repeals are today. They are not a like-for-like replacement, because #55 makes the parser read them and they stop
+    // being a disagreement, which would break this case; this one has to survive #55. It also needs the table's R beside a
+    // repeal the text makes (653.616), which HB 3723's text, with no parsed repeal, cannot give.
     // The Version's text, one line to a row of the page: SECTION 1 repeals ORS 653.616, SECTION 2 amends ORS 653.626.
     rig.system.olis.serveDocument(
       "/liz/2025R1/Downloads/MeasureDocument/SB69/C-Engrossed",
@@ -786,9 +799,11 @@ describe("a made-up table in shapes the 2025R1 table never shows", () => {
   // after the Measure number is the emergency clause of a row at the Introduced Version, or the level of an E-Engrossed
   // Version, and the feed says which Versions a Measure has (ADR-0033). The 2025R1 feed lists no E-Engrossed Version of
   // any Measure (none of its 6,178 MeasureDocuments rows; its latest level is C), so every one of the 819 entries of the
-  // table that end in an E alone (180 Measures, none of them a Measure of the fixture, measured 2026-10-30 in the cached
-  // feed and the fixture's copy of the table) is the emergency clause. The fixture has no such row, so these rows are
-  // MADE UP, and so are the E-Engrossed Versions of the two cases after the first.
+  // table that end in an E alone (180 Measures, measured 2026-10-30 in the cached feed and the fixture's copy of the table)
+  // is the emergency clause. Since ticket #54 the fixture has two real Measures with such rows, HB 3723 and HB 3124, whose
+  // Introduced Versions get_measure-statutes-affected-table.test.ts reads against the real table. The rows below stay MADE
+  // UP, for SB 983 and SB 69: a case needs a Measure whose Versions it can give an E-Engrossed Version, and the two cases after
+  // the first need that Version too, which is made up as well.
   const eAloneRows = ["244.120 A §1 SB 983 E", "244.350 R §2 SB 983 E", "653.626 A §9 SB 69 A E"];
   const eAloneTable = madeUpTable(eAloneRows);
   const otherEntriesOfEAlone = [
