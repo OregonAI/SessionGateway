@@ -258,7 +258,7 @@ A Proposed Amendment whose Amended Version is not the latest the Index holds: it
 _Avoid_: withdrawn, rejected (the committee's action on an amendment is its Meaning at each Posting)
 
 **Same links as**:
-A Version whose Statute Links, as read from its text, are exactly those of the Version before it in print order: the same targets under the same kinds in the same measure sections. `get_measure` says `same_links_as` that Version's id and leaves the links out, and still shows the Version's own Statutes Affected Table block and `no_longer_listed` flag (ADR-0036). A Version whose text was not read is never the same as another, because it has said nothing.
+Said of a Version whose Statute Links, as read from its text, repeat those of the Version before it in print order: under each kind the same targets, in the same measure sections and named in the same order. A Version whose text was not read has the same links as none, and none has the same links as it, because it has said nothing (ADR-0036).
 _Avoid_: duplicate Version, same as
 
 **Relating clause**:

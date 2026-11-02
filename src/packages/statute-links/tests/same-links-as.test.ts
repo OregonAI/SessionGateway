@@ -3,10 +3,11 @@ import { statuteLinksOfMeasure } from "../measure.ts";
 import { heldVersion, link, measureOf, sb69Links, heldTable, tripleOf } from "./measure-cases.ts";
 
 // Seam 4: which Versions have the same links as the Version before them (ticket #99; ADR-0036, which supersedes ADR-0027's
-// `same_as`). A Version whose reading, the text read and the Statute Links, is exactly that of the Version before it in print
-// order has the same links as that Version. Only the reading is compared: the Version's own Statutes Affected Table block and
-// its flag that two complete pulls in a row have not listed it (ADR-0030) are its own, whatever the Version before it has, so
-// the result keeps them beside "same links as". A Version that was not read is never the same as another: it has said nothing.
+// `same_as`). A Version whose reading, the text read and the Statute Links under each kind in the order the text names them,
+// is exactly that of the Version before it in print order has the same links as that Version. Only the reading is compared:
+// the Version's own Statutes Affected Table block and its flag that two complete pulls in a row have not listed it (ADR-0030)
+// are its own, whatever the Version before it has, so the result keeps them beside "same links as". A Version that was not
+// read is never the same as another: it has said nothing.
 //
 // SB 69's A-Engrossed and Enrolled Versions read the same, to the last measure section (292 links: 8 amends, 1 adds-to and 283
 // cites; get-measure-statute-links.test.ts), and so do HB 3795's B-Engrossed and Enrolled Versions. The links of a Version are
@@ -88,9 +89,10 @@ describe("a Version whose reading repeats the one before it", () => {
     ]);
   });
 
-  // The reading is the links by kind, each target once with the measure sections it is linked in (ADR-0015), so two Versions
-  // that list the same links in another order within a measure section read the same. MADE UP from SB 69: the Enrolled Version's
-  // §3 names the amendment before the citation.
+  // The reading is the links by kind, each target once with the measure sections it is linked in, in the order the text first
+  // names them (ADR-0015). Links of different kinds are read apart, so two Versions that name an amendment and a citation in
+  // another order within a measure section read the same; links of one kind in another order do not (the next case but one).
+  // MADE UP from SB 69: the Enrolled Version's §3 names the amendment before the citation.
   test("SB 69's Enrolled Version, when its SECTION 3 lists the amendment before the citation: the links by kind are the same, so it still has the same links", () => {
     const reordered = [
       link("adds-to", "ors-chapter-657b", "1"),
@@ -109,6 +111,28 @@ describe("a Version whose reading repeats the one before it", () => {
     expect(sameLinksOf(result)).toEqual([
       ["A-Engrossed", undefined],
       ["Enrolled", "A-Engrossed"],
+    ]);
+  });
+
+  // MADE UP from HB 3795: its Enrolled Version with SECTION 2's citations of ORS 418.811 and 418.813 named the other way round.
+  // The reading keeps the order of the targets within a kind, so the Version does not repeat the B-Engrossed Version.
+  test("a Version that names two citations of one measure section in another order is not the same: HB 3795's Enrolled Version with ORS 418.813 cited before 418.811", () => {
+    const swapped = hb3795BEngrossed.map((each) => {
+      if (each.kind !== "cites") return each;
+      if (each.target.id === "ors-418.811") return link("cites", "ors-418.813", "2");
+      if (each.target.id === "ors-418.813") return link("cites", "ors-418.811", "2");
+      return each;
+    });
+    const versions = [
+      heldVersion(hb3795, "B-Engrossed", { links: hb3795BEngrossed }),
+      heldVersion(hb3795, "Enrolled", { links: swapped }),
+    ];
+
+    const result = statuteLinksOfMeasure({ measure: hb3795, versions, amendments: [], table: undefined });
+
+    expect(sameLinksOf(result)).toEqual([
+      ["B-Engrossed", undefined],
+      ["Enrolled", undefined],
     ]);
   });
 
@@ -199,6 +223,33 @@ describe("a Version that was not read", () => {
       ["A-Engrossed", undefined],
       ["B-Engrossed", undefined],
       ["Enrolled", undefined],
+    ]);
+  });
+
+  // MADE UP, from SB 69 as above: its A-Engrossed Version is a scan and its Enrolled Version was read and names no ORS section
+  // (the real one names 292 links). The scan's links are empty because nothing was read, the Enrolled Version's because the text
+  // has none, so the two empty lists do not say the same.
+  test("a Version that was read and has no links is not the same as the scan before it: SB 69's Enrolled Version after a scan", () => {
+    const versions = [heldVersion(sb69, "A-Engrossed", { read: false }), heldVersion(sb69, "Enrolled", { links: [] })];
+
+    const result = statuteLinksOfMeasure({ measure: sb69, versions, amendments: [], table: undefined });
+
+    expect(sameLinksOf(result)).toEqual([
+      ["A-Engrossed", undefined],
+      ["Enrolled", undefined],
+    ]);
+  });
+
+  // The other side of the same line: a Version that was read has said "no links", and a second one that says it too repeats it.
+  // MADE UP, from SB 69 as above: its A-Engrossed and Enrolled Versions both read, naming no ORS section.
+  test("two Versions that were read and have no links are the same as each other: SB 69's Enrolled Version after A-Engrossed", () => {
+    const versions = [heldVersion(sb69, "A-Engrossed", { links: [] }), heldVersion(sb69, "Enrolled", { links: [] })];
+
+    const result = statuteLinksOfMeasure({ measure: sb69, versions, amendments: [], table: undefined });
+
+    expect(sameLinksOf(result)).toEqual([
+      ["A-Engrossed", undefined],
+      ["Enrolled", "A-Engrossed"],
     ]);
   });
 
