@@ -43,7 +43,11 @@ const addedTo = /(?:is|are) added to and made a part of\s*$/;
 // Oregon Laws 2024," or "as amended by section 5 of this 2025 Act," (#6 F2).
 const asAmendedBy = String.raw`(?:,?\s*as amended by [^.;:]{1,400}?)?`;
 const amendedAfter = new RegExp(String.raw`^${asAmendedBy},?\s*(?:is|are) amended\b`);
-const repealedAfter = /^\s*(?:is|are) repealed\b/;
+// A repeal list can end with sections of an earlier session's law: "ORS 247.016 and 247.018 and section 9, chapter 492,
+// Oregon Laws 2023, are repealed". The list's ORS sections are repealed whatever citation follows them (#55).
+const sectionNumbers = String.raw`\d+[a-z]?(?:,\s*\d+[a-z]?)*(?:,?\s*(?:and|or)\s+\d+[a-z]?)?`;
+const sessionLawCitation = String.raw`,?\s*(?:and\s+|or\s+)?sections?\s+${sectionNumbers},\s*chapter\s+\d+[a-z]?,\s*Oregon Laws\s+\d{4}`;
+const repealedAfter = new RegExp(String.raw`^(?:${sessionLawCitation})*,?\s*(?:is|are) repealed\b`);
 
 function kindOf(text: string, reference: OrsReference): StatuteLinkKind {
   if (addedTo.test(text.slice(Math.max(0, reference.start - 60), reference.start))) return "adds-to";
