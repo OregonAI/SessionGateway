@@ -31,7 +31,7 @@ import {
   legislatorCodesWithoutRow,
   linkedDocumentUrl,
   requiredManifestStrings,
-  rowKeyOf,
+  rowIdentityOf,
   statutesAffectedTablePath,
   targetKeyOf,
   unresolvedId,
@@ -220,7 +220,7 @@ function loadUnresolved(): Map<string, { entry: Unresolved; used: boolean }> {
     if (documentedGapReason(entry.entity_set, entry.property, entry.refers_to, entry.target_key) !== entry.reason) {
       problem(
         `unresolved.json unresolved[${index}]: ${describeKey(entry.refers_to, entry.target_key)} is not a documented gap of the full cache, or its reason is not the documented one. ` +
-          `The documented gaps are the Legislator Codes ${legislatorCodesWithoutRow.join(" and ")} (olis-odata.md section 8, gotcha 4) and a CommitteeMembers row whose LegislatorCode matches no Legislators row (gotcha 5).`,
+          `The documented gaps are the Legislator Codes ${legislatorCodesWithoutRow.join(" and ")} (olis-odata.md section 8, gotcha 4) and a CommitteeMembers row whose LegislatorCode matches no Legislators row and does not start "Rep " or "Sen " (gotcha 5).`,
       );
       return;
     }
@@ -276,7 +276,7 @@ function checkReferences(): { references: number; accepted: number } {
           targetSpec !== undefined &&
           present !== undefined &&
           present.has(keyString(targetSpec.key.map((p) => target[p])));
-        const rowKey = rowKeyOf(entitySet, row);
+        const rowKey = rowIdentityOf(entitySet, row);
         const id = unresolvedId(entitySet, rowKey, ref.property, ref.to);
         const listed = unresolved.get(id);
         if (found) {
@@ -340,12 +340,12 @@ function checkLinkedDocuments(): void {
     for (const row of rows) {
       const url = linkedUrl(entitySet, row);
       if (url === undefined) {
-        problem(`${describeKey(entitySet, rowKeyOf(entitySet, row))}: its document URL is not a valid URL`);
+        problem(`${describeKey(entitySet, rowIdentityOf(entitySet, row))}: its document URL is not a valid URL`);
         continue;
       }
       if (url === null) continue;
       if (!manifestUrls.has(url))
-        problem(`${describeKey(entitySet, rowKeyOf(entitySet, row))} links ${url}, which has no manifest entry`);
+        problem(`${describeKey(entitySet, rowIdentityOf(entitySet, row))} links ${url}, which has no manifest entry`);
       linking.set(url, [...(linking.get(url) ?? []), { entitySet, row }]);
     }
   }
@@ -382,7 +382,7 @@ function checkLinkedDocuments(): void {
     }
     const rows = linking.get(sourceUrl) ?? [];
     for (const { entitySet, row } of rows) {
-      const rowKey = rowKeyOf(entitySet, row);
+      const rowKey = rowIdentityOf(entitySet, row);
       const spec = entitySets[entitySet] as { key: string[] };
       if (!named.has(`${entitySet}|${keyString(spec.key.map((p) => rowKey[p]))}`)) {
         problem(

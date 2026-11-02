@@ -36,7 +36,7 @@ import {
   legislatorCodesWithoutRow,
   linkedDocumentUrl,
   makeUnresolved,
-  rowKeyOf,
+  rowIdentityOf,
   statutesAffectedTablePath,
   targetKeyOf,
 } from "./schema.ts";
@@ -245,9 +245,9 @@ function select(feed: Map<string, Row[]>, chosen: Chosen[]): Selection {
           const gap = makeUnresolved(entitySet, row, ref, target);
           if (gap === null) {
             throw new BuildError(
-              `${describeKey(entitySet, rowKeyOf(entitySet, row))}.${ref.property} refers to ${describeKey(ref.to, target)}, which the full ${SESSION} feed cache does not hold either. ` +
+              `${describeKey(entitySet, rowIdentityOf(entitySet, row))}.${ref.property} refers to ${describeKey(ref.to, target)}, which the full ${SESSION} feed cache does not hold either. ` +
                 `The documented gaps are the Legislator Codes ${legislatorCodesWithoutRow.join(" and ")} (olis-odata.md section 8, gotcha 4) ` +
-                "and a CommitteeMembers row whose LegislatorCode matches no Legislators row (gotcha 5). " +
+                'and a CommitteeMembers row whose LegislatorCode matches no Legislators row and does not start "Rep " or "Sen " (gotcha 5). ' +
                 "Find out why this one is missing, then record it in schema.ts with the evidence.",
             );
           }
@@ -257,7 +257,7 @@ function select(feed: Map<string, Row[]>, chosen: Chosen[]): Selection {
         const targetRow = (feed.get(ref.to) as Row[])[targetIndex] as Row;
         if (targetSpec.aboutMeasure && hasMeasure(targetRow) && !isChosen(targetRow)) {
           throw new BuildError(
-            `${entitySet} ${JSON.stringify(rowKeyOf(entitySet, row))} refers to ${ref.to} ${JSON.stringify(target)}, ` +
+            `${entitySet} ${JSON.stringify(rowIdentityOf(entitySet, row))} refers to ${ref.to} ${JSON.stringify(target)}, ` +
               `which is about ${String(targetRow["MeasurePrefix"])} ${String(targetRow["MeasureNumber"])}, not in measures.txt. ` +
               "The closure does not pull in other Measures: add that Measure on purpose, or drop the chosen one.",
           );
@@ -324,13 +324,13 @@ function collectDocuments(feed: Map<string, Row[]>, selection: Selection): Doc[]
         url = linkedDocumentUrl(entitySet, row);
       } catch {
         throw new BuildError(
-          `${entitySet} ${JSON.stringify(rowKeyOf(entitySet, row))}: document URL "${link.url(row)}" is not a valid URL`,
+          `${entitySet} ${JSON.stringify(rowIdentityOf(entitySet, row))}: document URL "${link.url(row)}" is not a valid URL`,
         );
       }
       if (url === null) continue;
       if (!url.startsWith(OLIS_ORIGIN)) {
         throw new BuildError(
-          `${entitySet} ${JSON.stringify(rowKeyOf(entitySet, row))}: ${url} is not under ${OLIS_ORIGIN}; only OLIS URLs are fetched`,
+          `${entitySet} ${JSON.stringify(rowIdentityOf(entitySet, row))}: ${url} is not under ${OLIS_ORIGIN}; only OLIS URLs are fetched`,
         );
       }
       const stem = `${link.kind}/${link.stem(row)}`;
@@ -339,7 +339,7 @@ function collectDocuments(feed: Map<string, Row[]>, selection: Selection): Doc[]
         throw new BuildError(`documents ${clash} and ${url} would both be stored as ${stem}`);
       byStem.set(stem, url);
       const doc = byUrl.get(url) ?? { stem, url, meanBytes: link.meanBytes, linkedBy: [] };
-      doc.linkedBy.push({ entity_set: entitySet, row_key: rowKeyOf(entitySet, row) });
+      doc.linkedBy.push({ entity_set: entitySet, row_key: rowIdentityOf(entitySet, row) });
       byUrl.set(url, doc);
     }
   }
