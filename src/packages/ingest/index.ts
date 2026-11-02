@@ -23,6 +23,7 @@ import {
   type StoredDocumentHash,
   type SearchRecord,
   type SponsorRecord,
+  type TestimonyAgency,
   type TestimonyRecord,
   type StatuteParseRecord,
   type UnreadStatuteFile,
@@ -180,20 +181,35 @@ function committeeVoteRecordOf(entry: CommitteeVoteEntry, resolver: LegislatorRe
 }
 
 /**
- * The Testimony rows among the links, each with the Agency its `Organization` names. The match is the Agency
- * Link extractor's (`testimonyAgencyLinks`, spec #1 module 5), made here because the registry is the snapshot's
- * and only the worker reads that (ADR-0012). It matches the Organization and nothing else. With `match` false the
- * rows carry no Agency, so the writer leaves the stored one (ADR-0047).
+ * What a run does with the Agency of the Testimony rows it reads. `"match"`: it matches each row's Organization with the
+ * snapshot file's registry, which is the snapshot the index reports. `"leaveToFullPull"`: it matches none, because an
+ * increment's snapshot file is not the one the index reports, and the next full pull matches every row (ADR-0047).
  */
-function testimonyRecordsOf(links: readonly DocumentLink[], snapshot: Snapshot, match: boolean): TestimonyRecord[] {
+type TestimonyAgencyRun = "match" | "leaveToFullPull";
+
+/**
+ * The Testimony rows among the links, each with what the run does with the Agency its `Organization` names. The match
+ * is the Agency Link extractor's (`testimonyAgencyLinks`, spec #1 module 5), made here because the registry is the
+ * snapshot's and only the worker reads that (ADR-0012). It matches the Organization and nothing else. A run that leaves
+ * the Agency to the next full pull makes no match, so the writer keeps the stored one (ADR-0047).
+ */
+function testimonyRecordsOf(
+  links: readonly DocumentLink[],
+  snapshot: Snapshot,
+  agencyRun: TestimonyAgencyRun,
+): TestimonyRecord[] {
   const records: TestimonyRecord[] = [];
   for (const link of links) {
     const details = link.testimony;
     if (details === undefined) continue;
-    const agencyId = match
-      ? (testimonyAgencyLinks(details.organization ?? "", snapshot.agencies)[0]?.agency ?? null)
-      : undefined;
-    records.push({ link: { ...link, testimony: details }, agencyId });
+    const agency: TestimonyAgency =
+      agencyRun === "match"
+        ? {
+            kind: "matched",
+            agencyId: testimonyAgencyLinks(details.organization ?? "", snapshot.agencies)[0]?.agency ?? null,
+          }
+        : { kind: "leftToFullPull" };
+    records.push({ link: { ...link, testimony: details }, agency });
   }
   return records;
 }
@@ -488,7 +504,7 @@ function feedRecordOf(
   deps: IngestDeps,
   snapshot: Snapshot,
   feed: FeedRead,
-  matchTestimony: boolean,
+  testimonyAgencyRun: TestimonyAgencyRun,
 ): { record: FullPullRecord; resolver: LegislatorResolver; committeeNames: Map<CommitteeId, string> } {
   const { measures, legislatorRows, sponsorships, history, committeeVotes, floorVotes, committees } = feed;
   const { meetings, agendaItems, committeeMembers, convenings, sessionDates, links } = feed;
@@ -521,7 +537,7 @@ function feedRecordOf(
     meetings,
     agendaItems,
     documentLinks: links,
-    testimony: testimonyRecordsOf(links, snapshot, matchTestimony),
+    testimony: testimonyRecordsOf(links, snapshot, testimonyAgencyRun),
     committeeMembers,
     convenings,
     sessionDates,
@@ -565,7 +581,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     throw new Error(`The full pull is incomplete, so it stored nothing. ${which.join("; ")}`);
   }
 
-  const { record, resolver, committeeNames } = feedRecordOf(config, deps, snapshot, feed, true);
+  const { record, resolver, committeeNames } = feedRecordOf(config, deps, snapshot, feed, "match");
   const writer = openIndexWriter(config.databasePath);
   let documentsFetched: number;
   const passageCounts: PassageCounts = { passages: 0, keywordOnly: 0, embedded: 0, reused: 0 };
@@ -690,7 +706,13 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
     });
     const feed = await readFeed(olis, config, deps, "increment", writer.highestFloorLetterId(config.session));
     const snapshotIsReported = writer.reportedSnapshotCommit(config.session) === snapshot.version.commit;
-    const { record, committeeNames } = feedRecordOf(config, deps, snapshot, feed, snapshotIsReported);
+    const { record, committeeNames } = feedRecordOf(
+      config,
+      deps,
+      snapshot,
+      feed,
+      snapshotIsReported ? "match" : "leaveToFullPull",
+    );
     writer.recordIncrement(config.session, asOf, record);
     const passageCounts: PassageCounts = { passages: 0, keywordOnly: 0, embedded: 0, reused: 0 };
     const notFetched: BuildReport["documents_not_fetched"] = [];
