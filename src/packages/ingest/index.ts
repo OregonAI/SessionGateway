@@ -4,15 +4,14 @@
 // counted; one that did not stores nothing and says which sets were short in the build report
 // (docs/adr/0030-a-row-is-no-longer-listed-after-two-complete-pulls-miss-it-and-the-tools-flag-it.md). A complete
 // pull stores the feed, with which documents each meeting lists, the Agency each
-// Testimony's Organization names, the version of the OregonAI snapshot and the time the pull started as
-// the index's "as of" time. It resolves the Legislator Code of
-// each sponsor and each vote to a Legislator on the way and reports the codes it could not. It refreshes
+// Testimony's Organization names and the time the pull started as the index's "as of" time. It resolves the
+// Legislator Code of each sponsor and each vote to a Legislator on the way and reports the codes it could not. It refreshes
 // what the feed says about the documents it already holds, fetches every linked document the store does
-// not hold yet, once each, keeps its text, reads the Statute Links of the Versions and Proposed Amendments it
-// holds, and writes the build report
-// (docs/adr/0011-an-amendment-is-a-node-and-its-postings-are-documents.md).
+// not hold yet, once each, keeps its text, and writes the build report
+// (docs/adr/0011-an-amendment-is-a-node-and-its-postings-are-documents.md). The Snapshot read (`snapshot-read.ts`) then
+// reads the Statute Links and the Agency Links of what is stored with the OregonAI snapshot and records the snapshot the
+// index reports (docs/adr/0035-statute-links-are-read-again-when-the-snapshot-changes-before-the-agency-links.md).
 import { createHash } from "node:crypto";
-import { testimonyAgencyLinks } from "#/packages/agency-links/index.ts";
 import type { IngestConfig } from "#/packages/config/index.ts";
 import {
   openIndexWriter,
@@ -23,8 +22,6 @@ import {
   type StoredDocumentHash,
   type SearchRecord,
   type SponsorRecord,
-  type TestimonyAgency,
-  type TestimonyRecord,
 } from "#/packages/database/writer.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
 import { findCitations } from "#/packages/domain/citations.ts";
@@ -40,14 +37,13 @@ import {
   type UnresolvedLegislatorCode,
 } from "#/packages/legislators/resolver.ts";
 import { createOlisClient, type OlisClient, type SetCount } from "#/packages/olis-client/index.ts";
-import { loadSnapshot, type Snapshot } from "#/packages/oregonai-snapshot/index.ts";
+import { loadSnapshot } from "#/packages/oregonai-snapshot/index.ts";
 import { extractPdfText, type ExtractedPdf } from "#/packages/pdf-text/index.ts";
 import { searchEntryOf } from "#/packages/search/documents.ts";
 import { splitPassages } from "#/packages/search/passages.ts";
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { compareTimestamps, formatPacific, pacificTimestampOf, type Timestamp } from "#/packages/time/pacific.ts";
-import { agencyReadOf } from "./lib/agency-links.ts";
 import { buildReportPath, writeBuildReport, type BuildReport, type SetReport } from "./lib/build-report.ts";
 import {
   hashSampleReportPath,
@@ -58,7 +54,7 @@ import {
   type HashSampleReport,
 } from "./lib/hash-sample.ts";
 import { loadStatutesAffectedTable } from "./lib/statutes-affected-table.ts";
-import { statuteParseOf } from "./lib/statute-parse.ts";
+import { beginSnapshotRead, type SnapshotRead } from "./snapshot-read.ts";
 
 export type IngestDeps = {
   fetch: typeof fetch;
@@ -176,40 +172,6 @@ function committeeVoteRecordOf(entry: CommitteeVoteEntry, resolver: LegislatorRe
   return { ...entry, legislatorId: legislatorIdOfResolution(resolver.resolve("CommitteeVotes", entry.legislatorCode)) };
 }
 
-/**
- * What a run does with the Agency of the Testimony rows it reads. `"match"`: it matches each row's Organization with the
- * snapshot file's registry, which is the snapshot the index reports. `"leaveToFullPull"`: it matches none, because an
- * increment's snapshot file is not the one the index reports, and the next full pull matches every row (ADR-0047).
- */
-type TestimonyAgencyRun = "match" | "leaveToFullPull";
-
-/**
- * The Testimony rows among the links, each with what the run does with the Agency its `Organization` names. The match
- * is the Agency Link extractor's (`testimonyAgencyLinks`, spec #1 module 5), made here because the registry is the
- * snapshot's and only the worker reads that (ADR-0012). It matches the Organization and nothing else. A run that leaves
- * the Agency to the next full pull makes no match, so the writer keeps the stored one (ADR-0047).
- */
-function testimonyRecordsOf(
-  links: readonly DocumentLink[],
-  snapshot: Snapshot,
-  agencyRun: TestimonyAgencyRun,
-): TestimonyRecord[] {
-  const records: TestimonyRecord[] = [];
-  for (const link of links) {
-    const details = link.testimony;
-    if (details === undefined) continue;
-    const agency: TestimonyAgency =
-      agencyRun === "match"
-        ? {
-            kind: "matched",
-            agencyId: testimonyAgencyLinks(details.organization ?? "", snapshot.agencies)[0]?.agency ?? null,
-          }
-        : { kind: "leftToFullPull" };
-    records.push({ link: { ...link, testimony: details }, agency });
-  }
-  return records;
-}
-
 /** What a pull made of the passages of the documents it stored: how many, and how many it had to embed. */
 type PassageCounts = { passages: number; keywordOnly: number; embedded: number; reused: number };
 
@@ -281,28 +243,21 @@ type DocumentsStep = {
   deps: IngestDeps;
   writer: IndexWriter;
   olis: OlisClient;
-  snapshot: Snapshot;
   /** The links of the rows this run read. */
   links: readonly DocumentLink[];
   committeeNames: ReadonlyMap<CommitteeId, string>;
   passageCounts: PassageCounts;
   /** Gets an entry for each document this run could not get or read. */
   notFetched: BuildReport["documents_not_fetched"];
-  /**
-   * Whether this run reads the links and reports the snapshot. A full pull does. An increment does only while the
-   * snapshot file is the one the index reports: a changed snapshot makes every stored document's links unread, which is
-   * the full pull's work (ADR-0035), and a new document's links wait for it.
-   */
-  readLinks: boolean;
 };
 
 /**
  * Fetches the linked documents the store does not hold, once each, and keeps their text; refreshes what the feed says of
- * the ones it holds; reads the Statute Links and the Agency Links of what is stored and reports the snapshot. A full pull
- * and an increment do the same here with the links each read, and it returns how many documents it fetched.
+ * the ones it holds. A full pull and an increment do the same here with the links each read, and it returns how many
+ * documents it fetched. Reading what is stored for links is the Snapshot read's (`snapshot-read.ts`).
  */
 async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
-  const { config, deps, writer, olis, snapshot, links, committeeNames, passageCounts, notFetched, readLinks } = step;
+  const { config, deps, writer, olis, links, committeeNames, passageCounts, notFetched } = step;
   let documentsFetched = 0;
   const stored = writer.storedDocumentIds(config.session);
   // A fetched file is unchanging (ADR-0005) but its feed row is not: OLIS changes a posting's Meaning,
@@ -356,38 +311,6 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
     stored.add(link.id);
     documentsFetched += 1;
   }
-  if (!readLinks) return documentsFetched;
-  // The Statute Links of every stored Version and posting not yet read with this snapshot, from the text the store
-  // holds: the files are not fetched again. Postings that share a file are read once (ADR-0015). A snapshot that has
-  // changed since a file was read makes it unread, because its ranges are expanded against the snapshot's section
-  // list, and this comes before the Agency Links below, which are made from these links (ADR-0035).
-  for (const file of writer.unreadStatuteFiles(config.session, snapshot.version)) {
-    writer.storeStatuteParse(
-      statuteParseOf(file, writer.storedText(file.documentId), snapshot.orsSections),
-      snapshot.version,
-    );
-  }
-  // The Agency Links of every stored Fiscal Impact Statement, Version and posting not yet read with this snapshot, from
-  // the text the store holds and the Statute Links read from it just above (ADR-0027). A snapshot that has changed since
-  // a document was read makes it unread: the index reports the snapshot of this pull, so every link in it is made with it.
-  for (const document of writer.unreadAgencyDocuments(config.session, snapshot.version)) {
-    writer.storeAgencyRead(
-      agencyReadOf(
-        document,
-        writer.storedText(document.documentId),
-        writer.statuteLinksOf(document.documentId),
-        snapshot,
-      ),
-      snapshot.version,
-    );
-  }
-  // The index reports this snapshot only now, when every link in it has been read with it, and a pull that stopped
-  // before this line leaves the snapshot of the last pull that finished (ADR-0035). The Agencies' parents go with it.
-  writer.recordSnapshotRead(
-    config.session,
-    snapshot.version,
-    [...snapshot.agencyParents].map(([agency, parent]) => ({ agency, parent })),
-  );
   return documentsFetched;
 }
 
@@ -458,9 +381,8 @@ async function readFeed(
 function feedRecordOf(
   config: IngestConfig,
   deps: IngestDeps,
-  snapshot: Snapshot,
   feed: FeedRead,
-  testimonyAgencyRun: TestimonyAgencyRun,
+  snapshotRead: SnapshotRead,
 ): { record: FullPullRecord; resolver: LegislatorResolver; committeeNames: Map<CommitteeId, string> } {
   const { measures, legislatorRows, sponsorships, history, committeeVotes, floorVotes, committees } = feed;
   const { meetings, agendaItems, committeeMembers, convenings, sessionDates, links } = feed;
@@ -493,7 +415,7 @@ function feedRecordOf(
     meetings,
     agendaItems,
     documentLinks: links,
-    testimony: testimonyRecordsOf(links, snapshot, testimonyAgencyRun),
+    testimony: snapshotRead.testimonyRecordsOf(links),
     committeeMembers,
     convenings,
     sessionDates,
@@ -537,28 +459,28 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     throw new Error(`The full pull is incomplete, so it stored nothing. ${which.join("; ")}`);
   }
 
-  const { record, resolver, committeeNames } = feedRecordOf(config, deps, snapshot, feed, "match");
   const writer = openIndexWriter(config.databasePath);
-  let documentsFetched: number;
   const passageCounts: PassageCounts = { passages: 0, keywordOnly: 0, embedded: 0, reused: 0 };
   const notFetched: BuildReport["documents_not_fetched"] = [];
   try {
+    const snapshotRead = beginSnapshotRead({ writer, session: config.session, snapshot, pull: "full_pull" });
+    const { record, resolver, committeeNames } = feedRecordOf(config, deps, feed, snapshotRead);
     // What each meeting lists and which analysis documents each Measure has are the feed's, so they are
     // stored with the rest of it before any file is fetched: a file that fails to come is still listed,
     // and the server can say a Measure has a statement it does not hold yet.
     writer.recordFullPull(config.session, asOf, record);
-    documentsFetched = await storeLinkedDocuments({
+    const documentsFetched = await storeLinkedDocuments({
       config,
       deps,
       writer,
       olis,
-      snapshot,
       links,
       committeeNames,
       passageCounts,
       notFetched,
-      readLinks: true,
     });
+    // The Statute Links and Agency Links of what is stored, with this pull's snapshot, and the snapshot the index reports.
+    await snapshotRead.finish();
     const listingCounts = new Map(writer.listingCounts(config.session).map((count) => [count.entitySet, count]));
     const unresolvedMemberCodes = new Set(
       resolver
@@ -607,16 +529,16 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       },
       ...(statutesAffectedTable === undefined ? {} : { statutes_affected_table: statutesAffectedTable }),
     });
+    return {
+      measures: measures.length,
+      asOf,
+      documentsFetched,
+      documentsNotFetched: notFetched.length,
+      unresolvedLegislatorCodes: resolver.unresolved(),
+    };
   } finally {
     writer.close();
   }
-  return {
-    measures: measures.length,
-    asOf,
-    documentsFetched,
-    documentsNotFetched: notFetched.length,
-    unresolvedLegislatorCodes: resolver.unresolved(),
-  };
 }
 
 export type IncrementResult = {
@@ -633,9 +555,9 @@ const INCREMENT_OVERLAP_HOURS = 2;
  * An increment (ADR-0005, ADR-0039): reads the rows OLIS created or modified since the last run, less a two-hour
  * overlap (`CreatedDate gt X or ModifiedDate gt X`), stores them, and fetches the documents they link that the store
  * does not hold. It is not a complete pull: it lists nothing and marks nothing no longer listed (ADR-0030). A short read
- * stores nothing and throws. It reads the links of the documents it stores, and matches each Testimony row's Agency, only
- * when the snapshot file is the one the index reports; under a changed file it leaves both to the next full pull
- * (ADR-0035, ADR-0047).
+ * stores nothing and throws. The Snapshot read (`snapshot-read.ts`) reads the links of the documents it stores, and matches
+ * each Testimony row's Agency, only when the snapshot file is the one the index reports; under a changed file it leaves
+ * both to the next full pull (ADR-0035, ADR-0047).
  */
 export async function runIncrement(config: IngestConfig, deps: IngestDeps): Promise<IncrementResult> {
   const snapshot = await loadSnapshot(config.snapshotPath);
@@ -661,14 +583,8 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
       },
     });
     const feed = await readFeed(olis, config, deps, "increment", writer.highestFloorLetterId(config.session));
-    const snapshotIsReported = writer.reportedSnapshotCommit(config.session) === snapshot.version.commit;
-    const { record, committeeNames } = feedRecordOf(
-      config,
-      deps,
-      snapshot,
-      feed,
-      snapshotIsReported ? "match" : "leaveToFullPull",
-    );
+    const snapshotRead = beginSnapshotRead({ writer, session: config.session, snapshot, pull: "increment" });
+    const { record, committeeNames } = feedRecordOf(config, deps, feed, snapshotRead);
     writer.recordIncrement(config.session, asOf, record);
     const passageCounts: PassageCounts = { passages: 0, keywordOnly: 0, embedded: 0, reused: 0 };
     const notFetched: BuildReport["documents_not_fetched"] = [];
@@ -677,13 +593,12 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
       deps,
       writer,
       olis,
-      snapshot,
       links: feed.links,
       committeeNames,
       passageCounts,
       notFetched,
-      readLinks: snapshotIsReported,
     });
+    await snapshotRead.finish();
     return { asOf, documentsFetched, documentsNotFetched: notFetched.length };
   } finally {
     writer.close();
