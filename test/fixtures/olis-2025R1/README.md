@@ -27,12 +27,15 @@ point at, and every document they link.
   Rep Owens, Co-Chairs of HALNRW from one instant, because the set's declared key is not unique
   (`olis-odata.md` section 8, gotcha 5); the file keeps every row.
   **Personal names.** The set's `LegislatorCode` holds the personal names of non-legislator members
-  of task forces (gotcha 5), which no Legislators row matches. That decision does not arise here:
-  all 99 rows name a Legislator Code that a Legislators row of the slice answers to (checked on the
-  cache on 2026-10-31: no code is unresolved), and no non-legislator is committed. The cache's
-  task force committees that have such members (JOCSS, for one) are not among the 12. The build
-  stops on a member whose code resolves to no Legislators row, naming it, so a Measure added later
-  whose committee has one needs a decision first, and its README note.
+  of task forces (gotcha 5), which no Legislators row matches. Names in the feed are public record
+  and are committed as published (ADR-0002), so such a member is committed like any other row. The
+  build records the row in `unresolved.json` with a reason of its own (the member is no Legislator,
+  gotcha 5; not gotcha 4's "Legislators is a current snapshot"), and `verify.ts` accepts it the same
+  way. The kind of row is the rule, so no person is listed by hand. None is in the slice now: all 99
+  rows name a Legislator Code that a Legislators row of the slice answers to (checked on the cache
+  on 2026-10-31), because the cache's 32 such members sit in JTFBHA (22) and JOCSS (10), two task
+  forces that are not among the 12 committees. A Measure added later whose committee has one brings
+  the member in with it.
 - **Not in the slice.** `CommitteeStaffMembers`, `ConveneTimes` and `LegislativeSessions`: no row
   about a Measure points at them. `verify.ts` still knows what refers to what in the first two.
 - **Documents.** Versions and Printed Amendments, analysis documents (Fiscal and Revenue Impact
