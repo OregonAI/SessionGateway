@@ -255,17 +255,17 @@ describe.for(eras)("get_measure's Statutes Affected Table for a %s client", (era
     });
   });
 
-  // HB 3723 (ticket #54), the first REAL disagreement of the fixture. Its Introduced Version is the only one the feed lists, and
-  // the table prints ten rows for it, each ending in an E alone, which is the emergency clause here because the feed lists no
-  // E-Engrossed Version (get-measure-statutes-affected-table-pull.test.ts): "247.002 A §3", "247.012 A §4", "247.014 A §9",
-  // "247.016 R §1", "247.017 A §2", "247.018 R §1", "247.019 A §10", "247.171 A §5", "247.292 A §6" and "247.302 A §7"
-  // (artables2025R1.pdf, pdftotext -layout, pages RS25-T-16 and RS25-T-17). The Version's SECTION 1 reads "ORS 247.016 and
-  // 247.018 and section 9, chapter 492, Oregon Laws 2023, are repealed", and SECTIONS 2 to 10 amend the eight others.
-  describe("HB 3723, whose repeals the parser does not read", () => {
-    // TODAY'S BEHAVIOUR, not the right answer: the parser misses a repeal list that a session-law citation follows, so the
-    // two repeals at §1 are entries the text lacks. Ticket #55 fixes the parser, and then these two move from only_in_table
-    // to parsed_changes.repeals as confirmed, and the Version's repeals list them.
-    it("confirms the eight amendments and lists the two repeals at §1 as the table's alone (today's behaviour; the parser fix is #55)", async () => {
+  // HB 3723 (ticket #54, which began as the first REAL disagreement of the fixture; ticket #55 ended it). Its Introduced
+  // Version is the only one the feed lists, and the table prints ten rows for it, each ending in an E alone, which is the
+  // emergency clause here because the feed lists no E-Engrossed Version
+  // (get-measure-statutes-affected-table-pull.test.ts): "247.002 A §3", "247.012 A §4", "247.014 A §9", "247.016 R §1",
+  // "247.017 A §2", "247.018 R §1", "247.019 A §10", "247.171 A §5", "247.292 A §6" and "247.302 A §7"
+  // (artables2025R1.pdf, pdftotext -layout, pages RS25-T-16 and RS25-T-17). The Version's SECTION 1 reads "ORS 247.016
+  // and 247.018 and section 9, chapter 492, Oregon Laws 2023, are repealed", and SECTIONS 2 to 10 amend the eight others.
+  describe("HB 3723, whose repeal list a session-law citation follows", () => {
+    // Ticket #55 made the parser read the repeal list, so the two repeals at §1 are links the text has and the table confirms.
+    // Before it they were only_in_table, and the Version's repeals were empty.
+    it("confirms the ten entries: the eight amendments and the two repeals at §1", async () => {
       const links = await linksOf("HB 3723");
       const introduced = version(links, "Introduced");
 
@@ -285,15 +285,19 @@ describe.for(eras)("get_measure's Statutes Affected Table for a %s client", (era
               confirmed(sectionTarget("ors-247.019", "10")),
             ],
           },
+          repeals: {
+            sections: [confirmed(sectionTarget("ors-247.016", "1")), confirmed(sectionTarget("ors-247.018", "1"))],
+          },
         }),
-        only_in_table: expectedChanges({
-          repeals: { sections: [sectionTarget("ors-247.016", "1"), sectionTarget("ors-247.018", "1")] },
-        }),
+        only_in_table: null,
         only_in_parsed_links: null,
         entries_not_compared: null,
       });
-      // The disagreement is beside the links, never in them: the text's repeals are what the parser reads of it.
-      expect(introduced.statute_links.repeals).toEqual({ sections: [], chapters: [] });
+      // The Version's own repeals are what its text says: ORS 247.016 and 247.018, in SECTION 1.
+      expect(introduced.statute_links.repeals).toEqual({
+        sections: [sectionTarget("ors-247.016", "1"), sectionTarget("ors-247.018", "1")],
+        chapters: [],
+      });
     });
 
     it("says the table lists the Measure, and has no entry for any other Version or level", async () => {
