@@ -1,3 +1,4 @@
+import { versionDescriptionOfLetter } from "#/packages/domain/documents.ts";
 import {
   statuteLinkKindOfTableAction,
   versionDescriptionOfTableLevel,
@@ -86,12 +87,31 @@ function compareWithText(version: StoredVersion, entries: readonly StatutesAffec
   };
 }
 
+/** The description of the E-Engrossed Version, the only Version whose level can be an E alone after the Measure number. */
+export const eEngrossedVersion = versionDescriptionOfLetter("E");
+
+/**
+ * The description of the Version a Table entry names, given whether the feed lists an E-Engrossed Version of its Measure
+ * (held or not). A row with a level, or none, names what `versionDescriptionOfTableLevel` says. A row that ends in an E alone
+ * is column (4), the emergency clause, of a row with no level when the feed lists no E-Engrossed Version, so it names the
+ * Introduced Version: an E can be a level only if that Version exists. When the feed lists one, the E may be its level or the
+ * clause, the table's text does not say which, and nothing is guessed: undefined (ADR-0033, ADR-0013's rule).
+ */
+function versionNamedByEntry(
+  entry: Pick<StatutesAffectedEntry, "level" | "loneE">,
+  listsEEngrossed: boolean,
+): string | undefined {
+  if (!entry.loneE) return versionDescriptionOfTableLevel(entry.level);
+  return listsEEngrossed ? undefined : versionDescriptionOfLetter(null);
+}
+
 /** What the table says of a Version: undefined when no entry names it. */
 export function tableOfVersion(
   version: StoredVersion,
   table: StatutesAffectedTableOfMeasure,
 ): TableOfVersion | undefined {
-  const entries = table.entries.filter((entry) => versionDescriptionOfTableLevel(entry.level) === version.label);
+  const listsEEngrossed = table.listedVersions.includes(eEngrossedVersion);
+  const entries = table.entries.filter((entry) => versionNamedByEntry(entry, listsEEngrossed) === version.label);
   return entries.length === 0 ? undefined : compareWithText(version, entries);
 }
 
@@ -125,11 +145,12 @@ export function tableOfMeasure(
   table: StatutesAffectedTableOfMeasure,
 ): TableOfMeasure {
   const heldLabels = new Set(versions.map((version) => version.label));
+  const listsEEngrossed = table.listedVersions.includes(eEngrossedVersion);
   const apart: EntriesApart[] = [];
   for (const [printed, entries] of byPrintedLevel(table.entries)) {
     const [first] = entries;
     if (first === undefined) continue;
-    const version = versionDescriptionOfTableLevel(first.level);
+    const version = versionNamedByEntry(first, listsEEngrossed);
     if (version !== undefined && heldLabels.has(version)) continue;
     apart.push({ printed, why: whyApart(first, version), links: distinctLinks(entries.map(linkOfEntry)) });
   }
