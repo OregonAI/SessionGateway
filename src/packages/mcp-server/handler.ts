@@ -149,7 +149,7 @@ function buildServer(
     input: searchInput,
     output: searchOutput,
     annotations: { readOnlyHint: true, openWorldHint: false },
-    run: (input) => search(searchDeps, config.session, input),
+    run: (input, asOf) => search(searchDeps, config.session, input, asOf),
     faultMessage: searchFaultMessage,
   });
   envelope.register(server, {
@@ -185,7 +185,6 @@ export function createSessionGatewayHandler(config: ServerConfig, deps: HandlerD
     searchIndex,
     embedder: deps.embedder,
     vectors: createVectorCache({
-      reader,
       searchIndex,
       session: config.session,
       modelId: deps.embedder.modelId,

@@ -22,6 +22,7 @@ import {
   termsOf,
 } from "#/packages/search/text.ts";
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
+import type { Timestamp } from "#/packages/time/pacific.ts";
 import type { Outcome } from "../envelope.ts";
 import {
   checkFilters,
@@ -284,13 +285,14 @@ function keywordRankings(
  */
 async function embeddingCandidates(
   deps: SearchDeps,
+  asOf: Timestamp,
   query: string,
   terms: readonly string[],
   filter: SearchFilter,
 ): Promise<Map<HitId, Candidate>> {
   const found = new Map<HitId, Candidate>();
   if (terms.length === 0) return found;
-  const vectors = deps.vectors.current();
+  const vectors = deps.vectors.current(asOf);
   if (vectors.index.size === 0) return found;
   const question = quantizeUnitVector(await deps.embedder.embedQuestion(query));
   const near = vectors.index.nearest(
@@ -345,10 +347,12 @@ function orderedCandidates(
   return [...ranked.values()];
 }
 
+/** `asOf` is the index's As of that the envelope read for the call: it says which state of the index the vectors are of. */
 export async function search(
   deps: SearchDeps,
   session: SessionKey,
   input: z.infer<typeof searchInput>,
+  asOf: Timestamp,
 ): Promise<SearchOutcome> {
   const citations = findCitations(input.query, session);
   const resolved = filterOf(deps, session, input, citations);
@@ -365,7 +369,7 @@ export async function search(
   const terms = termsOf(withoutCitations);
   const cited = citedCandidates(deps.searchIndex, citations, filter);
   const byWords = keywordRankings(deps.searchIndex, terms, citations.map(phraseOf), filter);
-  const byEmbedding = await embeddingCandidates(deps, input.query, terms, filter);
+  const byEmbedding = await embeddingCandidates(deps, asOf, input.query, terms, filter);
   const citationTerms = citations.map(citationTermOf);
 
   const results = orderedCandidates(cited, byWords.everyWord, byEmbedding, byWords.someWords)
