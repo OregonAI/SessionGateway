@@ -36,7 +36,7 @@ import {
   legislatorCodesWithoutRow,
   linkedDocumentUrl,
   makeUnresolved,
-  rowKeyOf,
+  rowIdentityOf,
   statutesAffectedTablePath,
   targetKeyOf,
 } from "./schema.ts";
@@ -244,15 +244,11 @@ function select(feed: Map<string, Row[]>, chosen: Chosen[]): Selection {
         if (targetIndex === undefined) {
           const gap = makeUnresolved(entitySet, row, ref, target);
           if (gap === null) {
-            const refers = `${describeKey(entitySet, rowKeyOf(entitySet, row))}.${ref.property} refers to ${describeKey(ref.to, target)}, which the full ${SESSION} feed cache does not hold either. `;
             throw new BuildError(
-              refers +
-                (entitySet === committeeMembersSet
-                  ? "This is a member who is no Legislator (olis-odata.md section 8, gotcha 5), not a gap for schema.ts: " +
-                    "committing a non-Legislator's personal name needs the owner's decision first " +
-                    "(test/fixtures/olis-2025R1/README.md, 'Personal names'). Ask before changing the build or measures.txt."
-                  : `The only documented gaps are the Legislator Codes ${legislatorCodesWithoutRow.join(" and ")} (olis-odata.md section 8, gotcha 4): ` +
-                    "find out why this one is missing, then record it in schema.ts with the evidence."),
+              `${describeKey(entitySet, rowIdentityOf(entitySet, row))}.${ref.property} refers to ${describeKey(ref.to, target)}, which the full ${SESSION} feed cache does not hold either. ` +
+                `The documented gaps are the Legislator Codes ${legislatorCodesWithoutRow.join(" and ")} (olis-odata.md section 8, gotcha 4) ` +
+                'and a CommitteeMembers row whose LegislatorCode matches no Legislators row and does not start "Rep " or "Sen " (gotcha 5). ' +
+                "Find out why this one is missing, then record it in schema.ts with the evidence.",
             );
           }
           unresolved.push({ rowIndex, gap });
@@ -261,7 +257,7 @@ function select(feed: Map<string, Row[]>, chosen: Chosen[]): Selection {
         const targetRow = (feed.get(ref.to) as Row[])[targetIndex] as Row;
         if (targetSpec.aboutMeasure && hasMeasure(targetRow) && !isChosen(targetRow)) {
           throw new BuildError(
-            `${entitySet} ${JSON.stringify(rowKeyOf(entitySet, row))} refers to ${ref.to} ${JSON.stringify(target)}, ` +
+            `${entitySet} ${JSON.stringify(rowIdentityOf(entitySet, row))} refers to ${ref.to} ${JSON.stringify(target)}, ` +
               `which is about ${String(targetRow["MeasurePrefix"])} ${String(targetRow["MeasureNumber"])}, not in measures.txt. ` +
               "The closure does not pull in other Measures: add that Measure on purpose, or drop the chosen one.",
           );
@@ -275,7 +271,8 @@ function select(feed: Map<string, Row[]>, chosen: Chosen[]): Selection {
   // The members of the committees the closure found, every row of them (ticket #81). Nothing refers to a
   // CommitteeMembers row, so the closure cannot reach them; each member's committee is already in. Their
   // Legislator Codes are followed like any other, and one that no Legislators row answers to (a task force's
-  // non-legislator member, olis-odata.md section 8, gotcha 5) stops the build in the loop above.
+  // non-legislator member, olis-odata.md section 8, gotcha 5) is committed as published and recorded as unresolved
+  // with that reason (ADR-0002: names are public record).
   const memberRows = feed.get(committeeMembersSet) ?? [];
   const keptCommittees = new Set(
     [...(included.get("Committees") ?? [])].map((i) => String((feed.get("Committees") as Row[])[i]?.["CommitteeCode"])),
@@ -327,13 +324,13 @@ function collectDocuments(feed: Map<string, Row[]>, selection: Selection): Doc[]
         url = linkedDocumentUrl(entitySet, row);
       } catch {
         throw new BuildError(
-          `${entitySet} ${JSON.stringify(rowKeyOf(entitySet, row))}: document URL "${link.url(row)}" is not a valid URL`,
+          `${entitySet} ${JSON.stringify(rowIdentityOf(entitySet, row))}: document URL "${link.url(row)}" is not a valid URL`,
         );
       }
       if (url === null) continue;
       if (!url.startsWith(OLIS_ORIGIN)) {
         throw new BuildError(
-          `${entitySet} ${JSON.stringify(rowKeyOf(entitySet, row))}: ${url} is not under ${OLIS_ORIGIN}; only OLIS URLs are fetched`,
+          `${entitySet} ${JSON.stringify(rowIdentityOf(entitySet, row))}: ${url} is not under ${OLIS_ORIGIN}; only OLIS URLs are fetched`,
         );
       }
       const stem = `${link.kind}/${link.stem(row)}`;
@@ -342,7 +339,7 @@ function collectDocuments(feed: Map<string, Row[]>, selection: Selection): Doc[]
         throw new BuildError(`documents ${clash} and ${url} would both be stored as ${stem}`);
       byStem.set(stem, url);
       const doc = byUrl.get(url) ?? { stem, url, meanBytes: link.meanBytes, linkedBy: [] };
-      doc.linkedBy.push({ entity_set: entitySet, row_key: rowKeyOf(entitySet, row) });
+      doc.linkedBy.push({ entity_set: entitySet, row_key: rowIdentityOf(entitySet, row) });
       byUrl.set(url, doc);
     }
   }

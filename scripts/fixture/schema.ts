@@ -31,6 +31,13 @@ export type Ref = {
 export type EntitySpec = {
   /** The properties that identify a row when other rows refer to it. */
   key: string[];
+  /**
+   * The properties that name one row in unresolved.json and in messages, when the declared key is
+   * not unique and a row needs more to be told apart. Absent: the key does. Only for a set that no
+   * reference points at and whose rows link no document: build.ts and verify.ts look rows up by
+   * `key` when they follow a reference or a manifest's linked_by, and both would then be wrong.
+   */
+  identity?: string[];
   /** True when the row carries SessionKey, MeasurePrefix and MeasureNumber (possibly null). */
   aboutMeasure: boolean;
   refs: Ref[];
@@ -112,8 +119,12 @@ export const entitySets: Record<string, EntitySpec> = {
   // The declared key is not unique (olis-odata.md section 8, gotcha 5), so nothing may point at
   // a CommitteeMembers row, and nothing in this table does. build.ts adds the rows of the
   // committees it keeps (ticket #81) and follows these references from them.
+  // The declared key is shared by several rows, e.g. five members of JOCSS (measured on the full
+  // 2025R1 cache on 2026-11-02: JOCSS|2025-05-30T16:19:00|Member, 5 rows), so a row is named by its
+  // Legislator Code too. With it, no two of the 468 rows share a name.
   CommitteeMembers: {
     key: ["CommitteeCode", "CreatedDate", "Title"],
+    identity: ["CommitteeCode", "CreatedDate", "Title", "LegislatorCode"],
     aboutMeasure: false,
     refs: [committee("CommitteeCode"), legislator("LegislatorCode")],
   },
@@ -326,13 +337,20 @@ export function targetKeyOf(row: Row, ref: Ref): Record<string, unknown> | null 
   return target;
 }
 
-/** The key of a row as an object, for messages and for the manifest's linked_by. */
-export function rowKeyOf(entitySet: string, row: Row): Record<string, unknown> {
+/** The properties that name a row of this set: its `identity` when it declares one, otherwise its `key`. */
+const identityProperties = (spec: EntitySpec): string[] => spec.identity ?? spec.key;
+
+/**
+ * The name of a row as an object (the values of identityProperties), for messages, unresolved.json
+ * and the manifest's linked_by. It equals the row's key unless the set declares an `identity`; it
+ * is not what other rows refer to (that is `key`, see targetKeyOf).
+ */
+export function rowIdentityOf(entitySet: string, row: Row): Record<string, unknown> {
   const spec = entitySets[entitySet];
-  const key: Record<string, unknown> = {};
-  if (spec === undefined) return key;
-  for (const property of spec.key) key[property] = row[property] ?? null;
-  return key;
+  const name: Record<string, unknown> = {};
+  if (spec === undefined) return name;
+  for (const property of identityProperties(spec)) name[property] = row[property] ?? null;
+  return name;
 }
 
 /** `Set[Prop=value, Prop=value]` for one line of output. */
@@ -345,7 +363,7 @@ export function describeKey(entitySet: string, key: Record<string, unknown>): st
 // The two files build.ts writes beside the feed rows and verify.ts reads back. Their shapes are
 // declared once, here, so a change to one cannot leave the other reading a different file.
 
-/** A feed row that links a document: its entity set and its key (see rowKeyOf). */
+/** A feed row that links a document: its entity set and its name (see rowIdentityOf). */
 export type LinkedBy = { entity_set: string; row_key: Record<string, unknown> };
 
 export const isLinkedBy = (value: unknown): value is LinkedBy =>
@@ -390,31 +408,43 @@ export type Unresolved = {
 
 // The references the full cache itself cannot resolve. Only these are recorded in unresolved.json
 // and only these does verify accept, so a broken reference cannot be waved through by editing
-// the file: it has to be a documented gap with the documented reason.
+// the file: it has to be a documented gap with the documented reason. There are two kinds.
 //
-// The one documented gap: Legislators is a current snapshot, so the Legislator Codes "Rep Neron"
-// and "Sen Woods", which 2025R1 votes, sponsorships and floor carriers use, have no row
-// (docs/research/olis-odata.md section 8, gotcha 4). A scan of every reference in every row of the
-// full 2025R1 feed cache on 2026-10-29 (791,744 of them) found no other that fails, apart from
-// the non-legislator names in CommitteeMembers.LegislatorCode (gotcha 5), none of which is in a
-// committee the fixture keeps (checked on 2026-10-31: the 99 rows of its 12 committees all resolve).
-// A new gap is for a person to look at: add it here with the evidence.
+// 1. Legislators is a current snapshot, so the Legislator Codes "Rep Neron" and "Sen Woods", which
+//    2025R1 votes, sponsorships and floor carriers use, have no row (docs/research/olis-odata.md
+//    section 8, gotcha 4). Two codes, listed below.
+// 2. A CommitteeMembers row whose Legislator Code matches no Legislators row is a member of a task
+//    force who is no Legislator (gotcha 5), and the code is the person's name. That is a kind of
+//    row, not a list of people: the cache has 32 of them (JTFBHA 22, JOCSS 10), and the reason
+//    follows from the entity set and the property alone, except that a code starting "Rep " or
+//    "Sen " is never given it (owner decision on #87, 2026-11-02): it is a gap only if listed in 1. Names are public record and are
+//    committed as published (ADR-0002).
+//
+// A scan of every reference in every row of the full 2025R1 feed cache on 2026-10-29 (791,744 of
+// them) found no other that fails. A new gap is for a person to look at: add it here with the evidence.
 export const legislatorCodesWithoutRow: readonly string[] = ["Rep Neron", "Sen Woods"];
 
 const legislatorGapReason =
   "No Legislators row with this LegislatorCode in the full 2025R1 feed cache: Legislators is a current snapshot (docs/research/olis-odata.md section 8, gotcha 4).";
 
+const nonLegislatorMemberReason =
+  "No Legislators row with this LegislatorCode in the full 2025R1 feed cache: the member is no Legislator but a member of a task force, whose LegislatorCode is a personal name (docs/research/olis-odata.md section 8, gotcha 5).";
+
 /** The reason the full cache cannot resolve this reference, or null when it is not a documented gap. */
-export function documentedGapReason(refersTo: string, target: Record<string, unknown>): string | null {
+export function documentedGapReason(
+  entitySet: string,
+  property: string,
+  refersTo: string,
+  target: Record<string, unknown>,
+): string | null {
+  if (refersTo !== "Legislators" || target["SessionKey"] !== "2025R1") return null;
   const code = target["LegislatorCode"];
-  if (
-    refersTo === "Legislators" &&
-    target["SessionKey"] === "2025R1" &&
-    typeof code === "string" &&
-    legislatorCodesWithoutRow.includes(code)
-  ) {
-    return legislatorGapReason;
-  }
+  if (typeof code !== "string") return null;
+  if (legislatorCodesWithoutRow.includes(code)) return legislatorGapReason;
+  // A code that starts "Rep " or "Sen " is a legislator's, not a task-force member's name, so gotcha 5
+  // does not cover it: it is a gap only if it is on the gotcha-4 list above.
+  if (entitySet === "CommitteeMembers" && property === "LegislatorCode" && !/^(Rep|Sen) /.test(code))
+    return nonLegislatorMemberReason;
   return null;
 }
 
@@ -425,11 +455,11 @@ export function makeUnresolved(
   ref: Ref,
   target: Record<string, unknown>,
 ): Unresolved | null {
-  const reason = documentedGapReason(ref.to, target);
+  const reason = documentedGapReason(entitySet, ref.property, ref.to, target);
   if (reason === null) return null;
   return {
     entity_set: entitySet,
-    row_key: rowKeyOf(entitySet, row),
+    row_key: rowIdentityOf(entitySet, row),
     property: ref.property,
     refers_to: ref.to,
     target_key: target,
@@ -455,6 +485,6 @@ export function unresolvedId(
   refersTo: string,
 ): string {
   const spec = entitySets[entitySet];
-  const keyValues = spec === undefined ? [] : spec.key.map((p) => rowKey[p]);
+  const keyValues = spec === undefined ? [] : identityProperties(spec).map((p) => rowKey[p]);
   return `${entitySet}|${keyString(keyValues)}|${property}|${refersTo}`;
 }
