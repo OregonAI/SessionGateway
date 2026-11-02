@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { statuteLinksOfMeasure, type StatuteLinksOfMeasure, type TableOfVersion } from "../measure.ts";
-import { heldVersion, link, measureOf, sb69Links, heldTable, tripleOf } from "./measure-cases.ts";
+import { statuteLinksOfMeasure, type TableOfVersion } from "../measure.ts";
+import { heldVersion, link, measureOf, sb69Links, heldTable, tripleOf, versionNamed } from "./measure-cases.ts";
 
 // Seam 4: which links the Statutes Affected Table confirms, and where the table and the links disagree (ticket #99;
 // ADR-0033, GLOSSARY.md "Confirmed link" and "Table entry"). A Table entry names one Version by its engrossing level, and
@@ -35,13 +35,6 @@ const sb69Rows = [
   "659A.159 A §4 SB 69 A",
   "659A.165 A §5 SB 69 A",
 ];
-
-function versionNamed(result: StatuteLinksOfMeasure, label: string): { table: TableOfVersion | undefined } {
-  const found = result.versions.find((entry) => entry.version.label === label);
-  if (found === undefined)
-    throw new Error(`No ${label} Version among ${result.versions.map((v) => v.version.label).join(", ")}`);
-  return found;
-}
 
 function compared(table: TableOfVersion | undefined): Extract<TableOfVersion, { kind: "compared" }> {
   if (table?.kind !== "compared")
@@ -125,7 +118,9 @@ describe("a Table entry that names a Version", () => {
 
 // MADE UP, as get-measure-statutes-affected-table-pull.test.ts makes it up: SB 69's rows, changed one by one. 653.616 is R
 // where the real table says A; 657B.070 is §2 where the real table says §3; 659A.150 is a section SB 69 cites (in the range
-// 659A.150 to 659A.186) and does not amend; and five of the real rows are left out. The text of the Version is the real one.
+// 659A.150 to 659A.186) and does not amend; five of the real rows are left out; and two rows are added that the real table
+// does not have: "657B.080 A §5 SB 69 BCC E" (a conference committee's level, which names no Version) and "657B.090 A §6 SB 69 B"
+// (the B-Engrossed Version, which the Index does not hold). The text of the Version is the real one.
 describe("a table that disagrees with the text of SB 69's A-Engrossed Version", () => {
   const disagreeingRows = [
     "653.616 R §8 SB 69 A",

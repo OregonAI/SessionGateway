@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { parseStatutesAffectedTable } from "../index.ts";
-import { statuteLinksOfMeasure, tallyLoneEEntries, type StatuteLinksOfMeasure } from "../measure.ts";
-import { heldVersion, link, measureOf, heldTable, tripleOf } from "./measure-cases.ts";
+import { statuteLinksOfMeasure, tallyLoneEEntries } from "../measure.ts";
+import { heldVersion, link, measureOf, heldTable, tripleOf, versionNamed } from "./measure-cases.ts";
 
 // Seam 4: which Version a Table entry that ends in an E alone names (ticket #99; ADR-0033, GLOSSARY.md "Table entry"). The
 // table's legend gives "E" both as the mark that an emergency clause applies (column 4) and, by its examples, as the level of an
@@ -12,22 +12,16 @@ import { heldVersion, link, measureOf, heldTable, tripleOf } from "./measure-cas
 //  - an E-Engrossed Version listed, held or not: the E is either, and the entry names no Version.
 //
 // The rows are lines of the PDF.js text of documents/reports/artables2025R1.pdf, as table-entries.test.ts quotes them (lines
-// 4153-4158, the foot of page 26 and the head of page 27): "339.990 A §5 HB 2052 E". The 2025R1 feed lists no E-Engrossed Version
-// of any Measure (none of its 6,178 MeasureDocuments rows; ADR-0033), so the Versions that make HB 2052 a Measure with one are
-// MADE UP, as the E-Engrossed Versions of get-measure-statutes-affected-table-pull.test.ts are. HB 2052's text is not in the
-// fixture: its Introduced Version is given the one link the row names, so that the case asks only which Version the row is set
+// 4153-4158, the foot of page 26 and the head of page 27): "339.990 A §5 HB 2052 E". The Versions the cases give HB 2052 and
+// SB 98 are MADE UP: the fixture holds no MeasureDocuments row of either Measure, and the 2025R1 feed lists no E-Engrossed
+// Version of any Measure (none of its 6,178 MeasureDocuments rows; ADR-0033), so a listing that gives one of them an
+// E-Engrossed Version is invented, as the E-Engrossed Versions of get-measure-statutes-affected-table-pull.test.ts are. So is
+// the one link the Version a row names is given, the one the row names, so that a case asks only which Version the row is set
 // beside.
 
 const hb2052 = measureOf("HB", 2052);
 const row = "339.990 A §5 HB 2052 E";
 const introduced = heldVersion(hb2052, "Introduced", { links: [link("amends", "ors-339.990", "5")] });
-
-function versionNamed(result: StatuteLinksOfMeasure, label: string): StatuteLinksOfMeasure["versions"][number] {
-  const found = result.versions.find((entry) => entry.version.label === label);
-  if (found === undefined)
-    throw new Error(`No ${label} Version among ${result.versions.map((v) => v.version.label).join(", ")}`);
-  return found;
-}
 
 describe("an entry that ends in an E alone", () => {
   test("HB 2052 '339.990 A §5 HB 2052 E', when the feed lists no E-Engrossed Version: the E is the emergency clause, and the entry is compared with the Introduced Version", () => {
@@ -75,8 +69,9 @@ describe("an entry that ends in an E alone", () => {
   });
 
   // "2.150 A §20 SB 98 B E" (lines 36-46, page 1): a level B and then the emergency clause. That E follows a level, so it is
-  // column (4) and nothing else, and the row names the B-Engrossed Version whatever the feed lists. SB 98 is not a Measure of the
-  // fixture, so its Versions are given the one link the row names.
+  // column (4) and nothing else, and the row names the B-Engrossed Version whatever the feed lists. MADE UP: SB 98 is not a
+  // Measure of the fixture, so its Introduced and B-Engrossed Versions, and the listing that adds an E-Engrossed Version to them,
+  // are invented; the B-Engrossed Version is given the one link the row names.
   test("SB 98 '2.150 A §20 SB 98 B E' has a level before its E: it names B-Engrossed even when the feed lists an E-Engrossed Version", () => {
     const sb98 = measureOf("SB", 98);
     const versions = [

@@ -20,6 +20,7 @@ import {
 } from "#/packages/domain/statute-links.ts";
 import { readTimestamp } from "#/packages/time/pacific.ts";
 import { parseStatutesAffectedTable } from "../index.ts";
+import type { StatuteLinksOfMeasure, VersionLinks } from "../measure.ts";
 
 // Builders for the Measures the cases of the Statute Links of a Measure are taken from. A case writes what the stored
 // documents say as literals (the links a Version's text has, the header a Proposed Amendment's first page prints) and
@@ -132,6 +133,15 @@ export function proposedAmendment(key: MeasureKey, number: string, postings: rea
       parse: { textRead: true, amendedVersionHeader: header, links: [], relatingClauseEdits: [] },
     })),
   };
+}
+
+/** The entry the result lists for a Version, by the description the feed gives it. */
+export function versionNamed(result: StatuteLinksOfMeasure, label: string): VersionLinks {
+  const found = result.versions.find((entry) => entry.version.label === label);
+  if (found === undefined) {
+    throw new Error(`No ${label} Version among ${result.versions.map((entry) => entry.version.label).join(", ")}`);
+  }
+  return found;
 }
 
 /** A link as [kind, target id, measure section], the form a case writes the links it expects in. */
