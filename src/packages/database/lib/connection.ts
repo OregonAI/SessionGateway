@@ -591,3 +591,12 @@ export function openReadConnection(path: string): DatabaseSync {
   }
   return database;
 }
+
+/**
+ * A connection with no journal mode to set, no version to check and no upgrade step to run, for a caller that touches
+ * a file the worker built and nothing else (`checkpoint.ts`). Like any `DatabaseSync`, it creates a file that is
+ * missing, so the caller checks that the file exists first.
+ */
+export function openPlainConnection(path: string): DatabaseSync {
+  return new DatabaseSync(path, { timeout: BUSY_TIMEOUT_MS });
+}

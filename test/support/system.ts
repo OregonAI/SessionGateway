@@ -6,7 +6,7 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync } fro
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { loadIngestConfig, loadServerConfig, type ServerConfig } from "#/packages/config/index.ts";
-import { checkpointIndex } from "#/packages/database/writer.ts";
+import { checkpointIndex } from "#/packages/database/checkpoint.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
 import {
   runFullPull,
