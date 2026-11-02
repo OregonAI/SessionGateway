@@ -1,9 +1,6 @@
 // The MCP server's side of the database: read-only.
 import { z } from "zod";
 import {
-  agencyLinkKey,
-  listedLinkKeys,
-  type AgencyEvidence,
   type LinkedNode,
   type StoredAgencyLink,
   type StoredStatuteLinked,
@@ -18,11 +15,11 @@ import {
   type Committee,
   type DocumentId,
   type DocumentKind,
+  type DocumentLookup,
   type DocumentView,
   type FloorLetterDetails,
   type FloorLetterEntry,
   type IndexCounts,
-  type Listing,
   type ListedAgendaItem,
   type AmendmentHeader,
   type CommitteeId,
@@ -37,13 +34,14 @@ import {
   type RelatedNode,
   type TestimonyEntry,
   type SessionSpan,
+  type StoredMeasure,
+  type UnheldDocument,
 } from "#/packages/domain/documents.ts";
 import {
   measureIdOf,
   olisPageUrlOf,
   parseMeasureReference,
   type HistoryAction,
-  type Measure,
   type MeasureId,
   type MeasureKey,
   type SessionKey,
@@ -79,7 +77,7 @@ import {
 import { compareTimestamps, type Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceFromJson, storedEvidenceKinds } from "./lib/agency-evidence.ts";
 import { openReadConnection } from "./lib/connection.ts";
-import { listedOrUnchecked } from "./lib/listing.ts";
+import { agencyLinkListings, openListingReader, type ListingRead } from "./lib/listing.ts";
 import {
   readFullPullAsOf,
   readSessionsHeld,
@@ -103,7 +101,8 @@ export type MeetingFilter = {
 };
 
 export type IndexReader = {
-  findMeasure(key: MeasureKey): Measure | undefined;
+  /** A Measure the index holds, with whether the feed lists it (ADR-0030). */
+  findMeasure(key: MeasureKey): StoredMeasure | undefined;
   /** A Measure's Member sponsors in print order. */
   findSponsors(key: MeasureKey): Sponsor[];
   /** The codes of the committees that sponsor a Measure, in print order. */
@@ -150,10 +149,14 @@ export type IndexReader = {
   /** The version of the OregonAI snapshot the last completed full pull built the index with. */
   snapshotVersion(session: SessionKey): SnapshotVersion | undefined;
   /**
-   * A document by its id, or a Proposed Amendment by its id: the text of its latest posting, with the
-   * nodes all its postings point at.
+   * A document by its id, or a Proposed Amendment by its id: the text of its latest posting, with the nodes all its
+   * postings point at, and the Listing in either case. When the index holds no file for the id but the feed has a row for
+   * it (a fetch that failed or was not reached, or a row the feed stopped listing before any pull fetched it), it says so
+   * (`held: false`), with the Listing and whether the row is Testimony. Undefined when the index holds no file for the id
+   * and no row that a complete pull has listed names it, unless the id is a Testimony row (an Increment may have stored
+   * one that no complete pull has listed yet): a row of any other kind that only an Increment has stored is not known.
    */
-  findDocument(id: DocumentId | AmendmentId): DocumentView | undefined;
+  findDocument(id: DocumentId | AmendmentId): DocumentLookup | undefined;
   /**
    * The analysis documents the store holds for a Measure: the ones whose files the worker fetched, so
    * that each is a document `findDocument` resolves.
@@ -222,21 +225,6 @@ export type IndexReader = {
   findFloorLetters(key: MeasureKey): FloorLetterEntry[];
   /** What the row of the Floor Letter with this document id says, or undefined when the id names no Floor Letter. */
   floorLetterDetails(id: DocumentId): FloorLetterDetails | undefined;
-  /**
-   * Whether the feed lists a Testimony with this id, whether or not its file is fetched, and when it last did;
-   * undefined when the index holds no Testimony row with this id. A Testimony that is listed and whose file the store lacks is one
-   * `findDocument` does not resolve yet: the next pull fetches it. One that is no longer listed is not fetched by
-   * any pull, and the store holds the file only if it fetched it while the feed listed it.
-   */
-  testimonyListing(id: DocumentId | AmendmentId): Listing | undefined;
-  /**
-   * When the feed no longer lists the row behind a document id or a Proposed Amendment id, the time it last did:
-   * undefined when the feed lists it, or the index knows no such row. For an id `findDocument` does not resolve,
-   * because no pull fetched the file while the feed listed it, and none will now.
-   */
-  findNoLongerListed(id: DocumentId | AmendmentId): Extract<Listing, { listed: false }> | undefined;
-  /** Whether the feed still lists a Measure the index holds, and when it last did. */
-  measureListing(key: MeasureKey): Listing;
   close(): void;
 };
 
@@ -249,7 +237,6 @@ const floorLetterRow = z.object({
   title: z.string().nullable(),
   description: z.string().nullable(),
   fetched: z.number().optional(),
-  listed: z.number().optional(),
   has_text_layer: z.number().nullable().optional(),
 });
 
@@ -341,7 +328,6 @@ const analysisRow = z.object({
   source_url: z.string(),
   analysis_version_label: z.string(),
   analysis_is_minority: z.number(),
-  listed: z.number(),
 });
 const committeeRow = z.object({ code: z.string(), id: z.string(), name: z.string() });
 const meetingRow = z.object({
@@ -351,7 +337,6 @@ const meetingRow = z.object({
   committee_name: z.string(),
   at: z.string(),
   status: z.string(),
-  listed: z.number(),
 });
 const agendaItemRow = z.object({
   id: z.number(),
@@ -365,7 +350,6 @@ const agendaItemRow = z.object({
   comments: z.string().nullable(),
   board_name: z.string().nullable(),
   executive_appointee: z.string().nullable(),
-  listed: z.number(),
 });
 const meetingDocumentRow = z.object({
   id: z.string(),
@@ -377,7 +361,6 @@ const meetingDocumentRow = z.object({
   measure_id: z.string().nullable(),
   meaning: z.string().nullable(),
   fetched: z.number(),
-  listed: z.number(),
 });
 const testimonyRow = z.object({
   id: z.string(),
@@ -393,7 +376,6 @@ const testimonyRow = z.object({
   meeting_at: z.string(),
   agency_id: z.string().nullable(),
   fetched: z.number(),
-  listed: z.number(),
   has_text_layer: z.number().nullable(),
   text_hash: z.string().nullable(),
 });
@@ -408,7 +390,6 @@ const postingRow = z.object({
   committee_code: z.string(),
   committee_name: z.string(),
   fetched: z.number(),
-  listed: z.number(),
   content_hash: z.string().nullable(),
 });
 const versionRow = z.object({
@@ -416,7 +397,6 @@ const versionRow = z.object({
   label: z.string(),
   source_url: z.string(),
   content_hash: z.string(),
-  listed: z.number(),
 });
 const parseRow = z.object({
   text_read: z.number(),
@@ -461,8 +441,6 @@ const agencyLinkRow = z.object({
   document_created_at: z.string().nullable(),
   measure_id: z.string(),
   version_id: z.string().nullable(),
-  listed: z.number().nullable(),
-  last_listed_at: z.string().nullable(),
 });
 const testimonyLinkRow = z.object({
   agency_id: z.string(),
@@ -471,8 +449,6 @@ const testimonyLinkRow = z.object({
   document_source_url: z.string(),
   document_created_at: z.string().nullable(),
   measure_id: z.string(),
-  listed: z.number().nullable(),
-  last_listed_at: z.string().nullable(),
 });
 const statuteLinkedRow = statuteLinkRow.extend({
   document_id: z.string(),
@@ -490,15 +466,13 @@ const unresolvedUnitRow = z.object({
   document_source_url: z.string(),
   measure_id: z.string(),
   version_id: z.string().nullable(),
-  listed: z.number().nullable(),
-  last_listed_at: z.string().nullable(),
 });
 const versionNodeRow = z.object({ label: z.string(), source_url: z.string() });
 const amendmentNumberRow = z.object({ label: z.string() });
 const amendmentFileRow = z.object({ source_url: z.string() });
 const countRow = z.object({ n: z.number() });
+const documentIdRow = z.object({ document_id: z.string() });
 const kindCountRow = z.object({ kind: z.string(), n: z.number() });
-const listingRow = z.object({ listed: z.number().nullable(), last_listed_at: z.string().nullable() });
 const relationRow = z.object({
   relation: z.string(),
   to_id: z.string(),
@@ -564,23 +538,24 @@ export function openIndexReader(path: string): IndexReader {
     "SELECT kind, COUNT(*) AS n FROM document WHERE session_key = ? GROUP BY kind",
   );
   const selectDocument = database.prepare("SELECT * FROM document WHERE id = ?");
-  // Whether the feed lists a document: its feed row's state (ADR-0030). For a Proposed Amendment the postings'
-  // rows are looked at together, and the latest pull that listed any of them says.
-  const selectDocumentListing = database.prepare(
-    "SELECT listed, last_listed_at FROM feed_row_state WHERE document_id = ?",
-  );
-  // An amendment is listed while the feed lists any of its postings (ADR-0030), so the postings are the ones the feed
-  // lists for it (meeting_document, written for every link before any file is fetched) and the ones the store holds,
-  // whether or not a posting's file is stored. The posting listed most recently says: a listed one comes first.
-  const selectPostingsListing = database.prepare(
-    `SELECT ${listedOrUnchecked} AS listed, fr.last_listed_at
-     FROM (SELECT document_id FROM meeting_document WHERE node_id = ?1 AND kind = 'proposed_amendment'
-           UNION
-           SELECT id FROM document WHERE node_id = ?1 AND node_id <> id) p
-       LEFT JOIN feed_row_state fr ON fr.document_id = p.document_id
-     ORDER BY ${listedOrUnchecked} DESC, fr.last_listed_pull DESC
-     LIMIT 1`,
-  );
+  // Whether the feed lists a row is the Listing's to say (ADR-0030): every row and Document below is handed out with the
+  // Listing it asks of it, and no query here joins the listing state.
+  const listings = openListingReader(database);
+  /**
+   * Runs a read that asks the Listing of several rows inside one read transaction, so that a list is made from one
+   * snapshot: a complete Full pull that commits while the list is made is seen by all of its rows or by none, and the
+   * list does not mix Listings from before and after it. A read inside another joins it. The COMMIT is in a `finally`, so a
+   * read that throws leaves no transaction open on the connection.
+   */
+  function inOneSnapshot<T>(read: () => T): T {
+    if (database.isTransaction) return read();
+    database.exec("BEGIN");
+    try {
+      return read();
+    } finally {
+      database.exec("COMMIT");
+    }
+  }
   const selectPostings = database.prepare(
     "SELECT * FROM document WHERE node_id = ? AND node_id <> id ORDER BY posted_at DESC, id DESC",
   );
@@ -588,21 +563,19 @@ export function openIndexReader(path: string): IndexReader {
     "SELECT relation, to_id, meaning FROM document_relation WHERE document_id = ? ORDER BY rowid",
   );
   const selectAnalyses = database.prepare(
-    `SELECT d.id, d.label, d.source_url, d.analysis_version_label, d.analysis_is_minority, ${listedOrUnchecked} AS listed
+    `SELECT d.id, d.label, d.source_url, d.analysis_version_label, d.analysis_is_minority
        FROM document d
          JOIN document_relation r ON r.document_id = d.id
-         LEFT JOIN feed_row_state fr ON fr.document_id = d.id
       WHERE d.kind = 'analysis' AND r.relation = 'measure' AND r.to_id = ?
       ORDER BY d.id`,
   );
-  // The listed analysis documents the store does not hold. A row the feed has stopped listing (two complete pulls in
-  // a row missed it) is not one the feed lists, so it is not counted; one pull that misses it changes nothing.
-  const countNotHeld = database.prepare(
-    `SELECT COUNT(*) AS n
+  // The analysis documents the feed lists for a Measure that the store does not hold. A row the feed has stopped listing (two
+  // complete pulls in a row missed it) is not one the feed lists, so it is not counted; one pull that misses it changes nothing.
+  const selectNotHeld = database.prepare(
+    `SELECT l.document_id
        FROM analysis_listing l
          LEFT JOIN document d ON d.id = l.document_id
-         LEFT JOIN feed_row_state fr ON fr.document_id = l.document_id
-      WHERE l.measure_id = ? AND d.id IS NULL AND ${listedOrUnchecked} = 1`,
+      WHERE l.measure_id = ? AND d.id IS NULL`,
   );
   const selectCommittee = database.prepare(
     "SELECT code, id, name FROM committee WHERE session_key = ? AND (upper(code) = upper(?) OR id = lower(?))",
@@ -612,11 +585,9 @@ export function openIndexReader(path: string): IndexReader {
   const meetingsSet: PulledEntitySet = "CommitteeMeetings";
   const agendaItemsSet: PulledEntitySet = "CommitteeAgendaItems";
   const selectMeetings = database.prepare(
-    `SELECT m.id, m.committee_id, m.committee_code, c.name AS committee_name, m.at, m.status, ${listedOrUnchecked} AS listed
+    `SELECT m.id, m.committee_id, m.committee_code, c.name AS committee_name, m.at, m.status
      FROM meeting m
        JOIN committee c ON c.session_key = m.session_key AND c.code = m.committee_code
-       LEFT JOIN feed_row_state fr ON fr.session_key = m.session_key AND fr.entity_set = ?
-                                  AND fr.row_key = m.id
      WHERE m.session_key = ?
        AND (? IS NULL OR EXISTS (SELECT 1 FROM agenda_item a
                                  WHERE a.meeting_id = m.id AND a.measure_prefix = ? AND a.measure_number = ?))
@@ -626,61 +597,48 @@ export function openIndexReader(path: string): IndexReader {
      ORDER BY m.at, m.committee_code`,
   );
   const selectAgendaItems = database.prepare(
-    `SELECT a.*, ${listedOrUnchecked} AS listed
+    `SELECT a.*
      FROM agenda_item a
-       LEFT JOIN feed_row_state fr ON fr.session_key = a.session_key AND fr.entity_set = ?
-                                  AND fr.row_key = CAST(a.id AS TEXT)
      WHERE a.meeting_id = ? ORDER BY a.print_order IS NULL, CAST(a.print_order AS INTEGER), a.id`,
   );
   // What the feed lists for a meeting, and whether the document table holds each file yet.
   const selectMeetingDocuments = database.prepare(
     `SELECT l.document_id AS id, l.node_id, l.kind, l.label, l.source_url, l.title, l.measure_id, l.meaning,
-            EXISTS (SELECT 1 FROM document d WHERE d.id = l.document_id) AS fetched, ${listedOrUnchecked} AS listed
+            EXISTS (SELECT 1 FROM document d WHERE d.id = l.document_id) AS fetched
      FROM meeting_document l
-       LEFT JOIN feed_row_state fr ON fr.document_id = l.document_id
      WHERE l.meeting_id = ?`,
   );
   // The Testimony the feed lists for a Measure, and whether the document table holds each file yet.
   const selectTestimony = database.prepare(
     `SELECT t.document_id AS id, t.comm_test_id, t.source_url, t.document_description, t.position_id, t.submitter,
             t.behalf_of, t.organization, t.committee_id, t.committee_code, t.meeting_at, t.agency_id,
-            d.id IS NOT NULL AS fetched, ${listedOrUnchecked} AS listed, d.has_text_layer, d.text_hash
+            d.id IS NOT NULL AS fetched, d.has_text_layer, d.text_hash
      FROM testimony t
        LEFT JOIN document d ON d.id = t.document_id
-       LEFT JOIN feed_row_state fr ON fr.document_id = t.document_id
      WHERE t.measure_id = ? ORDER BY t.comm_test_id`,
   );
   // The Floor Letters whose row names a Measure, and whether the document table holds each file yet (ADR-0045).
   const selectFloorLetters = database.prepare(
     `SELECT f.document_id AS id, f.floor_letter_id, f.source_url, f.chamber, f.letter_date, f.title, f.description,
-            d.id IS NOT NULL AS fetched, ${listedOrUnchecked} AS listed, d.has_text_layer
+            d.id IS NOT NULL AS fetched, d.has_text_layer
      FROM floor_letter f
        LEFT JOIN document d ON d.id = f.document_id
-       LEFT JOIN feed_row_state fr ON fr.document_id = f.document_id
      WHERE f.measure_id = ? ORDER BY f.letter_date, f.floor_letter_id`,
   );
   const selectFloorLetter = database.prepare(
     `SELECT document_id AS id, floor_letter_id, source_url, chamber, letter_date, title, description
      FROM floor_letter WHERE document_id = ?`,
   );
-  const selectTestimonyListing = database.prepare(
-    `SELECT fr.listed, fr.last_listed_at FROM testimony t
-       LEFT JOIN feed_row_state fr ON fr.document_id = t.document_id
-      WHERE t.document_id = ?`,
-  );
-  const selectMeasureListing = database.prepare(
-    "SELECT listed, last_listed_at FROM feed_row_state WHERE session_key = ? AND entity_set = ? AND row_key = ?",
-  );
+  const selectTestimonyExists = database.prepare("SELECT 1 AS found FROM testimony WHERE document_id = ?");
   // The postings the feed lists for one Proposed Amendment, with the meeting each was posted to.
   const selectPostingsOfAmendment = database.prepare(
     `SELECT l.document_id, l.label, l.source_url, l.measure_id, l.meaning, l.meeting_id, m.at AS meeting_at,
             m.committee_code, c.name AS committee_name,
-            d.id IS NOT NULL AS fetched, ${listedOrUnchecked} AS listed, d.content_hash
+            d.id IS NOT NULL AS fetched, d.content_hash
      FROM meeting_document l
      JOIN meeting m ON m.id = l.meeting_id
      JOIN committee c ON c.session_key = m.session_key AND c.code = m.committee_code
      LEFT JOIN document d ON d.id = l.document_id
-     LEFT JOIN feed_row_state fr ON fr.document_id = l.document_id
      WHERE l.kind = 'proposed_amendment' AND l.node_id = ?
      ORDER BY m.at`,
   );
@@ -688,10 +646,9 @@ export function openIndexReader(path: string): IndexReader {
     "SELECT DISTINCT node_id FROM meeting_document WHERE kind = 'proposed_amendment' AND measure_id = ?",
   );
   const selectVersionsOfMeasure = database.prepare(
-    `SELECT d.id, d.label, d.source_url, d.content_hash, ${listedOrUnchecked} AS listed
+    `SELECT d.id, d.label, d.source_url, d.content_hash
      FROM document d
        JOIN document_relation r ON r.document_id = d.id
-       LEFT JOIN feed_row_state fr ON fr.document_id = d.id
      WHERE d.kind = 'version' AND r.relation = 'measure' AND r.to_id = ?`,
   );
   const selectStatuteParse = database.prepare(
@@ -716,13 +673,12 @@ export function openIndexReader(path: string): IndexReader {
   const agencyLinksWhere = (condition: string): string =>
     `SELECT a.agency_id, a.kind AS link_kind, a.evidence, d.id AS document_id, d.source_url AS document_source_url,
             d.label AS document_label, d.kind AS document_kind, d.node_id, dc.created_at AS document_created_at,
-            mr.to_id AS measure_id, vr.to_id AS version_id, fr.listed, fr.last_listed_at
+            mr.to_id AS measure_id, vr.to_id AS version_id
      FROM agency_link a
        JOIN document d ON d.id = a.document_id
        JOIN document_relation mr ON mr.document_id = d.id AND mr.relation = 'measure'
        LEFT JOIN document_relation vr ON vr.document_id = d.id AND vr.relation = 'version'
        LEFT JOIN document_created dc ON dc.document_id = d.id
-       LEFT JOIN feed_row_state fr ON fr.document_id = d.id
      WHERE d.session_key = ?1 AND ${condition}
      ORDER BY a.agency_id, d.id, a.ordinal`;
   const selectAgencyLinksOfAgency = database.prepare(agencyLinksWhere("a.agency_id = ?2"));
@@ -744,21 +700,19 @@ export function openIndexReader(path: string): IndexReader {
   // Testimony whose Organization names an Agency: the worker matched it when it stored the row (ADR-0016, ADR-0027).
   const testimonyLinksWhere = (condition: string): string =>
     `SELECT t.agency_id, t.organization, t.document_id, t.source_url AS document_source_url,
-            dc.created_at AS document_created_at, t.measure_id, fr.listed, fr.last_listed_at
+            dc.created_at AS document_created_at, t.measure_id
      FROM testimony t LEFT JOIN document_created dc ON dc.document_id = t.document_id
-       LEFT JOIN feed_row_state fr ON fr.document_id = t.document_id
      WHERE t.session_key = ?1 AND t.agency_id IS NOT NULL AND t.measure_id IS NOT NULL AND ${condition}
      ORDER BY t.agency_id, t.comm_test_id`;
   const selectTestimonyLinksOfAgency = database.prepare(testimonyLinksWhere("t.agency_id = ?2"));
   const selectTestimonyLinksOfMeasure = database.prepare(testimonyLinksWhere("t.measure_id = ?2"));
   const selectUnresolvedUnits = database.prepare(
     `SELECT u.unit, d.id AS document_id, d.source_url AS document_source_url, mr.to_id AS measure_id,
-            vr.to_id AS version_id, fr.listed, fr.last_listed_at
+            vr.to_id AS version_id
      FROM unresolved_unit u
        JOIN document d ON d.id = u.document_id
        JOIN document_relation mr ON mr.document_id = d.id AND mr.relation = 'measure'
        LEFT JOIN document_relation vr ON vr.document_id = d.id AND vr.relation = 'version'
-       LEFT JOIN feed_row_state fr ON fr.document_id = d.id
      WHERE mr.to_id = ?
      ORDER BY d.id, u.ordinal`,
   );
@@ -819,19 +773,6 @@ export function openIndexReader(path: string): IndexReader {
       relatingClauseEdits: edits,
     };
   }
-  /**
-   * The listing a query of `feed_row_state` found. No row, or a row whose state is NULL (a LEFT JOIN that found
-   * none), is a row no complete pull has listed: it reads as listed, not yet checked (ADR-0030).
-   */
-  function listingOf(row: unknown): Listing {
-    const stored = row === undefined ? { listed: null, last_listed_at: null } : listingRow.parse(row);
-    if (stored.listed === 0) {
-      if (stored.last_listed_at === null)
-        throw new Error("A row that is no longer listed has no time it was last listed");
-      return { listed: false, lastListedAt: stored.last_listed_at as Timestamp };
-    }
-    return { listed: true, lastListedAt: stored.last_listed_at as Timestamp | null };
-  }
   function measureNodeOf(key: MeasureKey): LinkedNode {
     return {
       type: "measure",
@@ -839,6 +780,7 @@ export function openIndexReader(path: string): IndexReader {
       measure: key,
       label: null,
       sourceUrl: olisPageUrlOf(key),
+      listing: listings.ofRow(key.session, measuresSet, measureIdOf(key)).listing,
     };
   }
   /** The Measure a stored id names. The ids in the store were minted from a Measure of this Session. */
@@ -849,7 +791,14 @@ export function openIndexReader(path: string): IndexReader {
   }
   /** The Version a stored Version document is. */
   function versionNodeOf(key: MeasureKey, id: string, label: string, sourceUrl: string): LinkedNode {
-    return { type: "version", id: id as DocumentId, measure: key, label, sourceUrl };
+    return {
+      type: "version",
+      id: id as DocumentId,
+      measure: key,
+      label,
+      sourceUrl,
+      listing: listings.ofDocument(id as DocumentId).listing,
+    };
   }
   /** The Proposed Amendment a stored posting is of: its number as its earliest posting writes it, and the file served for it. */
   function amendmentNodeOf(key: MeasureKey, id: string): LinkedNode {
@@ -861,6 +810,7 @@ export function openIndexReader(path: string): IndexReader {
       measure: key,
       label: number.label,
       sourceUrl: file.source_url,
+      listing: listings.ofAmendment(id as AmendmentId).listing,
     };
   }
   /**
@@ -903,6 +853,20 @@ export function openIndexReader(path: string): IndexReader {
         return found.document_kind satisfies never;
     }
   }
+  /**
+   * What the index knows of an id it holds no file for: the rows of the feed that link the document, else the postings of
+   * the Proposed Amendment it names, and whether it is a Testimony row. An id that no row a complete pull has listed names
+   * is nothing known, unless it is a Testimony row, which is known even when no complete pull has listed it yet (an
+   * Increment stored it).
+   */
+  function unheldOf(id: DocumentId | AmendmentId): UnheldDocument | undefined {
+    const document = listings.ofDocument(id as DocumentId);
+    const read = document.kind === "checked" ? document : listings.ofAmendment(id as AmendmentId);
+    const testimony = selectTestimonyExists.get(id) !== undefined;
+    // A row no complete pull has listed is known only when it is Testimony; any other such id is no id the index serves.
+    if (read.kind === "no_row" && !testimony) return undefined;
+    return { held: false, testimony, listing: read.listing };
+  }
   function relationsOf(documentId: DocumentId): RelatedNode[] {
     return selectRelations.all(documentId).map((row) => {
       const stored = relationRow.parse(row);
@@ -910,6 +874,9 @@ export function openIndexReader(path: string): IndexReader {
     });
   }
   function amendmentOf(id: AmendmentId): StoredAmendment | undefined {
+    return inOneSnapshot(() => amendmentIn(id));
+  }
+  function amendmentIn(id: AmendmentId): StoredAmendment | undefined {
     const rows = selectPostingsOfAmendment.all(id).map((row) => postingRow.parse(row));
     const listed = rows.map((stored) => ({
       label: stored.label,
@@ -924,7 +891,7 @@ export function openIndexReader(path: string): IndexReader {
         committeeName: stored.committee_name,
         meaning: stored.meaning,
         fetched: stored.fetched === 1,
-        listed: stored.listed === 1,
+        listing: listings.ofDocument(stored.document_id as DocumentId).listing,
       } satisfies AmendmentPosting,
     }));
     // The same meeting's postings are told apart by the feed's number, compared as a number.
@@ -960,42 +927,56 @@ export function openIndexReader(path: string): IndexReader {
       measureId: earliest.measureId,
       postings: listed.map(({ posting }) => posting),
       files: [...readings.values()],
+      listing: listings.ofAmendment(id).listing,
     };
   }
   function findAgencyLinks(
     session: SessionKey,
     of: { agency: AgencyId } | { measure: MeasureKey },
   ): StoredAgencyLink[] {
+    return inOneSnapshot(() => agencyLinksIn(session, of));
+  }
+  function agencyLinksIn(session: SessionKey, of: { agency: AgencyId } | { measure: MeasureKey }): StoredAgencyLink[] {
     const [links, testimonyLinks, asked] =
       "agency" in of
         ? [selectAgencyLinksOfAgency, selectTestimonyLinksOfAgency, of.agency]
         : [selectAgencyLinksOfMeasure, selectTestimonyLinksOfMeasure, measureIdOf(of.measure)];
     const stored = links.all(session, asked).map((row) => agencyLinkRow.parse(row));
     const known = new Map<string, LinkedNode>();
-    const read = stored.map((found): StoredAgencyLink => {
+    const measureNode = (measureId: string, key: MeasureKey): LinkedNode => {
+      const node = known.get(`measure ${measureId}`) ?? measureNodeOf(key);
+      known.set(`measure ${measureId}`, node);
+      return node;
+    };
+    // Each link with the Listing of the Document its evidence was read from. The Agency's link to a node is listed while any
+    // of the Documents its evidence rests on is (ADR-0037), so the Listing of a link is read across all of them.
+    const evidence: { link: Omit<StoredAgencyLink, "listing">; read: ListingRead }[] = stored.map((found) => {
       const key = measureKeyOf(found.measure_id, session);
-      const evidence: AgencyEvidence = evidenceFromJson(found.link_kind, found.evidence);
+      // A Proposed Amendment is listed while the feed lists any of its postings (ADR-0030), as its node is.
+      const read =
+        found.document_kind === "proposed_amendment"
+          ? listings.ofAmendment(found.node_id as AmendmentId)
+          : listings.ofDocument(found.document_id as DocumentId);
       return {
-        agency: found.agency_id as AgencyId,
-        evidence,
-        document: {
-          id: found.document_id as DocumentId,
-          sourceUrl: found.document_source_url,
-          createdAt: found.document_created_at as Timestamp | null,
-          // A Proposed Amendment is listed while the feed lists any of its postings (ADR-0030), as its node is.
-          listing: listingOf(
-            found.document_kind === "proposed_amendment" ? selectPostingsListing.get(found.node_id) : found,
-          ),
+        link: {
+          agency: found.agency_id as AgencyId,
+          evidence: evidenceFromJson(found.link_kind, found.evidence),
+          document: {
+            id: found.document_id as DocumentId,
+            sourceUrl: found.document_source_url,
+            createdAt: found.document_created_at as Timestamp | null,
+            listing: read.listing,
+          },
+          node: nodeOfDocument(found, key, known),
         },
-        node: nodeOfDocument(found, key, known),
+        read,
       };
     });
-    const testimony = testimonyLinks
-      .all(session, asked)
-      .map((row) => testimonyLinkRow.parse(row))
-      .map((found): StoredAgencyLink => {
-        const key = measureKeyOf(found.measure_id, session);
-        return {
+    for (const found of testimonyLinks.all(session, asked).map((row) => testimonyLinkRow.parse(row))) {
+      const key = measureKeyOf(found.measure_id, session);
+      const read = listings.ofDocument(found.document_id as DocumentId);
+      evidence.push({
+        link: {
           agency: found.agency_id as AgencyId,
           // The Agency Link extractor matches the Organization with stray spaces trimmed (agency-links, matchOrganization).
           evidence: { kind: "testimony", organization: (found.organization ?? "").trim() },
@@ -1003,76 +984,92 @@ export function openIndexReader(path: string): IndexReader {
             id: found.document_id as DocumentId,
             sourceUrl: found.document_source_url,
             createdAt: found.document_created_at as Timestamp | null,
-            listing: listingOf(found),
+            listing: read.listing,
           },
-          node: measureNodeOf(key),
-        };
+          node: measureNode(found.measure_id, key),
+        },
+        read,
       });
-    return [...read, ...testimony];
+    }
+    const listingOfLink = agencyLinkListings(
+      evidence.map(({ link, read }) => ({ agency: link.agency, nodeId: link.node.id, read })),
+    );
+    return evidence.map(({ link }): StoredAgencyLink => ({
+      ...link,
+      listing: listingOfLink(link.agency, link.node.id),
+    }));
   }
   return {
     analysisDocuments(key) {
-      return selectAnalyses.all(measureIdOf(key)).map((row) => {
-        const stored = analysisRow.parse(row);
-        const id = stored.id as DocumentId;
-        const related = relationsOf(id);
-        return {
-          id,
-          type: stored.label,
-          versionLabel: stored.analysis_version_label,
-          isMinority: stored.analysis_is_minority === 1,
-          sourceUrl: stored.source_url,
-          committeeId: (related.find((node) => node.relation === "committee")?.to as CommitteeId | undefined) ?? null,
-          placedVersionId: (related.find((node) => node.relation === "version")?.to as DocumentId | undefined) ?? null,
-          listed: stored.listed === 1,
-        };
+      return inOneSnapshot(() => {
+        return selectAnalyses.all(measureIdOf(key)).map((row) => {
+          const stored = analysisRow.parse(row);
+          const id = stored.id as DocumentId;
+          const related = relationsOf(id);
+          return {
+            id,
+            type: stored.label,
+            versionLabel: stored.analysis_version_label,
+            isMinority: stored.analysis_is_minority === 1,
+            sourceUrl: stored.source_url,
+            committeeId: (related.find((node) => node.relation === "committee")?.to as CommitteeId | undefined) ?? null,
+            placedVersionId:
+              (related.find((node) => node.relation === "version")?.to as DocumentId | undefined) ?? null,
+            listing: listings.ofDocument(id).listing,
+          };
+        });
       });
     },
     analysisNotHeld(key) {
-      return countRow.parse(countNotHeld.get(measureIdOf(key))).n;
+      return inOneSnapshot(() => {
+        return selectNotHeld
+          .all(measureIdOf(key))
+          .filter((row) => listings.ofDocument(documentIdRow.parse(row).document_id as DocumentId).listing.listed)
+          .length;
+      });
     },
     findAgencyLinks,
     findStatuteLinked(session, target) {
-      const known = new Map<string, LinkedNode>();
-      let rows;
-      if ("section" in target) {
-        rows = selectStatuteLinkedTo.all(session, target.section);
-      } else {
-        const { from, before } = orsSectionIdRangeOf(target.chapter);
-        rows = [
-          ...selectStatuteLinkedTo.all(session, target.chapter),
-          ...selectStatuteLinkedWithin.all(session, from, before),
-        ];
-      }
-      return rows
-        .map((row) => statuteLinkedRow.parse(row))
-        .map((found): StoredStatuteLinked => {
-          const key = measureKeyOf(found.measure_id, session);
-          const node =
-            found.document_kind === "version"
-              ? (known.get(found.document_id) ??
-                versionNodeOf(key, found.document_id, found.document_label, found.document_source_url))
-              : (known.get(found.node_id) ?? amendmentNodeOf(key, found.node_id));
-          known.set(node.id, node);
-          return {
-            document: {
-              id: found.document_id as DocumentId,
-              sourceUrl: found.document_source_url,
-              createdAt: found.document_created_at as Timestamp | null,
-            },
-            node,
-            link: statuteLinkOfRow(found),
-          };
-        });
+      return inOneSnapshot(() => {
+        const known = new Map<string, LinkedNode>();
+        let rows;
+        if ("section" in target) {
+          rows = selectStatuteLinkedTo.all(session, target.section);
+        } else {
+          const { from, before } = orsSectionIdRangeOf(target.chapter);
+          rows = [
+            ...selectStatuteLinkedTo.all(session, target.chapter),
+            ...selectStatuteLinkedWithin.all(session, from, before),
+          ];
+        }
+        return rows
+          .map((row) => statuteLinkedRow.parse(row))
+          .map((found): StoredStatuteLinked => {
+            const key = measureKeyOf(found.measure_id, session);
+            const node =
+              found.document_kind === "version"
+                ? (known.get(found.document_id) ??
+                  versionNodeOf(key, found.document_id, found.document_label, found.document_source_url))
+                : (known.get(found.node_id) ?? amendmentNodeOf(key, found.node_id));
+            known.set(node.id, node);
+            return {
+              document: {
+                id: found.document_id as DocumentId,
+                sourceUrl: found.document_source_url,
+                createdAt: found.document_created_at as Timestamp | null,
+              },
+              node,
+              link: statuteLinkOfRow(found),
+            };
+          });
+      });
     },
     measuresWithAgencyLink(session, agency) {
       // ADR-0037: a link none of whose evidence documents the feed lists is not counted, as a node no longer listed is not.
-      const links = findAgencyLinks(session, { agency });
-      const listed = listedLinkKeys(links);
       return [
         ...new Set(
-          links
-            .filter((link) => listed.has(agencyLinkKey(link.agency, link.node.id)))
+          findAgencyLinks(session, { agency })
+            .filter((link) => link.listing.listed)
             .map((link) => measureIdOf(link.node.measure)),
         ),
       ];
@@ -1086,17 +1083,19 @@ export function openIndexReader(path: string): IndexReader {
       return parents;
     },
     findUnresolvedUnits(measure) {
-      return selectUnresolvedUnits.all(measureIdOf(measure)).map((row): StoredUnresolvedUnit => {
-        const found = unresolvedUnitRow.parse(row);
-        return {
-          unit: found.unit,
-          statement: {
-            id: found.document_id as DocumentId,
-            sourceUrl: found.document_source_url,
-            listing: listingOf(found),
-          },
-          node: statementNodeOf(measure, found.version_id),
-        };
+      return inOneSnapshot(() => {
+        return selectUnresolvedUnits.all(measureIdOf(measure)).map((row): StoredUnresolvedUnit => {
+          const found = unresolvedUnitRow.parse(row);
+          return {
+            unit: found.unit,
+            statement: {
+              id: found.document_id as DocumentId,
+              sourceUrl: found.document_source_url,
+              listing: listings.ofDocument(found.document_id as DocumentId).listing,
+            },
+            node: statementNodeOf(measure, found.version_id),
+          };
+        });
       });
     },
     counts(session) {
@@ -1125,57 +1124,65 @@ export function openIndexReader(path: string): IndexReader {
       };
     },
     findDocument(id) {
-      const own = selectDocument.get(id);
-      if (own !== undefined) {
-        const document = documentOf(own);
-        return {
-          document,
-          related: relationsOf(document.id),
-          listing: listingOf(selectDocumentListing.get(document.id)),
-        };
-      }
-      // Not a document: a Proposed Amendment, which has a posting (and a file) for each meeting.
-      const postings = selectPostings.all(id).map(documentOf);
-      const latest = postings[0];
-      if (latest === undefined) return undefined;
-      const related: RelatedNode[] = [];
-      const seen = new Set<string>();
-      for (const posting of postings.toReversed()) {
-        for (const node of relationsOf(posting.id)) {
-          if (node.relation === "amendment") continue;
-          // A posting is told apart by its meeting; every other relation is the same for each posting.
-          const key = `${node.relation} ${node.to}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          related.push(node);
+      return inOneSnapshot(() => {
+        const own = selectDocument.get(id);
+        if (own !== undefined) {
+          const document = documentOf(own);
+          return {
+            held: true,
+            document,
+            related: relationsOf(document.id),
+            listing: listings.ofDocument(document.id).listing,
+          };
         }
-      }
-      return {
-        document: latest,
-        related,
-        listing: listingOf(selectPostingsListing.get(id)),
-      };
+        // Not a document: a Proposed Amendment, which has a posting (and a file) for each meeting.
+        const postings = selectPostings.all(id).map(documentOf);
+        const latest = postings[0];
+        if (latest === undefined) return unheldOf(id);
+        const related: RelatedNode[] = [];
+        const seen = new Set<string>();
+        for (const posting of postings.toReversed()) {
+          for (const node of relationsOf(posting.id)) {
+            if (node.relation === "amendment") continue;
+            // A posting is told apart by its meeting; every other relation is the same for each posting.
+            const key = `${node.relation} ${node.to}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            related.push(node);
+          }
+        }
+        return {
+          held: true,
+          document: latest,
+          related,
+          listing: listings.ofAmendment(id as AmendmentId).listing,
+        };
+      });
     },
     findAmendment(id) {
       return amendmentOf(id);
     },
     findMeasureAmendments(key) {
-      const ids = selectAmendmentsOfMeasure
-        .all(measureIdOf(key))
-        .map((row) => z.object({ node_id: z.string() }).parse(row).node_id);
-      const amendments = ids.flatMap((id) => amendmentOf(id as AmendmentId) ?? []);
-      return amendments.sort((a, b) => numbersInOrder.compare(a.number, b.number));
+      return inOneSnapshot(() => {
+        const ids = selectAmendmentsOfMeasure
+          .all(measureIdOf(key))
+          .map((row) => z.object({ node_id: z.string() }).parse(row).node_id);
+        const amendments = ids.flatMap((id) => amendmentOf(id as AmendmentId) ?? []);
+        return amendments.sort((a, b) => numbersInOrder.compare(a.number, b.number));
+      });
     },
     findMeasureVersions(key) {
-      return selectVersionsOfMeasure.all(measureIdOf(key)).map((row): StoredVersion => {
-        const stored = versionRow.parse(row);
-        return {
-          id: stored.id as DocumentId,
-          label: stored.label,
-          sourceUrl: stored.source_url,
-          parse: statuteParseOf(stored.content_hash, "version"),
-          listed: stored.listed === 1,
-        };
+      return inOneSnapshot(() => {
+        return selectVersionsOfMeasure.all(measureIdOf(key)).map((row): StoredVersion => {
+          const stored = versionRow.parse(row);
+          return {
+            id: stored.id as DocumentId,
+            label: stored.label,
+            sourceUrl: stored.source_url,
+            parse: statuteParseOf(stored.content_hash, "version"),
+            listing: listings.ofDocument(stored.id as DocumentId).listing,
+          };
+        });
       });
     },
     statutesAffectedTableOf(key) {
@@ -1212,128 +1219,124 @@ export function openIndexReader(path: string): IndexReader {
       return { session, code: stored.code, id: stored.id as CommitteeId, name: stored.name };
     },
     findMeetings(session, filter) {
-      const measure = filter.measure;
-      const committeeCode = filter.committeeCode ?? null;
-      const from = filter.from ?? null;
-      const to = filter.to ?? null;
-      return selectMeetings
-        .all(
-          meetingsSet,
-          session,
-          measure?.prefix ?? null,
-          measure?.prefix ?? null,
-          measure?.number ?? null,
-          committeeCode,
-          committeeCode,
-          from,
-          from,
-          to,
-          to,
-        )
-        .map((row) => {
-          const stored = meetingRow.parse(row);
-          return {
-            id: stored.id as MeetingId,
-            committee: {
-              id: stored.committee_id as CommitteeId,
-              code: stored.committee_code,
-              name: stored.committee_name,
-            },
-            at: stored.at as Timestamp,
-            status: stored.status,
-            listed: stored.listed === 1,
-          };
-        });
+      return inOneSnapshot(() => {
+        const measure = filter.measure;
+        const committeeCode = filter.committeeCode ?? null;
+        const from = filter.from ?? null;
+        const to = filter.to ?? null;
+        return selectMeetings
+          .all(
+            session,
+            measure?.prefix ?? null,
+            measure?.prefix ?? null,
+            measure?.number ?? null,
+            committeeCode,
+            committeeCode,
+            from,
+            from,
+            to,
+            to,
+          )
+          .map((row) => {
+            const stored = meetingRow.parse(row);
+            return {
+              id: stored.id as MeetingId,
+              committee: {
+                id: stored.committee_id as CommitteeId,
+                code: stored.committee_code,
+                name: stored.committee_name,
+              },
+              at: stored.at as Timestamp,
+              status: stored.status,
+              listing: listings.ofRow(session, meetingsSet, stored.id).listing,
+            };
+          });
+      });
     },
     meetingContents(meeting) {
-      const agendaItems = selectAgendaItems.all(agendaItemsSet, meeting).map((row): ListedAgendaItem => {
-        const stored = agendaItemRow.parse(row);
-        return {
-          listed: stored.listed === 1,
-          itemId: stored.id,
-          meetingId: stored.meeting_id as MeetingId,
-          measure:
-            stored.measure_prefix === null || stored.measure_number === null
-              ? null
-              : {
-                  session: stored.session_key as SessionKey,
-                  prefix: stored.measure_prefix,
-                  number: stored.measure_number,
-                },
-          meetingType: stored.meeting_type,
-          action: stored.action,
-          printOrder: stored.print_order,
-          comments: stored.comments,
-          boardName: stored.board_name,
-          executiveAppointee: stored.executive_appointee,
-        };
-      });
-      const listed = selectMeetingDocuments.all(meeting).map((row) => meetingDocumentRow.parse(row));
-      const documentsOfKind = (kind: DocumentKind): MeetingDocument[] =>
-        listed
-          .filter((stored) => stored.kind === kind)
-          .map((stored) => ({
-            id: stored.id as DocumentId,
-            label: stored.label,
-            sourceUrl: stored.source_url,
-            measureId: stored.measure_id as MeasureId | null,
-            title: stored.title,
-            fetched: stored.fetched === 1,
-            listed: stored.listed === 1,
-          }))
-          .sort((a, b) => numbersInOrder.compare(a.id, b.id));
-      const amendments = listed
-        .filter((stored) => stored.kind === "proposed_amendment")
-        .map((stored): PostedAmendment => {
-          if (stored.measure_id === null) throw new Error(`The posting ${stored.id} is listed with no Measure`);
+      return inOneSnapshot(() => {
+        const agendaItems = selectAgendaItems.all(meeting).map((row): ListedAgendaItem => {
+          const stored = agendaItemRow.parse(row);
           return {
-            id: stored.node_id as AmendmentId,
-            number: stored.label,
-            measureId: stored.measure_id as MeasureId,
-            meaning: stored.meaning,
-            documentId: stored.id as DocumentId,
-            sourceUrl: stored.source_url,
-            fetched: stored.fetched === 1,
-            listed: stored.listed === 1,
+            listing: listings.ofRow(stored.session_key as SessionKey, agendaItemsSet, String(stored.id)).listing,
+            itemId: stored.id,
+            meetingId: stored.meeting_id as MeetingId,
+            measure:
+              stored.measure_prefix === null || stored.measure_number === null
+                ? null
+                : {
+                    session: stored.session_key as SessionKey,
+                    prefix: stored.measure_prefix,
+                    number: stored.measure_number,
+                  },
+            meetingType: stored.meeting_type,
+            action: stored.action,
+            printOrder: stored.print_order,
+            comments: stored.comments,
+            boardName: stored.board_name,
+            executiveAppointee: stored.executive_appointee,
           };
         });
-      amendments.sort(
-        (a, b) =>
-          numbersInOrder.compare(a.measureId, b.measureId) ||
-          numbersInOrder.compare(a.number, b.number) ||
-          numbersInOrder.compare(a.documentId, b.documentId),
-      );
-      return {
-        agenda: documentsOfKind("agenda")[0] ?? null,
-        agendaItems,
-        amendments,
-        exhibits: documentsOfKind("exhibit"),
-        recordingLogs: documentsOfKind("recording_log"),
-      };
-    },
-    testimonyListing(id) {
-      const row = selectTestimonyListing.get(id);
-      return row === undefined ? undefined : listingOf(row);
-    },
-    findNoLongerListed(id) {
-      const listing = listingOf(selectDocumentListing.get(id) ?? selectPostingsListing.get(id));
-      return listing.listed ? undefined : listing;
-    },
-    measureListing(key) {
-      return listingOf(selectMeasureListing.get(key.session, measuresSet, measureIdOf(key)));
+        const listed = selectMeetingDocuments.all(meeting).map((row) => meetingDocumentRow.parse(row));
+        const documentsOfKind = (kind: DocumentKind): MeetingDocument[] =>
+          listed
+            .filter((stored) => stored.kind === kind)
+            .map((stored) => ({
+              id: stored.id as DocumentId,
+              label: stored.label,
+              sourceUrl: stored.source_url,
+              measureId: stored.measure_id as MeasureId | null,
+              title: stored.title,
+              fetched: stored.fetched === 1,
+              listing: listings.ofDocument(stored.id as DocumentId).listing,
+            }))
+            .sort((a, b) => numbersInOrder.compare(a.id, b.id));
+        const amendments = listed
+          .filter((stored) => stored.kind === "proposed_amendment")
+          .map((stored): PostedAmendment => {
+            if (stored.measure_id === null) throw new Error(`The posting ${stored.id} is listed with no Measure`);
+            return {
+              id: stored.node_id as AmendmentId,
+              number: stored.label,
+              measureId: stored.measure_id as MeasureId,
+              meaning: stored.meaning,
+              documentId: stored.id as DocumentId,
+              sourceUrl: stored.source_url,
+              fetched: stored.fetched === 1,
+              listing: listings.ofDocument(stored.id as DocumentId).listing,
+            };
+          });
+        amendments.sort(
+          (a, b) =>
+            numbersInOrder.compare(a.measureId, b.measureId) ||
+            numbersInOrder.compare(a.number, b.number) ||
+            numbersInOrder.compare(a.documentId, b.documentId),
+        );
+        return {
+          agenda: documentsOfKind("agenda")[0] ?? null,
+          agendaItems,
+          amendments,
+          exhibits: documentsOfKind("exhibit"),
+          recordingLogs: documentsOfKind("recording_log"),
+        };
+      });
     },
     findFloorLetters(key) {
-      return selectFloorLetters.all(measureIdOf(key)).map((row): FloorLetterEntry => {
-        const stored = floorLetterRow.parse(row);
-        return {
-          ...floorLetterDetailsOf(stored),
-          id: stored.id as DocumentId,
-          sourceUrl: stored.source_url,
-          fetched: stored.fetched === 1,
-          listed: stored.listed === 1,
-          hasTextLayer:
-            stored.has_text_layer === null || stored.has_text_layer === undefined ? null : stored.has_text_layer === 1,
-        };
+      return inOneSnapshot(() => {
+        return selectFloorLetters.all(measureIdOf(key)).map((row): FloorLetterEntry => {
+          const stored = floorLetterRow.parse(row);
+          return {
+            ...floorLetterDetailsOf(stored),
+            id: stored.id as DocumentId,
+            sourceUrl: stored.source_url,
+            fetched: stored.fetched === 1,
+            listing: listings.ofDocument(stored.id as DocumentId).listing,
+            hasTextLayer:
+              stored.has_text_layer === null || stored.has_text_layer === undefined
+                ? null
+                : stored.has_text_layer === 1,
+          };
+        });
       });
     },
     floorLetterDetails(id) {
@@ -1341,26 +1344,28 @@ export function openIndexReader(path: string): IndexReader {
       return row === undefined ? undefined : floorLetterDetailsOf(floorLetterRow.parse(row));
     },
     findTestimony(key) {
-      return selectTestimony.all(measureIdOf(key)).map((row): TestimonyEntry => {
-        const stored = testimonyRow.parse(row);
-        return {
-          id: stored.id as DocumentId,
-          commTestId: stored.comm_test_id,
-          sourceUrl: stored.source_url,
-          documentDescription: stored.document_description,
-          position: positionOf(stored.position_id),
-          submitter: stored.submitter,
-          behalfOf: stored.behalf_of,
-          organization: stored.organization,
-          committeeId: stored.committee_id as CommitteeId,
-          committeeCode: stored.committee_code,
-          meetingAt: stored.meeting_at as Timestamp,
-          agencyId: stored.agency_id as AgencyId | null,
-          fetched: stored.fetched === 1,
-          listed: stored.listed === 1,
-          hasTextLayer: stored.has_text_layer === null ? null : stored.has_text_layer === 1,
-          textHash: stored.text_hash,
-        };
+      return inOneSnapshot(() => {
+        return selectTestimony.all(measureIdOf(key)).map((row): TestimonyEntry => {
+          const stored = testimonyRow.parse(row);
+          return {
+            id: stored.id as DocumentId,
+            commTestId: stored.comm_test_id,
+            sourceUrl: stored.source_url,
+            documentDescription: stored.document_description,
+            position: positionOf(stored.position_id),
+            submitter: stored.submitter,
+            behalfOf: stored.behalf_of,
+            organization: stored.organization,
+            committeeId: stored.committee_id as CommitteeId,
+            committeeCode: stored.committee_code,
+            meetingAt: stored.meeting_at as Timestamp,
+            agencyId: stored.agency_id as AgencyId | null,
+            fetched: stored.fetched === 1,
+            listing: listings.ofDocument(stored.id as DocumentId).listing,
+            hasTextLayer: stored.has_text_layer === null ? null : stored.has_text_layer === 1,
+            textHash: stored.text_hash,
+          };
+        });
       });
     },
     findMeasure(key) {
@@ -1374,6 +1379,7 @@ export function openIndexReader(path: string): IndexReader {
         digest: stored.digest,
         createdAt: stored.created_at as Timestamp,
         modifiedAt: stored.modified_at as Timestamp | null,
+        listing: listings.ofRow(key.session, measuresSet, measureIdOf(key)).listing,
       };
     },
     findSponsors(key) {

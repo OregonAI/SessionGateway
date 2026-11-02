@@ -1,0 +1,43 @@
+---
+status: accepted; refines ADR-0030 and ADR-0037 (their rules stand: where the state is read, and who derives it, changes)
+supersedes: ADR-0030 in part (the sentences "The tools and search read the view, and nothing else keeps a copy of "listed"" and "Search now reads `feed_row_state` for every candidate document", and the words "which `feed_row_state` says (`last_listed_pull > latest - 2`); the same view gives the as-of time of the pull that last listed it"), and ADR-0009 in part (the `database` bullet of ticket #18: the view as "the one place that says whether a row is listed", the "SQL term for a row with no entry" in `lib/listing.ts`, and the three per-kind methods)
+---
+
+# The Listing is one module in `database`, and the reader hands out every row with its Listing
+
+ADR-0030 and ADR-0037 say when a row is No longer listed, and the first build wrote that rule five ways in two languages: the `feed_row_state` view, `previous - 2` and `number - 2` in the writer's search-generation bump, a SQL string (`COALESCE(fr.listed, 1)`) spliced into twelve reader queries that only worked over a join aliased `fr`, the unchecked case again in TypeScript, and a `NOT EXISTS` in search. "An amendment is listed while any Posting is" lived in one query, and ADR-0037 was applied by hand in the reader, in `agency_links` and in `find_measures`. A tool chose among `measureListing`, `findNoLongerListed` and `testimonyListing`, which returned three shapes. The architecture review of 2026-11-01 reopened it, and the owner decided it there (ticket #97).
+
+## Decision
+
+- **`database/lib/listing.ts` owns the Listing.** The two-pull arithmetic is one TypeScript function, `lastPullThatIsNoLongerListed`: the rows last listed by that pull or an earlier one are No longer listed. The reader applies it to a row it holds, and the writer's bump and search's queries bind the same number as a parameter (`last_listed_pull <= ?`) where the rule must run inside SQL over many rows. The arithmetic is spelled nowhere else; what the file exports is its result for a Session (`noLongerListedThrough`).
+- **The same module owns the other rules**: a row with no row in `feed_row` is listed with no last listing (ADR-0030), which a lookup says as its own case (`no_row`, against `checked`, in the `ListingRead` it returns) and not as a null; a Proposed Amendment is listed while any Posting is, and an Agency Link while any evidence Document is (ADR-0037), both through one `anyListed` that only the file uses; and a complete pull raises the search generation when it changes which Documents are No longer listed, which it learns by asking the rule before and after the pull.
+- **Search names no column of the Listing's tables.** It asks the Listing for three things: `listedDocumentSql(alias, parameter)`, the WHERE term that leaves out a Document the feed no longer lists, with `noLongerListedThrough(database, session)`, the number it binds; and `unlistedAmong(database, session, ids)`, which of some Documents the feed no longer lists and when each was last listed, from which `unlistedPostings` and `unlistedCiting` make their notes. The term stays SQL in search's queries, because a keyword query is cut by `LIMIT` and the vectors are loaded over every passage of the Session, so leaving the Documents out afterwards would cut the wrong rows. What stays in search is where the term sits (in its WHERE clauses, over `search_document` as `sd`); its text, the table and columns it reads, and the "no row, so kept" part of it are the Listing's. The exported text is the one SQL string of the file, and it carries no arithmetic.
+- **Everything the reader hands out carries its `listing`**: every row, Document, Measure, Proposed Amendment, the node an Agency Link sits on and the link itself (listed while any of its evidence Documents is). The `Listing` type stays in `domain`. `listedLinkKeys` left `domain` with the by-hand rebuilds in the tools, and the three per-kind methods are gone. `findDocument` also answers for an id the index holds no file of (`held: false`, with whether the row is Testimony and its Listing), so `get_document` reads one answer. A row of a kind other than Testimony that an Increment stored and no complete pull has listed is not such an id: `findDocument` does not know it, as before.
+- **A list is made from one snapshot.** Each lookup of a Listing is a read of its own, so a list of rows could mix Listings from before and after a complete Full pull commits. The reader's list-producing methods (`findTestimony`, `meetingContents`, `findAgencyLinks` and the rest that ask the Listing of each row) run inside one read transaction on the read-only connection (`inOneSnapshot`: `BEGIN`, and `COMMIT` in a `finally`).
+- **The schema text is not touched.** ADR-0048 freezes today's `CREATE ... IF NOT EXISTS` text as version 1, and an edit to it would never reach a file already stamped. The view `feed_row_state` therefore stays in `connection.ts` and says the same rule in SQL, and nothing reads it. The first numbered upgrade step another ticket adds also drops it (Consequences).
+
+## Considered Options
+
+- **Keep the view as the one source and have the reader and search read it.** Rejected: the view's text cannot change once it is frozen, the rule would live in the schema and not in the module that explains it, and the unchecked case would still be a `COALESCE` in every query.
+- **A view for the Documents search may return, or for every row's Listing including unchecked ones.** Rejected: it adds schema, which is the step ADR-0048 makes a numbered upgrade.
+- **Leave unlisted Documents out of search in TypeScript.** Rejected: a keyword query is cut by `LIMIT`, and a set of the unlisted Documents costs a scan of every row of `feed_row` at each query unless it is cached per search generation. A `NOT EXISTS` on an indexed column is the shape ADR-0030 measured (there over the view, 4.4 to 5.4 s against 3.8 to 4.6 s for the load of 1,056,000 passages); the term now reads `feed_row` directly, one join fewer, and was not measured again.
+- **Ask the Listing for a whole list at once (`ofDocuments(ids)`) instead of row by row.** Not built: the per-row lookups measured faster than the join they replace (Consequences). It is the route if a list of many thousands of rows ever matters.
+
+## Consequences
+
+The reader asks for each row's Listing with a small indexed query where it used to join the state, so a list of N rows costs N lookups; they are by primary key or by `feed_row_document`. This was expected to cost, and measured the other way.
+
+**Local measurement, 2026-11-02**, by the reviewer of ticket #97, one run each, with the real readers from `main` and from this branch, on a synthetic database of about 305,000 feed rows (a 2025R1 pull holds about 282,000 rows by the count in `docs/research/olis-odata.md` section 7, and ADR-0030 listed 330,000 in one transaction), machine load about 3.5:
+
+| Query | `main` | this branch |
+|---|---|---|
+| `findTestimony`, 32 rows | 300 ms | 0.9 ms |
+| `findTestimony`, 5,000 rows | 315 ms | 116 ms |
+| `findAgencyLinks`, 3,000 links | 357 ms | 140 ms |
+| `measuresWithAgencyLink` | 338 ms | 131 ms |
+
+The reason is `main`'s `LEFT JOIN feed_row_state`: SQLite materializes the whole view and builds an automatic index over it for every list query (`EXPLAIN` shows `MATERIALIZE feed_row_state`), whatever the size of the list. The same reviewer measured a set-based join straight on `feed_row` at about 18 ms for 5,000 rows, so a batched `ofDocuments(ids)` is where to go if lists of that size ever matter. One run each on a loaded machine shows the order of the difference and nothing finer.
+
+Search's "no row, so listed" is said once in SQL (`listedDocumentSql`, and the join of `unlistedAmong`, which does not return a Document without a row) and once in TypeScript (`no_row` in `ListingRead`). The seam-4 tests (`database/tests/`) hold both to the same cases: `listing-search.test.ts` has a Document an Increment stored stay in search's keyword results and vectors after three complete Full pulls that never list it, and stay out of the notes of an item held and not listed, and `listing-carried.test.ts` and `listing-two-pull-rule.test.ts` ask the reader the same of the Document. The tools' output does not change (`test/tools/no-longer-listed*.test.ts` and `pre-listing-database.test.ts` pass as they were).
+
+The view `feed_row_state` has been read by nothing since this ADR, and is still created by version 1 of the schema. The first numbered upgrade step another ticket adds also runs `DROP VIEW IF EXISTS feed_row_state`; `connection.ts` says so beside the list of steps. Until then a file carries a view nothing reads.

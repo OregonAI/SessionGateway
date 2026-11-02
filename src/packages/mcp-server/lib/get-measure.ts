@@ -358,7 +358,6 @@ export async function getMeasure(
   const committeeVotes = reader.findCommitteeVotes(measure);
   // The Measure is in the index, so OLIS is asked about it; a reference the index does not know never reaches OLIS.
   const live = await liveStatus.lookup(measure);
-  const listing = reader.measureListing(measure);
   const statuteLinksBySource = statuteLinksBySourceOf(measure, versions, reader.findMeasureAmendments(measure));
   // The table's blocks are set beside the Versions first; same_links_as keeps each Version's own block (ADR-0036).
   const withTable = statuteLinksBySourceWithTable(
@@ -370,7 +369,7 @@ export async function getMeasure(
     kind: "found",
     measure: {
       id: measureIdOf(measure),
-      ...listingShown(listing),
+      ...listingShown(measure.listing),
       catchline: measure.catchline,
       digest: measure.digest,
       analysis_documents: analysisDocumentsOf(

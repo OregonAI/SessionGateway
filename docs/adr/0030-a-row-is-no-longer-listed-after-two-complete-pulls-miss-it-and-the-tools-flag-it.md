@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: accepted; where the state is read and who derives it is refined by ADR-0049 (the rule stands); the sentences "The tools and search read the view, and nothing else keeps a copy of "listed"" and "Search now reads `feed_row_state` for every candidate document", and the words "which `feed_row_state` says (`last_listed_pull > latest - 2`); the same view gives the as-of time of the pull that last listed it", are superseded by ADR-0049, which has `database/lib/listing.ts` derive the rule and nothing read the view
 supersedes: ADR-0013 in part (analysis_listing is kept and read through the listing state, not replaced at every full pull)
 ---
 

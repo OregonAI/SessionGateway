@@ -257,7 +257,7 @@ function itemOf(entry: TestimonyEntry, sameLetterAs: ReadonlyMap<DocumentId, Let
     same_letter_as: sameLetterAs.get(entry.id)?.idToRead ?? null,
     same_letter_count: sameLetterAs.get(entry.id)?.count ?? null,
     agency_id: entry.agencyId,
-    ...noLongerListedFlag(entry.listed),
+    ...noLongerListedFlag(entry.listing),
   };
 }
 

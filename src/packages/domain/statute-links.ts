@@ -8,6 +8,7 @@ import {
   type AmendmentId,
   type AmendmentPosting,
   type DocumentId,
+  type Listing,
 } from "./documents.ts";
 import type { MeasureId } from "./index.ts";
 import { parseOrsChapterId, parseOrsSectionId, type OrsChapterId, type OrsSectionId } from "./oregonai.ts";
@@ -211,8 +212,8 @@ export type StoredVersion = {
   label: string;
   sourceUrl: string;
   parse: StatuteParse;
-  /** False once two complete full pulls in a row have not listed the Version (ADR-0030). It is still served by id. */
-  listed: boolean;
+  /** Whether the feed lists the Version (ADR-0030). A Version it no longer lists is still served by id. */
+  listing: Listing;
 };
 
 /** One file posted for a Proposed Amendment, with the postings it was posted as: postings of one amendment can share a file. */
@@ -235,4 +236,6 @@ export type StoredAmendment = {
   postings: AmendmentPosting[];
   /** One for each distinct file the store holds among the postings, in the order of their first posting. */
   files: AmendmentFile[];
+  /** Whether the feed lists the amendment: while it lists any of its postings (ADR-0030). */
+  listing: Listing;
 };

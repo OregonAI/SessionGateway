@@ -6,6 +6,7 @@ import type { AmendmentId, CommitteeId, DocumentId, DocumentKind } from "#/packa
 import type { MeasureId, SessionKey } from "#/packages/domain/index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openReadConnection } from "./lib/connection.ts";
+import { listedDocumentSql, noLongerListedThrough, unlistedAmong } from "./lib/listing.ts";
 
 /** Which documents a search may return. Every field given must hold. */
 export type SearchFilter = {
@@ -169,12 +170,7 @@ const citedRow = z.object({
   cited_at: z.number().nullable().optional(),
 });
 const countRow = z.object({ n: z.number() });
-const unlistedRow = z.object({
-  document_id: z.string(),
-  node_id: z.string(),
-  last_listed_at: z.string(),
-  n: z.number(),
-});
+const candidateRow = z.object({ document_id: z.string(), node_id: z.string() });
 const generationRow = z.object({ generation: z.number() });
 const vectorRow = z.object({
   passage_id: z.number(),
@@ -201,18 +197,13 @@ const detailsRow = z.object({
 });
 
 /**
- * The WHERE term that leaves out a document the feed no longer lists (ADR-0005, ADR-0030), over `search_document`
- * aliased `sd`. Every query of the index and the load of the vectors have it, so that a document that two complete
- * pulls in a row have not listed is in no result and in no scan, and `get_document` still serves it. A document
- * with no row in `feed_row_state` is one no complete pull has listed: it reads as listed, not yet checked.
+ * The WHERE terms of a filter over `search_document` (aliased `sd`), and the values they take. They leave out a document
+ * the feed no longer lists (ADR-0005, ADR-0030) by the Listing's term (`listedDocumentSql`). `unlistedThrough` is the
+ * last pull whose rows are No longer listed, for the filter's Session (`noLongerListedThrough`).
  */
-const listedDocument =
-  "NOT EXISTS (SELECT 1 FROM feed_row_state fr WHERE fr.document_id = sd.document_id AND fr.listed = 0)";
-
-/** The WHERE terms of a filter over `search_document` (aliased `sd`), and the values they take. */
-function filterTerms(filter: SearchFilter): { sql: string; values: string[] } {
-  const terms = ["sd.session_key = ?", listedDocument];
-  const values: string[] = [filter.session];
+function filterTerms(filter: SearchFilter, unlistedThrough: number): { sql: string; values: (string | number)[] } {
+  const terms = ["sd.session_key = ?", listedDocumentSql("sd", "?")];
+  const values: (string | number)[] = [filter.session, unlistedThrough];
   if (filter.kind !== undefined) {
     terms.push("sd.kind = ?");
     values.push(filter.kind);
@@ -251,6 +242,8 @@ function passageTextOf(stored: z.infer<typeof detailsRow>, citedAt: number | und
 
 export function openSearchReader(path: string): SearchIndexReader {
   const database = openReadConnection(path);
+  /** The last pull whose rows are No longer listed, for a Session, as of now: asked for each query. */
+  const unlistedThrough = (session: SessionKey): number => noLongerListedThrough(database, session);
   const selectDetails = database.prepare(
     `SELECT d.id AS document_id, sd.node_id, sd.kind, sd.title, sd.measure_id, sd.dated_at, d.source_url, d.text,
             p.start_offset, p.end_offset
@@ -262,7 +255,7 @@ export function openSearchReader(path: string): SearchIndexReader {
   const vectorSelection = `FROM passage p
        JOIN search_document sd ON sd.document_id = p.document_id
        JOIN passage_vector v ON v.text_hash = p.text_hash AND v.model_id = ?2
-     WHERE sd.session_key = ?1 AND sd.keyword_only = 0 AND ${listedDocument}`;
+     WHERE sd.session_key = ?1 AND sd.keyword_only = 0 AND ${listedDocumentSql("sd", "?3")}`;
   const selectGeneration = database.prepare("SELECT generation FROM search_generation WHERE id = 1");
   const selectVectorCount = database.prepare(`SELECT COUNT(*) AS n ${vectorSelection}`);
   const selectVectors = database.prepare(
@@ -280,21 +273,38 @@ export function openSearchReader(path: string): SearchIndexReader {
       ...(stored.cited_at === null || stored.cited_at === undefined ? {} : { citedAt: stored.cited_at }),
     };
   };
-  const unlistedHoldingOf = (row: unknown): UnlistedHolding | undefined => {
-    if (row === undefined) return undefined;
-    const stored = unlistedRow.parse(row);
+  /**
+   * The candidates a note is about, as the search index files them (the stored Documents of an item), and of them the
+   * ones the Listing says the feed no longer lists: how many, and the one listed last.
+   */
+  const unlistedHoldingOf = (session: SessionKey, candidates: readonly unknown[]): UnlistedHolding | undefined => {
+    const nodeOf = new Map<string, DocumentId | AmendmentId>();
+    for (const row of candidates) {
+      const stored = candidateRow.parse(row);
+      nodeOf.set(stored.document_id, stored.node_id as DocumentId | AmendmentId);
+    }
+    const unlisted = unlistedAmong(database, session, [...nodeOf.keys()] as DocumentId[]);
+    const [latest] = unlisted;
+    if (latest === undefined) return undefined;
+    const nodeId = nodeOf.get(latest.documentId);
+    if (nodeId === undefined) throw new Error(`The Listing named ${latest.documentId}, which search did not offer`);
     return {
-      count: stored.n,
-      latest: {
-        documentId: stored.document_id as DocumentId,
-        nodeId: stored.node_id as DocumentId | AmendmentId,
-        lastListedAt: stored.last_listed_at as Timestamp,
-      },
+      count: unlisted.length,
+      latest: { documentId: latest.documentId, nodeId, lastListedAt: latest.lastListedAt },
     };
   };
+  const selectPostingDocuments = database.prepare(
+    "SELECT sd.document_id, sd.node_id FROM search_document sd WHERE sd.node_id = ? AND sd.session_key = ?",
+  );
+  const selectCitingDocuments = database.prepare(
+    `SELECT DISTINCT sd.document_id, sd.node_id
+     FROM document_citation dc
+       JOIN search_document sd ON sd.document_id = dc.document_id
+     WHERE dc.citation_id = ? AND sd.session_key = ?`,
+  );
   return {
     keyword(match, filter, limit, keywordOnly = false) {
-      const terms = filterTerms(filter);
+      const terms = filterTerms(filter, unlistedThrough(filter.session));
       const rows = database
         .prepare(
           `SELECT p.id AS passage_id, p.document_id, sd.node_id
@@ -319,10 +329,10 @@ export function openSearchReader(path: string): SearchIndexReader {
       return generationRow.parse(selectGeneration.get()).generation;
     },
     vectorCount(session, modelId) {
-      return countRow.parse(selectVectorCount.get(session, modelId)).n;
+      return countRow.parse(selectVectorCount.get(session, modelId, unlistedThrough(session))).n;
     },
     *vectors(session, modelId) {
-      for (const row of selectVectors.iterate(session, modelId)) {
+      for (const row of selectVectors.iterate(session, modelId, unlistedThrough(session))) {
         const stored = vectorRow.parse(row);
         yield {
           passageId: stored.passage_id,
@@ -342,7 +352,7 @@ export function openSearchReader(path: string): SearchIndexReader {
       }
     },
     citing(citationId, filter, limit) {
-      const terms = filterTerms(filter);
+      const terms = filterTerms(filter, unlistedThrough(filter.session));
       return database
         .prepare(
           `SELECT sd.document_id, sd.node_id,
@@ -363,7 +373,7 @@ export function openSearchReader(path: string): SearchIndexReader {
         .map(citedOf);
     },
     versionsOf(measure, filter) {
-      const terms = filterTerms(filter);
+      const terms = filterTerms(filter, unlistedThrough(filter.session));
       return database
         .prepare(
           `SELECT sd.document_id, sd.node_id, ${firstPassage} AS passage_id
@@ -375,7 +385,7 @@ export function openSearchReader(path: string): SearchIndexReader {
         .map(citedOf);
     },
     postingOf(amendment, filter) {
-      const terms = filterTerms(filter);
+      const terms = filterTerms(filter, unlistedThrough(filter.session));
       const row = database
         .prepare(
           `SELECT sd.document_id, sd.node_id, ${firstPassage} AS passage_id
@@ -388,31 +398,10 @@ export function openSearchReader(path: string): SearchIndexReader {
       return row === undefined ? undefined : citedOf(row);
     },
     unlistedPostings(amendment, session) {
-      const row = database
-        .prepare(
-          `SELECT sd.document_id, sd.node_id, fr.last_listed_at, COUNT(*) OVER () AS n
-           FROM search_document sd
-             JOIN feed_row_state fr ON fr.document_id = sd.document_id AND fr.listed = 0
-           WHERE sd.node_id = ? AND sd.session_key = ?
-           ORDER BY fr.last_listed_pull DESC, sd.document_id DESC
-           LIMIT 1`,
-        )
-        .get(amendment, session);
-      return unlistedHoldingOf(row);
+      return unlistedHoldingOf(session, selectPostingDocuments.all(amendment, session));
     },
     unlistedCiting(citationId, session) {
-      const row = database
-        .prepare(
-          `SELECT sd.document_id, sd.node_id, fr.last_listed_at, COUNT(*) OVER () AS n
-           FROM document_citation dc
-             JOIN search_document sd ON sd.document_id = dc.document_id
-             JOIN feed_row_state fr ON fr.document_id = sd.document_id AND fr.listed = 0
-           WHERE dc.citation_id = ? AND sd.session_key = ?
-           ORDER BY fr.last_listed_pull DESC, sd.document_id DESC
-           LIMIT 1`,
-        )
-        .get(citationId, session);
-      return unlistedHoldingOf(row);
+      return unlistedHoldingOf(session, selectCitingDocuments.all(citationId, session));
     },
     details(match) {
       const row = selectDetails.get(match.passageId, match.documentId);

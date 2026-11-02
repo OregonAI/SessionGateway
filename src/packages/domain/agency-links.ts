@@ -68,6 +68,8 @@ export type LinkedNode = {
   label: string | null;
   /** The Measure's page on OLIS, the Version's file, or the file `get_document` serves for the amendment (its latest posting). */
   sourceUrl: string;
+  /** Whether the feed lists the node: the Measure's row, the Version's, or any posting of the amendment (ADR-0030). */
+  listing: Listing;
 };
 
 /** An Agency Link as the store holds it: the link, the document its evidence was read from, and the node it sits on. */
@@ -79,6 +81,12 @@ export type StoredAgencyLink = {
    * or the Testimony. `createdAt` is when OLIS created its row (null when the feed gave none).
    */
   document: { id: DocumentId; sourceUrl: string; createdAt: Timestamp | null; listing: Listing };
+  /**
+   * Whether the feed lists the Agency's link to the node (ADR-0037): the link is listed while any Document its evidence was
+   * read from is. It is the Listing of the link, not of this evidence: every row of the Agency's evidence for one node
+   * carries the same one.
+   */
+  listing: Listing;
   /**
    * Where the link sits: the Version a Fiscal Impact Statement is placed on (ADR-0013) or the Measure when it is on none;
    * the Version or Proposed Amendment whose text it was read from; the Measure for Testimony.
@@ -104,18 +112,3 @@ export type StoredStatuteLinked = {
   node: LinkedNode;
   link: StatuteLink;
 };
-
-/** What one Agency's links to one node are known by: the Agency and the node the evidence sits on. */
-export function agencyLinkKey(agency: AgencyId, nodeId: string): string {
-  return `${agency} ${nodeId}`;
-}
-
-/**
- * The keys (`agencyLinkKey`) of the Agency's links to a node with at least one evidence document the feed lists. A link
- * whose every evidence document is no longer listed is not among them (ADR-0037); one with any listed document is.
- */
-export function listedLinkKeys(links: readonly StoredAgencyLink[]): Set<string> {
-  return new Set(
-    links.filter((link) => link.document.listing.listed).map((link) => agencyLinkKey(link.agency, link.node.id)),
-  );
-}

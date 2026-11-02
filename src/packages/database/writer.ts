@@ -41,7 +41,7 @@ import {
   readConveneDays,
   readSessionDates,
 } from "./lib/run-state.ts";
-import { listedRowsOf } from "./lib/listing.ts";
+import { countListedRows, listedRowsOf, recordCompletePull } from "./lib/listing.ts";
 import { statuteLinkOfRow, statuteLinkRow } from "./lib/statute-link-rows.ts";
 
 type SponsorRecordFields = {
@@ -435,10 +435,7 @@ export type IndexWriter = {
 
 const idRow = z.object({ id: z.string() });
 const revisionRow = z.object({ id: z.string(), revision: z.number() });
-const pullNumberRow = z.object({ number: z.number() });
-const countRow = z.object({ n: z.number() });
 const memberRow = z.object({ committee_code: z.string(), legislator_code: z.string() });
-const listingCountRow = z.object({ entity_set: z.string(), listed: z.number(), no_longer_listed: z.number() });
 const scanRow = z.object({ id: z.string(), source_url: z.string() });
 const sampleRow = z.object({ id: z.string(), source_url: z.string(), content_hash: z.string() });
 const unreadFileRow = z.object({
@@ -657,21 +654,6 @@ export function openIndexWriter(path: string): IndexWriter {
       `INSERT INTO analysis_listing (document_id, session_key, measure_id) VALUES (?, ?, ?)
          ON CONFLICT (document_id) DO UPDATE SET measure_id = excluded.measure_id`,
     );
-    const selectLatestPull = database.prepare(
-      "SELECT COALESCE(MAX(number), 0) AS number FROM feed_pull WHERE session_key = ?",
-    );
-    const insertPull = database.prepare("INSERT INTO feed_pull (session_key, number, as_of) VALUES (?, ?, ?)");
-    const listRow = database.prepare(
-      `INSERT INTO feed_row (session_key, entity_set, row_key, document_id, last_listed_pull) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT (session_key, entity_set, row_key) DO UPDATE SET
-           document_id = excluded.document_id, last_listed_pull = excluded.last_listed_pull`,
-    );
-    const selectUnlistedDocuments = database.prepare(
-      "SELECT document_id AS id FROM feed_row WHERE session_key = ? AND document_id IS NOT NULL AND last_listed_pull <= ?",
-    );
-    const countDocumentsLastListedIn = database.prepare(
-      "SELECT COUNT(*) AS n FROM feed_row WHERE session_key = ? AND document_id IS NOT NULL AND last_listed_pull = ?",
-    );
     const upsertCommitteeMember = database.prepare(
       `INSERT INTO committee_member (session_key, row_key, committee_code, legislator_code, title, created_at,
                                        modified_at)
@@ -887,19 +869,7 @@ export function openIndexWriter(path: string): IndexWriter {
       recordAsOf.run(session, asOf);
       // The pull is a complete one: it lists every row it read. A document that was no longer listed and is
       // listed again, or that this pull makes no longer listed, changes what search holds in memory.
-      const previous = pullNumberRow.parse(selectLatestPull.get(session)).number;
-      const number = previous + 1;
-      const unlistedBefore = new Set(
-        selectUnlistedDocuments.all(session, previous - 2).map((row) => idRow.parse(row).id),
-      );
-      insertPull.run(session, number, asOf);
-      let relisted = false;
-      for (const row of listedRowsOf(pulled)) {
-        listRow.run(session, row.entitySet, row.key, row.documentId, number);
-        if (row.documentId !== null && unlistedBefore.has(row.documentId)) relisted = true;
-      }
-      const agedOut = countRow.parse(countDocumentsLastListedIn.get(session, number - 2)).n > 0;
-      if (relisted || agedOut) bumpSearchGeneration();
+      if (recordCompletePull(database, session, asOf, listedRowsOf(pulled)).searchChanged) bumpSearchGeneration();
       database.exec("COMMIT");
     } catch (error) {
       database.exec("ROLLBACK");
@@ -1068,16 +1038,7 @@ export function openIndexWriter(path: string): IndexWriter {
       }
     },
     listingCounts(session) {
-      const rows = database
-        .prepare(
-          `SELECT entity_set, SUM(listed) AS listed, COUNT(*) - SUM(listed) AS no_longer_listed
-           FROM feed_row_state WHERE session_key = ? GROUP BY entity_set ORDER BY entity_set`,
-        )
-        .all(session);
-      return rows.map((row) => {
-        const stored = listingCountRow.parse(row);
-        return { entitySet: stored.entity_set, listed: stored.listed, noLongerListed: stored.no_longer_listed };
-      });
+      return countListedRows(database, session);
     },
     committeeMembers(session) {
       const rows = database

@@ -1,5 +1,5 @@
 ---
-status: accepted; the sentence "a migration waits for the first release that needs one" is superseded by ADR-0048
+status: accepted; the sentence "a migration waits for the first release that needs one" is superseded by ADR-0048; in the `database` bullet of ticket #18 the parenthesis "(the one place that says whether a row is listed; ...)" after `feed_row_state`, the words "and the SQL term for a row with no entry", and the clause "and has `testimonyListing`, `measureListing` and `findNoLongerListed` in place of `listsTestimony`" are superseded by ADR-0049
 ---
 
 # Packages for the tracer bullet and the tickets after it, with the database's writer and reader as two entry points

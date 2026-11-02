@@ -191,7 +191,7 @@ export function postingShown(posting: AmendmentPosting): z.infer<typeof postingO
     committee_name: posting.committeeName,
     meaning: posting.meaning,
     fetched: posting.fetched,
-    ...noLongerListedFlag(posting.listed),
+    ...noLongerListedFlag(posting.listing),
   };
 }
 
@@ -444,7 +444,7 @@ export function statuteLinksBySourceOf(
       id: version.id,
       label: version.label,
       source_url: version.sourceUrl,
-      ...noLongerListedFlag(version.listed),
+      ...noLongerListedFlag(version.listing),
       ...parseResultShown(version.parse),
     })),
     proposed_amendments: current,

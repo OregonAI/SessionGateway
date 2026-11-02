@@ -15,8 +15,8 @@ export const noLongerListedOutput = z
   );
 
 /** The flag as an object to spread into an item: nothing for a row the feed lists. */
-export function noLongerListedFlag(listed: boolean): { no_longer_listed?: true } {
-  return listed ? {} : { no_longer_listed: true };
+export function noLongerListedFlag(listing: Listing): { no_longer_listed?: true } {
+  return listing.listed ? {} : { no_longer_listed: true };
 }
 
 /** The fields of `get_measure` that say whether the feed still lists the Measure. */
@@ -47,7 +47,7 @@ export const documentListingFields = {
 
 /** The fields to spread into a Measure, a document or an example: nothing while the feed lists it. */
 export function listingShown(listing: Listing): { no_longer_listed?: true; last_listed_at?: string } {
-  return listing.listed ? {} : { ...noLongerListedFlag(false), last_listed_at: listing.lastListedAt };
+  return listing.listed ? {} : { ...noLongerListedFlag(listing), last_listed_at: listing.lastListedAt };
 }
 
 /** The fields of `get_document` that say whether the feed still lists the document: always present. */

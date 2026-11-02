@@ -491,6 +491,11 @@ const versionOneSchema = `
  * gives a file with no version every table it lacks, so a file built before versions upgrades the way it always has.
  * A change to a table after version 1 is a step appended here with its own test, and a step is never edited once a
  * release has run it: a new file runs every step, so `versionOneSchema` above stays version 1's text.
+ *
+ * To do with the first step another ticket adds: version 1 creates the view `feed_row_state`, which nothing has read since
+ * ADR-0049 (the Listing module in `lib/listing.ts` derives the rule in TypeScript). That step should also run
+ * `DROP VIEW IF EXISTS feed_row_state`, so that no file keeps a view nothing reads. Version 1's text is not edited to
+ * remove it.
  */
 const upgradeSteps: readonly ((database: DatabaseSync) => void)[] = [
   (database) => {
