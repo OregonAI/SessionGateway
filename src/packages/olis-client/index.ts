@@ -20,6 +20,7 @@ import {
   downloadStoredDocument,
   readDocumentLinks,
   type Download,
+  type DocumentSets,
 } from "./lib/documents.ts";
 import { readFloorLetters } from "./lib/floor-letters.ts";
 import { readFloorVoteRows } from "./lib/floor-votes.ts";
@@ -32,7 +33,7 @@ import type { OlisClientOptions, PullRead, SetCount } from "./lib/options.ts";
 import { readConvenings, readSessionDates } from "./lib/schedule.ts";
 import { readSponsorshipRows } from "./lib/sponsors.ts";
 
-export type { Download, OlisClientOptions, MeasureLiveRead, PullRead, SetCount };
+export type { Download, DocumentSets, OlisClientOptions, MeasureLiveRead, PullRead, SetCount };
 
 /**
  * The client has a reader for each entity set a Pull reads, and each takes the `PullRead` the caller wants on every call:
@@ -80,8 +81,11 @@ export type OlisClient = {
    * `changed_since` read throws.
    */
   readFloorLetters(session: SessionKey, read: PullRead, signal: AbortSignal): Promise<DocumentLink[]>;
-  /** The documents the feed links for the Session, apart from agendas (a meeting's) and Floor Letters, not yet fetched. */
-  readDocumentLinks(session: SessionKey, read: PullRead, signal: AbortSignal): Promise<DocumentLink[]>;
+  /**
+   * The documents the feed links for the Session, apart from agendas (a meeting's) and Floor Letters, not yet fetched: the
+   * links of each of the five sets that link them, under the set's name. The five are read together and in one mode.
+   */
+  readDocumentLinks(session: SessionKey, read: PullRead, signal: AbortSignal): Promise<DocumentSets>;
   /** Fetches one document from OLIS. */
   downloadDocument(link: DocumentLink, signal: AbortSignal): Promise<Download>;
   /** `downloadDocument` for a document the store holds, which is known by its `source_url` alone (the hash sample, ticket #20). */

@@ -366,8 +366,13 @@ async function readFeed(
   const convenings = kind === "full_pull" ? await olis.readConvenings(config.session, whole, deps.signal) : [];
   const sessionDates =
     kind === "full_pull" ? await olis.readSessionDates(config.session, whole, deps.signal) : undefined;
+  const documents = await olis.readDocumentLinks(config.session, changed, deps.signal);
   const links = [
-    ...(await olis.readDocumentLinks(config.session, changed, deps.signal)),
+    ...documents.MeasureDocuments,
+    ...documents.MeasureAnalysisDocuments,
+    ...documents.CommitteeProposedAmendments,
+    ...documents.CommitteeMeetingDocuments,
+    ...documents.CommitteePublicTestimonies,
     ...meetings.flatMap((meeting) => (meeting.agenda === null ? [] : [meeting.agenda])),
     // FloorLetters carry no dates, so an increment asks for the ids above the highest one held (ADR-0005, ADR-0045).
     ...(await olis.readFloorLetters(

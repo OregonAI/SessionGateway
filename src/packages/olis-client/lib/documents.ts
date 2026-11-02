@@ -350,19 +350,41 @@ async function readPostings(
   });
 }
 
+/**
+ * The document links of the five entity sets whose rows link documents, each under the feed's name for its set. A meeting's
+ * agenda (a column of a CommitteeMeetings row) and the Floor Letters (their own reader) are not among them.
+ */
+export type DocumentSets = {
+  MeasureDocuments: DocumentLink[];
+  MeasureAnalysisDocuments: DocumentLink[];
+  CommitteeMeetingDocuments: DocumentLink[];
+  CommitteeProposedAmendments: DocumentLink[];
+  CommitteePublicTestimonies: DocumentLink[];
+};
+
+/**
+ * Reads the five sets together, each the way `read` says, because an analysis document is placed on the Version the feed
+ * lists for it (ADR-0013), so the Versions are read first and the analyses are read against them.
+ */
 export async function readDocumentLinks(
   options: OlisClientOptions,
   session: SessionKey,
   read: PullRead,
   signal: AbortSignal,
-): Promise<DocumentLink[]> {
+): Promise<DocumentSets> {
   const versions = await readVersions(options, session, read, signal);
   const versionIds = new Set(versions.filter((link) => link.kind === "version").map((link) => link.id));
   const analyses = await readAnalyses(options, session, read, versionIds, signal);
   const exhibits = await readExhibits(options, session, read, signal);
   const postings = await readPostings(options, session, read, signal);
   const testimony = await readTestimony(options, session, read, signal);
-  return [...versions, ...analyses, ...postings, ...exhibits, ...testimony];
+  return {
+    MeasureDocuments: versions,
+    MeasureAnalysisDocuments: analyses,
+    CommitteeMeetingDocuments: exhibits,
+    CommitteeProposedAmendments: postings,
+    CommitteePublicTestimonies: testimony,
+  };
 }
 
 /**
