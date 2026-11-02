@@ -541,6 +541,21 @@ export function openIndexReader(path: string): IndexReader {
   // Whether the feed lists a row is the Listing's to say (ADR-0030): every row and Document below is handed out with the
   // Listing it asks of it, and no query here joins the listing state.
   const listings = openListingReader(database);
+  /**
+   * Runs a read that asks the Listing of several rows inside one read transaction, so that a list is made from one
+   * snapshot: a complete Full pull that commits while the list is made is seen by all of its rows or by none, and the
+   * list does not mix Listings from before and after it. A read inside another joins it. The COMMIT is in a `finally`, so a
+   * read that throws leaves no transaction open on the connection.
+   */
+  function inOneSnapshot<T>(read: () => T): T {
+    if (database.isTransaction) return read();
+    database.exec("BEGIN");
+    try {
+      return read();
+    } finally {
+      database.exec("COMMIT");
+    }
+  }
   const selectPostings = database.prepare(
     "SELECT * FROM document WHERE node_id = ? AND node_id <> id ORDER BY posted_at DESC, id DESC",
   );
@@ -859,6 +874,9 @@ export function openIndexReader(path: string): IndexReader {
     });
   }
   function amendmentOf(id: AmendmentId): StoredAmendment | undefined {
+    return inOneSnapshot(() => amendmentIn(id));
+  }
+  function amendmentIn(id: AmendmentId): StoredAmendment | undefined {
     const rows = selectPostingsOfAmendment.all(id).map((row) => postingRow.parse(row));
     const listed = rows.map((stored) => ({
       label: stored.label,
@@ -916,6 +934,9 @@ export function openIndexReader(path: string): IndexReader {
     session: SessionKey,
     of: { agency: AgencyId } | { measure: MeasureKey },
   ): StoredAgencyLink[] {
+    return inOneSnapshot(() => agencyLinksIn(session, of));
+  }
+  function agencyLinksIn(session: SessionKey, of: { agency: AgencyId } | { measure: MeasureKey }): StoredAgencyLink[] {
     const [links, testimonyLinks, asked] =
       "agency" in of
         ? [selectAgencyLinksOfAgency, selectTestimonyLinksOfAgency, of.agency]
@@ -980,60 +1001,68 @@ export function openIndexReader(path: string): IndexReader {
   }
   return {
     analysisDocuments(key) {
-      return selectAnalyses.all(measureIdOf(key)).map((row) => {
-        const stored = analysisRow.parse(row);
-        const id = stored.id as DocumentId;
-        const related = relationsOf(id);
-        return {
-          id,
-          type: stored.label,
-          versionLabel: stored.analysis_version_label,
-          isMinority: stored.analysis_is_minority === 1,
-          sourceUrl: stored.source_url,
-          committeeId: (related.find((node) => node.relation === "committee")?.to as CommitteeId | undefined) ?? null,
-          placedVersionId: (related.find((node) => node.relation === "version")?.to as DocumentId | undefined) ?? null,
-          listing: listings.ofDocument(id).listing,
-        };
+      return inOneSnapshot(() => {
+        return selectAnalyses.all(measureIdOf(key)).map((row) => {
+          const stored = analysisRow.parse(row);
+          const id = stored.id as DocumentId;
+          const related = relationsOf(id);
+          return {
+            id,
+            type: stored.label,
+            versionLabel: stored.analysis_version_label,
+            isMinority: stored.analysis_is_minority === 1,
+            sourceUrl: stored.source_url,
+            committeeId: (related.find((node) => node.relation === "committee")?.to as CommitteeId | undefined) ?? null,
+            placedVersionId:
+              (related.find((node) => node.relation === "version")?.to as DocumentId | undefined) ?? null,
+            listing: listings.ofDocument(id).listing,
+          };
+        });
       });
     },
     analysisNotHeld(key) {
-      return selectNotHeld
-        .all(measureIdOf(key))
-        .filter((row) => listings.ofDocument(documentIdRow.parse(row).document_id as DocumentId).listing.listed).length;
+      return inOneSnapshot(() => {
+        return selectNotHeld
+          .all(measureIdOf(key))
+          .filter((row) => listings.ofDocument(documentIdRow.parse(row).document_id as DocumentId).listing.listed)
+          .length;
+      });
     },
     findAgencyLinks,
     findStatuteLinked(session, target) {
-      const known = new Map<string, LinkedNode>();
-      let rows;
-      if ("section" in target) {
-        rows = selectStatuteLinkedTo.all(session, target.section);
-      } else {
-        const { from, before } = orsSectionIdRangeOf(target.chapter);
-        rows = [
-          ...selectStatuteLinkedTo.all(session, target.chapter),
-          ...selectStatuteLinkedWithin.all(session, from, before),
-        ];
-      }
-      return rows
-        .map((row) => statuteLinkedRow.parse(row))
-        .map((found): StoredStatuteLinked => {
-          const key = measureKeyOf(found.measure_id, session);
-          const node =
-            found.document_kind === "version"
-              ? (known.get(found.document_id) ??
-                versionNodeOf(key, found.document_id, found.document_label, found.document_source_url))
-              : (known.get(found.node_id) ?? amendmentNodeOf(key, found.node_id));
-          known.set(node.id, node);
-          return {
-            document: {
-              id: found.document_id as DocumentId,
-              sourceUrl: found.document_source_url,
-              createdAt: found.document_created_at as Timestamp | null,
-            },
-            node,
-            link: statuteLinkOfRow(found),
-          };
-        });
+      return inOneSnapshot(() => {
+        const known = new Map<string, LinkedNode>();
+        let rows;
+        if ("section" in target) {
+          rows = selectStatuteLinkedTo.all(session, target.section);
+        } else {
+          const { from, before } = orsSectionIdRangeOf(target.chapter);
+          rows = [
+            ...selectStatuteLinkedTo.all(session, target.chapter),
+            ...selectStatuteLinkedWithin.all(session, from, before),
+          ];
+        }
+        return rows
+          .map((row) => statuteLinkedRow.parse(row))
+          .map((found): StoredStatuteLinked => {
+            const key = measureKeyOf(found.measure_id, session);
+            const node =
+              found.document_kind === "version"
+                ? (known.get(found.document_id) ??
+                  versionNodeOf(key, found.document_id, found.document_label, found.document_source_url))
+                : (known.get(found.node_id) ?? amendmentNodeOf(key, found.node_id));
+            known.set(node.id, node);
+            return {
+              document: {
+                id: found.document_id as DocumentId,
+                sourceUrl: found.document_source_url,
+                createdAt: found.document_created_at as Timestamp | null,
+              },
+              node,
+              link: statuteLinkOfRow(found),
+            };
+          });
+      });
     },
     measuresWithAgencyLink(session, agency) {
       // ADR-0037: a link none of whose evidence documents the feed lists is not counted, as a node no longer listed is not.
@@ -1054,17 +1083,19 @@ export function openIndexReader(path: string): IndexReader {
       return parents;
     },
     findUnresolvedUnits(measure) {
-      return selectUnresolvedUnits.all(measureIdOf(measure)).map((row): StoredUnresolvedUnit => {
-        const found = unresolvedUnitRow.parse(row);
-        return {
-          unit: found.unit,
-          statement: {
-            id: found.document_id as DocumentId,
-            sourceUrl: found.document_source_url,
-            listing: listings.ofDocument(found.document_id as DocumentId).listing,
-          },
-          node: statementNodeOf(measure, found.version_id),
-        };
+      return inOneSnapshot(() => {
+        return selectUnresolvedUnits.all(measureIdOf(measure)).map((row): StoredUnresolvedUnit => {
+          const found = unresolvedUnitRow.parse(row);
+          return {
+            unit: found.unit,
+            statement: {
+              id: found.document_id as DocumentId,
+              sourceUrl: found.document_source_url,
+              listing: listings.ofDocument(found.document_id as DocumentId).listing,
+            },
+            node: statementNodeOf(measure, found.version_id),
+          };
+        });
       });
     },
     counts(session) {
@@ -1093,59 +1124,65 @@ export function openIndexReader(path: string): IndexReader {
       };
     },
     findDocument(id) {
-      const own = selectDocument.get(id);
-      if (own !== undefined) {
-        const document = documentOf(own);
+      return inOneSnapshot(() => {
+        const own = selectDocument.get(id);
+        if (own !== undefined) {
+          const document = documentOf(own);
+          return {
+            held: true,
+            document,
+            related: relationsOf(document.id),
+            listing: listings.ofDocument(document.id).listing,
+          };
+        }
+        // Not a document: a Proposed Amendment, which has a posting (and a file) for each meeting.
+        const postings = selectPostings.all(id).map(documentOf);
+        const latest = postings[0];
+        if (latest === undefined) return unheldOf(id);
+        const related: RelatedNode[] = [];
+        const seen = new Set<string>();
+        for (const posting of postings.toReversed()) {
+          for (const node of relationsOf(posting.id)) {
+            if (node.relation === "amendment") continue;
+            // A posting is told apart by its meeting; every other relation is the same for each posting.
+            const key = `${node.relation} ${node.to}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            related.push(node);
+          }
+        }
         return {
           held: true,
-          document,
-          related: relationsOf(document.id),
-          listing: listings.ofDocument(document.id).listing,
+          document: latest,
+          related,
+          listing: listings.ofAmendment(id as AmendmentId).listing,
         };
-      }
-      // Not a document: a Proposed Amendment, which has a posting (and a file) for each meeting.
-      const postings = selectPostings.all(id).map(documentOf);
-      const latest = postings[0];
-      if (latest === undefined) return unheldOf(id);
-      const related: RelatedNode[] = [];
-      const seen = new Set<string>();
-      for (const posting of postings.toReversed()) {
-        for (const node of relationsOf(posting.id)) {
-          if (node.relation === "amendment") continue;
-          // A posting is told apart by its meeting; every other relation is the same for each posting.
-          const key = `${node.relation} ${node.to}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          related.push(node);
-        }
-      }
-      return {
-        held: true,
-        document: latest,
-        related,
-        listing: listings.ofAmendment(id as AmendmentId).listing,
-      };
+      });
     },
     findAmendment(id) {
       return amendmentOf(id);
     },
     findMeasureAmendments(key) {
-      const ids = selectAmendmentsOfMeasure
-        .all(measureIdOf(key))
-        .map((row) => z.object({ node_id: z.string() }).parse(row).node_id);
-      const amendments = ids.flatMap((id) => amendmentOf(id as AmendmentId) ?? []);
-      return amendments.sort((a, b) => numbersInOrder.compare(a.number, b.number));
+      return inOneSnapshot(() => {
+        const ids = selectAmendmentsOfMeasure
+          .all(measureIdOf(key))
+          .map((row) => z.object({ node_id: z.string() }).parse(row).node_id);
+        const amendments = ids.flatMap((id) => amendmentOf(id as AmendmentId) ?? []);
+        return amendments.sort((a, b) => numbersInOrder.compare(a.number, b.number));
+      });
     },
     findMeasureVersions(key) {
-      return selectVersionsOfMeasure.all(measureIdOf(key)).map((row): StoredVersion => {
-        const stored = versionRow.parse(row);
-        return {
-          id: stored.id as DocumentId,
-          label: stored.label,
-          sourceUrl: stored.source_url,
-          parse: statuteParseOf(stored.content_hash, "version"),
-          listing: listings.ofDocument(stored.id as DocumentId).listing,
-        };
+      return inOneSnapshot(() => {
+        return selectVersionsOfMeasure.all(measureIdOf(key)).map((row): StoredVersion => {
+          const stored = versionRow.parse(row);
+          return {
+            id: stored.id as DocumentId,
+            label: stored.label,
+            sourceUrl: stored.source_url,
+            parse: statuteParseOf(stored.content_hash, "version"),
+            listing: listings.ofDocument(stored.id as DocumentId).listing,
+          };
+        });
       });
     },
     statutesAffectedTableOf(key) {
@@ -1182,116 +1219,124 @@ export function openIndexReader(path: string): IndexReader {
       return { session, code: stored.code, id: stored.id as CommitteeId, name: stored.name };
     },
     findMeetings(session, filter) {
-      const measure = filter.measure;
-      const committeeCode = filter.committeeCode ?? null;
-      const from = filter.from ?? null;
-      const to = filter.to ?? null;
-      return selectMeetings
-        .all(
-          session,
-          measure?.prefix ?? null,
-          measure?.prefix ?? null,
-          measure?.number ?? null,
-          committeeCode,
-          committeeCode,
-          from,
-          from,
-          to,
-          to,
-        )
-        .map((row) => {
-          const stored = meetingRow.parse(row);
-          return {
-            id: stored.id as MeetingId,
-            committee: {
-              id: stored.committee_id as CommitteeId,
-              code: stored.committee_code,
-              name: stored.committee_name,
-            },
-            at: stored.at as Timestamp,
-            status: stored.status,
-            listing: listings.ofRow(session, meetingsSet, stored.id).listing,
-          };
-        });
+      return inOneSnapshot(() => {
+        const measure = filter.measure;
+        const committeeCode = filter.committeeCode ?? null;
+        const from = filter.from ?? null;
+        const to = filter.to ?? null;
+        return selectMeetings
+          .all(
+            session,
+            measure?.prefix ?? null,
+            measure?.prefix ?? null,
+            measure?.number ?? null,
+            committeeCode,
+            committeeCode,
+            from,
+            from,
+            to,
+            to,
+          )
+          .map((row) => {
+            const stored = meetingRow.parse(row);
+            return {
+              id: stored.id as MeetingId,
+              committee: {
+                id: stored.committee_id as CommitteeId,
+                code: stored.committee_code,
+                name: stored.committee_name,
+              },
+              at: stored.at as Timestamp,
+              status: stored.status,
+              listing: listings.ofRow(session, meetingsSet, stored.id).listing,
+            };
+          });
+      });
     },
     meetingContents(meeting) {
-      const agendaItems = selectAgendaItems.all(meeting).map((row): ListedAgendaItem => {
-        const stored = agendaItemRow.parse(row);
-        return {
-          listing: listings.ofRow(stored.session_key as SessionKey, agendaItemsSet, String(stored.id)).listing,
-          itemId: stored.id,
-          meetingId: stored.meeting_id as MeetingId,
-          measure:
-            stored.measure_prefix === null || stored.measure_number === null
-              ? null
-              : {
-                  session: stored.session_key as SessionKey,
-                  prefix: stored.measure_prefix,
-                  number: stored.measure_number,
-                },
-          meetingType: stored.meeting_type,
-          action: stored.action,
-          printOrder: stored.print_order,
-          comments: stored.comments,
-          boardName: stored.board_name,
-          executiveAppointee: stored.executive_appointee,
-        };
-      });
-      const listed = selectMeetingDocuments.all(meeting).map((row) => meetingDocumentRow.parse(row));
-      const documentsOfKind = (kind: DocumentKind): MeetingDocument[] =>
-        listed
-          .filter((stored) => stored.kind === kind)
-          .map((stored) => ({
-            id: stored.id as DocumentId,
-            label: stored.label,
-            sourceUrl: stored.source_url,
-            measureId: stored.measure_id as MeasureId | null,
-            title: stored.title,
-            fetched: stored.fetched === 1,
-            listing: listings.ofDocument(stored.id as DocumentId).listing,
-          }))
-          .sort((a, b) => numbersInOrder.compare(a.id, b.id));
-      const amendments = listed
-        .filter((stored) => stored.kind === "proposed_amendment")
-        .map((stored): PostedAmendment => {
-          if (stored.measure_id === null) throw new Error(`The posting ${stored.id} is listed with no Measure`);
+      return inOneSnapshot(() => {
+        const agendaItems = selectAgendaItems.all(meeting).map((row): ListedAgendaItem => {
+          const stored = agendaItemRow.parse(row);
           return {
-            id: stored.node_id as AmendmentId,
-            number: stored.label,
-            measureId: stored.measure_id as MeasureId,
-            meaning: stored.meaning,
-            documentId: stored.id as DocumentId,
-            sourceUrl: stored.source_url,
-            fetched: stored.fetched === 1,
-            listing: listings.ofDocument(stored.id as DocumentId).listing,
+            listing: listings.ofRow(stored.session_key as SessionKey, agendaItemsSet, String(stored.id)).listing,
+            itemId: stored.id,
+            meetingId: stored.meeting_id as MeetingId,
+            measure:
+              stored.measure_prefix === null || stored.measure_number === null
+                ? null
+                : {
+                    session: stored.session_key as SessionKey,
+                    prefix: stored.measure_prefix,
+                    number: stored.measure_number,
+                  },
+            meetingType: stored.meeting_type,
+            action: stored.action,
+            printOrder: stored.print_order,
+            comments: stored.comments,
+            boardName: stored.board_name,
+            executiveAppointee: stored.executive_appointee,
           };
         });
-      amendments.sort(
-        (a, b) =>
-          numbersInOrder.compare(a.measureId, b.measureId) ||
-          numbersInOrder.compare(a.number, b.number) ||
-          numbersInOrder.compare(a.documentId, b.documentId),
-      );
-      return {
-        agenda: documentsOfKind("agenda")[0] ?? null,
-        agendaItems,
-        amendments,
-        exhibits: documentsOfKind("exhibit"),
-        recordingLogs: documentsOfKind("recording_log"),
-      };
+        const listed = selectMeetingDocuments.all(meeting).map((row) => meetingDocumentRow.parse(row));
+        const documentsOfKind = (kind: DocumentKind): MeetingDocument[] =>
+          listed
+            .filter((stored) => stored.kind === kind)
+            .map((stored) => ({
+              id: stored.id as DocumentId,
+              label: stored.label,
+              sourceUrl: stored.source_url,
+              measureId: stored.measure_id as MeasureId | null,
+              title: stored.title,
+              fetched: stored.fetched === 1,
+              listing: listings.ofDocument(stored.id as DocumentId).listing,
+            }))
+            .sort((a, b) => numbersInOrder.compare(a.id, b.id));
+        const amendments = listed
+          .filter((stored) => stored.kind === "proposed_amendment")
+          .map((stored): PostedAmendment => {
+            if (stored.measure_id === null) throw new Error(`The posting ${stored.id} is listed with no Measure`);
+            return {
+              id: stored.node_id as AmendmentId,
+              number: stored.label,
+              measureId: stored.measure_id as MeasureId,
+              meaning: stored.meaning,
+              documentId: stored.id as DocumentId,
+              sourceUrl: stored.source_url,
+              fetched: stored.fetched === 1,
+              listing: listings.ofDocument(stored.id as DocumentId).listing,
+            };
+          });
+        amendments.sort(
+          (a, b) =>
+            numbersInOrder.compare(a.measureId, b.measureId) ||
+            numbersInOrder.compare(a.number, b.number) ||
+            numbersInOrder.compare(a.documentId, b.documentId),
+        );
+        return {
+          agenda: documentsOfKind("agenda")[0] ?? null,
+          agendaItems,
+          amendments,
+          exhibits: documentsOfKind("exhibit"),
+          recordingLogs: documentsOfKind("recording_log"),
+        };
+      });
     },
     findFloorLetters(key) {
-      return selectFloorLetters.all(measureIdOf(key)).map((row): FloorLetterEntry => {
-        const stored = floorLetterRow.parse(row);
-        return {
-          ...floorLetterDetailsOf(stored),
-          id: stored.id as DocumentId,
-          sourceUrl: stored.source_url,
-          fetched: stored.fetched === 1,
-          listing: listings.ofDocument(stored.id as DocumentId).listing,
-          hasTextLayer:
-            stored.has_text_layer === null || stored.has_text_layer === undefined ? null : stored.has_text_layer === 1,
-        };
+      return inOneSnapshot(() => {
+        return selectFloorLetters.all(measureIdOf(key)).map((row): FloorLetterEntry => {
+          const stored = floorLetterRow.parse(row);
+          return {
+            ...floorLetterDetailsOf(stored),
+            id: stored.id as DocumentId,
+            sourceUrl: stored.source_url,
+            fetched: stored.fetched === 1,
+            listing: listings.ofDocument(stored.id as DocumentId).listing,
+            hasTextLayer:
+              stored.has_text_layer === null || stored.has_text_layer === undefined
+                ? null
+                : stored.has_text_layer === 1,
+          };
+        });
       });
     },
     floorLetterDetails(id) {
@@ -1299,26 +1344,28 @@ export function openIndexReader(path: string): IndexReader {
       return row === undefined ? undefined : floorLetterDetailsOf(floorLetterRow.parse(row));
     },
     findTestimony(key) {
-      return selectTestimony.all(measureIdOf(key)).map((row): TestimonyEntry => {
-        const stored = testimonyRow.parse(row);
-        return {
-          id: stored.id as DocumentId,
-          commTestId: stored.comm_test_id,
-          sourceUrl: stored.source_url,
-          documentDescription: stored.document_description,
-          position: positionOf(stored.position_id),
-          submitter: stored.submitter,
-          behalfOf: stored.behalf_of,
-          organization: stored.organization,
-          committeeId: stored.committee_id as CommitteeId,
-          committeeCode: stored.committee_code,
-          meetingAt: stored.meeting_at as Timestamp,
-          agencyId: stored.agency_id as AgencyId | null,
-          fetched: stored.fetched === 1,
-          listing: listings.ofDocument(stored.id as DocumentId).listing,
-          hasTextLayer: stored.has_text_layer === null ? null : stored.has_text_layer === 1,
-          textHash: stored.text_hash,
-        };
+      return inOneSnapshot(() => {
+        return selectTestimony.all(measureIdOf(key)).map((row): TestimonyEntry => {
+          const stored = testimonyRow.parse(row);
+          return {
+            id: stored.id as DocumentId,
+            commTestId: stored.comm_test_id,
+            sourceUrl: stored.source_url,
+            documentDescription: stored.document_description,
+            position: positionOf(stored.position_id),
+            submitter: stored.submitter,
+            behalfOf: stored.behalf_of,
+            organization: stored.organization,
+            committeeId: stored.committee_id as CommitteeId,
+            committeeCode: stored.committee_code,
+            meetingAt: stored.meeting_at as Timestamp,
+            agencyId: stored.agency_id as AgencyId | null,
+            fetched: stored.fetched === 1,
+            listing: listings.ofDocument(stored.id as DocumentId).listing,
+            hasTextLayer: stored.has_text_layer === null ? null : stored.has_text_layer === 1,
+            textHash: stored.text_hash,
+          };
+        });
       });
     },
     findMeasure(key) {

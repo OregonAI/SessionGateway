@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
-import { documentKinds, parseDocumentReference, relations } from "#/packages/domain/documents.ts";
+import { documentKinds, parseDocumentReference, relations, type UnheldDocument } from "#/packages/domain/documents.ts";
 import { floorLetterDocumentOutput, floorLetterDocumentShown } from "./floor-letters.ts";
 import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 import { documentListingOutput, documentListingShown } from "./listing.ts";
@@ -80,13 +80,13 @@ export function getDocument(
   if (id === undefined) return { kind: "unknown", id: input.id, session };
   const found = reader.findDocument(id);
   if (found === undefined) return { kind: "unknown", id: input.id, session };
-  if (!found.held) {
-    // A row the feed no longer lists is a fact whatever it is; a listed Testimony is one the next pull fetches; any other
-    // listed row without a file is no id this index serves.
-    if (!found.listing.listed) {
-      return { kind: "no_longer_listed_not_held", id, session, lastListedAt: found.listing.lastListedAt };
-    }
-    return found.testimony ? { kind: "not_held", id, session } : { kind: "unknown", id: input.id, session };
+  switch (found.held) {
+    case true:
+      break;
+    case false:
+      return unheldResult(found, id, input.id, session);
+    default:
+      return found satisfies never;
   }
   const stored = found.document;
   const parts = splitIntoParts(stored.text);
@@ -124,6 +124,21 @@ export function getDocument(
       notice: NON_OFFICIAL_NOTICE,
     },
   };
+}
+
+/**
+ * What an agent is told of an id the index holds no file of. A row the feed no longer lists is a fact whatever it is; a
+ * listed Testimony is one the next pull fetches; any other listed row without a file is no id this index serves.
+ */
+function unheldResult(found: UnheldDocument, id: string, asked: string, session: SessionKey): GetDocumentResult {
+  switch (found.listing.listed) {
+    case false:
+      return { kind: "no_longer_listed_not_held", id, session, lastListedAt: found.listing.lastListedAt };
+    case true:
+      return found.testimony ? { kind: "not_held", id, session } : { kind: "unknown", id: asked, session };
+    default:
+      return found.listing satisfies never;
+  }
 }
 
 /** What an agent is told when no document matches, so it can correct the call. */

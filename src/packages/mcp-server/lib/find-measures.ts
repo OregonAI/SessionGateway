@@ -266,7 +266,7 @@ type Piece = {
 };
 
 /** What makes one node an item: the pieces of evidence, in their order, and for an Agency the Listing of its link to the node. */
-type Candidate = { node: LinkedNode; pieces: Piece[]; link?: Listing };
+type Candidate = { node: LinkedNode; pieces: Piece[]; linkListing?: Listing };
 
 /** The latest of a piece's times, or undefined when it has none. */
 function latestOf(createdAt: readonly Timestamp[]): Timestamp | undefined {
@@ -281,7 +281,7 @@ function latestOf(createdAt: readonly Timestamp[]): Timestamp | undefined {
 function candidatesOfLinks(links: readonly GatheredLink[]): Candidate[] {
   const byNode = new Map<string, Candidate>();
   for (const { link, createdAt } of links.toSorted((a, b) => compareLinks(a.link, b.link))) {
-    const own = byNode.get(link.node.id) ?? { node: link.node, pieces: [], link: link.listing };
+    const own = byNode.get(link.node.id) ?? { node: link.node, pieces: [], linkListing: link.listing };
     own.pieces.push({
       kind: link.evidence.kind,
       document: { id: link.document.id, sourceUrl: link.document.sourceUrl },
@@ -386,7 +386,10 @@ function itemOf(candidate: Candidate, since: Timestamp | undefined): Item | unde
     }),
     documents: shown.map((piece) => piece.document),
     // The item is flagged when its own row is No longer listed, and for an Agency also when its link to the node is.
-    listing: candidate.link !== undefined && !candidate.link.listed ? candidate.link : candidate.node.listing,
+    listing:
+      candidate.linkListing !== undefined && !candidate.linkListing.listed
+        ? candidate.linkListing
+        : candidate.node.listing,
   };
 }
 
