@@ -217,7 +217,7 @@ describe.for(eras)("get_measure's analysis documents for a %s client", (era) => 
     expect(reason).toMatch(/no Version label/i);
   });
 
-  // The fixture's 34 MeasureAnalysisDocuments rows belong to its 8 Measures; 7 of them have a blank
+  // The fixture's 34 MeasureAnalysisDocuments rows belong to its 10 Measures; 7 of them have a blank
   // Version (HB 3027 86401 and 91908, HB 3131 85989, SB 64 90799 and 91528, SB 121 90895, SB 983 88201).
   it("lists every one of the fixture's 34 analysis documents, and each id resolves in get_document", async () => {
     const measures = ["SB 69", "HB 3795", "HB 3131", "SB 64", "SB 121", "SB 921", "SB 983", "HB 3027"];

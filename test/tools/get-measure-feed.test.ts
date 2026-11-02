@@ -210,8 +210,9 @@ describe("a pull that is refused", () => {
 });
 
 describe("the feed's paging", () => {
-  // The fixture holds ten Measures of 2025R1 (test/fixtures/olis-2025R1/measures.txt); these are the first eight, and
-  // HB 3723 and HB 3124 (ticket #54) are not paged here.
+  // The fixture holds ten Measures of 2025R1 (test/fixtures/olis-2025R1/measures.txt); these are
+  // eight of its ten rows in the feed's order (rows 1 to 6, 8 and 10). HB 3124 (row 7) and HB 3723 (row 9), added by
+  // ticket #54, are not asserted here.
   const fixtureMeasures = [
     ["SB 64", "measure-2025r1-sb64"],
     ["SB 69", "measure-2025r1-sb69"],

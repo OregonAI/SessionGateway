@@ -305,9 +305,13 @@ describe.for(eras)("get_measure's Statutes Affected Table for a %s client", (era
   });
 
   // HB 3124 (ticket #54). Its SECTION 1 reads "Section 2 of this 2025 Act is added to and made a part of the wildlife laws", and
-  // names no ORS chapter, so the parser reads no link that adds to the law. The table prints "Ch. 496 to) Ch. 501 ) Add §1
-  // HB 3124 E" (artables2025R1.pdf, pdftotext -layout, page RS25-T-42): a series of chapters, which is its two ends and the
-  // chapters between them that the snapshot's section list holds (the snapshot fixture holds none of 497 to 500).
+  // names no ORS chapter, so the parser reads no link that adds to the law. The table prints "Ch. 496 to) Ch. 501 ) ... Add §1
+  // HB 3124 E" (artables2025R1.pdf, pdftotext -layout, page RS25-T-41, the row after HB 2557's): a series of chapters, which
+  // is its two ends and the chapters between them that the snapshot's section list holds. The [496, 501] literal comes from
+  // the trimmed snapshot fixture, which keeps no section of any chapter 496 to 501: the trim reads an ORS citation, HB 3124's
+  // text cites none, and the trim ignores the table's bare chapter numbers (snapshot README, "How the list was taken" 1). The
+  // code keeps a series' two ends whether or not the list holds them. ERF at 6c41efefb5 holds sections of chapters 496, 497,
+  // 498 and 501 (none of 499 or 500), so the full snapshot would give [496, 497, 498, 501].
   describe("HB 3124, whose text says 'the wildlife laws' and names no chapter", () => {
     it("lists the table's addition to ORS chapters 496 and 501 at §1 as the table's alone, and no parsed link that changes the law", async () => {
       const introduced = version(await linksOf("HB 3124"), "Introduced");

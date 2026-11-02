@@ -53,7 +53,7 @@ afterEach(async () => {
 /** The options find-measures*.test.ts use for the same clocks, so the templates are shared. */
 const optionsAt = (clockAt: string) => ({ clockAt, documents: true, serverEnv: { MCP_RATE_LIMIT: "1000" } });
 
-/** Every row of the fixture exists by then, so the pull fetches all 278 documents. */
+/** Every row of the fixture exists by then, so the pull fetches all 280 documents. */
 const augustOptions = optionsAt("2026-08-01T17:00:00Z");
 
 async function start(clockAt: string): Promise<System> {

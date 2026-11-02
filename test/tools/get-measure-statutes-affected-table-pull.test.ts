@@ -4,7 +4,8 @@
 // file that is not a table, refused again without a second reading) until it can; a table that is loaded, fetched again,
 // withdrawn and then changed; a Version whose text could not be read; and made-up tables in shapes the real one never
 // shows (the last describe: a line the parser cannot read, a footer date in November, overturned vetoes, an E alone for a
-// Measure with and without an E-Engrossed Version in the feed). A system pulls the fixture's 280 documents, about four
+// Measure with an E-Engrossed Version in the feed, which the real table never shows: HB 3723 and HB 3124 have an E alone and
+// no E-Engrossed Version, and the case that has one is MADE UP). A system pulls the fixture's 280 documents, about four
 // seconds, so a system serves several cases, which run in the order written and each take the table on from the one
 // before. They are read from the top: a case that comes later relies on what the earlier ones did.
 //
@@ -317,7 +318,10 @@ describe("a table that was loaded", () => {
   // the text of its Introduced Version, which the parser does not read as a repeal until #55, has no repeal; HB 3124's row adds
   // to ORS chapters 496 and 501 at §1, and its text names no chapter. A table that overwrote the Version's links would show
   // in them. The expected links are read from the deployment that names no table, which has the same Versions and never saw one.
-  it("leaves HB 3723's and HB 3124's parsed links as the text has them when the real table says otherwise: the table is beside them, never over them", async () => {
+  // HB 3723's half is TODAY'S BEHAVIOUR, not the right answer: once #55 reads its repeal list, its repeals are no longer a
+  // disagreement, the two asserts on it below (no parsed repeals, the repeals in only_in_table) move, and HB 3124 alone carries
+  // the never-overwrite case, which stays true.
+  it("leaves HB 3723's and HB 3124's parsed links as the text has them when the real table says otherwise: the table is beside them, never over them (HB 3723's half is today's behaviour; the parser fix is #55)", async () => {
     for (const measure of ["HB 3723", "HB 3124"]) {
       const shown = linksOf(await rig.ask(measure)).versions.map((entry) => [entry.label, entry.statute_links]);
       const onMain = linksOf(await unset.ask(measure)).versions.map((entry) => [entry.label, entry.statute_links]);
@@ -326,11 +330,13 @@ describe("a table that was loaded", () => {
     }
     const hb3723 = linksOf(await rig.ask("HB 3723")).versions[0];
     const hb3124 = linksOf(await rig.ask("HB 3124")).versions[0];
+    // TODAY'S BEHAVIOUR (HB 3723, until #55):
     expect(hb3723?.statute_links.repeals).toEqual(noLinks.repeals);
     expect(hb3723?.statutes_affected_table?.only_in_table?.repeals.sections.map((target) => target.target_id)).toEqual([
       "ors-247.016",
       "ors-247.018",
     ]);
+    // HB 3124, which stays a disagreement after #55:
     expect(hb3124?.statute_links["adds-to"]).toEqual(noLinks["adds-to"]);
     expect(
       hb3124?.statutes_affected_table?.only_in_table?.["adds-to"].chapters.map((target) => target.target_id),
@@ -513,7 +519,8 @@ describe("a table that was loaded", () => {
 // MADE UP, as get-measure-statute-links-pull.test.ts makes them up: rows for a B-Engrossed and a C-Engrossed Version of
 // SB 69 (the feed has neither). B-Engrossed is served with the fixture's scan (Exhibit 288141, a PDF with no text layer), so
 // that the index holds the Version and has read nothing of it. C-Engrossed's file is not served until the second case, and
-// is a PDF the test builds: no Version of the fixture repeals an ORS section, and a repeal is the table's "R". A made-up
+// is a PDF the test builds: no Version of the fixture has a parsed repeal of an ORS section (HB 3723 §1 repeals 247.016 and
+// 247.018, which the parser does not read until #55), and a repeal is the table's "R". A made-up
 // table, served from the pull after, names each Version.
 const versionRowOf = (prefix: string, number: number, description: string): Record<string, unknown> => ({
   SessionKey: "2025R1",
@@ -570,6 +577,10 @@ describe("Versions this index could not read, and one made up to repeal", () => 
   });
 
   it("sets the table's R beside a repeal the text makes, its A beside an amendment, and shows a repeal only the table has", async () => {
+    // MADE UP, and it stays made up (ticket #54): the row "653.646 R §3 SB 69 C" is a repeal only the table has, which HB 3723's
+    // real §1 repeals are today. They are not a like-for-like replacement, because #55 makes the parser read them and they stop
+    // being a disagreement, which would break this case; this one has to survive #55. It also needs the table's R beside a
+    // repeal the text makes (653.616), which HB 3723's text, with no parsed repeal, cannot give.
     // The Version's text, one line to a row of the page: SECTION 1 repeals ORS 653.616, SECTION 2 amends ORS 653.626.
     rig.system.olis.serveDocument(
       "/liz/2025R1/Downloads/MeasureDocument/SB69/C-Engrossed",
