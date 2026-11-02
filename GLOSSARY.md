@@ -257,6 +257,10 @@ _Avoid_: base Version, parent Version
 A Proposed Amendment whose Amended Version is not the latest the Index holds: it holds a later Version, whether or not it holds the Amended Version itself. `get_measure` leaves its Statute Links out and lists it apart, because the next Version's own links replace them (ADR-0001, ADR-0015); `compare_amendment` still answers for it.
 _Avoid_: withdrawn, rejected (the committee's action on an amendment is its Meaning at each Posting)
 
+**Same links as**:
+A Version whose Statute Links, as read from its text, are exactly those of the Version before it in print order: the same targets under the same kinds in the same measure sections. `get_measure` says `same_links_as` that Version's id and leaves the links out, and still shows the Version's own Statutes Affected Table block and `no_longer_listed` flag (ADR-0036). A Version whose text was not read is never the same as another, because it has said nothing.
+_Avoid_: duplicate Version, same as
+
 **Relating clause**:
 The words of a Measure's text that say what it does to the statutes: "Relating to human services; amending ORS 409.711." They start on line 2 of page 1 and can run over several lines (SB 69's A-Engrossed Version has three). A Proposed Amendment can edit them.
 _Avoid_: title
