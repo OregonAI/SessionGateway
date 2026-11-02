@@ -1,0 +1,253 @@
+// The arrangement of the seam-4 tests of the Listing (ticket #97, test/CLAUDE.md "Seam 4"): a WAL database in a temp
+// directory of its own, the writer's, the reader's and search's entry points opened on it, and builders for what a
+// complete Full pull records.
+//
+// Every value here is MADE UP. None comes from the feed or from the fixture: the Session `2099R1` does not exist,
+// SB 9001 and the committee MADE are invented, and so are the texts, the people and the Agency.
+import { createHash } from "node:crypto";
+import { mkdtempDisposableSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  amendmentIdOf,
+  committeeIdOf,
+  meetingIdOf,
+  postingIdOf,
+  testimonyIdOf,
+  versionIdOf,
+  type AmendmentId,
+  type Committee,
+  type DocumentId,
+  type DocumentLink,
+  type Meeting,
+  type StoredDocument,
+} from "#/packages/domain/documents.ts";
+import { measureIdOf, type Measure, type MeasureKey, type SessionKey } from "#/packages/domain/index.ts";
+import type { AgencyId } from "#/packages/domain/oregonai.ts";
+import type { Timestamp } from "#/packages/time/pacific.ts";
+import { openIndexReader, type IndexReader } from "../reader.ts";
+import { openSearchReader, type SearchIndexReader } from "../search.ts";
+import {
+  openIndexWriter,
+  type FullPullRecord,
+  type IndexWriter,
+  type SearchRecord,
+  type TestimonyRecord,
+} from "../writer.ts";
+
+/** MADE UP: a Session that does not exist. */
+export const session = "2099R1" as SessionKey;
+
+/** MADE UP: a Measure that does not exist. */
+export const measureKey: MeasureKey = { session, prefix: "SB", number: 9001 };
+export const measureId = measureIdOf(measureKey);
+
+/** MADE UP: the id of the model the made-up vectors are under. */
+export const modelId = "made-up-model";
+
+/** MADE UP: an Agency's slug. */
+export const agency = "bureau-of-made-up-things" as AgencyId;
+
+/** The made-up pulls' as-of times: pull `n` of a story starts at ten past two in the morning, Pacific, on day `n` of January 2099. */
+export function asOf(n: number): Timestamp {
+  return `2099-01-${String(n).padStart(2, "0")}T02:10:00-08:00` as Timestamp;
+}
+
+/** The index a test opens: the writer, the reader and search on one file, and a way to remove it. */
+export type MadeUpIndex = {
+  writer: IndexWriter;
+  reader: IndexReader;
+  search: SearchIndexReader;
+  /** Closes the three and removes the file. */
+  close(): void;
+};
+
+/** Opens the writer first, which creates the schema, and then the two read-only sides. */
+export function openMadeUpIndex(): MadeUpIndex {
+  const directory = mkdtempDisposableSync(join(tmpdir(), "session-gateway-listing-"));
+  const path = join(directory.path, "index.db");
+  const writer = openIndexWriter(path);
+  const reader = openIndexReader(path);
+  const search = openSearchReader(path);
+  return {
+    writer,
+    reader,
+    search,
+    close: () => {
+      search.close();
+      reader.close();
+      writer.close();
+      directory.remove();
+    },
+  };
+}
+
+/** A complete Full pull's record that reads nothing, with these parts. */
+export function pullOf(parts: Partial<FullPullRecord> = {}): FullPullRecord {
+  return {
+    measures: [],
+    history: [],
+    legislatorRows: [],
+    legislators: [],
+    legislatorCodes: [],
+    sponsors: [],
+    floorVotes: [],
+    committeeVotes: [],
+    committees: [],
+    meetings: [],
+    agendaItems: [],
+    documentLinks: [],
+    testimony: [],
+    committeeMembers: [],
+    convenings: [],
+    sessionDates: undefined,
+    ...parts,
+  };
+}
+
+/** MADE UP: SB 9001's Measures row. */
+export const measure: Measure = {
+  ...measureKey,
+  catchline: "Relating to made-up things",
+  location: { current: "In Senate Committee", committeeCode: "MADE" },
+  digest: "Creates a made-up thing.",
+  createdAt: "2099-01-01T00:00:00-08:00" as Timestamp,
+  modifiedAt: null,
+};
+
+/** MADE UP: SB 9001's Introduced Version, as the feed links it. */
+export function versionLink(label = "Introduced"): DocumentLink & { id: DocumentId } {
+  const id = versionIdOf(measureKey, label);
+  return {
+    id,
+    nodeId: id,
+    kind: "version",
+    label,
+    sourceUrl: `https://made-up.example/${id}.pdf`,
+    postedAt: null,
+    date: "2099-01-01T00:00:00-08:00" as Timestamp,
+    relations: [{ relation: "measure", to: measureId, meaning: null, provenance: "MADE UP MeasureDocuments row" }],
+  };
+}
+
+/** MADE UP: the committee MADE and the meeting it holds on day `day` of January 2099. */
+export const committee: Committee = {
+  session,
+  code: "MADE",
+  id: committeeIdOf(session, "MADE"),
+  name: "Committee on Made-up Things",
+};
+
+export function meetingOn(day: number): Meeting {
+  const at = `2099-01-${String(day).padStart(2, "0")}T08:00:00-08:00` as Timestamp;
+  return {
+    session,
+    committeeCode: committee.code,
+    id: meetingIdOf(session, committee.code, at),
+    committeeId: committee.id,
+    at,
+    status: "Scheduled",
+    agenda: null,
+  };
+}
+
+/** MADE UP: the Proposed Amendment SB 9001-1, and its posting number `postingNumber` to the meeting on day `day`. */
+export const amendmentId: AmendmentId = amendmentIdOf(measureKey, "-1");
+
+export function postingLink(postingNumber: number, day: number): DocumentLink & { id: DocumentId } {
+  const id = postingIdOf(session, postingNumber);
+  const meeting = meetingOn(day);
+  return {
+    id,
+    nodeId: amendmentId,
+    kind: "proposed_amendment",
+    label: "-1",
+    sourceUrl: `https://made-up.example/${id}.pdf`,
+    postedAt: meeting.at,
+    date: meeting.at,
+    relations: [
+      { relation: "measure", to: measureId, meaning: null, provenance: "MADE UP CommitteeProposedAmendments row" },
+      {
+        relation: "posted_to",
+        to: meeting.id,
+        meaning: "Proposed",
+        provenance: "MADE UP CommitteeProposedAmendments row",
+      },
+      { relation: "amendment", to: amendmentId, meaning: null, provenance: "MADE UP CommitteeProposedAmendments row" },
+    ],
+  };
+}
+
+/** MADE UP: Testimony number `commTestId` on SB 9001, from a submitter that names the made-up Agency. */
+export function testimonyRecord(commTestId: number): TestimonyRecord & { link: { id: DocumentId } } {
+  const id = testimonyIdOf(session, commTestId);
+  const meeting = meetingOn(10);
+  return {
+    link: {
+      id,
+      nodeId: id,
+      kind: "testimony",
+      label: "Testimony",
+      sourceUrl: `https://made-up.example/${id}.pdf`,
+      postedAt: null,
+      date: meeting.at,
+      testimony: {
+        commTestId,
+        position: { id: 3983, label: "support" },
+        submitter: `Made Up Person ${commTestId}`,
+        behalfOf: null,
+        organization: "Bureau of Made-up Things",
+        committeeCode: committee.code,
+        meetingAt: meeting.at,
+      },
+      relations: [
+        { relation: "measure", to: measureId, meaning: null, provenance: "MADE UP CommitteePublicTestimonies row" },
+        {
+          relation: "committee",
+          to: committee.id,
+          meaning: null,
+          provenance: "MADE UP CommitteePublicTestimonies row",
+        },
+      ],
+    },
+    agencyId: agency,
+  };
+}
+
+/** MADE UP: the text a made-up document has, and what search keeps of it: one passage that is the whole text. */
+export function searchRecordOf(link: DocumentLink, text: string, keywordOnly = false): SearchRecord {
+  const hash = createHash("sha256").update(text).digest("hex");
+  return {
+    entry: {
+      nodeId: link.nodeId,
+      kind: link.kind,
+      title: link.label,
+      measureId,
+      committeeId: null,
+      date: link.date,
+      keywordOnly,
+    },
+    passages: [{ start: 0, end: text.length, text, hash }],
+    citations: [],
+    // One made-up vector of 384 int8 values, the length of the real model's.
+    vectors: { modelId, rows: [{ hash, vector: new Int8Array(384).fill(1) }] },
+  };
+}
+
+/** MADE UP: a stored document of this link, with this text. */
+export function storedOf(link: DocumentLink, text: string): StoredDocument {
+  return {
+    ...link,
+    retrievedAt: "2099-01-01T01:00:00-08:00" as Timestamp,
+    contentHash: createHash("sha256").update(`file ${link.id}`).digest("hex"),
+    textHash: createHash("sha256").update(text).digest("hex"),
+    pageCount: 1,
+    hasTextLayer: true,
+    text,
+  };
+}
+
+/** Stores a made-up document the way the worker does, searchable by its words. */
+export function storeMadeUpDocument(index: MadeUpIndex, link: DocumentLink, text: string): void {
+  index.writer.storeDocument(session, storedOf(link, text), searchRecordOf(link, text));
+}
