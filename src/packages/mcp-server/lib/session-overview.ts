@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
-import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
+import type { Outcome } from "./outcome.ts";
 
 export const sessionOverviewInput = z.object({});
 
@@ -36,11 +36,6 @@ export const sessionOverviewOutput = z.object({
         .describe("The documents by what they are."),
     })
     .describe("What the index holds."),
-  as_of: z
-    .string()
-    .describe(
-      "When the index was last refreshed, in Pacific time with its UTC offset: the start of the latest complete full pull or of a later increment.",
-    ),
   last_increment: z
     .string()
     .nullable()
@@ -56,31 +51,32 @@ export const sessionOverviewOutput = z.object({
     .describe(
       "The OregonAI data this index was built with: the agency registry, the ORS section ids and the table of which Agencies' rules implement each ORS chapter. It was copied at build time and is not looked up again while serving.",
     ),
-  notice: z.string().describe("A reminder that this is not the official record."),
 });
 
 export type SessionOverviewOutput = z.infer<typeof sessionOverviewOutput>;
 
-export function sessionOverview(reader: IndexReader, session: SessionKey): SessionOverviewOutput {
-  const asOf = reader.asOf(session);
-  if (asOf === undefined) throw new Error(`The index holds no completed full pull of ${session} to date it by`);
+/** This tool has no fault: every call is answered. A snapshot the index does not record is a bug, and throws. */
+export type SessionOverviewOutcome = Outcome<SessionOverviewOutput, never>;
+
+export function sessionOverview(reader: IndexReader, session: SessionKey): SessionOverviewOutcome {
   const snapshot = reader.snapshotVersion(session);
   if (snapshot === undefined) throw new Error(`The index records no OregonAI snapshot for ${session}`);
   const counts = reader.counts(session);
   return {
-    session,
-    counts: {
-      measures: counts.measures,
-      committees: counts.committees,
-      meetings: counts.meetings,
-      proposed_amendments: counts.proposedAmendments,
-      documents: counts.documents,
-      documents_without_text_layer: counts.documentsWithoutTextLayer,
-      documents_by_kind: counts.documentsByKind,
+    kind: "answer",
+    answer: {
+      session,
+      counts: {
+        measures: counts.measures,
+        committees: counts.committees,
+        meetings: counts.meetings,
+        proposed_amendments: counts.proposedAmendments,
+        documents: counts.documents,
+        documents_without_text_layer: counts.documentsWithoutTextLayer,
+        documents_by_kind: counts.documentsByKind,
+      },
+      last_increment: reader.lastIncrement(session) ?? null,
+      snapshot: { source: snapshot.source, commit: snapshot.commit, commit_date: snapshot.commitDate },
     },
-    as_of: asOf,
-    last_increment: reader.lastIncrement(session) ?? null,
-    snapshot: { source: snapshot.source, commit: snapshot.commit, commit_date: snapshot.commitDate },
-    notice: NON_OFFICIAL_NOTICE,
   };
 }

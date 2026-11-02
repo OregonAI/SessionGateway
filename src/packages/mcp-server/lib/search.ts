@@ -22,8 +22,16 @@ import {
   termsOf,
 } from "#/packages/search/text.ts";
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
-import { checkFilters, parseAgencyArgument, type FilterFault, type NotAnAgencyId } from "./filters.ts";
-import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
+import type { Timestamp } from "#/packages/time/pacific.ts";
+import type { Outcome } from "./outcome.ts";
+import {
+  checkFilters,
+  filterFaultMessage,
+  notAnAgencyIdMessage,
+  parseAgencyArgument,
+  type FilterFault,
+  type NotAnAgencyId,
+} from "./filters.ts";
 import type { VectorCache } from "./vector-cache.ts";
 
 /** The most hits one call returns, when the call does not say, and the most it may ask for (spec #1; ADR-0025). */
@@ -131,8 +139,6 @@ export const searchOutput = z.object({
     .describe(
       'What the search found nothing for, in words: a citation in the query that names nothing the index holds ("SB 69-3" when the amendment was never posted). No hit is then an exact match for it. Empty when there is nothing to say.',
     ),
-  as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
-  notice: z.string().describe("A reminder that this is not the official record."),
 });
 
 export type SearchOutput = z.infer<typeof searchOutput>;
@@ -146,8 +152,10 @@ export type SearchDeps = {
   embedder: Embedder;
 };
 
-/** An unknown Measure is an expected outcome, so it is a value; the MCP edge decides it is a tool error. */
-export type SearchResult = { kind: "found"; search: SearchOutput } | FilterFault | NotAnAgencyId;
+/** An unknown Measure is an expected outcome, so it is a value; the envelope tells the agent it is a tool error. */
+export type SearchFault = FilterFault | NotAnAgencyId;
+
+export type SearchOutcome = Outcome<SearchOutput, SearchFault>;
 
 type FoundBy = "citation" | "keyword" | "embedding";
 /** The order `found_by` lists how a hit was found in. */
@@ -191,7 +199,7 @@ function filterOf(
   session: SessionKey,
   input: z.infer<typeof searchInput>,
   citations: readonly Citation[],
-): { kind: "filter"; filter: SearchFilter } | Exclude<SearchResult, { kind: "found" }> {
+): { kind: "filter"; filter: SearchFilter } | SearchFault {
   const checked = checkFilters(deps.reader, session, input);
   if (checked.kind !== "ok") return checked;
   const { measure, committee } = checked;
@@ -277,13 +285,14 @@ function keywordRankings(
  */
 async function embeddingCandidates(
   deps: SearchDeps,
+  asOf: Timestamp,
   query: string,
   terms: readonly string[],
   filter: SearchFilter,
 ): Promise<Map<HitId, Candidate>> {
   const found = new Map<HitId, Candidate>();
   if (terms.length === 0) return found;
-  const vectors = deps.vectors.current();
+  const vectors = deps.vectors.current(asOf);
   if (vectors.index.size === 0) return found;
   const question = quantizeUnitVector(await deps.embedder.embedQuestion(query));
   const near = vectors.index.nearest(
@@ -338,18 +347,18 @@ function orderedCandidates(
   return [...ranked.values()];
 }
 
+/** `asOf` is the index's As of that the envelope read for the call: it says which state of the index the vectors are of. */
 export async function search(
   deps: SearchDeps,
   session: SessionKey,
   input: z.infer<typeof searchInput>,
-): Promise<SearchResult> {
-  const asOf = deps.reader.asOf(session);
-  if (asOf === undefined) throw new Error(`The index holds no completed full pull of ${session} to date it by`);
+  asOf: Timestamp,
+): Promise<SearchOutcome> {
   const citations = findCitations(input.query, session);
   const resolved = filterOf(deps, session, input, citations);
-  if (resolved.kind !== "filter") return resolved;
+  if (resolved.kind !== "filter") return { kind: "fault", fault: resolved };
   const agency = input.agency === undefined ? undefined : parseAgencyArgument(input.agency);
-  if (typeof agency === "object") return agency;
+  if (typeof agency === "object") return { kind: "fault", fault: agency };
   const agencyMeasures =
     agency === undefined ? undefined : new Set(deps.reader.measuresWithAgencyLink(session, agency));
   const filter: SearchFilter = agencyMeasures === undefined ? resolved.filter : { ...resolved.filter, agencyMeasures };
@@ -360,7 +369,7 @@ export async function search(
   const terms = termsOf(withoutCitations);
   const cited = citedCandidates(deps.searchIndex, citations, filter);
   const byWords = keywordRankings(deps.searchIndex, terms, citations.map(phraseOf), filter);
-  const byEmbedding = await embeddingCandidates(deps, input.query, terms, filter);
+  const byEmbedding = await embeddingCandidates(deps, asOf, input.query, terms, filter);
   const citationTerms = citations.map(citationTermOf);
 
   const results = orderedCandidates(cited, byWords.everyWord, byEmbedding, byWords.someWords)
@@ -382,7 +391,21 @@ export async function search(
     });
   const notes = citations.flatMap((citation) => notesAbout(holdingOf(deps, session, citation), citation));
   if (agencyMeasures?.size === 0) notes.push(noAgencyLinkNote(input.agency?.trim() ?? ""));
-  return { kind: "found", search: { query: input.query, results, notes, as_of: asOf, notice: NON_OFFICIAL_NOTICE } };
+  return { kind: "answer", answer: { query: input.query, results, notes } };
+}
+
+/** What an agent is told when a call to search is a fault. */
+export function searchFaultMessage(fault: SearchFault): string {
+  switch (fault.kind) {
+    case "unknown_measure":
+    case "unknown_committee":
+    case "backwards_range":
+      return filterFaultMessage(fault);
+    case "not_an_agency_id":
+      return notAnAgencyIdMessage(fault.reference);
+    default:
+      return fault satisfies never;
+  }
 }
 
 /**

@@ -10,6 +10,8 @@ import {
 } from "#/packages/domain/index.ts";
 import type { AgendaItem } from "#/packages/domain/schedule.ts";
 import type { CommitteeVote, FloorVote, LegislatorVote } from "#/packages/domain/votes.ts";
+import type { Timestamp } from "#/packages/time/pacific.ts";
+import type { Outcome } from "./outcome.ts";
 import { agencyLinksOf, agencyLinksOutput } from "./agency-links.ts";
 import { analysisDocumentsOf, analysisDocumentsOutput } from "./analysis.ts";
 import { floorLettersOutput, floorLettersShown } from "./floor-letters.ts";
@@ -17,10 +19,6 @@ import { measureListingOutput, listingShown } from "./listing.ts";
 import { statuteLinksBySourceOf, versionsWithSameLinksAs } from "./statute-links.ts";
 import { statuteLinksBySourceWithTable, statuteLinksBySourceWithTableOutput } from "./statutes-affected-table.ts";
 import type { LiveLookup, LiveStatusReader } from "./live-status.ts";
-
-/** The notice every result carries (ADR-0002, spec #1 "What every result must carry"). */
-export const NON_OFFICIAL_NOTICE =
-  "Not the official record of the Oregon Legislature. This is an unofficial copy of public information from the Legislature's Open Data Service; use source_url for the Legislature's own page.";
 
 const legislatorOutput = z
   .object({
@@ -237,8 +235,6 @@ export const getMeasureOutput = z.object({
       "The Measure's committee votes as of the last full pull (see as_of), in the order the committees met. A roll that OLIS gives under two reports, as it does for a joint committee, is listed once; two different rolls of one committee at one meeting are two entries. OLIS creates these rows before the meeting is held, so a vote whose meeting_date is later than as_of can already list answers; the feed does not say whether that vote has been taken.",
     ),
   live_status: liveStatusOutput,
-  as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
-  notice: z.string().describe("A reminder that this is not the official record."),
 });
 
 export type GetMeasureOutput = z.infer<typeof getMeasureOutput>;
@@ -247,9 +243,10 @@ function legislatorVoteShown(cast: LegislatorVote): z.infer<typeof legislatorVot
   return { legislator_code: cast.legislatorCode, legislator: cast.legislator, vote: cast.vote };
 }
 
-/** An unknown Measure is an expected outcome, so it is a value; the MCP edge decides it is a tool error. */
-export type GetMeasureResult =
-  { kind: "found"; measure: GetMeasureOutput } | { kind: "unknown"; reference: string; session: SessionKey };
+/** An unknown Measure is an expected outcome, so it is a value; the envelope tells the agent it is a tool error. */
+export type GetMeasureFault = { kind: "unknown"; reference: string; session: SessionKey };
+
+export type GetMeasureOutcome = Outcome<GetMeasureOutput, GetMeasureFault>;
 
 /** True when two values shown to an agent are the same in every field. */
 function sameShown(left: unknown, right: unknown): boolean {
@@ -339,19 +336,17 @@ function historyShown(action: HistoryAction): z.infer<typeof historyActionOutput
   return { chamber: action.chamber, date: action.date, text: action.text };
 }
 
+/** `asOf` is the index's As of that the envelope read for the call, which dates the live block when the lookup fails. */
 export async function getMeasure(
   reader: IndexReader,
   liveStatus: LiveStatusReader,
   session: SessionKey,
   input: z.infer<typeof getMeasureInput>,
-): Promise<GetMeasureResult> {
+  asOf: Timestamp,
+): Promise<GetMeasureOutcome> {
   const key = parseMeasureReference(input.measure, session);
   const measure = key === undefined ? undefined : reader.findMeasure(key);
-  if (measure === undefined) return { kind: "unknown", reference: input.measure, session };
-  const asOf = reader.asOf(session);
-  if (asOf === undefined) {
-    throw new Error(`The index holds Measures of ${session} but no completed full pull to date them by`);
-  }
+  if (measure === undefined) return { kind: "fault", fault: { kind: "unknown", reference: input.measure, session } };
   const versions = reader.findMeasureVersions(measure);
   const history = reader.findHistory(measure);
   const floorVotes = reader.findFloorVotes(measure);
@@ -366,8 +361,8 @@ export async function getMeasure(
     reader.statutesAffectedTableOf(measure),
   );
   return {
-    kind: "found",
-    measure: {
+    kind: "answer",
+    answer: {
       id: measureIdOf(measure),
       ...listingShown(measure.listing),
       catchline: measure.catchline,
@@ -400,10 +395,13 @@ export async function getMeasure(
       floor_votes: floorVotes.map(floorVoteShown),
       committee_votes: committeeVotes.map(committeeVoteShown),
       live_status: liveStatusOf(live, { location: measure.location, history, floorVotes, committeeVotes, asOf }),
-      as_of: asOf,
-      notice: NON_OFFICIAL_NOTICE,
     },
   };
+}
+
+/** What an agent is told when a call to get_measure is a fault. */
+export function getMeasureFaultMessage(fault: GetMeasureFault): string {
+  return unknownMeasureMessage(fault.reference, fault.session);
 }
 
 /** What an agent is told when no Measure matches, so it can correct the call. */

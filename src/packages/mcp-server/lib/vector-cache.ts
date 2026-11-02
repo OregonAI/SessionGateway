@@ -1,5 +1,4 @@
 import type { DocumentFacts, SearchIndexReader } from "#/packages/database/search.ts";
-import type { IndexReader } from "#/packages/database/reader.ts";
 import type { AmendmentId, DocumentId } from "#/packages/domain/documents.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import { VECTOR_DIMENSIONS } from "#/packages/embedder/index.ts";
@@ -24,33 +23,30 @@ export type LoadedVectors = {
 
 export type VectorCache = {
   /**
-   * The vectors the index holds now: read again from the database when its as-of time or its generation has
-   * changed since they were read.
+   * The vectors the index holds now: read again from the database when the as-of time given or the generation has
+   * changed since they were read. The as-of time is the one the tool result envelope read for the call.
    */
-  current(): LoadedVectors;
+  current(asOf: Timestamp): LoadedVectors;
 };
 
 /**
  * Holds the vectors of the Session in memory for the exact scan, and reads them again when the index has changed
- * (ADR-0025, "Meaning side"). The as-of time and the generation are read on every call, which is two small
- * queries. A full pull records its as-of time before it stores its documents, one by one, and the server serves
- * during the pull (ADR-0007), so the as-of time alone would pin the vectors a search in the middle of a pull read,
- * and the pull's later documents would never reach the meaning side until the next pull; the worker raises the
+ * (ADR-0025, "Meaning side"). The as-of time comes with every call, and the generation is read on every call, which
+ * is one small query. A full pull records its as-of time before it stores its documents, one by one, and the server
+ * serves during the pull (ADR-0007), so the as-of time alone would pin the vectors a search in the middle of a pull
+ * read, and the pull's later documents would never reach the meaning side until the next pull; the worker raises the
  * generation with each document and each refresh that changes what is held. The generation is read before the
  * vectors, so a commit that lands while they are read makes the next call read them again. The vectors are those
  * of the embedder's model: a database built with another model has none, and a scan finds nothing.
  */
 export function createVectorCache(deps: {
-  reader: IndexReader;
   searchIndex: SearchIndexReader;
   session: SessionKey;
   modelId: string;
 }): VectorCache {
   let loaded: LoadedVectors | undefined;
   return {
-    current() {
-      const asOf = deps.reader.asOf(deps.session);
-      if (asOf === undefined) throw new Error(`The index holds no completed full pull of ${deps.session}`);
+    current(asOf) {
       // Before the vectors are read: a commit that lands while they are read then shows in the next call.
       const generation = deps.searchIndex.generation();
       if (loaded?.asOf === asOf && loaded.generation === generation) return loaded;

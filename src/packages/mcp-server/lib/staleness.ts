@@ -5,13 +5,20 @@ import type { ServerConfig } from "#/packages/config/index.ts";
 import type { IndexReader } from "#/packages/database/reader.ts";
 import { sessionScheduleOf, stalenessAt, type Staleness } from "#/packages/ingest/schedule.ts";
 import type { Clock } from "#/packages/time/clock.ts";
-import { formatPacific } from "#/packages/time/pacific.ts";
+import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
 
-/** The warning to add to an answer, or undefined when the index is fresh enough (or has never been pulled). */
-export function stalenessWarning(reader: IndexReader, config: ServerConfig, clock: Clock): string | undefined {
-  const latestUpdate = reader.asOf(config.session);
+/**
+ * The warning to add to an answer, or undefined when the index is fresh enough. `latestUpdate` is the index's As of,
+ * which the caller has read for the call: the warning speaks of the same time the answer carries.
+ */
+export function stalenessWarning(
+  reader: IndexReader,
+  config: ServerConfig,
+  clock: Clock,
+  latestUpdate: Timestamp,
+): string | undefined {
   const lastFullPull = reader.lastFullPull(config.session);
-  if (latestUpdate === undefined || lastFullPull === undefined) return undefined;
+  if (lastFullPull === undefined) return undefined;
   const now = formatPacific(clock.now());
   const staleness = stalenessAt({
     now,

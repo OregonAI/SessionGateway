@@ -22,8 +22,8 @@ import {
   type EvidenceFields,
   type GatheredLink,
 } from "./agency-links.ts";
+import type { Outcome } from "./outcome.ts";
 import { notAnAgencyIdMessage, parseAgencyArgument } from "./filters.ts";
-import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 import { documentListingFields, listingShown, noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 
 /**
@@ -210,8 +210,6 @@ export const findMeasuresOutput = z.object({
     )
     .describe("Each document the examples of this page name, once, with where the Legislature publishes it."),
   notes: z.array(z.string()).describe("What the answer has nothing for, in words. Empty when there is nothing to say."),
-  as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
-  notice: z.string().describe("A reminder that this is not the official record."),
 });
 
 export type FindMeasuresOutput = z.infer<typeof findMeasuresOutput>;
@@ -226,11 +224,11 @@ type Item = Omit<ItemOutput, "created_at" | "last_created_at"> & {
   listing: Listing;
 };
 
-/** Why a call cannot be met, or the answer. Expected outcomes are values; the MCP edge decides they are tool errors. */
-export type FindMeasuresResult =
-  | { kind: "found"; found: FindMeasuresOutput }
-  | { kind: "bad_request"; message: string }
-  | { kind: "no_such_page"; page: number; lastPage: number };
+/** Why a call cannot be met. Expected outcomes are values; the envelope tells the agent they are tool errors. */
+export type FindMeasuresFault =
+  { kind: "bad_request"; message: string } | { kind: "no_such_page"; page: number; lastPage: number };
+
+export type FindMeasuresOutcome = Outcome<FindMeasuresOutput, FindMeasuresFault>;
 
 const groupDescriptions: Record<GroupKind, string> = {
   derived:
@@ -489,16 +487,17 @@ export function findMeasures(
   reader: IndexReader,
   session: SessionKey,
   input: z.infer<typeof findMeasuresInput>,
-): FindMeasuresResult {
-  const asOf = reader.asOf(session);
-  if (asOf === undefined) throw new Error(`The index holds no completed full pull of ${session} to date it by`);
+): FindMeasuresOutcome {
   const target = targetOf(input);
-  if (target.kind === "bad_request") return target;
+  if (target.kind === "bad_request") return { kind: "fault", fault: target };
   const since = input.since === undefined ? undefined : readTimestamp(input.since);
   if (input.since !== undefined && since === undefined) {
     return {
-      kind: "bad_request",
-      message: `"${input.since}" is not a time. Give a date such as 2025-01-23 or a time such as 2025-01-23T16:00:00 (Pacific) or 2025-01-24T00:00:00Z.`,
+      kind: "fault",
+      fault: {
+        kind: "bad_request",
+        message: `"${input.since}" is not a time. Give a date such as 2025-01-23 or a time such as 2025-01-23T16:00:00 (Pacific) or 2025-01-24T00:00:00Z.`,
+      },
     };
   }
   let groups: Group[];
@@ -533,10 +532,10 @@ export function findMeasures(
   const page = input.page ?? 1;
   const paged = pageOf(groups, page);
   const lastPage = Math.max(1, Math.ceil(paged.total / PAGE_SIZE));
-  if (page > lastPage) return { kind: "no_such_page", page, lastPage };
+  if (page > lastPage) return { kind: "fault", fault: { kind: "no_such_page", page, lastPage } };
   return {
-    kind: "found",
-    found: {
+    kind: "answer",
+    answer: {
       query: {
         agency: target.kind === "agency" ? target.id : null,
         ors_section: target.kind === "section" ? target.id : null,
@@ -550,14 +549,24 @@ export function findMeasures(
       groups: paged.groups,
       documents: paged.documents,
       notes,
-      as_of: asOf,
-      notice: NON_OFFICIAL_NOTICE,
     },
   };
 }
 
+/** What an agent is told when a call to find_measures is a fault. */
+export function findMeasuresFaultMessage(fault: FindMeasuresFault): string {
+  switch (fault.kind) {
+    case "bad_request":
+      return fault.message;
+    case "no_such_page":
+      return noSuchPageMessage(fault.page, fault.lastPage);
+    default:
+      return fault satisfies never;
+  }
+}
+
 /** What an agent is told when it asks for a page past the last one. */
-export function noSuchPageMessage(page: number, lastPage: number): string {
+function noSuchPageMessage(page: number, lastPage: number): string {
   const pages = lastPage === 1 ? "1 page" : `${lastPage} pages`;
   return `The answer has ${pages}, so there is no page ${page}. Ask for a page from 1 to ${lastPage}.`;
 }
