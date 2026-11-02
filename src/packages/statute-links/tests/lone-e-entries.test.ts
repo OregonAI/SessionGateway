@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vitest";
+import { measureIdOf, type MeasureId, type MeasureKey } from "#/packages/domain/index.ts";
 import { parseStatutesAffectedTable } from "../index.ts";
-import { statuteLinksOfMeasure, tallyLoneEEntries } from "../measure.ts";
+import { statuteLinksOfMeasure } from "../measure.ts";
+import { tallyLoneEEntries } from "../table.ts";
 import { heldVersion, link, measureOf, heldTable, tripleOf, versionNamed } from "./measure-cases.ts";
 
 // Seam 4: which Version a Table entry that ends in an E alone names (ticket #99; ADR-0033, GLOSSARY.md "Table entry"). The
@@ -94,8 +96,8 @@ describe("an entry that ends in an E alone", () => {
 
 // The Build report counts the table's entries that end in an E alone, and of those the ones the rule above leaves naming no
 // Version (`lone_e_entries` and `lone_e_with_e_engrossed_version`, ADR-0034), so the operator reads how much of the table the
-// feed's listing cannot place. It asks the rule the comparison asks, and is given what the worker knows: which Measures the feed
-// lists an E-Engrossed Version of.
+// feed's listing cannot place. It asks the rule the comparison asks, and is given what the worker knows: the Measures of the
+// Session the feed lists a Version of a description for, which the count asks for the E-Engrossed Version.
 describe("the Build report's count of the entries that end in an E alone", () => {
   // Lines 2195-2201 and 4153-4158 of the PDF.js text of documents/reports/artables2025R1.pdf (table-entries.test.ts). Four rows
   // end in an E alone (HB 3944 §8, SB 678 §21, HB 2052 §5 and HB 2187 §1); "SB 83 A E" has a level before its E, and "SB 75 A"
@@ -109,23 +111,28 @@ A §21 SB 678 E
 R §1 HB 2187 E`;
   const { entries } = parseStatutesAffectedTable({ text: rows, orsSections: [] });
 
+  /** The worker's lookup when the feed lists an E-Engrossed Version of these Measures and no Version of any other description. */
+  function listingEEngrossedOf(...measures: MeasureKey[]): (description: string) => ReadonlySet<MeasureId> {
+    return (description) => new Set(description === "E-Engrossed" ? measures.map(measureIdOf) : []);
+  }
+
   test("counts the four rows that end in an E alone when the feed lists no E-Engrossed Version of any of their Measures, and none names no Version", () => {
-    expect(tallyLoneEEntries(entries, () => false)).toEqual({ entries: 4, namingNoVersion: 0 });
+    expect(tallyLoneEEntries(entries, hb2052.session, listingEEngrossedOf())).toEqual({
+      entries: 4,
+      namingNoVersion: 0,
+    });
   });
 
   // MADE UP: the feed lists an E-Engrossed Version of SB 678 and HB 2187 (the 2025R1 feed lists none of any Measure).
   test("counts the rows of a Measure the feed lists an E-Engrossed Version of as naming no Version: SB 678 §21 and HB 2187 §1, and not the others", () => {
-    const listsEEngrossed = (measure: { prefix: string; number: number }): boolean =>
-      `${measure.prefix} ${String(measure.number)}` === "SB 678" ||
-      `${measure.prefix} ${String(measure.number)}` === "HB 2187";
+    const listing = listingEEngrossedOf(measureOf("SB", 678), measureOf("HB", 2187));
 
-    expect(tallyLoneEEntries(entries, listsEEngrossed)).toEqual({ entries: 4, namingNoVersion: 2 });
+    expect(tallyLoneEEntries(entries, hb2052.session, listing)).toEqual({ entries: 4, namingNoVersion: 2 });
   });
 
   test("does not count a row with a level before its E, whatever the feed lists: SB 83 'A E' names A-Engrossed", () => {
-    expect(tallyLoneEEntries(entries, (measure) => measure.prefix === "SB" && measure.number === 83)).toEqual({
-      entries: 4,
-      namingNoVersion: 0,
-    });
+    const listing = listingEEngrossedOf(measureOf("SB", 83));
+
+    expect(tallyLoneEEntries(entries, hb2052.session, listing)).toEqual({ entries: 4, namingNoVersion: 0 });
   });
 });

@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import type { IndexWriter } from "#/packages/database/writer.ts";
-import { measureIdOf, type SessionKey } from "#/packages/domain/index.ts";
+import type { SessionKey } from "#/packages/domain/index.ts";
 import type { OrsSectionId } from "#/packages/domain/oregonai.ts";
 import type { Download } from "#/packages/olis-client/index.ts";
 import { extractPdfText } from "#/packages/pdf-text/index.ts";
 import { parseStatutesAffectedTable, type StatutesAffectedTableParse } from "#/packages/statute-links/index.ts";
-import { eEngrossedVersion, tallyLoneEEntries } from "#/packages/statute-links/measure.ts";
+import { tallyLoneEEntries } from "#/packages/statute-links/table.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 
 /**
@@ -147,9 +147,8 @@ function countsOf(
   "entries" | "previous_session_entries" | "unread_lines" | "lone_e_entries" | "lone_e_with_e_engrossed_version"
 > {
   // The rule that sets a lone-E entry beside a Version is the entry point's, so this count and get_measure cannot disagree.
-  const listingEEngrossed = read.writer.measuresListingVersion(read.session, eEngrossedVersion);
-  const loneE = tallyLoneEEntries(parsed.entries, (measure) =>
-    listingEEngrossed.has(measureIdOf({ session: read.session, ...measure })),
+  const loneE = tallyLoneEEntries(parsed.entries, read.session, (description) =>
+    read.writer.measuresListingVersion(read.session, description),
   );
   return {
     entries: parsed.entries.length,

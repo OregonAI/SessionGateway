@@ -24,9 +24,8 @@ import { tableOfMeasure, tableOfVersion, type TableOfMeasure, type TableOfVersio
 export type { PlacedAmendment, SupersededAmendment } from "./lib/amendments.ts";
 export { placeAmendedVersion } from "./lib/amendments.ts";
 export type { LinkedTarget, StatuteLinksByKind } from "./lib/links-by-kind.ts";
-export type { EntriesApart, LoneETally, TableOfMeasure, TableOfVersion, WhyApart } from "./lib/table-comparison.ts";
+export type { EntriesApart, TableOfMeasure, TableOfVersion, WhyApart } from "./lib/table-comparison.ts";
 export { statuteLinksByKind } from "./lib/links-by-kind.ts";
-export { eEngrossedVersion, tallyLoneEEntries } from "./lib/table-comparison.ts";
 
 export type StatuteLinksOfMeasureInput = {
   /** The Measure the Versions and Proposed Amendments are of. */

@@ -1,4 +1,5 @@
 import { versionDescriptionOfLetter } from "#/packages/domain/documents.ts";
+import { measureIdOf, type MeasureId, type SessionKey } from "#/packages/domain/index.ts";
 import {
   statuteLinkKindOfTableAction,
   versionDescriptionOfTableLevel,
@@ -88,7 +89,7 @@ function compareWithText(version: StoredVersion, entries: readonly StatutesAffec
 }
 
 /** The description of the E-Engrossed Version, the only Version whose level can be an E alone after the Measure number. */
-export const eEngrossedVersion = versionDescriptionOfLetter("E");
+const eEngrossedVersion = versionDescriptionOfLetter("E");
 
 /**
  * The description of the Version a Table entry names, given whether the feed lists an E-Engrossed Version of its Measure
@@ -114,19 +115,23 @@ export type LoneETally = {
 };
 
 /**
- * Counts the entries that end in an E alone, and of those the ones that name no Version (ADR-0033). `listsEEngrossed` says
- * whether the feed lists an E-Engrossed Version of a Measure, held or not: the rule is the one that sets each entry beside a
- * Version.
+ * Counts the entries that end in an E alone, and of those the ones that name no Version (ADR-0033): the rule is the one that
+ * sets each entry beside a Version. `measuresListing` is the caller's lookup of the Measures of `session` the feed lists a
+ * Version of a description for, held or not: it is asked once, for the E-Engrossed Version.
  */
 export function tallyLoneEEntries(
   entries: readonly StatutesAffectedEntry[],
-  listsEEngrossed: (measure: StatutesAffectedEntry["measure"]) => boolean,
+  session: SessionKey,
+  measuresListing: (description: string) => ReadonlySet<MeasureId>,
 ): LoneETally {
+  const listingEEngrossed = measuresListing(eEngrossedVersion);
   const loneE = entries.filter((entry) => entry.loneE);
   return {
     entries: loneE.length,
     namingNoVersion: loneE.filter(
-      (entry) => versionDescriptionOfEntry(entry, listsEEngrossed(entry.measure)) === undefined,
+      (entry) =>
+        versionDescriptionOfEntry(entry, listingEEngrossed.has(measureIdOf({ session, ...entry.measure }))) ===
+        undefined,
     ).length,
   };
 }
