@@ -75,7 +75,10 @@ point at, and every document they link.
 `scripts/fixture/build.ts` read the 2025R1 feed cache (`.cache/olis-2025R1/feed/`) and
 `measures.txt`, selected the rows, and downloaded the 278 documents the download cache lacked, in
 one run on 2026-10-29 (Pacific) between 23:15 and 23:31: one request at a time, at least a second
-apart, none retried, none failed, 65,141,256 bytes. Each download is kept in
+apart, none retried, none failed, 65,141,256 bytes. A second run, for ticket #54 (HB 3723 and HB 3124, approved by the
+owner under the Acceptable Use Agreement, ADR-0005), downloaded the two Introduced Versions that the first run's
+278 did not include, on 2026-11-01 (Pacific) between 21:01:31 and 21:01:35 (05:01:31 to 05:01:35 UTC on 11-02): 2
+documents, 78,323 bytes (29,097 and 49,226), none retried, none failed; 278 were reused from the download cache. Each download is kept in
 `.cache/olis-2025R1/downloads/` with its `source_url` and retrieval time beside it and is never
 fetched again. Sample files in `documents-sample-1/` and `-2/` were used only to choose Measures.
 

@@ -2607,6 +2607,25 @@
       ]
     },
     {
+      "path": "documents/measure-documents/HB3124/Introduced.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/HB3124/Introduced",
+      "retrieved_at": "2026-11-02T05:01:33+00:00",
+      "sha256": "b619979d26d07478a17214c9b72e6b32606251b96cf27f372f627a9d8a134113",
+      "bytes": 29097,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "MeasureDocuments",
+          "row_key": {
+            "SessionKey": "2025R1",
+            "MeasurePrefix": "HB",
+            "MeasureNumber": 3124,
+            "VersionDescription": "Introduced"
+          }
+        }
+      ]
+    },
+    {
       "path": "documents/measure-documents/HB3131/Introduced.pdf",
       "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/HB3131/Introduced",
       "retrieved_at": "2026-10-30T06:24:20+00:00",
@@ -2620,6 +2639,25 @@
             "SessionKey": "2025R1",
             "MeasurePrefix": "HB",
             "MeasureNumber": 3131,
+            "VersionDescription": "Introduced"
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/measure-documents/HB3723/Introduced.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/HB3723/Introduced",
+      "retrieved_at": "2026-11-02T05:01:34+00:00",
+      "sha256": "97ecdb5423381941a59e856af7c6d5eae7de2deeb8016484a13ea1851384bf24",
+      "bytes": 49226,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "MeasureDocuments",
+          "row_key": {
+            "SessionKey": "2025R1",
+            "MeasurePrefix": "HB",
+            "MeasureNumber": 3723,
             "VersionDescription": "Introduced"
           }
         }

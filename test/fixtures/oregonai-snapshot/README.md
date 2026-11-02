@@ -14,24 +14,25 @@ OregonAI's repository. It is made by the same script that builds the whole snaps
 Taken from the checkout at commit `6c41efefb5683a35437c9db6baf235c2051cef4b` (2026-10-31T07:13:00-07:00,
 ERF PR #455, which re-validated the agency registry against statute):
 
-- 39 ORS chapters, of 531 with a section: every chapter that a document or a Measure of the 2025R1
+- 42 ORS chapters, of 531 with a section: every chapter that a document or a Measure of the 2025R1
   fixture cites in one of the forms listed under "How the list was taken". Each keeps all its sections
-  (4,392 of 39,002), so a range can be expanded inside it.
-- 129 Agencies, of 231 registry rows: the 35 whose name or alias the fixture's texts contain, every
+  (4,693 of 39,002), so a range can be expanded inside it.
+- 129 Agencies, of 231 registry rows: the 36 whose name or alias the fixture's texts contain, every
   Agency a rule of which implements a section of a kept chapter, and the parent of each Agency kept
   (ADR-0029), so that no `parent` names a row the file lacks. The second kind is most of them: chapter
   192 (public records) alone has 63, because many agencies' rules implement it. Of the 129, 65 have a
-  parent (27 `part_of`, 36 `administered_by` and 2 `undetermined` relations). The parents of 61 of them
-  were already kept by the first two rules; the other four (the Environmental Quality Commission, the
-  State Board of Forestry, the State Fish and Wildlife Commission and the Water Resources Commission, the
-  statutory bodies of four Departments the fixture keeps) are kept by the third rule alone. One chain is
+  parent (27 `part_of`, 36 `administered_by` and 2 `undetermined` relations). The parents of 62 of them
+  were already kept by the first two rules; the other three (the Environmental Quality Commission, the
+  State Board of Forestry and the Water Resources Commission, the statutory bodies of three Departments
+  the fixture keeps) are kept by the third rule alone. (The State Fish and Wildlife Commission, the fourth
+  body of this kind until ticket #54, is now named in the text of HB 3124.) One chain is
   two levels deep: Early Learning Division → Oregon Department of Education → State Board of Education.
   The whole registry has 94 rows with a parent and 110 relations (73 `administered_by`, 33 `part_of`, 4
   `undetermined`), 10 chains two levels deep, and 8 rows under two bodies, which get no parent (the build
   names them on stderr; the fixture keeps none of them).
-- The chapter table's rows for the kept chapters: each of the 39 has one (39 of 442 rows in all).
+- The chapter table's rows for the kept chapters: each of the 42 has one (42 of 442 rows in all).
 
-`snapshot.json` is about 134 KB; the whole snapshot is about 900 KB.
+`snapshot.json` is about 141 KB; the whole snapshot is about 900 KB.
 
 ## How the list was taken
 
