@@ -3,8 +3,8 @@ import type { IndexReader } from "#/packages/database/reader.ts";
 import { olisMeetingPageUrlOf, type MeetingHeader } from "#/packages/domain/documents.ts";
 import { measureIdOf, type SessionKey } from "#/packages/domain/index.ts";
 import { formatPacific, isAtOrAfter } from "#/packages/time/pacific.ts";
-import { checkFilters, type FilterFault } from "./filters.ts";
-import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
+import type { Outcome } from "../envelope.ts";
+import { checkFilters, filterFaultMessage, type FilterFault } from "./filters.ts";
 import { noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 
 /** What `fetched` says on every document a meeting lists: it is not the same for a row the feed no longer lists. */
@@ -172,36 +172,32 @@ export const meetingsOutput = z.object({
     .describe(
       'The first meeting among all that match that is upcoming and whose status is "Scheduled", or null when there is none. When `truncated` is true it may not be in `meetings`: ask again with `from` set to its date.',
     ),
-  as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
-  notice: z.string().describe("A reminder that this is not the official record."),
 });
 
 export type MeetingsOutput = z.infer<typeof meetingsOutput>;
 
-/** Unknown references and empty questions are expected outcomes, so they are values; the MCP edge decides they are tool errors. */
-export type MeetingsResult = { kind: "found"; meetings: MeetingsOutput } | FilterFault | { kind: "no_filter" };
+/** Unknown references and empty questions are expected outcomes, so they are values; the envelope tells the agent they are tool errors. */
+export type MeetingsFault = FilterFault | { kind: "no_filter" };
+
+export type MeetingsOutcome = Outcome<MeetingsOutput, MeetingsFault>;
 
 export function meetings(
   reader: IndexReader,
   session: SessionKey,
   now: Date,
   input: z.infer<typeof meetingsInput>,
-): MeetingsResult {
+): MeetingsOutcome {
   if (
     input.measure === undefined &&
     input.committee === undefined &&
     input.from === undefined &&
     input.to === undefined
   ) {
-    return { kind: "no_filter" };
+    return { kind: "fault", fault: { kind: "no_filter" } };
   }
   const checked = checkFilters(reader, session, input);
-  if (checked.kind !== "ok") return checked;
+  if (checked.kind !== "ok") return { kind: "fault", fault: checked };
   const { measure, committee } = checked;
-  const asOf = reader.asOf(session);
-  if (asOf === undefined) {
-    throw new Error(`The index holds meetings of ${session} but no completed full pull to date them by`);
-  }
   const found = reader
     .findMeetings(session, {
       ...(measure === undefined ? {} : { measure }),
@@ -224,15 +220,13 @@ export function meetings(
     characters += size;
   }
   return {
-    kind: "found",
-    meetings: {
+    kind: "answer",
+    answer: {
       now: formatPacific(now),
       meetings: returned,
       matching_meetings: found.length,
       truncated: found.length > returned.length,
       next_meeting_id: found.find((meeting) => meeting.upcoming && meeting.status === "Scheduled")?.id ?? null,
-      as_of: asOf,
-      notice: NON_OFFICIAL_NOTICE,
     },
   };
 }
@@ -314,5 +308,19 @@ function meetingOutputOf(
 }
 
 /** What an agent is told when it asks for meetings without saying which. */
-export const NO_FILTER_MESSAGE =
+const NO_FILTER_MESSAGE =
   "Give a Measure, a committee or a date range (measure, committee, from, to). Without one, the answer would be every meeting of the Session.";
+
+/** What an agent is told when a call to meetings is a fault. */
+export function meetingsFaultMessage(fault: MeetingsFault): string {
+  switch (fault.kind) {
+    case "unknown_measure":
+    case "unknown_committee":
+    case "backwards_range":
+      return filterFaultMessage(fault);
+    case "no_filter":
+      return NO_FILTER_MESSAGE;
+    default:
+      return fault satisfies never;
+  }
+}

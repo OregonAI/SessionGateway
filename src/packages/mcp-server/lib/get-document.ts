@@ -1,8 +1,8 @@
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
 import { documentKinds, parseDocumentReference, relations, type UnheldDocument } from "#/packages/domain/documents.ts";
+import type { Outcome } from "../envelope.ts";
 import { floorLetterDocumentOutput, floorLetterDocumentShown } from "./floor-letters.ts";
-import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
 import { documentListingOutput, documentListingShown } from "./listing.ts";
 import { splitIntoParts } from "./parts.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
@@ -52,15 +52,12 @@ export const getDocumentOutput = z.object({
   related: z.array(related).describe("The nodes this document points at."),
   floor_letter: floorLetterDocumentOutput,
   ...documentListingOutput,
-  as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
-  notice: z.string().describe("A reminder that this is not the official record."),
 });
 
 export type GetDocumentOutput = z.infer<typeof getDocumentOutput>;
 
-/** An unknown document is an expected outcome, so it is a value; the MCP edge decides it is a tool error. */
-export type GetDocumentResult =
-  | { kind: "found"; document: GetDocumentOutput }
+/** Why a call cannot be met. These are expected outcomes, so they are values; the envelope tells the agent they are tool errors. */
+export type GetDocumentFault =
   | { kind: "unknown"; id: string; session: SessionKey }
   /** A Testimony the feed lists and the store has not fetched: a fact about the index, not a wrong id. */
   | { kind: "not_held"; id: string; session: SessionKey }
@@ -71,15 +68,17 @@ export type GetDocumentResult =
   | { kind: "no_longer_listed_not_held"; id: string; session: SessionKey; lastListedAt: Timestamp }
   | { kind: "no_such_part"; id: string; part: number; partCount: number };
 
+export type GetDocumentOutcome = Outcome<GetDocumentOutput, GetDocumentFault>;
+
 export function getDocument(
   reader: IndexReader,
   session: SessionKey,
   input: z.infer<typeof getDocumentInput>,
-): GetDocumentResult {
+): GetDocumentOutcome {
   const id = parseDocumentReference(input.id, session);
-  if (id === undefined) return { kind: "unknown", id: input.id, session };
+  if (id === undefined) return { kind: "fault", fault: { kind: "unknown", id: input.id, session } };
   const found = reader.findDocument(id);
-  if (found === undefined) return { kind: "unknown", id: input.id, session };
+  if (found === undefined) return { kind: "fault", fault: { kind: "unknown", id: input.id, session } };
   switch (found.held) {
     case true:
       break;
@@ -91,15 +90,11 @@ export function getDocument(
   const stored = found.document;
   const parts = splitIntoParts(stored.text);
   const part = input.part ?? 1;
-  if (part > parts.length) return { kind: "no_such_part", id, part, partCount: parts.length };
-  const asOf = reader.asOf(session);
-  if (asOf === undefined) {
-    throw new Error(`The index holds documents of ${session} but no completed full pull to date them by`);
-  }
+  if (part > parts.length) return { kind: "fault", fault: { kind: "no_such_part", id, part, partCount: parts.length } };
   const floorLetter = stored.kind === "floor_letter" ? reader.floorLetterDetails(stored.id) : undefined;
   return {
-    kind: "found",
-    document: {
+    kind: "answer",
+    answer: {
       id,
       document_id: stored.id,
       kind: stored.kind,
@@ -120,8 +115,6 @@ export function getDocument(
       })),
       ...(floorLetter === undefined ? {} : { floor_letter: floorLetterDocumentShown(floorLetter) }),
       ...documentListingShown(found.listing),
-      as_of: asOf,
-      notice: NON_OFFICIAL_NOTICE,
     },
   };
 }
@@ -130,19 +123,40 @@ export function getDocument(
  * What an agent is told of an id the index holds no file of. A row the feed no longer lists is a fact whatever it is; a
  * listed Testimony is one the next pull fetches; any other listed row without a file is no id this index serves.
  */
-function unheldResult(found: UnheldDocument, id: string, asked: string, session: SessionKey): GetDocumentResult {
+function unheldResult(found: UnheldDocument, id: string, asked: string, session: SessionKey): GetDocumentOutcome {
   switch (found.listing.listed) {
     case false:
-      return { kind: "no_longer_listed_not_held", id, session, lastListedAt: found.listing.lastListedAt };
+      return {
+        kind: "fault",
+        fault: { kind: "no_longer_listed_not_held", id, session, lastListedAt: found.listing.lastListedAt },
+      };
     case true:
-      return found.testimony ? { kind: "not_held", id, session } : { kind: "unknown", id: asked, session };
+      return found.testimony
+        ? { kind: "fault", fault: { kind: "not_held", id, session } }
+        : { kind: "fault", fault: { kind: "unknown", id: asked, session } };
     default:
       return found.listing satisfies never;
   }
 }
 
+/** What an agent is told when a call to get_document is a fault. */
+export function getDocumentFaultMessage(fault: GetDocumentFault): string {
+  switch (fault.kind) {
+    case "unknown":
+      return unknownDocumentMessage(fault.id, fault.session);
+    case "not_held":
+      return testimonyNotHeldMessage(fault.id, fault.session);
+    case "no_longer_listed_not_held":
+      return noLongerListedNotHeldMessage(fault.id, fault.session, fault.lastListedAt);
+    case "no_such_part":
+      return noSuchPartMessage(fault.id, fault.part, fault.partCount);
+    default:
+      return fault satisfies never;
+  }
+}
+
 /** What an agent is told when no document matches, so it can correct the call. */
-export function unknownDocumentMessage(id: string, session: SessionKey): string {
+function unknownDocumentMessage(id: string, session: SessionKey): string {
   return `No document "${id}" in the ${session} Session. Give a document id such as version-${session.toLowerCase()}-sb69-a-engrossed.`;
 }
 
@@ -150,7 +164,7 @@ export function unknownDocumentMessage(id: string, session: SessionKey): string 
  * What an agent is told when the id is a Testimony that `testimony` lists but whose file the worker has not fetched
  * (a failed or not yet reached download). The id is right; the next pull fetches the file again.
  */
-export function testimonyNotHeldMessage(id: string, session: SessionKey): string {
+function testimonyNotHeldMessage(id: string, session: SessionKey): string {
   return `Testimony "${id}" is listed in the ${session} Session, but this index does not hold its file yet. The next pull fetches it again.`;
 }
 
@@ -159,12 +173,12 @@ export function testimonyNotHeldMessage(id: string, session: SessionKey): string
  * it) and the store never fetched its file. The id is right, but no pull will fetch the file now, because the feed
  * does not list the row.
  */
-export function noLongerListedNotHeldMessage(id: string, session: SessionKey, lastListedAt: string): string {
+function noLongerListedNotHeldMessage(id: string, session: SessionKey, lastListedAt: string): string {
   return `The document "${id}" was listed in the ${session} Session and is not any more (the feed last listed it ${lastListedAt}). This index never fetched its file, and no later pull will fetch it, because the Legislature's feed no longer lists it, so the index holds no text for it.`;
 }
 
 /** What an agent is told when it asks for a part past the last one. */
-export function noSuchPartMessage(id: string, part: number, partCount: number): string {
+function noSuchPartMessage(id: string, part: number, partCount: number): string {
   const parts = partCount === 1 ? "1 part" : `${partCount} parts`;
   return `Document "${id}" has ${parts}, so there is no part ${part}. Ask for a part from 1 to ${partCount}.`;
 }

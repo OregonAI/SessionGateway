@@ -4,7 +4,7 @@ import type { IndexReader } from "#/packages/database/reader.ts";
 import { parseAmendmentReference } from "#/packages/domain/documents.ts";
 import { parseMeasureReference, type MeasureKey, type SessionKey } from "#/packages/domain/index.ts";
 import type { StoredAmendment, StoredVersion } from "#/packages/domain/statute-links.ts";
-import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
+import type { Outcome } from "../envelope.ts";
 import {
   amendedVersionOutput,
   fileOutput,
@@ -63,15 +63,14 @@ export const compareAmendmentOutput = z.object({
     .array(comparedFileOutput)
     .describe("The distinct files posted for the amendment that this index holds, each with what was read of it."),
   deletions_note: z.string().describe("What this comparison does not cover: what the amendment deletes."),
-  as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
-  notice: z.string().describe("A reminder that this is not the official record."),
 });
 
 export type CompareAmendmentOutput = z.infer<typeof compareAmendmentOutput>;
 
-/** An unknown amendment is an expected outcome, so it is a value; the MCP edge decides it is a tool error. */
-export type CompareAmendmentResult =
-  { kind: "found"; comparison: CompareAmendmentOutput } | { kind: "unknown"; reference: string; session: SessionKey };
+/** An unknown amendment is an expected outcome, so it is a value; the envelope tells the agent it is a tool error. */
+export type CompareAmendmentFault = { kind: "unknown"; reference: string; session: SessionKey };
+
+export type CompareAmendmentOutcome = Outcome<CompareAmendmentOutput, CompareAmendmentFault>;
 
 function amendmentShown(amendment: StoredAmendment): CompareAmendmentOutput["amendment"] {
   return {
@@ -98,21 +97,19 @@ export function compareAmendment(
   reader: IndexReader,
   session: SessionKey,
   input: z.infer<typeof compareAmendmentInput>,
-): CompareAmendmentResult {
+): CompareAmendmentOutcome {
   const id = parseAmendmentReference(input.amendment, session);
   const amendment = id === undefined ? undefined : reader.findAmendment(id);
-  if (amendment === undefined) return { kind: "unknown", reference: input.amendment, session };
-  const asOf = reader.asOf(session);
-  if (asOf === undefined) {
-    throw new Error(`The index holds Proposed Amendments of ${session} but no completed full pull to date them by`);
+  if (amendment === undefined) {
+    return { kind: "fault", fault: { kind: "unknown", reference: input.amendment, session } };
   }
   const measure = parseMeasureReference(amendment.measureId, session);
   if (measure === undefined) {
     throw new Error(`The amendment ${amendment.id} is of ${amendment.measureId}, which is no Measure id of ${session}`);
   }
   return {
-    kind: "found",
-    comparison: {
+    kind: "answer",
+    answer: {
       amendment: amendmentShown(amendment),
       amended_version: comparedVersionShown(amendment, measure, reader.findMeasureVersions(measure)),
       files: amendment.files.map((file) => ({
@@ -120,14 +117,12 @@ export function compareAmendment(
         relating_clause_edits: file.parse.relatingClauseEdits.map(relatingClauseEditShown),
       })),
       deletions_note: DELETIONS_NOT_EVALUATED_NOTE,
-      as_of: asOf,
-      notice: NON_OFFICIAL_NOTICE,
     },
   };
 }
 
 /** What an agent is told when no Proposed Amendment matches, so it can correct the call. */
-export function unknownAmendmentMessage(reference: string, session: SessionKey): string {
-  const lower = session.toLowerCase();
-  return `No Proposed Amendment "${reference}" in the ${session} Session. Give an amendment's citation such as SB 69-2 or HB 3795-A3, or its id such as amendment-${lower}-sb69-2.`;
+export function compareAmendmentFaultMessage(fault: CompareAmendmentFault): string {
+  const lower = fault.session.toLowerCase();
+  return `No Proposed Amendment "${fault.reference}" in the ${fault.session} Session. Give an amendment's citation such as SB 69-2 or HB 3795-A3, or its id such as amendment-${lower}-sb69-2.`;
 }

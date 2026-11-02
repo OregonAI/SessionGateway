@@ -2,7 +2,8 @@ import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
 import { listedPositions, positionOf, type DocumentId, type TestimonyEntry } from "#/packages/domain/documents.ts";
 import { measureIdOf, parseMeasureReference, type MeasureId, type SessionKey } from "#/packages/domain/index.ts";
-import { NON_OFFICIAL_NOTICE } from "./get-measure.ts";
+import type { Outcome } from "../envelope.ts";
+import { unknownMeasureMessage } from "./get-measure.ts";
 import { noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 
 export const testimonyInput = z.object({
@@ -198,17 +199,16 @@ export const testimonyOutput = z.object({
     .describe(
       "This page's rows, by position in the order of position_counts, then by organization group in alphabetical order (no organization given last), then by CommTestId. A group that runs across a page break is on both pages, with the same count.",
     ),
-  as_of: z.string().describe("When the index was last refreshed, in Pacific time with its UTC offset."),
-  notice: z.string().describe("A reminder that this is not the official record."),
 });
 
 export type TestimonyOutput = z.infer<typeof testimonyOutput>;
 
-/** An unknown Measure is an expected outcome, so it is a value; the MCP edge decides it is a tool error. */
-export type TestimonyResult =
-  | { kind: "found"; testimony: TestimonyOutput }
+/** An unknown Measure is an expected outcome, so it is a value; the envelope tells the agent it is a tool error. */
+export type TestimonyFault =
   | { kind: "unknown_measure"; reference: string; session: SessionKey }
   | { kind: "no_such_page"; measureId: MeasureId; page: number; lastPage: number };
+
+export type TestimonyOutcome = Outcome<TestimonyOutput, TestimonyFault>;
 
 /**
  * What makes two Organization values one group: trimmed, every run of white space one space, capitals
@@ -382,28 +382,24 @@ export function testimony(
   reader: IndexReader,
   session: SessionKey,
   input: z.infer<typeof testimonyInput>,
-): TestimonyResult {
+): TestimonyOutcome {
   const key = parseMeasureReference(input.measure, session);
   if (key === undefined || reader.findMeasure(key) === undefined) {
-    return { kind: "unknown_measure", reference: input.measure, session };
-  }
-  const asOf = reader.asOf(session);
-  if (asOf === undefined) {
-    throw new Error(`The index holds Testimony of ${session} but no completed full pull to date it by`);
+    return { kind: "fault", fault: { kind: "unknown_measure", reference: input.measure, session } };
   }
   const entries = reader.findTestimony(key);
   const lastPage = Math.max(1, Math.ceil(entries.length / PAGE_SIZE));
   const page = input.page ?? 1;
   const measureId = measureIdOf(key);
-  if (page > lastPage) return { kind: "no_such_page", measureId, page, lastPage };
+  if (page > lastPage) return { kind: "fault", fault: { kind: "no_such_page", measureId, page, lastPage } };
   const identical = identicalLettersOf(entries);
   const { ordered, groups } = placeEntries(entries);
   const countByPosition = new Map<number, number>();
   for (const entry of entries)
     countByPosition.set(entry.position.id, (countByPosition.get(entry.position.id) ?? 0) + 1);
   return {
-    kind: "found",
-    testimony: {
+    kind: "answer",
+    answer: {
       measure_id: measureId,
       total: entries.length,
       position_counts: [...new Set([...listedPositions.map((position) => position.id), ...countByPosition.keys()])]
@@ -421,14 +417,24 @@ export function testimony(
         countByPosition,
         identical.setOf,
       ),
-      as_of: asOf,
-      notice: NON_OFFICIAL_NOTICE,
     },
   };
 }
 
+/** What an agent is told when a call to testimony is a fault. */
+export function testimonyFaultMessage(fault: TestimonyFault): string {
+  switch (fault.kind) {
+    case "unknown_measure":
+      return unknownMeasureMessage(fault.reference, fault.session);
+    case "no_such_page":
+      return noSuchPageMessage(fault.measureId, fault.page, fault.lastPage);
+    default:
+      return fault satisfies never;
+  }
+}
+
 /** What an agent is told when it asks for a page past the last one. */
-export function noSuchPageMessage(measureId: MeasureId, page: number, lastPage: number): string {
+function noSuchPageMessage(measureId: MeasureId, page: number, lastPage: number): string {
   const pages = lastPage === 1 ? "1 page" : `${lastPage} pages`;
   return `The Testimony on ${measureId} has ${pages}, so there is no page ${page}. Ask for a page from 1 to ${lastPage}.`;
 }
