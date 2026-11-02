@@ -217,10 +217,10 @@ function loadUnresolved(): Map<string, { entry: Unresolved; used: boolean }> {
     }
     // Only a gap of the full cache that the research documents, with its documented reason. Verify
     // has no cache to look in, so this is all that stops a hand edit from excusing a broken reference.
-    if (documentedGapReason(entry.refers_to, entry.target_key) !== entry.reason) {
+    if (documentedGapReason(entry.entity_set, entry.property, entry.refers_to, entry.target_key) !== entry.reason) {
       problem(
         `unresolved.json unresolved[${index}]: ${describeKey(entry.refers_to, entry.target_key)} is not a documented gap of the full cache, or its reason is not the documented one. ` +
-          `The only documented gaps are the Legislator Codes ${legislatorCodesWithoutRow.join(" and ")} (olis-odata.md section 8, gotcha 4).`,
+          `The documented gaps are the Legislator Codes ${legislatorCodesWithoutRow.join(" and ")} (olis-odata.md section 8, gotcha 4) and a CommitteeMembers row whose LegislatorCode matches no Legislators row (gotcha 5).`,
       );
       return;
     }
