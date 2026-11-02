@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { statuteLinksOfMeasure, type StatuteLinksOfMeasure } from "../measure.ts";
+import { parseStatutesAffectedTable } from "../index.ts";
+import { statuteLinksOfMeasure, tallyLoneEEntries, type StatuteLinksOfMeasure } from "../measure.ts";
 import { heldVersion, link, measureOf, tableOfMeasure, tripleOf } from "./measure-cases.ts";
 
 // Seam 4: which Version a Table entry that ends in an E alone names (ticket #99; ADR-0033, GLOSSARY.md "Table entry"). The
@@ -93,5 +94,43 @@ describe("an entry that ends in an E alone", () => {
     const table = versionNamed(result, "B-Engrossed").table;
     expect(table?.kind === "compared" ? table.confirmed.map(tripleOf) : table).toEqual([["amends", "ors-2.150", "20"]]);
     expect(result.table?.apart).toEqual([]);
+  });
+});
+
+// The Build report counts the table's entries that end in an E alone, and of those the ones the rule above leaves naming no
+// Version (`lone_e_entries` and `lone_e_with_e_engrossed_version`, ADR-0034), so the operator reads how much of the table the
+// feed's listing cannot place. It asks the rule the comparison asks, and is given what the worker knows: which Measures the feed
+// lists an E-Engrossed Version of.
+describe("the Build report's count of the entries that end in an E alone", () => {
+  // Lines 2195-2201 and 4153-4158 of the PDF.js text of documents/reports/artables2025R1.pdf (table-entries.test.ts). Four rows
+  // end in an E alone (HB 3944 §8, SB 678 §21, HB 2052 §5 and HB 2187 §1); "SB 83 A E" has a level before its E, and "SB 75 A"
+  // and "SB 78" have no E.
+  const rows = `215.291 A §8 HB 3944 E
+A §2 SB 75 A
+A §1 SB 78
+A §17 SB 83 A E
+A §21 SB 678 E
+339.990 A §5 HB 2052 E
+R §1 HB 2187 E`;
+  const { entries } = parseStatutesAffectedTable({ text: rows, orsSections: [] });
+
+  test("counts the four rows that end in an E alone when the feed lists no E-Engrossed Version of any of their Measures, and none names no Version", () => {
+    expect(tallyLoneEEntries(entries, () => false)).toEqual({ entries: 4, namingNoVersion: 0 });
+  });
+
+  // MADE UP: the feed lists an E-Engrossed Version of SB 678 and HB 2187 (the 2025R1 feed lists none of any Measure).
+  test("counts the rows of a Measure the feed lists an E-Engrossed Version of as naming no Version: SB 678 §21 and HB 2187 §1, and not the others", () => {
+    const listsEEngrossed = (measure: { prefix: string; number: number }): boolean =>
+      `${measure.prefix} ${String(measure.number)}` === "SB 678" ||
+      `${measure.prefix} ${String(measure.number)}` === "HB 2187";
+
+    expect(tallyLoneEEntries(entries, listsEEngrossed)).toEqual({ entries: 4, namingNoVersion: 2 });
+  });
+
+  test("does not count a row with a level before its E, whatever the feed lists: SB 83 'A E' names A-Engrossed", () => {
+    expect(tallyLoneEEntries(entries, (measure) => measure.prefix === "SB" && measure.number === 83)).toEqual({
+      entries: 4,
+      namingNoVersion: 0,
+    });
   });
 });

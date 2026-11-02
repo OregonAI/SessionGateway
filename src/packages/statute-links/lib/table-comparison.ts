@@ -105,6 +105,31 @@ function versionNamedByEntry(
   return listsEEngrossed ? undefined : versionDescriptionOfLetter(null);
 }
 
+/** What the Build report counts of a table's entries that end in an E alone (ADR-0034). */
+export type LoneETally = {
+  /** The entries that end in an E alone after the Measure number: the emergency clause, or the level of an E-Engrossed Version. */
+  entries: number;
+  /** Of those, the entries of a Measure the feed lists an E-Engrossed Version of: the rule leaves them naming no Version. */
+  namingNoVersion: number;
+};
+
+/**
+ * Counts the entries that end in an E alone, and of those the ones that name no Version (ADR-0033). `listsEEngrossed` says
+ * whether the feed lists an E-Engrossed Version of a Measure, held or not: the rule is the one that sets each entry beside a
+ * Version.
+ */
+export function tallyLoneEEntries(
+  entries: readonly StatutesAffectedEntry[],
+  listsEEngrossed: (measure: StatutesAffectedEntry["measure"]) => boolean,
+): LoneETally {
+  const loneE = entries.filter((entry) => entry.loneE);
+  return {
+    entries: loneE.length,
+    namingNoVersion: loneE.filter((entry) => versionNamedByEntry(entry, listsEEngrossed(entry.measure)) === undefined)
+      .length,
+  };
+}
+
 /** What the table says of a Version: undefined when no entry names it. */
 export function tableOfVersion(
   version: StoredVersion,
