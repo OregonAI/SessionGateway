@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { Citation } from "#/packages/domain/citations.ts";
 import type { DocumentId, DocumentLink } from "#/packages/domain/documents.ts";
-import { orsSectionIdOf } from "#/packages/domain/oregonai.ts";
+import type { OrsSectionId } from "#/packages/domain/oregonai.ts";
 import {
   amendmentId,
   analysisLink,
@@ -33,19 +33,17 @@ afterEach(() => {
 const version = versionLink();
 const word = '"zebracrossing"';
 
-/** MADE UP: the ORS section that some made-up documents name, as the id search is asked for. */
-const cited = orsSectionIdOf("468.130");
-
-/** The id of `cited`, as a string, as the notes of a citation ask for it. */
-function citedId(): string {
-  if (cited === undefined) throw new Error("ORS 468.130 is no ORS section id");
-  return cited;
-}
+/** MADE UP: the ORS section that some made-up documents name, as the notes of a citation are asked for it. */
+const cited = "ors-468.130";
 
 /** Stores a made-up document of this link that names `cited` once. */
 function storeCiting(link: DocumentLink, text: string): void {
-  if (cited === undefined) throw new Error("ORS 468.130 is no ORS section id");
-  const citation: Citation = { kind: "ors", id: cited, text: "ORS 468.130", index: text.indexOf("ORS 468.130") };
+  const citation: Citation = {
+    kind: "ors",
+    id: cited as OrsSectionId,
+    text: "ORS 468.130",
+    index: text.indexOf("ORS"),
+  };
   index.writer.storeDocument(session, storedOf(link, text), { ...searchRecordOf(link, text), citations: [citation] });
 }
 
@@ -139,7 +137,7 @@ describe("a Document no complete Full pull has listed", () => {
     index.writer.recordFullPull(session, asOf(4), pullOf());
 
     expect(index.search.unlistedPostings(amendmentId, session)).toBeUndefined();
-    expect(index.search.unlistedCiting(citedId(), session)).toBeUndefined();
+    expect(index.search.unlistedCiting(cited, session)).toBeUndefined();
   });
 });
 
@@ -179,16 +177,16 @@ describe("what the index holds of an item the feed no longer lists", () => {
     storeCiting(version, "A made-up thing is under ORS 468.130.");
     storeCiting(analysis, "The made-up thing falls under ORS 468.130.");
     index.writer.recordFullPull(session, asOf(2), pullOf({ documentLinks: [analysis] }));
-    expect(index.search.unlistedCiting(citedId(), session)).toBeUndefined();
+    expect(index.search.unlistedCiting(cited, session)).toBeUndefined();
 
     index.writer.recordFullPull(session, asOf(3), pullOf());
-    expect(index.search.unlistedCiting(citedId(), session)).toEqual({
+    expect(index.search.unlistedCiting(cited, session)).toEqual({
       count: 1,
       latest: { documentId: version.id, nodeId: version.id, lastListedAt: asOf(1) },
     });
 
     index.writer.recordFullPull(session, asOf(4), pullOf());
-    expect(index.search.unlistedCiting(citedId(), session)).toEqual({
+    expect(index.search.unlistedCiting(cited, session)).toEqual({
       count: 2,
       latest: { documentId: analysis.id, nodeId: analysis.id, lastListedAt: asOf(2) },
     });
