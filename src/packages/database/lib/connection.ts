@@ -478,6 +478,23 @@ const schema = `
   );
 `;
 
+/**
+ * The numbered upgrade steps (ADR-0048): step N takes a file from version N - 1 to version N, and the file's version
+ * is the number of steps there are. The worker applies the ones a file lacks, in order, in one transaction when it opens
+ * the file, so a file is never left half upgraded. Step 1 is today's schema: its pass of `CREATE ... IF NOT EXISTS`
+ * gives a file with no version every table it lacks, so a file built before versions upgrades the way it always has.
+ * A change to a table after version 1 is a step appended here with its own test, and a step is never edited once a
+ * release has run it: a new file runs every step, so `schema` above stays version 1's text.
+ */
+const upgradeSteps: readonly ((database: DatabaseSync) => void)[] = [
+  (database) => {
+    database.exec(schema);
+  },
+];
+
+/** The version the newest step leaves a file at. The server opens a file at this version only. */
+const schemaVersion = upgradeSteps.length;
+
 /** The default timeout of 0 fails at once on a busy database, so both sides wait up to 5 seconds. */
 const BUSY_TIMEOUT_MS = 5000;
 
@@ -497,11 +514,58 @@ export function openWriteConnection(path: string): DatabaseSync {
     );
   }
   database.exec("PRAGMA synchronous = NORMAL");
-  database.exec(schema);
+  try {
+    upgradeToCurrentVersion(database, path);
+  } catch (error) {
+    database.close();
+    throw error;
+  }
   return database;
 }
 
-/** The server's connection: it never writes. */
+/**
+ * Applies the upgrade steps the file lacks and stamps it with the version of the last, in one transaction. A file at a
+ * version newer than this worker knows is refused and left as it is: there is no downgrade (ADR-0048).
+ */
+function upgradeToCurrentVersion(database: DatabaseSync, path: string): void {
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const found = recordedVersionOf(database);
+    if (found > schemaVersion) {
+      throw new Error(
+        `The database at "${path}" is at schema version ${String(found)}, newer than the schema version ${String(schemaVersion)} this worker knows, and a worker never downgrades a file. Run the ingest worker and the server from the same release.`,
+      );
+    }
+    upgradeSteps.forEach((step, index) => {
+      if (index >= found) step(database);
+    });
+    if (found < schemaVersion) database.exec(`PRAGMA user_version = ${String(schemaVersion)}`);
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+/** The schema version the file records (ADR-0048): SQLite's `user_version`, which a file nobody has stamped reports as 0. */
+function recordedVersionOf(database: DatabaseSync): number {
+  const answer = database.prepare("PRAGMA user_version").get();
+  const version = answer?.["user_version"];
+  if (typeof version !== "number") {
+    throw new Error(`SQLite did not answer with the database's schema version: ${JSON.stringify(answer)}`);
+  }
+  return version;
+}
+
+/** The server's connection: it never writes, so it never upgrades a file and refuses one that is not at the version it knows. */
 export function openReadConnection(path: string): DatabaseSync {
-  return new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
+  const database = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
+  const found = recordedVersionOf(database);
+  if (found !== schemaVersion) {
+    database.close();
+    throw new Error(
+      `The database at "${path}" is at schema version ${String(found)}, and this server knows schema version ${String(schemaVersion)}. Run the ingest worker and the server from the same release: the worker upgrades the file when it opens it.`,
+    );
+  }
+  return database;
 }
