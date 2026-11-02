@@ -74,11 +74,12 @@ import {
   type FloorVote,
   type LegislatorVote,
 } from "#/packages/domain/votes.ts";
-import { compareTimestamps, type Timestamp } from "#/packages/time/pacific.ts";
+import type { Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceFromJson, storedEvidenceKinds } from "./lib/agency-evidence.ts";
 import { openReadConnection } from "./lib/connection.ts";
 import { agencyLinkListings, openListingReader, type ListingRead } from "./lib/listing.ts";
 import {
+  readAsOf,
   readFullPullAsOf,
   readSessionsHeld,
   readIncrementAsOf,
@@ -1452,11 +1453,7 @@ export function openIndexReader(path: string): IndexReader {
       return { id: stored.legislator_id as LegislatorId, name: stored.legislator_name };
     },
     asOf(session) {
-      // The index is as of its latest update: the last complete full pull, or a later increment (ADR-0039).
-      const full = fullPullOf(session);
-      const increment = incrementOf(session);
-      if (full === undefined || increment === undefined) return full;
-      return compareTimestamps(increment, full) > 0 ? increment : full;
+      return readAsOf(database, session);
     },
     sessionsHeld() {
       return readSessionsHeld(database);

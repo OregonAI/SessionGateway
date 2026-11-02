@@ -45,7 +45,7 @@ import { searchEntryOf } from "#/packages/search/documents.ts";
 import { splitPassages } from "#/packages/search/passages.ts";
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import type { Clock } from "#/packages/time/clock.ts";
-import { compareTimestamps, formatPacific, pacificTimestampOf, type Timestamp } from "#/packages/time/pacific.ts";
+import { formatPacific, pacificTimestampOf, type Timestamp } from "#/packages/time/pacific.ts";
 import { buildReportPath, writeBuildReport, type BuildReport, type SetReport } from "./lib/build-report.ts";
 import {
   hashSampleReportPath,
@@ -567,11 +567,8 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
   const asOf = formatPacific(deps.clock.now());
   const writer = openIndexWriter(config.databasePath);
   try {
-    const runs = writer.lastRuns(config.session);
-    const lastRun = [runs.fullPull, runs.increment]
-      .filter((at): at is Timestamp => at !== undefined)
-      .toSorted(compareTimestamps)
-      .at(-1);
+    // The Index's As of is when the last run began: the same time the server answers with.
+    const lastRun = writer.asOf(config.session);
     if (lastRun === undefined)
       throw new Error("An increment needs a complete full pull before it: the index holds none");
     const since = pacificTimestampOf(Temporal.Instant.from(lastRun).subtract({ hours: INCREMENT_OVERLAP_HOURS }));

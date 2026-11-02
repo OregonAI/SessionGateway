@@ -4,7 +4,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import type { SessionSpan } from "#/packages/domain/documents.ts";
 import { parseSessionKey, type SessionKey } from "#/packages/domain/index.ts";
-import type { Timestamp } from "#/packages/time/pacific.ts";
+import { compareTimestamps, type Timestamp } from "#/packages/time/pacific.ts";
 
 const fullPullRow = z.object({ full_pull_as_of: z.string() });
 const sessionRow = z.object({ session_key: z.string() });
@@ -41,6 +41,19 @@ export function readIncrementAsOf(database: DatabaseSync, session: SessionKey): 
 export function readFullPullAttempt(database: DatabaseSync, session: SessionKey): Timestamp | undefined {
   const row = database.prepare("SELECT as_of FROM full_pull_attempt WHERE session_key = ?").get(session);
   return row === undefined ? undefined : (startedRow.parse(row).as_of as Timestamp);
+}
+
+/**
+ * The Index's As of: the start of the latest complete full pull or of a later increment (ADR-0039), or undefined until a
+ * full pull has completed. The rule is written here, once, for the reader that stamps every result with it and for the
+ * writer that tells an increment how far back to read (ticket #100). The two times are compared as moments and not as
+ * text, which sorts wrongly across the night the clocks go back. A refused pull is not a run (`readFullPullAttempt`).
+ */
+export function readAsOf(database: DatabaseSync, session: SessionKey): Timestamp | undefined {
+  const full = readFullPullAsOf(database, session);
+  if (full === undefined) return undefined;
+  const increment = readIncrementAsOf(database, session);
+  return increment !== undefined && compareTimestamps(increment, full) > 0 ? increment : full;
 }
 
 /** The Pacific dates (YYYY-MM-DD) of the Session's committee meetings the index holds: days the Session meets. */

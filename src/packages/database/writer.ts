@@ -34,6 +34,7 @@ import type { Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceToJson } from "./lib/agency-evidence.ts";
 import { openWriteConnection } from "./lib/connection.ts";
 import {
+  readAsOf,
   readFullPullAsOf,
   readFullPullAttempt,
   readIncrementAsOf,
@@ -284,6 +285,12 @@ export type IndexWriter = {
    * ADR-0047) keeps the Agency the index holds for it, and a row new to the index is stored with none.
    */
   recordIncrement(session: SessionKey, asOf: Timestamp, pulled: FullPullRecord): void;
+  /**
+   * The Index's As of, the one the reader answers with: the start of the latest complete full pull or of a later increment
+   * (ADR-0039), or undefined until a full pull has completed. An increment reads from it, because a row OLIS changed since
+   * then is one the Index has not seen.
+   */
+  asOf(session: SessionKey): Timestamp | undefined;
   /**
    * When the Session's last complete full pull, last increment and last begun full pull (complete or refused) started,
    * or undefined while there has been none.
@@ -984,6 +991,9 @@ export function openIndexWriter(path: string): IndexWriter {
     },
     recordIncrement(session, asOf, pulled) {
       recordRows(session, asOf, pulled, "increment");
+    },
+    asOf(session) {
+      return readAsOf(database, session);
     },
     lastRuns(session) {
       return {
