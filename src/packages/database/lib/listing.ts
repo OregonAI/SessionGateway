@@ -204,7 +204,7 @@ function listedLinks(entitySet: ListedSet, links: readonly DocumentLink[]): List
  * A meeting's agenda is linked by a column of its CommitteeMeetings row and not by a row of its own, so it is named for the
  * column: the meeting stays listed when OLIS stops linking its agenda, and the agenda does not.
  */
-const listedRowsOfSet: { readonly [Name in PulledEntitySet]: (pulled: PulledRows) => ListedRow[] } = {
+const listedRowsOfSet: Readonly<Record<PulledEntitySet, (pulled: PulledRows) => ListedRow[]>> = {
   Measures: (pulled) => pulled.Measures.map((measure) => listed("Measures", measureIdOf(measure))),
   Legislators: (pulled) => pulled.Legislators.map((row) => listed("Legislators", row.code)),
   MeasureSponsors: (pulled) => pulled.MeasureSponsors.map((sponsor) => listed("MeasureSponsors", String(sponsor.id))),

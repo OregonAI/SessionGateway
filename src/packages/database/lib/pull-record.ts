@@ -100,7 +100,12 @@ type RowsOfSet = {
   FloorLetters: readonly DocumentLink[];
 };
 
-/** The rows a Pull read, with one field for each entity set the feed has under the feed's own name for it. */
+/**
+ * The rows a Pull read, with one field for each entity set the feed has under the feed's own name for it. A name added to
+ * `pulledEntitySets` that `RowsOfSet` above has no entry for fails on the next line with "Type 'Name' cannot be used to
+ * index type 'RowsOfSet'": add the set to `RowsOfSet`, with the type of its rows. The places that build or key a record
+ * (the Listing's table in `listing.ts`, the register and `readFeed` in `ingest`) then fail, each saying which set it lacks.
+ */
 export type PulledRows = { readonly [Name in PulledEntitySet]: RowsOfSet[Name] };
 
 /**
@@ -121,6 +126,10 @@ export type FullPullRecord = PulledRows & {
  * agenda, Exhibits, Recording Logs and the postings of Proposed Amendments) and which analysis documents each Measure has
  * are stored from these before any file is fetched, so a file that fails to come is still listed (ADR-0011, "Order of a
  * pull"). The worker fetches the files in this order.
+ *
+ * The fetch order is the worker's (ADR-0011), and the list is here, in `database`, all the same: the writer stores what each
+ * meeting lists, the analysis documents, the Versions and the Floor Letters from the same links, so `writer.ts` and the
+ * worker both call this one function, and the list of documents a record holds is written once (ADR-0050).
  */
 export function documentLinksOf(pulled: PulledRows): DocumentLink[] {
   return [
