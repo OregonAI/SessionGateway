@@ -5,6 +5,7 @@ import {
   versionIdOf,
   type AmendmentHeader,
   type AmendmentPosting,
+  type Listing,
 } from "#/packages/domain/documents.ts";
 import { measureIdOf, parseSessionKey, type MeasureKey, type SessionKey } from "#/packages/domain/index.ts";
 import { parseOrsChapterId, parseOrsSectionId } from "#/packages/domain/oregonai.ts";
@@ -23,6 +24,13 @@ import { parseStatutesAffectedTable } from "../index.ts";
 // Builders for the Measures the cases of the Statute Links of a Measure are taken from. A case writes what the stored
 // documents say as literals (the links a Version's text has, the header a Proposed Amendment's first page prints) and
 // these put them in the shapes the Index stores them in. Expected values never come from here.
+
+/** What the Index hands out for a row the feed lists, or (ADR-0030) for one that two complete full pulls in a row have not listed. */
+function listingOf(listed: boolean): Listing {
+  const lastListedAt = readTimestamp("2025-02-03T10:00:00-08:00");
+  if (lastListedAt === undefined) throw new Error("not a Pacific timestamp");
+  return listed ? { listed: true, lastListedAt } : { listed: false, lastListedAt };
+}
 
 function sessionOf(text: string): SessionKey {
   const key = parseSessionKey(text);
@@ -68,7 +76,7 @@ export function heldVersion(key: MeasureKey, description: string, options: HeldV
       links: read ? [...(options.links ?? [])] : [],
       relatingClauseEdits: [],
     },
-    listed: options.listed ?? true,
+    listing: listingOf(options.listed ?? true),
   };
 }
 
@@ -105,7 +113,7 @@ export function proposedAmendment(key: MeasureKey, number: string, postings: rea
       committeeName: posting.committee.name,
       meaning: posting.meaning,
       fetched: posting.header !== undefined,
-      listed: true,
+      listing: listingOf(true),
     };
   });
   const headers = postings.flatMap((posting) => (posting.header === undefined ? [] : [posting.header]));
@@ -116,6 +124,7 @@ export function proposedAmendment(key: MeasureKey, number: string, postings: rea
     spellings: [number],
     measureId: measureIdOf(key),
     postings: posted,
+    listing: listingOf(true),
     files: [...distinct.values()].map((header) => ({
       postingIds: postings
         .filter((posting) => JSON.stringify(posting.header) === JSON.stringify(header))

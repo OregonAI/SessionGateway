@@ -178,7 +178,7 @@ describe("a Version that has the same links as the one before it keeps its own t
       ["A-Engrossed", undefined],
       ["Enrolled", "A-Engrossed"],
     ]);
-    expect(result.versions.map((entry) => entry.version.listed)).toEqual([true, false]);
+    expect(result.versions.map((entry) => entry.version.listing.listed)).toEqual([true, false]);
   });
 });
 
