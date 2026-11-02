@@ -8,6 +8,7 @@ import type { IndexReader } from "#/packages/database/reader.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
+import type { Outcome } from "./lib/outcome.ts";
 import { createRateLimiter, rateLimitMessage } from "./lib/rate-limit.ts";
 import { stalenessWarning } from "./lib/staleness.ts";
 
@@ -21,15 +22,21 @@ const envelopeFields = {
   notice: z.string().describe("A reminder that this is not the official record."),
 };
 
+/** The output schemas folded with the envelope's fields, by the tool's own. A server is built for each request, a schema is not. */
+const foldedSchemas = new WeakMap<z.ZodObject, StandardSchemaWithJSON>();
+
+/** The tool's output schema with `as_of` and `notice` added, made once for each schema. */
+function withEnvelopeFields(output: z.ZodObject): StandardSchemaWithJSON {
+  const known = foldedSchemas.get(output);
+  if (known !== undefined) return known;
+  const folded: StandardSchemaWithJSON = output.extend(envelopeFields);
+  foldedSchemas.set(output, folded);
+  return folded;
+}
+
 /** The notice every result carries (ADR-0002, spec #1 "What every result must carry"). */
 const NON_OFFICIAL_NOTICE =
   "Not the official record of the Oregon Legislature. This is an unofficial copy of public information from the Legislature's Open Data Service; use source_url for the Legislature's own page.";
-
-/**
- * What a tool's function returns: its answer, or a fault, which is an expected outcome that the agent is told of as a
- * tool error (an unknown id, a page past the last). A bug or an infrastructure failure is not a fault: it throws.
- */
-export type Outcome<Answer, Fault> = { kind: "answer"; answer: Answer } | { kind: "fault"; fault: Fault };
 
 /** The MCP annotations a tool is registered with. */
 type Annotations = { readOnlyHint: true; openWorldHint: boolean };
@@ -145,7 +152,7 @@ export function createEnvelope(deps: EnvelopeDeps): Envelope {
     // Typed as the SDK's schema interface, which a zod object satisfies: the SDK then types the arguments as a plain
     // record, and the SDK has parsed them with this very schema, so they are what `z.infer` says.
     const inputSchema: StandardSchemaWithJSON = tool.input;
-    const outputSchema: StandardSchemaWithJSON = tool.output.extend(envelopeFields);
+    const outputSchema = withEnvelopeFields(tool.output);
     return server.registerTool(
       tool.name,
       {

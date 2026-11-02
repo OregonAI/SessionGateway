@@ -4,7 +4,7 @@ import type { IndexReader } from "#/packages/database/reader.ts";
 import { parseAmendmentReference } from "#/packages/domain/documents.ts";
 import { parseMeasureReference, type MeasureKey, type SessionKey } from "#/packages/domain/index.ts";
 import type { StoredAmendment, StoredVersion } from "#/packages/domain/statute-links.ts";
-import type { Outcome } from "../envelope.ts";
+import type { Outcome } from "./outcome.ts";
 import {
   amendedVersionOutput,
   fileOutput,

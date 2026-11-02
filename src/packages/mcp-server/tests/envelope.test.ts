@@ -13,8 +13,8 @@ import { McpServer, type CallToolResult } from "@modelcontextprotocol/server";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { loadServerConfig, type ServerConfig } from "#/packages/config/index.ts";
-import { openIndexReader, type IndexReader } from "#/packages/database/reader.ts";
-import { openIndexWriter, type FullPullRecord } from "#/packages/database/writer.ts";
+import { openIndexReader } from "#/packages/database/reader.ts";
+import { openIndexWriter, type FullPullRecord, type IndexWriter } from "#/packages/database/writer.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
 import { createEnvelope, type Envelope, type Tool } from "../envelope.ts";
@@ -77,13 +77,16 @@ afterEach(() => {
 type Arranged = {
   envelope: Envelope;
   config: ServerConfig;
-  reader: IndexReader;
+  /** The worker's side of the Index, still open: the server serves while the worker writes (ADR-0007). */
+  writer: IndexWriter;
   moveClockTo: (instant: string) => void;
 };
 
 /**
  * An envelope over an Index whose Full pull began at `pulledAt` (none when it is undefined) and whose Increment, when
- * given, began at `incrementedAt`. The clock stands at `now`, which is the Full pull's time unless given.
+ * given, began at `incrementedAt`. The clock stands at `now`, which is the Full pull's time unless given. The writer
+ * that arranged it stays open beside the reader, as the worker does beside the server, so that a case can write while
+ * the envelope serves.
  */
 function arrange(
   state: { pulledAt?: string; incrementedAt?: string; now?: string; env?: Record<string, string> } = {},
@@ -104,10 +107,10 @@ function arrange(
   if (state.incrementedAt !== undefined) {
     writer.recordIncrement(config.session, formatPacific(new Date(state.incrementedAt)), readNothing);
   }
-  writer.close();
   const reader = openIndexReader(databasePath);
   disposers.push(() => {
     reader.close();
+    writer.close();
     rmSync(directory, { recursive: true, force: true });
   });
   let now = new Date(state.now ?? state.pulledAt ?? "2026-08-01T17:00:00Z");
@@ -115,7 +118,7 @@ function arrange(
   return {
     envelope: createEnvelope({ reader, config, clock }),
     config,
-    reader,
+    writer,
     moveClockTo: (instant) => {
       now = new Date(instant);
     },
@@ -299,20 +302,13 @@ describe("the Staleness warning", () => {
   });
 
   it("speaks of the As of the answer carries, though an Increment lands while the tool is running", async () => {
-    const { reader: real, config } = arrange({
-      pulledAt,
-      incrementedAt: "2026-08-19T17:00:00Z",
-      now: nineteenDaysLater,
-    });
-    // The Index's As of is the Full pull's until the Increment lands, which it does while the tool runs.
-    const fullPull = formatPacific(new Date(pulledAt));
-    let landed = false;
-    const reader: IndexReader = { ...real, asOf: (session) => (landed ? real.asOf(session) : fullPull) };
-    const envelope = createEnvelope({ reader, config, clock: { now: () => new Date(nineteenDaysLater) } });
+    const { envelope, writer, config } = arrange({ pulledAt, now: nineteenDaysLater });
+    // The Index's As of is the Full pull's until the worker's Increment lands, which it does while the tool runs. The
+    // Increment is the newer As of, and the 18 days since it make no warning: the answer must keep to the older one.
     const tool: Greeter = {
       ...greeter(),
       run: () => {
-        landed = true;
+        writer.recordIncrement(config.session, formatPacific(new Date("2026-08-19T17:00:00Z")), readNothing);
         return { kind: "answer", answer: { greeting: "Hello" } };
       },
     };
@@ -321,6 +317,9 @@ describe("the Staleness warning", () => {
 
     expect(result.structuredContent).toMatchObject({ as_of: "2026-08-01T10:00:00-07:00" });
     expect(texts(result)[1]).toContain("It was last updated at 2026-08-01T10:00:00-07:00");
+    // The next call reads the Increment's As of: the Index did change while the tool ran.
+    const next = await envelope.answer(greeter(), { name: "Ada" });
+    expect(next.structuredContent).toMatchObject({ as_of: "2026-08-19T10:00:00-07:00" });
   });
 });
 
@@ -354,5 +353,15 @@ describe("registering a tool", () => {
     expect(advertised.required).toEqual(["greeting", "as_of", "notice"]);
     // The tool's own schema is not changed: the next registration of it starts from the same fields.
     expect(Object.keys(greetingOutput.shape)).toEqual(["greeting"]);
+  });
+
+  it("folds the fields into the output schema once, however many servers register the tool", () => {
+    // The stateless handler builds a server for every request, and each registers every tool again.
+    const { envelope } = arrange({ pulledAt: "2026-08-01T17:00:00Z" });
+
+    const first = envelope.register(new McpServer({ name: "test", version: "0.0.0" }), greeter());
+    const second = envelope.register(new McpServer({ name: "test", version: "0.0.0" }), greeter());
+
+    expect(second.outputSchema).toBe(first.outputSchema);
   });
 });

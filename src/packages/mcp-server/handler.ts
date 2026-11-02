@@ -32,6 +32,7 @@ import {
   meetingsInput,
   meetingsOutput,
 } from "./lib/meetings.ts";
+import { noFault } from "./lib/outcome.ts";
 import { search, searchFaultMessage, searchInput, searchOutput, type SearchDeps } from "./lib/search.ts";
 import { createVectorCache } from "./lib/vector-cache.ts";
 import { sessionOverview, sessionOverviewInput, sessionOverviewOutput } from "./lib/session-overview.ts";
@@ -161,7 +162,7 @@ function buildServer(
     output: sessionOverviewOutput,
     annotations: { readOnlyHint: true, openWorldHint: false },
     run: () => sessionOverview(reader, config.session),
-    faultMessage: (fault) => fault,
+    faultMessage: noFault,
   });
   return server;
 }

@@ -23,7 +23,7 @@ import {
 } from "#/packages/search/text.ts";
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
-import type { Outcome } from "../envelope.ts";
+import type { Outcome } from "./outcome.ts";
 import {
   checkFilters,
   filterFaultMessage,

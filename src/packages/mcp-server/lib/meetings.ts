@@ -3,7 +3,7 @@ import type { IndexReader } from "#/packages/database/reader.ts";
 import { olisMeetingPageUrlOf, type MeetingHeader } from "#/packages/domain/documents.ts";
 import { measureIdOf, type SessionKey } from "#/packages/domain/index.ts";
 import { formatPacific, isAtOrAfter } from "#/packages/time/pacific.ts";
-import type { Outcome } from "../envelope.ts";
+import type { Outcome } from "./outcome.ts";
 import { checkFilters, filterFaultMessage, type FilterFault } from "./filters.ts";
 import { noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 

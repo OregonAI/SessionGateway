@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
-import type { Outcome } from "../envelope.ts";
+import type { Outcome } from "./outcome.ts";
 
 export const sessionOverviewInput = z.object({});
 

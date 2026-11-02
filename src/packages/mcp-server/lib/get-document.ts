@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
 import { documentKinds, parseDocumentReference, relations, type UnheldDocument } from "#/packages/domain/documents.ts";
-import type { Outcome } from "../envelope.ts";
+import type { Outcome } from "./outcome.ts";
 import { floorLetterDocumentOutput, floorLetterDocumentShown } from "./floor-letters.ts";
 import { documentListingOutput, documentListingShown } from "./listing.ts";
 import { splitIntoParts } from "./parts.ts";

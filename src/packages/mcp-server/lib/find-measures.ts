@@ -22,7 +22,7 @@ import {
   type EvidenceFields,
   type GatheredLink,
 } from "./agency-links.ts";
-import type { Outcome } from "../envelope.ts";
+import type { Outcome } from "./outcome.ts";
 import { notAnAgencyIdMessage, parseAgencyArgument } from "./filters.ts";
 import { documentListingFields, listingShown, noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 

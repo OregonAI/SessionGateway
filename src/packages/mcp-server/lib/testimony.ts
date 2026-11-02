@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
 import { listedPositions, positionOf, type DocumentId, type TestimonyEntry } from "#/packages/domain/documents.ts";
 import { measureIdOf, parseMeasureReference, type MeasureId, type SessionKey } from "#/packages/domain/index.ts";
-import type { Outcome } from "../envelope.ts";
+import type { Outcome } from "./outcome.ts";
 import { unknownMeasureMessage } from "./get-measure.ts";
 import { noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 
