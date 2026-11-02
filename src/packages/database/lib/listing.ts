@@ -6,6 +6,10 @@
 // `lastPullThatIsNoLongerListed`, and everything derives from it: `isListed` for a row the reader holds, and the number
 // the queries of the writer and of search bind as a parameter (`last_listed_pull <= ?`), where they need the rule applied
 // inside SQL to a million rows. No SQL of this file spells the arithmetic, so there is nothing to keep in step with it.
+// Search's queries need two things of the Listing and ask this file for both: the WHERE term that leaves out a Document
+// the feed no longer lists (`listedDocumentSql`, with the number it binds, `noLongerListedThrough`), and which of some
+// Documents the feed no longer lists, with when each was last listed (`unlistedAmong`). Search names no column of
+// `feed_row` or `feed_pull`.
 // The view `feed_row_state` in connection.ts says the same in SQL and is no longer read by anything: the schema text is
 // version 1 of the index (ADR-0048) and is left as it was.
 //
@@ -44,50 +48,60 @@ const MISSES_THAT_UNLIST = 2;
  * `MISSES_THAT_UNLIST`. So the rows that are No longer listed are the ones last listed by this pull or an earlier one. A
  * pull that was refused has no number and is not a pull for the count (ADR-0030).
  */
-export function lastPullThatIsNoLongerListed(latestPull: number): number {
+function lastPullThatIsNoLongerListed(latestPull: number): number {
   return latestPull - MISSES_THAT_UNLIST;
 }
 
 /** Whether a row last listed by complete pull `lastListedPull` is still listed, when `latestPull` is the Session's latest. */
-export function isListed(latestPull: number, lastListedPull: number): boolean {
+function isListed(latestPull: number, lastListedPull: number): boolean {
   return lastListedPull > lastPullThatIsNoLongerListed(latestPull);
 }
 
 const numberRow = z.object({ number: z.number() });
 
 /** The number of the Session's latest complete Full pull, or 0 while it has none. */
-export function latestCompletePull(database: DatabaseSync, session: SessionKey): number {
+function latestCompletePull(database: DatabaseSync, session: SessionKey): number {
   return numberRow.parse(
     database.prepare("SELECT COALESCE(MAX(number), 0) AS number FROM feed_pull WHERE session_key = ?").get(session),
   ).number;
 }
 
 /**
- * A Listing with the number of the complete pull that gave its time, so that the Listings of several rows are told
- * apart by which pull is later and never by comparing clocks. `pull` is null for a row no complete pull has listed.
+ * A Listing and where it came from, so that the Listings of several rows are told apart by which pull is later and never
+ * by comparing clocks, and so that "no row" is a case of its own and not a null to be remembered.
  */
-export type ListingRead = { listing: Listing; pull: number | null };
+export type ListingRead =
+  /** A complete Full pull has listed a row behind it, and `pull` is the number of the pull that gave `listing`'s time. */
+  | { kind: "checked"; listing: Listing; pull: number }
+  /**
+   * No row of `feed_row` is behind it, so no complete Full pull has listed it: a row of an old file, one an Increment first
+   * stored, an id the feed has never named, or a thing that rests on no row. It is listed, with no last listing, not yet
+   * checked (ADR-0030).
+   */
+  | { kind: "no_row"; listing: { listed: true; lastListedAt: null } };
 
-/**
- * A row no complete Full pull has checked: an old file's, or one an Increment first stored. It has no row in `feed_row`,
- * so it is listed with no last listing, not yet checked (ADR-0030). This is the one place that says so.
- */
-const unchecked: ListingRead = { listing: { listed: true, lastListedAt: null }, pull: null };
+/** The one place that says a thing with no row in `feed_row` is listed and has no last listing (ADR-0030). */
+const noRow: ListingRead = { kind: "no_row", listing: { listed: true, lastListedAt: null } };
+
+/** Whether `read` was given by a later pull than `other`; a read that no pull gave is earlier than any that one did. */
+function givenByLaterPull(read: ListingRead, other: ListingRead): boolean {
+  return (read.kind === "checked" ? read.pull : -1) > (other.kind === "checked" ? other.pull : -1);
+}
 
 /**
  * The Listing of a thing that rests on several rows: it is listed while any of them is, with the latest listing of the
  * listed ones (a listed row that no pull has checked has none), and when none is listed, the latest of them all. A
  * Proposed Amendment rests on its Postings (ADR-0030) and an Agency Link on its evidence Documents (ADR-0037). A thing
- * that rests on no row is unchecked.
+ * that rests on no row has no row.
  */
-export function anyListed(reads: readonly ListingRead[]): ListingRead {
+function anyListed(reads: readonly ListingRead[]): ListingRead {
   const listed = reads.filter((read) => read.listing.listed);
   const pool = listed.length > 0 ? listed : reads;
   let latest: ListingRead | undefined;
   for (const read of pool) {
-    if (latest === undefined || (read.pull ?? -1) > (latest.pull ?? -1)) latest = read;
+    if (latest === undefined || givenByLaterPull(read, latest)) latest = read;
   }
-  return latest ?? unchecked;
+  return latest ?? noRow;
 }
 
 /** What one Agency's links to one node are known by: the Agency and the node the evidence sits on. */
@@ -155,8 +169,8 @@ export function openListingReader(database: DatabaseSync): ListingReader {
         const stored = stateRow.parse(row);
         const lastListedAt = stored.as_of as Timestamp;
         return isListed(stored.latest, stored.pull)
-          ? { listing: { listed: true, lastListedAt }, pull: stored.pull }
-          : { listing: { listed: false, lastListedAt }, pull: stored.pull };
+          ? { kind: "checked", listing: { listed: true, lastListedAt }, pull: stored.pull }
+          : { kind: "checked", listing: { listed: false, lastListedAt }, pull: stored.pull };
       }),
     );
   const ofDocument = (id: DocumentId): ListingRead => readOf(selectOfDocument.all(id));
@@ -248,6 +262,67 @@ export function conveningKeyOf(convening: Convening): string {
   return `${convening.at} ${convening.chamber}`;
 }
 
+/**
+ * The last pull whose rows are No longer listed in a Session, as of now: the one number the queries of search bind as the
+ * parameter of `listedDocumentSql`.
+ */
+export function noLongerListedThrough(database: DatabaseSync, session: SessionKey): number {
+  return lastPullThatIsNoLongerListed(latestCompletePull(database, session));
+}
+
+/**
+ * The WHERE term that leaves out a Document the feed no longer lists (ADR-0005, ADR-0030), over a table aliased `alias`
+ * that has the Document's `document_id` and `session_key`. Search puts it in every query and in the load of the vectors,
+ * so that a Document two complete pulls in a row have not listed is in no result and in no scan, and `get_document` still
+ * serves it. It stays SQL because a keyword query is cut by `LIMIT` and the vectors are loaded over every passage of the
+ * Session: leaving the Documents out afterwards would cut the wrong rows. `parameter` is the SQL text of one placeholder
+ * (`?`, `?3`) that takes `noLongerListedThrough`, so the rule's arithmetic is never spelled in the text. A Document with
+ * no row in `feed_row` is one no complete pull has listed: it reads as listed, not yet checked, and is kept (ADR-0030).
+ * `alias` and `parameter` are SQL text the caller writes, never data.
+ */
+export function listedDocumentSql(alias: string, parameter: string): string {
+  return `NOT EXISTS (SELECT 1 FROM feed_row fr WHERE fr.document_id = ${alias}.document_id AND fr.session_key = ${alias}.session_key AND fr.last_listed_pull <= ${parameter})`;
+}
+
+/** A Document the feed no longer lists, and when a complete pull last listed it. */
+export type UnlistedDocument = { documentId: DocumentId; lastListedAt: Timestamp };
+
+const unlistedRow = z.object({ document_id: z.string(), as_of: z.string() });
+
+/**
+ * Which of these Documents of a Session the feed no longer lists, the one a complete pull listed last first (then the
+ * greater id), each once, with the As of of the pull that last listed it. A Document with no row in `feed_row` is not one
+ * of them: no complete pull has listed it, so it has nothing to be No longer listed from (ADR-0030). For the notes of an
+ * item the index holds and the feed no longer lists, where search finds the candidates and the Listing says which count.
+ */
+export function unlistedAmong(
+  database: DatabaseSync,
+  session: SessionKey,
+  documentIds: readonly DocumentId[],
+): UnlistedDocument[] {
+  const rows = database
+    .prepare(
+      // CROSS JOIN fixes the order: from the Documents asked about, to their rows by `feed_row_document`, to the pull. Left to
+      // itself SQLite may scan the Session's rows of `feed_row` first.
+      `SELECT fr.document_id, p.as_of
+       FROM json_each(?3) j
+         CROSS JOIN feed_row fr ON fr.document_id = j.value
+         CROSS JOIN feed_pull p ON p.session_key = fr.session_key AND p.number = fr.last_listed_pull
+       WHERE fr.session_key = ?1 AND fr.last_listed_pull <= ?2
+       ORDER BY fr.last_listed_pull DESC, fr.document_id DESC`,
+    )
+    .all(session, noLongerListedThrough(database, session), JSON.stringify(documentIds));
+  const seen = new Set<string>();
+  const unlisted: UnlistedDocument[] = [];
+  for (const row of rows) {
+    const stored = unlistedRow.parse(row);
+    if (seen.has(stored.document_id)) continue;
+    seen.add(stored.document_id);
+    unlisted.push({ documentId: stored.document_id as DocumentId, lastListedAt: stored.as_of as Timestamp });
+  }
+  return unlisted;
+}
+
 const idRow = z.object({ id: z.string() });
 const countsRow = z.object({ entity_set: z.string(), listed: z.number(), no_longer_listed: z.number() });
 
@@ -257,7 +332,7 @@ function unlistedDocumentsOf(database: DatabaseSync, session: SessionKey): Set<s
     .prepare(
       "SELECT DISTINCT document_id AS id FROM feed_row WHERE session_key = ? AND document_id IS NOT NULL AND last_listed_pull <= ?",
     )
-    .all(session, lastPullThatIsNoLongerListed(latestCompletePull(database, session)));
+    .all(session, noLongerListedThrough(database, session));
   return new Set(rows.map((row) => idRow.parse(row).id));
 }
 
@@ -305,7 +380,7 @@ export function countListedRows(
       `SELECT entity_set, SUM(last_listed_pull > ?2) AS listed, SUM(last_listed_pull <= ?2) AS no_longer_listed
        FROM feed_row WHERE session_key = ?1 GROUP BY entity_set ORDER BY entity_set`,
     )
-    .all(session, lastPullThatIsNoLongerListed(latestCompletePull(database, session)))
+    .all(session, noLongerListedThrough(database, session))
     .map((row) => {
       const stored = countsRow.parse(row);
       return { entitySet: stored.entity_set, listed: stored.listed, noLongerListed: stored.no_longer_listed };

@@ -152,7 +152,9 @@ export type IndexReader = {
    * A document by its id, or a Proposed Amendment by its id: the text of its latest posting, with the nodes all its
    * postings point at, and the Listing in either case. When the index holds no file for the id but the feed has a row for
    * it (a fetch that failed or was not reached, or a row the feed stopped listing before any pull fetched it), it says so
-   * (`held: false`), with the Listing and whether the row is Testimony. Undefined when no row of the feed names the id.
+   * (`held: false`), with the Listing and whether the row is Testimony. Undefined when the index holds no file for the id
+   * and no row that a complete pull has listed names it, unless the id is a Testimony row (an Increment may have stored
+   * one that no complete pull has listed yet): a row of any other kind that only an Increment has stored is not known.
    */
   findDocument(id: DocumentId | AmendmentId): DocumentLookup | undefined;
   /**
@@ -838,14 +840,16 @@ export function openIndexReader(path: string): IndexReader {
   }
   /**
    * What the index knows of an id it holds no file for: the rows of the feed that link the document, else the postings of
-   * the Proposed Amendment it names, and whether it is a Testimony row. An id no row of the feed names is nothing known;
-   * a Testimony row is known even when no complete pull has listed it yet (an Increment stored it).
+   * the Proposed Amendment it names, and whether it is a Testimony row. An id that no row a complete pull has listed names
+   * is nothing known, unless it is a Testimony row, which is known even when no complete pull has listed it yet (an
+   * Increment stored it).
    */
   function unheldOf(id: DocumentId | AmendmentId): UnheldDocument | undefined {
     const document = listings.ofDocument(id as DocumentId);
-    const read = document.pull !== null ? document : listings.ofAmendment(id as AmendmentId);
+    const read = document.kind === "checked" ? document : listings.ofAmendment(id as AmendmentId);
     const testimony = selectTestimonyExists.get(id) !== undefined;
-    if (read.pull === null && !testimony) return undefined;
+    // A row no complete pull has listed is known only when it is Testimony; any other such id is no id the index serves.
+    if (read.kind === "no_row" && !testimony) return undefined;
     return { held: false, testimony, listing: read.listing };
   }
   function relationsOf(documentId: DocumentId): RelatedNode[] {

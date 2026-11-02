@@ -554,7 +554,8 @@ export type DocumentView = {
 
 /**
  * An id the feed has a row for and the index holds no file of: a row whose fetch failed or has not been reached, one the
- * feed stopped listing before any pull fetched it, or a Proposed Amendment none of whose postings' files is held.
+ * feed stopped listing before any pull fetched it, a Proposed Amendment none of whose postings' files is held, or a
+ * Testimony row an Increment stored that no complete pull has listed yet.
  */
 export type UnheldDocument = {
   held: false;
