@@ -4,36 +4,11 @@
 // goes through the entry points: the version is seen as a reader that opens the file or refuses it, never as a read of
 // the file's header. Only step 1 exists (today's schema); the first ticket that changes a table adds step 2 and its test.
 import { afterEach, describe, expect, test } from "vitest";
-import { parseSessionKey } from "#/packages/domain/index.ts";
-import { readTimestamp } from "#/packages/time/pacific.ts";
 import { openIndexReader } from "../reader.ts";
 import { openSearchReader } from "../search.ts";
-import { openIndexWriter, type FullPullRecord } from "../writer.ts";
+import { openIndexWriter } from "../writer.ts";
 import { createIndexFile, leaveAsBeforeVersions, stampSchemaVersion, type IndexFile } from "./arranged-files.ts";
-
-const session = parseSessionKey("2025R1");
-if (session === undefined) throw new Error("2025R1 is a Session key");
-const pulledAt = readTimestamp("2025-03-01T10:00:00-08:00");
-if (pulledAt === undefined) throw new Error("a Pacific time with an offset is a Timestamp");
-
-const nothingPulled: FullPullRecord = {
-  measures: [],
-  history: [],
-  legislatorRows: [],
-  legislators: [],
-  legislatorCodes: [],
-  sponsors: [],
-  floorVotes: [],
-  committeeVotes: [],
-  committees: [],
-  meetings: [],
-  agendaItems: [],
-  documentLinks: [],
-  testimony: [],
-  committeeMembers: [],
-  convenings: [],
-  sessionDates: undefined,
-};
+import { nothingPulled, pulledAt, pulledAtText, session } from "./nothing-pulled.ts";
 
 const files: IndexFile[] = [];
 const connections: { close(): void }[] = [];
@@ -111,7 +86,7 @@ describe("the writer", () => {
     // It is at version 1 now, so the reader opens it, and the row it held is there.
     const reader = openIndexReader(file.path);
     connections.push(reader);
-    expect(reader.lastFullPull(session)).toBe("2025-03-01T10:00:00-08:00");
+    expect(reader.lastFullPull(session)).toBe(pulledAtText);
   });
 
   test("refuses a file at a newer version than it knows, naming both, and leaves it at that version", () => {

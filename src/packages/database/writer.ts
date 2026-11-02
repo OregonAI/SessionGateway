@@ -435,6 +435,25 @@ function meetingListingOf(link: DocumentLink): { meetingId: string; meaning: str
   return bound === undefined ? undefined : { meetingId: bound.to, meaning: bound.meaning };
 }
 
+/**
+ * Moves everything the file's WAL holds into the database file and empties the WAL, so a copy of the file alone, without
+ * its `-wal` and `-shm`, is the whole database. The test harness takes it before it copies a template (test/CLAUDE.md,
+ * "Templates"); production code has no use for it. It opens a connection of its own beside the worker's and the
+ * server's, and throws when a reader held the checkpoint back: a page left in the WAL would go missing from the copy.
+ */
+export function checkpointIndex(path: string): void {
+  const database = openWriteConnection(path);
+  try {
+    // The pragma reports a checkpoint that another connection blocked as a row, not as an error.
+    const row = database.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get();
+    if (row?.["busy"] !== 0 || row["log"] !== row["checkpointed"]) {
+      throw new Error(`The WAL of the database at "${path}" was not fully checkpointed: ${JSON.stringify(row)}`);
+    }
+  } finally {
+    database.close();
+  }
+}
+
 export function openIndexWriter(path: string): IndexWriter {
   const database = openWriteConnection(path);
   const raiseSearchGeneration = database.prepare("UPDATE search_generation SET generation = generation + 1");
