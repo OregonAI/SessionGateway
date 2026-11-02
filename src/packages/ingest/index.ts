@@ -25,15 +25,11 @@ import {
   type SponsorRecord,
   type TestimonyAgency,
   type TestimonyRecord,
-  type StatuteParseRecord,
-  type UnreadStatuteFile,
 } from "#/packages/database/writer.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
 import { findCitations } from "#/packages/domain/citations.ts";
 import type { CommitteeId, DocumentLink } from "#/packages/domain/documents.ts";
 import type { LegislatorId, Sponsorship } from "#/packages/domain/legislators.ts";
-import type { OrsSectionId } from "#/packages/domain/oregonai.ts";
-import { unreadStatuteParse } from "#/packages/domain/statute-links.ts";
 import type { Passage, SearchEntry } from "#/packages/domain/search.ts";
 import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
 import type { LegislatorAlias } from "#/packages/legislators/aliases.ts";
@@ -46,7 +42,6 @@ import {
 import { createOlisClient, type OlisClient, type SetCount } from "#/packages/olis-client/index.ts";
 import { loadSnapshot, type Snapshot } from "#/packages/oregonai-snapshot/index.ts";
 import { extractPdfText, type ExtractedPdf } from "#/packages/pdf-text/index.ts";
-import { parseStatuteLinks, readAmendedVersionHeader } from "#/packages/statute-links/index.ts";
 import { searchEntryOf } from "#/packages/search/documents.ts";
 import { splitPassages } from "#/packages/search/passages.ts";
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
@@ -63,6 +58,7 @@ import {
   type HashSampleReport,
 } from "./lib/hash-sample.ts";
 import { loadStatutesAffectedTable } from "./lib/statutes-affected-table.ts";
+import { statuteParseOf } from "./lib/statute-parse.ts";
 
 export type IngestDeps = {
   fetch: typeof fetch;
@@ -212,46 +208,6 @@ function testimonyRecordsOf(
     records.push({ link: { ...link, testimony: details }, agency });
   }
   return records;
-}
-
-/**
- * What reading one stored file for Statute Links comes to (ADR-0015): the links of a Version, or of a
- * Proposed Amendment's inserted sections with its relating clause edits and the Version its header names. A
- * file with no text layer gives no links and is recorded as not read.
- */
-function statuteParseOf(
-  file: UnreadStatuteFile,
-  stored: { text: string; hasTextLayer: boolean },
-  orsSections: readonly OrsSectionId[],
-): StatuteParseRecord {
-  const common = { contentHash: file.contentHash, readAs: file.readAs };
-  if (!stored.hasTextLayer) {
-    return { ...common, ...unreadStatuteParse() };
-  }
-  switch (file.readAs) {
-    case "version": {
-      const parsed = parseStatuteLinks({ documentKind: "version", text: stored.text, orsSections });
-      return {
-        ...common,
-        textRead: true,
-        amendedVersionHeader: null,
-        links: parsed.links,
-        relatingClauseEdits: parsed.relatingClauseEdits,
-      };
-    }
-    case "proposed_amendment": {
-      const parsed = parseStatuteLinks({ documentKind: "proposed-amendment", text: stored.text, orsSections });
-      return {
-        ...common,
-        textRead: true,
-        amendedVersionHeader: readAmendedVersionHeader(stored.text) ?? null,
-        links: parsed.links,
-        relatingClauseEdits: parsed.relatingClauseEdits,
-      };
-    }
-    default:
-      return file.readAs satisfies never;
-  }
 }
 
 /** What a pull made of the passages of the documents it stored: how many, and how many it had to embed. */

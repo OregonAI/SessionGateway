@@ -87,9 +87,9 @@ module.exports = {
     {
       name: "worker-writes-only",
       comment:
-        "The ingest worker is the only writer (ADR-0009): its code and its entry script may import database/writer.ts, never database/reader.ts.",
+        "The ingest worker is the only writer (ADR-0009): its code and its entry script may import database/writer.ts, never database/reader.ts. Its seam-4 tests (test/CLAUDE.md) read back through the reader what the worker's code stored, as the seam-1 harness does.",
       severity: "error",
-      from: { path: `^(${R}/ingest/|src/bin/ingest\\.ts$)` },
+      from: { path: `^(${R}/ingest/|src/bin/ingest\\.ts$)`, pathNot: `^${R}/ingest/tests/` },
       to: { path: `^${R}/database/reader\\.ts$` },
     },
 
