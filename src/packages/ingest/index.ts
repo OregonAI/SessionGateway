@@ -38,7 +38,7 @@ import {
   type Resolution,
   type UnresolvedLegislatorCode,
 } from "#/packages/legislators/resolver.ts";
-import { createOlisClient, type OlisClient, type SetCount } from "#/packages/olis-client/index.ts";
+import { createOlisClient, type OlisClient, type PullRead, type SetCount } from "#/packages/olis-client/index.ts";
 import { loadSnapshot } from "#/packages/oregonai-snapshot/index.ts";
 import { extractPdfText, type ExtractedPdf } from "#/packages/pdf-text/index.ts";
 import { searchEntryOf } from "#/packages/search/documents.ts";
@@ -345,26 +345,36 @@ async function readFeed(
   config: IngestConfig,
   deps: IngestDeps,
   kind: "full_pull" | "increment",
+  since: Timestamp | undefined,
   floorLettersAbove: number | undefined,
 ): Promise<FeedRead> {
-  const measures = await olis.readMeasures(config.session, deps.signal);
-  const legislatorRows = await olis.readLegislators(config.session, deps.signal);
-  const sponsorships = await olis.readSponsorships(config.session, deps.signal);
-  const history = await olis.readHistoryActions(config.session, deps.signal);
-  const committeeVotes = await olis.readCommitteeVotes(config.session, deps.signal);
-  const floorVotes = await olis.readFloorVotes(config.session, deps.signal);
-  const committees = await olis.readCommittees(config.session, deps.signal);
-  const meetings = await olis.readMeetings(config.session, deps.signal);
-  const agendaItems = await olis.readAgendaItems(config.session, deps.signal);
-  const committeeMembers = await olis.readCommitteeMembers(config.session, deps.signal);
+  const whole: PullRead = { kind: "whole" };
+  // A full pull reads every set whole; an increment reads the rows changed since a time (ADR-0005, ADR-0039).
+  const changed: PullRead = since === undefined ? whole : { kind: "changed_since", since };
+  const measures = await olis.readMeasures(config.session, changed, deps.signal);
+  // Legislators and Committees are small and carry the names the rest resolve against, so an increment reads them whole.
+  const legislatorRows = await olis.readLegislators(config.session, whole, deps.signal);
+  const sponsorships = await olis.readSponsorships(config.session, changed, deps.signal);
+  const history = await olis.readHistoryActions(config.session, changed, deps.signal);
+  const committeeVotes = await olis.readCommitteeVotes(config.session, changed, deps.signal);
+  const floorVotes = await olis.readFloorVotes(config.session, changed, deps.signal);
+  const committees = await olis.readCommittees(config.session, whole, deps.signal);
+  const meetings = await olis.readMeetings(config.session, changed, deps.signal);
+  const agendaItems = await olis.readAgendaItems(config.session, changed, deps.signal);
+  const committeeMembers = await olis.readCommitteeMembers(config.session, changed, deps.signal);
   // The sets the schedule reads (ADR-0042) are whole-Session sets the full pull counts; an increment does not read them.
-  const convenings = kind === "full_pull" ? await olis.readConvenings(config.session, deps.signal) : [];
-  const sessionDates = kind === "full_pull" ? await olis.readSessionDates(config.session, deps.signal) : undefined;
+  const convenings = kind === "full_pull" ? await olis.readConvenings(config.session, whole, deps.signal) : [];
+  const sessionDates =
+    kind === "full_pull" ? await olis.readSessionDates(config.session, whole, deps.signal) : undefined;
   const links = [
-    ...(await olis.readDocumentLinks(config.session, deps.signal)),
+    ...(await olis.readDocumentLinks(config.session, changed, deps.signal)),
     ...meetings.flatMap((meeting) => (meeting.agenda === null ? [] : [meeting.agenda])),
     // FloorLetters carry no dates, so an increment asks for the ids above the highest one held (ADR-0005, ADR-0045).
-    ...(await olis.readFloorLetters(config.session, floorLettersAbove, deps.signal)),
+    ...(await olis.readFloorLetters(
+      config.session,
+      floorLettersAbove === undefined ? whole : { kind: "above_id", id: floorLettersAbove },
+      deps.signal,
+    )),
   ];
   return {
     measures,
@@ -447,7 +457,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       pause: deps.pause,
     },
   });
-  const feed = await readFeed(olis, config, deps, "full_pull", undefined);
+  const feed = await readFeed(olis, config, deps, "full_pull", undefined, undefined);
   const { measures, links } = feed;
 
   // The pull is complete only when every set it read came with as many rows as the feed counted. One that is not
@@ -575,14 +585,13 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
     const olis = createOlisClient({
       baseUrl: config.olisBaseUrl,
       fetch: deps.fetch,
-      changedSince: since,
       documents: {
         origin: config.olisDocumentOrigin,
         timeoutMs: deps.documentTimeoutMs ?? DEFAULT_DOCUMENT_TIMEOUT_MS,
         pause: deps.pause,
       },
     });
-    const feed = await readFeed(olis, config, deps, "increment", writer.highestFloorLetterId(config.session));
+    const feed = await readFeed(olis, config, deps, "increment", since, writer.highestFloorLetterId(config.session));
     const snapshotRead = beginIncrementSnapshotRead({ writer, session: config.session, snapshot });
     const { record, committeeNames } = feedRecordOf(config, deps, feed, snapshotRead);
     writer.recordIncrement(config.session, asOf, record);

@@ -28,54 +28,60 @@ import { readLegislatorRows } from "./lib/legislators.ts";
 import { readMeasureLive, type MeasureLiveRead } from "./lib/live.ts";
 import { readMeasureRows } from "./lib/measures.ts";
 import { readAgendaItems, readCommittees, readMeetings } from "./lib/meetings.ts";
-import type { OlisClientOptions, SetCount } from "./lib/options.ts";
+import type { OlisClientOptions, PullRead, SetCount } from "./lib/options.ts";
 import { readConvenings, readSessionDates } from "./lib/schedule.ts";
 import { readSponsorshipRows } from "./lib/sponsors.ts";
 
-export type { Download, OlisClientOptions, MeasureLiveRead, SetCount };
+export type { Download, OlisClientOptions, MeasureLiveRead, PullRead, SetCount };
 
+/**
+ * The client has a reader for each entity set a Pull reads, and each takes the `PullRead` the caller wants on every call:
+ * the whole set, the rows changed since a time, or the rows above an id. Which sets a Pull reads and how is the caller's
+ * to say (the ingest worker's register); the client keeps no rule about sets. A reader refuses a mode its set cannot be
+ * read by (the rows of a set with no dates are not read "changed since"), which is a bug in the caller and throws.
+ */
 export type OlisClient = {
-  /** Every Measure of the Session, as the feed lists them. */
-  readMeasures(session: SessionKey, signal: AbortSignal): Promise<Measure[]>;
-  /** Every Legislators row of the Session: the people the feed names, one row per Legislator Code. */
-  readLegislators(session: SessionKey, signal: AbortSignal): Promise<LegislatorRow[]>;
-  /** Every MeasureSponsors row of the Session, in the feed's order. */
-  readSponsorships(session: SessionKey, signal: AbortSignal): Promise<Sponsorship[]>;
-  /** Every MeasureHistoryActions row of the Session, in the feed's order. */
-  readHistoryActions(session: SessionKey, signal: AbortSignal): Promise<HistoryAction[]>;
-  /** Every CommitteeVotes row of the Session: one entry for each member in each committee vote, in the feed's order. */
-  readCommitteeVotes(session: SessionKey, signal: AbortSignal): Promise<CommitteeVoteEntry[]>;
-  /** Every MeasureVotes row of the Session: one entry for each Legislator in each floor vote, in the feed's order. */
-  readFloorVotes(session: SessionKey, signal: AbortSignal): Promise<FloorVoteEntry[]>;
+  /** The Measures of the Session, as the feed lists them. */
+  readMeasures(session: SessionKey, read: PullRead, signal: AbortSignal): Promise<Measure[]>;
+  /** The Legislators rows of the Session: the people the feed names, one row per Legislator Code. */
+  readLegislators(session: SessionKey, read: PullRead, signal: AbortSignal): Promise<LegislatorRow[]>;
+  /** The MeasureSponsors rows of the Session, in the feed's order. */
+  readSponsorships(session: SessionKey, read: PullRead, signal: AbortSignal): Promise<Sponsorship[]>;
+  /** The MeasureHistoryActions rows of the Session, in the feed's order. */
+  readHistoryActions(session: SessionKey, read: PullRead, signal: AbortSignal): Promise<HistoryAction[]>;
+  /** The CommitteeVotes rows of the Session: one entry for each member in each committee vote, in the feed's order. */
+  readCommitteeVotes(session: SessionKey, read: PullRead, signal: AbortSignal): Promise<CommitteeVoteEntry[]>;
+  /** The MeasureVotes rows of the Session: one entry for each Legislator in each floor vote, in the feed's order. */
+  readFloorVotes(session: SessionKey, read: PullRead, signal: AbortSignal): Promise<FloorVoteEntry[]>;
   /**
    * What OLIS says now about one Measure (the live lookup, ticket #21): only that Measure's rows, one
    * request for each of five kinds of row. It reads no other Measure and never pulls a whole set. `readAt`
    * is the time of the read: the schedule is the meetings at or after it.
    */
   readMeasureLive(key: MeasureKey, readAt: Date, signal: AbortSignal): Promise<MeasureLiveRead>;
-  /** Every committee of the Session. */
-  readCommittees(session: SessionKey, signal: AbortSignal): Promise<Committee[]>;
-  /** Every committee meeting of the Session, each with its agenda document when the feed links one. */
-  readMeetings(session: SessionKey, signal: AbortSignal): Promise<Meeting[]>;
-  /** Every agenda item of every committee meeting of the Session. */
-  readAgendaItems(session: SessionKey, signal: AbortSignal): Promise<AgendaItem[]>;
+  /** The committees of the Session. */
+  readCommittees(session: SessionKey, read: PullRead, signal: AbortSignal): Promise<Committee[]>;
+  /** The committee meetings of the Session, each with its agenda document when the feed links one. */
+  readMeetings(session: SessionKey, read: PullRead, signal: AbortSignal): Promise<Meeting[]>;
+  /** The agenda items of the committee meetings of the Session. */
+  readAgendaItems(session: SessionKey, read: PullRead, signal: AbortSignal): Promise<AgendaItem[]>;
   /**
-   * Every CommitteeMembers row of the Session, one entry for each row. The set's declared key is not unique, so
+   * The CommitteeMembers rows of the Session, one entry for each row. The set's declared key is not unique, so
    * each entry's `key` is the whole row, and no two rows are taken for one (olis-odata.md section 8, gotcha 5).
    */
-  readCommitteeMembers(session: SessionKey, signal: AbortSignal): Promise<CommitteeMember[]>;
-  /** Every ConveneTimes row of the Session: the floor convenings, each day of which is a day the Session meets (ticket #67). */
-  readConvenings(session: SessionKey, signal: AbortSignal): Promise<Convening[]>;
+  readCommitteeMembers(session: SessionKey, read: PullRead, signal: AbortSignal): Promise<CommitteeMember[]>;
+  /** The ConveneTimes rows of the Session: the floor convenings, each day of which is a day the Session meets (ticket #67). */
+  readConvenings(session: SessionKey, read: PullRead, signal: AbortSignal): Promise<Convening[]>;
   /** The Session's own LegislativeSessions row (its begin and end dates), or undefined when the feed has none (ticket #67). */
-  readSessionDates(session: SessionKey, signal: AbortSignal): Promise<SessionDates | undefined>;
+  readSessionDates(session: SessionKey, read: PullRead, signal: AbortSignal): Promise<SessionDates | undefined>;
   /**
-   * The Session's Floor Letters (ticket #64, ADR-0045), each a document link that carries its row: the whole set, counted
-   * with `$count`, or with `aboveId` only the letters whose `FloorLetterId` is greater (an increment's read: the set has
-   * no dates to ask by).
+   * The Session's Floor Letters (ticket #64, ADR-0045), each a document link that carries its row. The set has no dates, so
+   * it is read `whole` (counted with `$count`) or `above_id` (only the letters whose `FloorLetterId` is greater); a
+   * `changed_since` read throws.
    */
-  readFloorLetters(session: SessionKey, aboveId: number | undefined, signal: AbortSignal): Promise<DocumentLink[]>;
-  /** Every document the feed links for the Session, apart from agendas (a meeting's) and Floor Letters, not yet fetched. */
-  readDocumentLinks(session: SessionKey, signal: AbortSignal): Promise<DocumentLink[]>;
+  readFloorLetters(session: SessionKey, read: PullRead, signal: AbortSignal): Promise<DocumentLink[]>;
+  /** The documents the feed links for the Session, apart from agendas (a meeting's) and Floor Letters, not yet fetched. */
+  readDocumentLinks(session: SessionKey, read: PullRead, signal: AbortSignal): Promise<DocumentLink[]>;
   /** Fetches one document from OLIS. */
   downloadDocument(link: DocumentLink, signal: AbortSignal): Promise<Download>;
   /** `downloadDocument` for a document the store holds, which is known by its `source_url` alone (the hash sample, ticket #20). */
@@ -89,21 +95,21 @@ export type OlisClient = {
 
 export function createOlisClient(options: OlisClientOptions): OlisClient {
   return {
-    readMeasures: (session, signal) => readMeasureRows(options, session, signal),
-    readLegislators: (session, signal) => readLegislatorRows(options, session, signal),
-    readSponsorships: (session, signal) => readSponsorshipRows(options, session, signal),
-    readHistoryActions: (session, signal) => readHistoryActionRows(options, session, signal),
-    readCommitteeVotes: (session, signal) => readCommitteeVoteRows(options, session, signal),
-    readFloorVotes: (session, signal) => readFloorVoteRows(options, session, signal),
+    readMeasures: (session, read, signal) => readMeasureRows(options, session, read, signal),
+    readLegislators: (session, read, signal) => readLegislatorRows(options, session, read, signal),
+    readSponsorships: (session, read, signal) => readSponsorshipRows(options, session, read, signal),
+    readHistoryActions: (session, read, signal) => readHistoryActionRows(options, session, read, signal),
+    readCommitteeVotes: (session, read, signal) => readCommitteeVoteRows(options, session, read, signal),
+    readFloorVotes: (session, read, signal) => readFloorVoteRows(options, session, read, signal),
     readMeasureLive: (key, readAt, signal) => readMeasureLive(options, key, readAt, signal),
-    readCommittees: (session, signal) => readCommittees(options, session, signal),
-    readMeetings: (session, signal) => readMeetings(options, session, signal),
-    readAgendaItems: (session, signal) => readAgendaItems(options, session, signal),
-    readCommitteeMembers: (session, signal) => readCommitteeMembers(options, session, signal),
-    readConvenings: (session, signal) => readConvenings(options, session, signal),
-    readSessionDates: (session, signal) => readSessionDates(options, session, signal),
-    readDocumentLinks: (session, signal) => readDocumentLinks(options, session, signal),
-    readFloorLetters: (session, aboveId, signal) => readFloorLetters(options, session, aboveId, signal),
+    readCommittees: (session, read, signal) => readCommittees(options, session, read, signal),
+    readMeetings: (session, read, signal) => readMeetings(options, session, read, signal),
+    readAgendaItems: (session, read, signal) => readAgendaItems(options, session, read, signal),
+    readCommitteeMembers: (session, read, signal) => readCommitteeMembers(options, session, read, signal),
+    readConvenings: (session, read, signal) => readConvenings(options, session, read, signal),
+    readSessionDates: (session, read, signal) => readSessionDates(options, session, read, signal),
+    readDocumentLinks: (session, read, signal) => readDocumentLinks(options, session, read, signal),
+    readFloorLetters: (session, read, signal) => readFloorLetters(options, session, read, signal),
     downloadDocument: (link, signal) => downloadDocument(options, link, signal),
     downloadStoredDocument: (sourceUrl, signal) => downloadStoredDocument(options, sourceUrl, signal),
     downloadFile: (url, signal) => downloadFile(options, url, signal),

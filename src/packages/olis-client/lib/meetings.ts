@@ -10,7 +10,7 @@ import {
 } from "#/packages/domain/documents.ts";
 import { sourceUrlOf } from "./documents.ts";
 import { readSessionRows } from "./feed.ts";
-import type { OlisClientOptions } from "./options.ts";
+import type { OlisClientOptions, PullRead } from "./options.ts";
 import { feedTimestamp } from "./timestamps.ts";
 
 const meetingRow = z.looseObject({
@@ -26,9 +26,10 @@ const meetingRow = z.looseObject({
 export async function readMeetings(
   options: OlisClientOptions,
   session: SessionKey,
+  read: PullRead,
   signal: AbortSignal,
 ): Promise<Meeting[]> {
-  const rows = await readSessionRows(options, "CommitteeMeetings", session, meetingRow, signal);
+  const rows = await readSessionRows(options, "CommitteeMeetings", session, meetingRow, signal, read);
   return rows.map((row) => {
     const id = meetingIdOf(session, row.CommitteeCode, row.MeetingDate);
     const committeeId = committeeIdOf(session, row.CommitteeCode);
@@ -72,9 +73,10 @@ const committeeRow = z.looseObject({
 export async function readCommittees(
   options: OlisClientOptions,
   session: SessionKey,
+  read: PullRead,
   signal: AbortSignal,
 ): Promise<Committee[]> {
-  const rows = await readSessionRows(options, "Committees", session, committeeRow, signal);
+  const rows = await readSessionRows(options, "Committees", session, committeeRow, signal, read);
   return rows.map((row) => ({
     session,
     code: row.CommitteeCode,
@@ -104,9 +106,10 @@ const agendaItemRow = z.looseObject({
 export async function readAgendaItems(
   options: OlisClientOptions,
   session: SessionKey,
+  read: PullRead,
   signal: AbortSignal,
 ): Promise<AgendaItem[]> {
-  const rows = await readSessionRows(options, "CommitteeAgendaItems", session, agendaItemRow, signal);
+  const rows = await readSessionRows(options, "CommitteeAgendaItems", session, agendaItemRow, signal, read);
   return rows.map((row) => ({
     itemId: row.CommitteeAgendaItemId,
     meetingId: meetingIdOf(session, row.CommitteCode, row.MeetingDate),

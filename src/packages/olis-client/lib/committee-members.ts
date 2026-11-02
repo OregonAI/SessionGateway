@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { CommitteeMember } from "#/packages/domain/documents.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import { readSessionRows } from "./feed.ts";
-import type { OlisClientOptions } from "./options.ts";
+import type { OlisClientOptions, PullRead } from "./options.ts";
 import { feedTimestamp } from "./timestamps.ts";
 
 // The set's declared key is (CommitteeCode, CreatedDate, Title), with no SessionKey or LegislatorCode in it, and it
@@ -31,9 +31,10 @@ function wholeRowKey(row: Record<string, unknown>): string {
 export async function readCommitteeMembers(
   options: OlisClientOptions,
   session: SessionKey,
+  read: PullRead,
   signal: AbortSignal,
 ): Promise<CommitteeMember[]> {
-  const rows = await readSessionRows(options, "CommitteeMembers", session, memberRow, signal);
+  const rows = await readSessionRows(options, "CommitteeMembers", session, memberRow, signal, read);
   return rows.map((row) => ({
     session,
     key: wholeRowKey(row),

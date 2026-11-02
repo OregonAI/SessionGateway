@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { LegislatorRow } from "#/packages/domain/legislators.ts";
 import { readSessionRows } from "./feed.ts";
-import type { OlisClientOptions } from "./options.ts";
+import type { OlisClientOptions, PullRead } from "./options.ts";
 
 const legislatorRow = z.looseObject({
   SessionKey: z.string(),
@@ -14,9 +14,10 @@ const legislatorRow = z.looseObject({
 export async function readLegislatorRows(
   options: OlisClientOptions,
   session: SessionKey,
+  read: PullRead,
   signal: AbortSignal,
 ): Promise<LegislatorRow[]> {
-  const rows = await readSessionRows(options, "Legislators", session, legislatorRow, signal);
+  const rows = await readSessionRows(options, "Legislators", session, legislatorRow, signal, read);
   return rows.map((row) => ({
     session,
     code: row.LegislatorCode,
