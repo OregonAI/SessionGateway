@@ -50,7 +50,8 @@ describe("a Document a complete Full pull makes No longer listed", () => {
     index.writer.recordFullPull(session, asOf(3), pullOf());
     expect(whatSearchHolds()).toEqual({ keyword: [], vectors: [] });
     expect(index.search.generation()).toBe(listed + 1);
-    expect(index.reader.findDocument(version.id)?.document.text).toBe("A zebracrossing is a made-up thing.");
+    const served = index.reader.findDocument(version.id);
+    expect(served?.held === true ? served.document.text : undefined).toBe("A zebracrossing is a made-up thing.");
 
     // A pull that lists it brings it back to both, and the generation moves again.
     index.writer.recordFullPull(session, asOf(4), pullOf({ documentLinks: [version] }));

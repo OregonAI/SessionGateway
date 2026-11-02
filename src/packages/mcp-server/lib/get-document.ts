@@ -77,16 +77,16 @@ export function getDocument(
   input: z.infer<typeof getDocumentInput>,
 ): GetDocumentResult {
   const id = parseDocumentReference(input.id, session);
-  const found = id === undefined ? undefined : reader.findDocument(id);
   if (id === undefined) return { kind: "unknown", id: input.id, session };
-  if (found === undefined) {
-    const unlisted = reader.findNoLongerListed(id);
-    if (unlisted !== undefined) {
-      return { kind: "no_longer_listed_not_held", id, session, lastListedAt: unlisted.lastListedAt };
+  const found = reader.findDocument(id);
+  if (found === undefined) return { kind: "unknown", id: input.id, session };
+  if (!found.held) {
+    // A row the feed no longer lists is a fact whatever it is; a listed Testimony is one the next pull fetches; any other
+    // listed row without a file is no id this index serves.
+    if (!found.listing.listed) {
+      return { kind: "no_longer_listed_not_held", id, session, lastListedAt: found.listing.lastListedAt };
     }
-    return reader.testimonyListing(id) === undefined
-      ? { kind: "unknown", id: input.id, session }
-      : { kind: "not_held", id, session };
+    return found.testimony ? { kind: "not_held", id, session } : { kind: "unknown", id: input.id, session };
   }
   const stored = found.document;
   const parts = splitIntoParts(stored.text);

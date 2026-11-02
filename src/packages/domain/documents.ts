@@ -540,6 +540,8 @@ export type StoredMeasure = Measure & { listing: Listing };
 
 /** What `get_document` resolves an id to: a document, and the nodes it (or the amendment's postings) point at. */
 export type DocumentView = {
+  /** The index holds the file: the text below is served. */
+  held: true;
   /** The document whose text is served: the id asked for, or an amendment's latest posting. */
   document: Omit<StoredDocument, "relations" | "textHash" | "date">;
   related: RelatedNode[];
@@ -549,6 +551,21 @@ export type DocumentView = {
    */
   listing: Listing;
 };
+
+/**
+ * An id the feed has a row for and the index holds no file of: a row whose fetch failed or has not been reached, one the
+ * feed stopped listing before any pull fetched it, or a Proposed Amendment none of whose postings' files is held.
+ */
+export type UnheldDocument = {
+  held: false;
+  /** Whether the row is a Testimony row. The pull that finds the feed lists it fetches the file again; for no other kind is the id a fact about the index. */
+  testimony: boolean;
+  /** Whether the feed lists the row. A row it no longer lists is not fetched by any pull. */
+  listing: Listing;
+};
+
+/** What the reader makes of an id `get_document` is given: the document it holds, or the row it lacks the file of. */
+export type DocumentLookup = DocumentView | UnheldDocument;
 
 /** A document with its extracted text, as the store keeps it and the server reads it. */
 export type StoredDocument = DocumentLink & {

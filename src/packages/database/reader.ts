@@ -15,11 +15,11 @@ import {
   type Committee,
   type DocumentId,
   type DocumentKind,
+  type DocumentLookup,
   type DocumentView,
   type FloorLetterDetails,
   type FloorLetterEntry,
   type IndexCounts,
-  type Listing,
   type ListedAgendaItem,
   type AmendmentHeader,
   type CommitteeId,
@@ -35,6 +35,7 @@ import {
   type TestimonyEntry,
   type SessionSpan,
   type StoredMeasure,
+  type UnheldDocument,
 } from "#/packages/domain/documents.ts";
 import {
   measureIdOf,
@@ -148,10 +149,12 @@ export type IndexReader = {
   /** The version of the OregonAI snapshot the last completed full pull built the index with. */
   snapshotVersion(session: SessionKey): SnapshotVersion | undefined;
   /**
-   * A document by its id, or a Proposed Amendment by its id: the text of its latest posting, with the
-   * nodes all its postings point at.
+   * A document by its id, or a Proposed Amendment by its id: the text of its latest posting, with the nodes all its
+   * postings point at, and the Listing in either case. When the index holds no file for the id but the feed has a row for
+   * it (a fetch that failed or was not reached, or a row the feed stopped listing before any pull fetched it), it says so
+   * (`held: false`), with the Listing and whether the row is Testimony. Undefined when no row of the feed names the id.
    */
-  findDocument(id: DocumentId | AmendmentId): DocumentView | undefined;
+  findDocument(id: DocumentId | AmendmentId): DocumentLookup | undefined;
   /**
    * The analysis documents the store holds for a Measure: the ones whose files the worker fetched, so
    * that each is a document `findDocument` resolves.
@@ -220,19 +223,6 @@ export type IndexReader = {
   findFloorLetters(key: MeasureKey): FloorLetterEntry[];
   /** What the row of the Floor Letter with this document id says, or undefined when the id names no Floor Letter. */
   floorLetterDetails(id: DocumentId): FloorLetterDetails | undefined;
-  /**
-   * Whether the feed lists a Testimony with this id, whether or not its file is fetched, and when it last did;
-   * undefined when the index holds no Testimony row with this id. A Testimony that is listed and whose file the store lacks is one
-   * `findDocument` does not resolve yet: the next pull fetches it. One that is no longer listed is not fetched by
-   * any pull, and the store holds the file only if it fetched it while the feed listed it.
-   */
-  testimonyListing(id: DocumentId | AmendmentId): Listing | undefined;
-  /**
-   * When the feed no longer lists the row behind a document id or a Proposed Amendment id, the time it last did:
-   * undefined when the feed lists it, or the index knows no such row. For an id `findDocument` does not resolve,
-   * because no pull fetched the file while the feed listed it, and none will now.
-   */
-  findNoLongerListed(id: DocumentId | AmendmentId): Extract<Listing, { listed: false }> | undefined;
   close(): void;
 };
 
@@ -846,6 +836,18 @@ export function openIndexReader(path: string): IndexReader {
         return found.document_kind satisfies never;
     }
   }
+  /**
+   * What the index knows of an id it holds no file for: the rows of the feed that link the document, else the postings of
+   * the Proposed Amendment it names, and whether it is a Testimony row. An id no row of the feed names is nothing known,
+   * and a Testimony row is known even to a feed no complete pull has listed it from.
+   */
+  function unheldOf(id: DocumentId | AmendmentId): UnheldDocument | undefined {
+    const document = listings.ofDocument(id as DocumentId);
+    const read = document.pull !== null ? document : listings.ofAmendment(id as AmendmentId);
+    const testimony = selectTestimonyExists.get(id) !== undefined;
+    if (read.pull === null && !testimony) return undefined;
+    return { held: false, testimony, listing: read.listing };
+  }
   function relationsOf(documentId: DocumentId): RelatedNode[] {
     return selectRelations.all(documentId).map((row) => {
       const stored = relationRow.parse(row);
@@ -1091,6 +1093,7 @@ export function openIndexReader(path: string): IndexReader {
       if (own !== undefined) {
         const document = documentOf(own);
         return {
+          held: true,
           document,
           related: relationsOf(document.id),
           listing: listings.ofDocument(document.id).listing,
@@ -1099,7 +1102,7 @@ export function openIndexReader(path: string): IndexReader {
       // Not a document: a Proposed Amendment, which has a posting (and a file) for each meeting.
       const postings = selectPostings.all(id).map(documentOf);
       const latest = postings[0];
-      if (latest === undefined) return undefined;
+      if (latest === undefined) return unheldOf(id);
       const related: RelatedNode[] = [];
       const seen = new Set<string>();
       for (const posting of postings.toReversed()) {
@@ -1113,6 +1116,7 @@ export function openIndexReader(path: string): IndexReader {
         }
       }
       return {
+        held: true,
         document: latest,
         related,
         listing: listings.ofAmendment(id as AmendmentId).listing,
@@ -1271,14 +1275,6 @@ export function openIndexReader(path: string): IndexReader {
         exhibits: documentsOfKind("exhibit"),
         recordingLogs: documentsOfKind("recording_log"),
       };
-    },
-    testimonyListing(id) {
-      return selectTestimonyExists.get(id) === undefined ? undefined : listings.ofDocument(id as DocumentId).listing;
-    },
-    findNoLongerListed(id) {
-      const read = listings.ofDocument(id as DocumentId);
-      const listing = read.pull === null ? listings.ofAmendment(id as AmendmentId).listing : read.listing;
-      return listing.listed ? undefined : listing;
     },
     findFloorLetters(key) {
       return selectFloorLetters.all(measureIdOf(key)).map((row): FloorLetterEntry => {
