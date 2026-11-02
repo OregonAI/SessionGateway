@@ -1,11 +1,17 @@
+import { existsSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { statuteLinkKinds, tableActions } from "#/packages/domain/statute-links.ts";
 import { storedEvidenceKinds } from "./agency-evidence.ts";
 
-// The only file in the project that imports node:sqlite (src/CLAUDE.md, "Shape"): the API is
-// Stability 1.2, so keeping it here keeps a swap to better-sqlite3 local.
+// The only production file that opens a node:sqlite connection (src/CLAUDE.md, "Shape"; lib/run-state.ts imports its type
+// only): the API is Stability 1.2, so keeping it here keeps a swap to better-sqlite3 local. The tests' arrangers
+// (database/tests/arranged-files.ts, test/support/old-database.ts) also import it, to arrange old files with SQL.
 
-const schema = `
+// FROZEN: a deployed file was built from this text; a change is a new numbered step, never an edit here. Version 1's text
+// includes the three CHECK lists built below from domain constants, so a new member of one of those lists is a change to
+// it too. The seam-4 guard (database/tests/schema-version.test.ts) builds a file from a frozen copy of this text
+// (database/tests/version-one-schema.sql) and opens the current code on it.
+const versionOneSchema = `
   CREATE TABLE IF NOT EXISTS measure (
     session_key TEXT NOT NULL,
     prefix TEXT NOT NULL,
@@ -478,6 +484,23 @@ const schema = `
   );
 `;
 
+/**
+ * The numbered upgrade steps (ADR-0048): step N takes a file from version N - 1 to version N, and the file's version
+ * is the number of steps there are. The worker applies the ones a file lacks, in order, in one transaction when it opens
+ * the file, so a file is never left half upgraded. Step 1 is today's schema: its pass of `CREATE ... IF NOT EXISTS`
+ * gives a file with no version every table it lacks, so a file built before versions upgrades the way it always has.
+ * A change to a table after version 1 is a step appended here with its own test, and a step is never edited once a
+ * release has run it: a new file runs every step, so `versionOneSchema` above stays version 1's text.
+ */
+const upgradeSteps: readonly ((database: DatabaseSync) => void)[] = [
+  (database) => {
+    database.exec(versionOneSchema);
+  },
+];
+
+/** The version the newest step leaves a file at. The server opens a file at this version only. */
+const schemaVersion = upgradeSteps.length;
+
 /** The default timeout of 0 fails at once on a busy database, so both sides wait up to 5 seconds. */
 const BUSY_TIMEOUT_MS = 5000;
 
@@ -497,11 +520,83 @@ export function openWriteConnection(path: string): DatabaseSync {
     );
   }
   database.exec("PRAGMA synchronous = NORMAL");
-  database.exec(schema);
+  try {
+    upgradeToCurrentVersion(database, path);
+  } catch (error) {
+    database.close();
+    throw error;
+  }
   return database;
 }
 
-/** The server's connection: it never writes. */
+/**
+ * Applies the upgrade steps the file lacks and stamps it with the version of the last, in one transaction. A file at a
+ * version newer than this worker knows is refused and left as it is: there is no downgrade (ADR-0048).
+ */
+function upgradeToCurrentVersion(database: DatabaseSync, path: string): void {
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const found = recordedVersionOf(database);
+    if (found > schemaVersion) {
+      throw new Error(
+        `The database at "${path}" is at schema version ${String(found)}, newer than the schema version ${String(schemaVersion)} this worker knows, and a worker never downgrades a file. Run the ingest worker and the server from the same release.`,
+      );
+    }
+    upgradeSteps.forEach((step, index) => {
+      if (index >= found) step(database);
+    });
+    if (found < schemaVersion) database.exec(`PRAGMA user_version = ${String(schemaVersion)}`);
+    database.exec("COMMIT");
+  } catch (error) {
+    // SQLite rolls some failures back by itself, and a ROLLBACK with no transaction open would throw over the real error.
+    if (database.isTransaction) database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+/** The schema version the file records (ADR-0048): SQLite's `user_version`, which a file nobody has stamped reports as 0. */
+function recordedVersionOf(database: DatabaseSync): number {
+  const answer = database.prepare("PRAGMA user_version").get();
+  const version = answer?.["user_version"];
+  if (typeof version !== "number") {
+    throw new Error(`SQLite did not answer with the database's schema version: ${JSON.stringify(answer)}`);
+  }
+  return version;
+}
+
+/**
+ * The server's connection: it never writes, so it never upgrades a file and refuses one that is not at the version it
+ * knows. The worker creates the file and stamps it, so a file that is missing, or that has no version yet, is a server
+ * started before the worker, and the errors say to start the worker first.
+ */
 export function openReadConnection(path: string): DatabaseSync {
-  return new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
+  if (!existsSync(path)) {
+    throw new Error(
+      `The database at "${path}" does not exist: the ingest worker creates it. Start the ingest worker first, then the server.`,
+    );
+  }
+  const database = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
+  const found = recordedVersionOf(database);
+  if (found === 0) {
+    database.close();
+    throw new Error(
+      `The database at "${path}" has no recorded schema version: the ingest worker has not opened it yet. Start the ingest worker first; it upgrades the file, and the server reads it.`,
+    );
+  }
+  if (found !== schemaVersion) {
+    database.close();
+    throw new Error(
+      `The database at "${path}" is at schema version ${String(found)}, and this server knows schema version ${String(schemaVersion)}. Run the ingest worker and the server from the same release: the worker upgrades the file when it opens it.`,
+    );
+  }
+  return database;
+}
+
+/**
+ * A connection with no journal mode to set, no version to check and no upgrade step to run, for a caller that touches
+ * a file the worker built and nothing else (`checkpoint.ts`). Like any `DatabaseSync`, it creates a file that is
+ * missing, so the caller checks that the file exists first.
+ */
+export function openPlainConnection(path: string): DatabaseSync {
+  return new DatabaseSync(path, { timeout: BUSY_TIMEOUT_MS });
 }

@@ -2,7 +2,8 @@
 // no complete pull has listed any of them. The worker that upgrades such a file creates the empty tables
 // (`CREATE TABLE IF NOT EXISTS`) before it pulls, so the state is the tables with nothing in them.
 //
-// This is the one place a test opens the database with SQL, and it only arranges: every assertion about the file goes
+// This is the one place a seam-1 test opens the database with SQL (the database package's own seam-4 tests arrange with
+// SQL in `src/packages/database/tests/arranged-files.ts`), and it only arranges: every assertion about the file goes
 // through the MCP tools (test/CLAUDE.md, "Seam 1"). The harness cannot run the base commit's worker instead: that
 // code is not in the tree, and a committed database built by it would be a fixture of its own.
 import { DatabaseSync } from "node:sqlite";

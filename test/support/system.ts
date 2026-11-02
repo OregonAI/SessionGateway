@@ -3,10 +3,10 @@
 // wires the production packages through their entry points, the way src/bin/ does.
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { loadIngestConfig, loadServerConfig, type ServerConfig } from "#/packages/config/index.ts";
+import { checkpointIndex } from "#/packages/database/checkpoint.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
 import {
   runFullPull,
@@ -198,17 +198,9 @@ async function buildDirectory(options: SystemOptions, key: string | undefined): 
   const first = await startSystem(options);
   const directory = mkdtempSync(join(cache ?? tmpdir(), "session-gateway-template-"));
   try {
-    const source = new DatabaseSync(first.database.path, { timeout: 5000 });
-    try {
-      // The pragma reports a checkpoint that another connection blocked as a row, not as an error: the copy leaves out
-      // the WAL, so a page left in it would go missing from every copy.
-      const row = source.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get();
-      if (row?.["busy"] !== 0 || row["log"] !== row["checkpointed"]) {
-        throw new Error(`The template's WAL was not fully checkpointed: ${JSON.stringify(row)}`);
-      }
-    } finally {
-      source.close();
-    }
+    // The copy leaves out the WAL, so a page left in it would go missing from every copy: the checkpoint throws if it
+    // was held back.
+    checkpointIndex(first.database.path);
     // After the checkpoint the database file holds everything, so the WAL and its shared-memory file are left out.
     cpSync(dirname(first.database.path), directory, {
       recursive: true,

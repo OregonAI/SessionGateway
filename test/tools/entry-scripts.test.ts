@@ -571,6 +571,25 @@ describe("the entry scripts", () => {
     expect(finished.stderr).toContain("SNAPSHOT_PATH");
   });
 
+  it("src/bin/server.ts refuses to start on a database the worker has not opened yet, saying to start the worker first", async () => {
+    // Ticket #95, ADR-0048. An empty file is an empty SQLite database, with no tables and no recorded version (0): the
+    // state of a file the worker has not opened, and the server knows version 1. The files that the server refuses for
+    // another version, or that do not exist, are seam-4 cases (database/tests/schema-version.test.ts); arranging a file
+    // at a newer version here would take SQL.
+    const { olis, database } = await fakeOlisAndDatabase();
+    writeFileSync(database.path, "");
+
+    const finished = await run("src/bin/server.ts", workerEnvironment(olis, database.path));
+
+    expect(finished.code).toBe(1);
+    // A failed start-up leaves Node's own uncaught-error text on stderr (src/CLAUDE.md, "Toolchain").
+    expect(finished.stderr).toContain(database.path);
+    expect(finished.stderr).toMatch(
+      /no recorded schema version.*worker has not opened it yet.*start the ingest worker first/is,
+    );
+    expect(finished.stdout).not.toContain("MCP server listening");
+  });
+
   it("src/bin/ingest.ts refuses a database that cannot run in WAL mode, instead of writing in another mode", async () => {
     // SQLite answers a request for WAL without an error and keeps the journal mode it had when it cannot
     // switch: an in-memory database is one such case, a filesystem without shared memory is another.
