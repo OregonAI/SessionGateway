@@ -314,7 +314,7 @@ export function testimonyRecord(commTestId: number): TestimonyRecord & { link: {
         },
       ],
     },
-    agencyId: agency,
+    agency: { kind: "matched", agencyId: agency },
   };
 }
 
