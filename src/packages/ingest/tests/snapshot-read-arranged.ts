@@ -34,7 +34,9 @@ import {
 import { measureIdOf, parseSessionKey, type MeasureKey } from "#/packages/domain/index.ts";
 import { parseSnapshot, type Snapshot } from "#/packages/oregonai-snapshot/index.ts";
 import { searchEntryOf } from "#/packages/search/documents.ts";
+import { parseStatutesAffectedTable } from "#/packages/statute-links/index.ts";
 import { readTimestamp } from "#/packages/time/pacific.ts";
+import type { StatutesAffectedTableFetch } from "../snapshot-read.ts";
 
 export const session = parseSessionKey("2025R1") ?? failed("2025R1 is a Session key");
 
@@ -305,6 +307,51 @@ export function storeDocuments(writer: IndexWriter, ...documents: StoredDocument
   for (const document of documents) writer.storeDocument(session, document, searchRecordOf(document));
 }
 
+// --- The Statutes Affected Table ----------------------------------------------------------------------------------------
+
+/** Where Legislative Counsel publishes the 2025R1 table (test/CLAUDE.md, "The Statutes Affected Table"). */
+export const tableUrl = "https://www.oregonlegislature.gov/AutoPubs/artables2025R1.pdf";
+
+/**
+ * MADE UP: a table of one series, 345.010 to 345.340, that amends HB 3027 in section 2, a row the real table does not
+ * have. The two lines are how PDF.js writes the series of the real table, as `madeUpRows` of
+ * test/tools/get-measure-statutes-affected-table-snapshot.test.ts has them.
+ */
+const madeUpTableText = ["345.010 to)", "345.340 ) A §2 HB 3027"].join("\n");
+
+/** When the held table was retrieved. MADE UP, a month before the Pulls of the cases. */
+export const heldTableRetrievedAt =
+  readTimestamp("2026-07-01T10:00:00-07:00") ?? failed("a Pacific time with an offset is a Timestamp");
+
+/**
+ * Stores the made-up table as a Pull with this Snapshot leaves it: its series expanded against the Snapshot's section
+ * list, which the committed one holds 22 sections of, and the Snapshot's commit beside it (ADR-0044).
+ */
+export function storeHeldTable(writer: IndexWriter, snapshot: Snapshot): void {
+  writer.storeStatutesAffectedTable(session, {
+    sourceUrl: tableUrl,
+    retrievedAt: heldTableRetrievedAt,
+    contentHash: createHash("sha256").update("MADE UP: the bytes of the held table").digest("hex"),
+    pageCount: 1,
+    text: madeUpTableText,
+    entries: parseStatutesAffectedTable({ text: madeUpTableText, orsSections: snapshot.orsSections }).entries,
+    snapshotCommit: snapshot.version.commit,
+  });
+}
+
+/** What a Pull is handed when the server fails to give the table: the status of its last answer, or null for none. */
+export function tableNotFetched(status: number | null, reason: string): StatutesAffectedTableFetch {
+  return { url: tableUrl, retrievedAt: fullPullAt, download: { kind: "failed", reason, status } };
+}
+
+/** What a Pull is handed when the server gives these bytes. */
+export function tableFetched(bytes: Uint8Array): StatutesAffectedTableFetch {
+  return { url: tableUrl, retrievedAt: fullPullAt, download: { kind: "fetched", bytes } };
+}
+
+/** Bytes that are no table, not even a PDF: a placeholder the server might give. MADE UP. */
+export const placeholderBytes = new TextEncoder().encode("MADE UP: this is a placeholder, not a table");
+
 // --- What the writer was asked to store ---------------------------------------------------------------------------
 
 /**
@@ -341,6 +388,16 @@ export function stoppingBeforeAgencyLinks(writer: IndexWriter): IndexWriter {
     ...writer,
     unreadAgencyDocuments: () => {
       throw new Error("The run stopped between the Statute Links and the Agency Links");
+    },
+  };
+}
+
+/** The same writer, except that replacing the entries of the held table fails: a run that stops at the Statutes Affected Table. */
+export function stoppingAtTableEntries(writer: IndexWriter): IndexWriter {
+  return {
+    ...writer,
+    rereadStatutesAffectedTable: () => {
+      throw new Error("The run stopped at the Statutes Affected Table");
     },
   };
 }

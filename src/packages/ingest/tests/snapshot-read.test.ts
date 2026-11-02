@@ -18,7 +18,12 @@ import type { IndexWriter } from "#/packages/database/writer.ts";
 import type { DocumentId, DocumentLink, StoredDocument } from "#/packages/domain/documents.ts";
 import { parseAgencyId, parseOrsChapterId, parseOrsSectionId } from "#/packages/domain/oregonai.ts";
 import type { Snapshot } from "#/packages/oregonai-snapshot/index.ts";
-import { beginSnapshotRead, type PullKind, type SnapshotReadOutcome } from "../snapshot-read.ts";
+import {
+  beginSnapshotRead,
+  type PullKind,
+  type SnapshotReadOutcome,
+  type StatutesAffectedTableFetch,
+} from "../snapshot-read.ts";
 import {
   boli,
   committedSnapshot,
@@ -34,11 +39,18 @@ import {
   madeUpCommit,
   madeUpSnapshot,
   openIndexRig,
+  placeholderBytes,
   postedAmendment,
   pulledFeed,
   session,
+  heldTableRetrievedAt,
+  stoppingAtTableEntries,
   stoppingBeforeAgencyLinks,
   storeDocuments,
+  storeHeldTable,
+  tableFetched,
+  tableNotFetched,
+  tableUrl,
   testimonyRow,
   wageOffice,
   type IndexRig,
@@ -66,6 +78,8 @@ type Pull = {
   fetched: StoredDocument[];
   /** The Testimony rows the feed lists in this Pull. */
   testimony?: DocumentLink[];
+  /** The Statutes Affected Table the Pull fetched, or nothing when the deployment names none or the Pull does not fetch it. */
+  table?: StatutesAffectedTableFetch;
   /** What the Snapshot read stores through: the Index's writer, unless a case watches it or stops it. */
   through?: IndexWriter;
 };
@@ -74,7 +88,7 @@ type Pull = {
  * A Pull as `ingest/index.ts` runs it: the Snapshot read begins, the feed and the documents it fetched are stored, and the
  * Snapshot read finishes.
  */
-function runPull({ rig, snapshot, pull, fetched, testimony = [], through }: Pull): Promise<SnapshotReadOutcome> {
+function runPull({ rig, snapshot, pull, fetched, testimony = [], table, through }: Pull): Promise<SnapshotReadOutcome> {
   const read = beginSnapshotRead({ writer: through ?? rig.writer, session, snapshot, pull });
   const links = [...fetched, ...testimony];
   const feed = pulledFeed({
@@ -85,7 +99,7 @@ function runPull({ rig, snapshot, pull, fetched, testimony = [], through }: Pull
   if (pull === "full_pull") rig.writer.recordFullPull(session, fullPullAt, feed);
   else rig.writer.recordIncrement(session, incrementAt, feed);
   storeDocuments(rig.writer, ...fetched);
-  return read.finish();
+  return read.finish(table);
 }
 
 /** An Index whose Full pull fetched these documents and read them with the Snapshot. */
@@ -213,7 +227,7 @@ describe("an Increment", () => {
       through: loggedWriter(rig.writer, log),
     });
 
-    expect(outcome).toEqual({ kind: "read" });
+    expect(outcome).toEqual({ kind: "read", statutesAffectedTable: undefined });
     expect(log).toEqual([
       "statute-links of a posting",
       "agency-links of posting-2025r1-28997",
@@ -335,6 +349,199 @@ describe("Testimony's Agency", () => {
 
     expect(testimonyAgencies(rig.reader)).toEqual({ 900101: boli, 900102: boli });
     expect(rig.reader.snapshotVersion(session)?.commit).toBe(madeUpCommit);
+  });
+});
+
+/** What the Index holds of the made-up table for HB 3027: the number of its entries, where it came from and when. */
+function heldTableOf(reader: IndexReader): { entries: number; sourceUrl: string; retrievedAt: string } | undefined {
+  const table = reader.statutesAffectedTableOf(hb3027);
+  return table === undefined
+    ? undefined
+    : { entries: table.entries.length, sourceUrl: table.sourceUrl, retrievedAt: table.retrievedAt };
+}
+
+/** An Index that holds the made-up table, read with the committed Snapshot: its series gives 22 entries. */
+async function indexHoldingTable(): Promise<IndexRig> {
+  const rig = newIndex();
+  await runPull({ rig, snapshot: committedSnapshot(), pull: "full_pull", fetched: [] });
+  storeHeldTable(rig.writer, committedSnapshot());
+  expect(heldTableOf(rig.reader)).toEqual({ entries: 22, sourceUrl: tableUrl, retrievedAt: heldTableRetrievedAt });
+  return rig;
+}
+
+// The Statutes Affected Table's series are expanded against the Snapshot's section list, so a Full pull with a new Snapshot
+// reads the held table again with it, in the Snapshot read and before the Snapshot is reported (ADR-0044). The Pull fetches
+// the table and hands the Snapshot read what it got. The held table is MADE UP (`snapshot-read-arranged.ts`): one series,
+// 345.010 to 345.340, which the committed Snapshot expands to 22 entries and the made-up one to 23.
+describe("the Statutes Affected Table", () => {
+  const stillHeld = { sourceUrl: tableUrl, retrievedAt: heldTableRetrievedAt };
+
+  describe.for([
+    { failure: "answers 404", status: 404, outcome: "not_published", reason: "The server answered 404" },
+    {
+      failure: "keeps failing",
+      status: 503,
+      outcome: "not_fetched",
+      reason: "MADE UP: the server answered 503 three times",
+    },
+  ])("when the server $failure", ({ status, outcome, reason }) => {
+    test("a new Snapshot reads the held table again from the held copy, and keeps the copy as it was", async () => {
+      const rig = await indexHoldingTable();
+
+      const read = await runPull({
+        rig,
+        snapshot: madeUpSnapshot(),
+        pull: "full_pull",
+        fetched: [],
+        table: tableNotFetched(status, reason),
+      });
+
+      expect(read).toEqual({
+        kind: "read",
+        statutesAffectedTable: {
+          source_url: tableUrl,
+          outcome: "read_again_from_held_copy",
+          held: true,
+          entries: 23,
+          previous_session_entries: 0,
+          unread_lines: 0,
+          lone_e_entries: 0,
+          lone_e_with_e_engrossed_version: 0,
+          reason,
+        },
+      });
+      expect(heldTableOf(rig.reader)).toEqual({ entries: 23, ...stillHeld });
+    });
+
+    test("the same Snapshot leaves the held table as it is and says why the table was not fetched", async () => {
+      const rig = await indexHoldingTable();
+
+      const read = await runPull({
+        rig,
+        snapshot: committedSnapshot(),
+        pull: "full_pull",
+        fetched: [],
+        table: tableNotFetched(status, reason),
+      });
+
+      expect(read).toEqual({
+        kind: "read",
+        statutesAffectedTable: {
+          source_url: tableUrl,
+          outcome,
+          held: true,
+          ...(status === 404 ? {} : { reason }),
+        },
+      });
+      expect(heldTableOf(rig.reader)).toEqual({ entries: 22, ...stillHeld });
+    });
+  });
+  describe("when the server gives bytes that are no table", () => {
+    test("a new Snapshot reads the held table again for the refusal's sake, keeps the copy, and remembers the refusal", async () => {
+      const rig = await indexHoldingTable();
+
+      const first = await runPull({
+        rig,
+        snapshot: madeUpSnapshot(),
+        pull: "full_pull",
+        fetched: [],
+        table: tableFetched(placeholderBytes),
+      });
+
+      // The refused bytes replace nothing; the held copy's text is read again with the new section list, and counted.
+      expect(first).toMatchObject({
+        kind: "read",
+        statutesAffectedTable: { source_url: tableUrl, outcome: "not_read", held: true, entries: 23 },
+      });
+      const refusal = first.kind === "read" ? first.statutesAffectedTable?.reason : undefined;
+      expect(typeof refusal).toBe("string");
+      expect(heldTableOf(rig.reader)).toEqual({ entries: 23, ...stillHeld });
+
+      // The same bytes again, with the same Snapshot: the refusal is remembered, nothing is read, the copy is as it was.
+      const again = await runPull({
+        rig,
+        snapshot: madeUpSnapshot(),
+        pull: "full_pull",
+        fetched: [],
+        table: tableFetched(placeholderBytes),
+      });
+
+      expect(again).toEqual({
+        kind: "read",
+        statutesAffectedTable: { source_url: tableUrl, outcome: "refused_unchanged", held: true, reason: refusal },
+      });
+      expect(heldTableOf(rig.reader)).toEqual({ entries: 23, ...stillHeld });
+    });
+
+    test("stores nothing when the Index holds no table", async () => {
+      const rig = await indexAfterFullPull(committedSnapshot());
+
+      const read = await runPull({
+        rig,
+        snapshot: madeUpSnapshot(),
+        pull: "full_pull",
+        fetched: [],
+        table: tableFetched(placeholderBytes),
+      });
+
+      expect(read).toMatchObject({
+        kind: "read",
+        statutesAffectedTable: { source_url: tableUrl, outcome: "not_read", held: false },
+      });
+      expect(heldTableOf(rig.reader)).toBeUndefined();
+    });
+  });
+
+  test("is read again before the new Snapshot is reported, and a run that stops there leaves the old one reported", async () => {
+    const rig = await indexHoldingTable();
+    const stopped = runPull({
+      rig,
+      snapshot: madeUpSnapshot(),
+      pull: "full_pull",
+      fetched: [],
+      table: tableNotFetched(404, "The server answered 404"),
+      through: stoppingAtTableEntries(rig.writer),
+    });
+    await expect(stopped).rejects.toThrow("The run stopped at the Statutes Affected Table");
+    expect(rig.reader.snapshotVersion(session)?.commit).toBe(committedCommit);
+    expect(heldTableOf(rig.reader)).toEqual({ entries: 22, ...stillHeld });
+    const log: string[] = [];
+
+    await runPull({
+      rig,
+      snapshot: madeUpSnapshot(),
+      pull: "full_pull",
+      fetched: [],
+      table: tableNotFetched(404, "The server answered 404"),
+      through: loggedWriter(rig.writer, log),
+    });
+
+    expect(log).toEqual(["table entries", `snapshot ${madeUpCommit}`]);
+    expect(heldTableOf(rig.reader)).toEqual({ entries: 23, ...stillHeld });
+    expect(rig.reader.snapshotVersion(session)?.commit).toBe(madeUpCommit);
+  });
+
+  test("is left alone when the Pull hands the Snapshot read no table, as when the deployment names none (ADR-0044)", async () => {
+    const rig = await indexHoldingTable();
+
+    const read = await runPull({ rig, snapshot: madeUpSnapshot(), pull: "full_pull", fetched: [] });
+
+    expect(read).toEqual({ kind: "read", statutesAffectedTable: undefined });
+    expect(heldTableOf(rig.reader)).toEqual({ entries: 22, ...stillHeld });
+  });
+
+  test("is not read by an Increment, which fetches none: handing it one is a bug", async () => {
+    const rig = await indexHoldingTable();
+
+    const bug = runPull({
+      rig,
+      snapshot: committedSnapshot(),
+      pull: "increment",
+      fetched: [],
+      table: tableNotFetched(404, "The server answered 404"),
+    });
+
+    await expect(bug).rejects.toThrow("An Increment does not read the Statutes Affected Table");
   });
 });
 

@@ -53,8 +53,7 @@ import {
   writeHashSampleReport,
   type HashSampleReport,
 } from "./lib/hash-sample.ts";
-import { loadStatutesAffectedTable } from "./lib/statutes-affected-table.ts";
-import { beginSnapshotRead, type SnapshotRead } from "./snapshot-read.ts";
+import { beginSnapshotRead, type SnapshotRead, type StatutesAffectedTableFetch } from "./snapshot-read.ts";
 
 export type IngestDeps = {
   fetch: typeof fetch;
@@ -479,8 +478,21 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       passageCounts,
       notFetched,
     });
-    // The Statute Links and Agency Links of what is stored, with this pull's snapshot, and the snapshot the index reports.
-    await snapshotRead.finish();
+    // Legislative Counsel's Statutes Affected Table, when the deployment names it: a second source for the Statute Links,
+    // fetched in each pull. The Snapshot read reads it, and says what became of it (ADR-0034, ADR-0044).
+    const tableUrl = config.statutesAffectedTableUrl;
+    const table: StatutesAffectedTableFetch | undefined =
+      tableUrl === null
+        ? undefined
+        : {
+            url: tableUrl,
+            retrievedAt: formatPacific(deps.clock.now()),
+            download: await olis.downloadFile(new URL(tableUrl), deps.signal),
+          };
+    // The Statute Links and Agency Links of what is stored, and the table's series, with this pull's snapshot; then the
+    // index reports the snapshot.
+    const snapshotReading = await snapshotRead.finish(table);
+    const statutesAffectedTable = snapshotReading.kind === "read" ? snapshotReading.statutesAffectedTable : undefined;
     const listingCounts = new Map(writer.listingCounts(config.session).map((count) => [count.entitySet, count]));
     const unresolvedMemberCodes = new Set(
       resolver
@@ -488,21 +500,6 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
         .filter((entry) => entry.references.some((reference) => reference.source === "CommitteeMembers"))
         .map((entry) => entry.code),
     );
-    // Legislative Counsel's Statutes Affected Table, when the deployment names it: a second source for the Statute
-    // Links, fetched in each pull and read again when its bytes or the snapshot's commit change (ADR-0034, ADR-0044).
-    const statutesAffectedTable =
-      config.statutesAffectedTableUrl === null
-        ? undefined
-        : await loadStatutesAffectedTable({
-            url: config.statutesAffectedTableUrl,
-            olis,
-            writer,
-            session: config.session,
-            orsSections: snapshot.orsSections,
-            snapshotCommit: snapshot.version.commit,
-            now: () => formatPacific(deps.clock.now()),
-            signal: deps.signal,
-          });
     writeBuildReport(buildReportPath(config.databasePath), {
       session: config.session,
       as_of: asOf,
@@ -598,7 +595,7 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
       passageCounts,
       notFetched,
     });
-    await snapshotRead.finish();
+    await snapshotRead.finish(undefined);
     return { asOf, documentsFetched, documentsNotFetched: notFetched.length };
   } finally {
     writer.close();
