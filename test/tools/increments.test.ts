@@ -281,8 +281,9 @@ describe("an increment and the OregonAI snapshot (ADR-0035, ADR-0039)", () => {
   });
 
   // Testimony's Agency (ADR-0047). The first pull of these cases is a copy of the template for the fixture at
-  // 2026-08-01 10:00 Pacific, when every row of the fixture exists; the increment at 12:00 is the subject. The new rows
-  // and the amended one are read by it (it asks for rows created or modified after 08:00, two hours before the pull).
+  // 2026-08-01 10:00 Pacific, when every row of the fixture exists; the increment at 12:00 is the subject. The made-up row
+  // a case adds and the row it amends are read by the increment (it asks for rows created or modified after 08:00, two
+  // hours before the pull).
   describe("Testimony's Agency", () => {
     const template = systemTemplate({ clockAt: "2026-08-01T17:00:00Z", documents: true });
     const atTheIncrement = "2026-08-01T19:00:00Z";
@@ -354,6 +355,24 @@ describe("an increment and the OregonAI snapshot (ADR-0035, ADR-0039)", () => {
       }
     }
 
+    /** The Organization the `testimony` tool gives for one Testimony row of the Measure, as the index stores it. */
+    async function organizationOf(system: System, era: Era, measure: string, commTestId: number): Promise<unknown> {
+      type Page = { positions: { organizations: { items: { id: string; organization: string | null }[] }[] }[] };
+      const connected = await connectClient(era, system.handler);
+      try {
+        const outcome = await callTool(connected, "testimony", { measure });
+        expect(outcome.isError, outcome.text).toBe(false);
+        const items = (outcome.structured as Page).positions.flatMap((position) =>
+          position.organizations.flatMap((group) => group.items),
+        );
+        const found = items.find((item) => item.id === `testimony-2025r1-${commTestId}`);
+        if (found === undefined) throw new Error(`The testimony tool lists no row ${commTestId} for ${measure}`);
+        return found.organization;
+      } finally {
+        await connected.close();
+      }
+    }
+
     async function isHeld(system: System, era: Era, documentId: string): Promise<boolean> {
       const connected = await connectClient(era, system.handler);
       try {
@@ -382,15 +401,18 @@ describe("an increment and the OregonAI snapshot (ADR-0035, ADR-0039)", () => {
       });
     });
 
-    it("keeps the Agency Link a Testimony row the index already held had, though the increment reads the row again under a changed snapshot", async () => {
+    it("keeps the Agency Link a Testimony row the index already held had, though the increment reads the row again with another Organization under a changed snapshot", async () => {
       const copy = copyWithChangedRegistry();
       const system = await startOn(copy.path);
       await everyClient(async (era) => {
         expect(await testimonyLinks(system, era, "HB 3795")).toEqual([[dhs, `testimony-2025r1-${heldRow}`]]);
       });
-      // The row is read again: OLIS modified it at 10:30.
+      // The row is read again: OLIS modified it at 10:30 and changed its Organization to the MADE UP one that the changed
+      // registry gives to the Bureau of Labor and Industries, so a match would give the row the Bureau and not the
+      // Department (ADR-0047: a row whose Organization an increment changed keeps the Agency its earlier text matched).
       system.olis.amendRows("CommitteePublicTestimonies", (candidate) => candidate["CommTestId"] === heldRow, {
         ModifiedDate: "2026-08-01T10:30:00",
+        Organization: madeUpOrganization,
       });
       copy.changeIt();
       system.clock.set(atTheIncrement);
@@ -398,6 +420,8 @@ describe("an increment and the OregonAI snapshot (ADR-0035, ADR-0039)", () => {
       await system.incrementAgain();
 
       await everyClient(async (era) => {
+        // The increment stored the row's new Organization, and left the Agency its earlier text matched.
+        expect(await organizationOf(system, era, "HB 3795", heldRow)).toBe(madeUpOrganization);
         expect(await testimonyLinks(system, era, "HB 3795")).toEqual([[dhs, `testimony-2025r1-${heldRow}`]]);
       });
     });
