@@ -28,6 +28,9 @@ A pass that reads every row of the Session from the OLIS feed. It counts as comp
 **Increment**:
 A pass that reads only the rows OLIS created or modified since the last run (`CreatedDate gt X or ModifiedDate gt X`, with X two hours before the last run began), stores them, and fetches the documents they link that the Index does not hold. It is not a complete pull: it lists nothing and never marks a row no longer listed. It moves the Index's as-of time, and `session_overview` reports when the last one ran. A change to an existing row of MeasureDocuments or MeasureAnalysisDocuments, whose `ModifiedDate` is always null, waits for the next Full pull (ADR-0039).
 
+**Pull register**:
+The one table that says, for each entity set of the feed, how a Full pull reads it and how an Increment does: whole, only the rows changed since the last run, only the rows above the highest id the Index holds, or not at all (ADR-0050).
+
 **Meeting day**:
 A day the Session meets: a day with a committee meeting or a floor convening (ConveneTimes) scheduled, or any weekday while the Session is in progress. The `15min` increments run on meeting days only (ADR-0039). The Session is in progress from its LegislativeSessions `BeginDate` to its `EndDate`, both included. While the feed gives no `EndDate`, it is in progress from `BeginDate` to the later of `BeginDate` and the last convening the Index holds, both included, and on `BeginDate` only while it holds none (ADR-0043). A full pull reads the convenings and that row (ADR-0042).
 
