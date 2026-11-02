@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: accepted; where the state is read and who derives it is refined by ADR-0049 (the rule stands)
 supersedes: ADR-0013 in part (analysis_listing is kept and read through the listing state, not replaced at every full pull)
 ---
 
