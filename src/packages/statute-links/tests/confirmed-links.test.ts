@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { statuteLinksOfMeasure, type StatuteLinksOfMeasure, type TableOfVersion } from "../measure.ts";
-import { heldVersion, link, measureOf, tableOfMeasure, tripleOf } from "./measure-cases.ts";
+import { heldVersion, link, measureOf, sb69Links, tableOfMeasure, tripleOf } from "./measure-cases.ts";
 
 // Seam 4: which links the Statutes Affected Table confirms, and where the table and the links disagree (ticket #99;
 // ADR-0033, GLOSSARY.md "Confirmed link" and "Table entry"). A Table entry names one Version by its engrossing level, and
@@ -16,23 +16,6 @@ import { heldVersion, link, measureOf, tableOfMeasure, tripleOf } from "./measur
 const sb69 = measureOf("SB", 69);
 const sb69Listed = ["Introduced", "A-Engrossed", "Enrolled"];
 
-// SB 69's A-Engrossed Version (pdftotext): SECTION 1 adds section 2 of the Act to ORS chapter 657B, SECTION 2 cites ORS
-// 657B.060, SECTION 3 cites it again and SECTIONS 3 to 10 amend 657B.070, 659A.159, 659A.165, 657B.400, 657B.060, 653.616,
-// 653.626 and 659A.156. (The Version has 283 citations; the two of ORS 657B.060 stand for them.) The Enrolled Version
-// reads the same.
-const sb69Links = [
-  link("adds-to", "ors-chapter-657b", "1"),
-  link("cites", "ors-657b.060", "2"),
-  link("cites", "ors-657b.060", "3"),
-  link("amends", "ors-657b.070", "3"),
-  link("amends", "ors-659a.159", "4"),
-  link("amends", "ors-659a.165", "5"),
-  link("amends", "ors-657b.400", "6"),
-  link("amends", "ors-657b.060", "7"),
-  link("amends", "ors-653.616", "8"),
-  link("amends", "ors-653.626", "9"),
-  link("amends", "ors-659a.156", "10"),
-];
 const sb69Versions = [
   heldVersion(sb69, "Introduced", { links: [link("cites", "ors-192.245", "1")] }),
   heldVersion(sb69, "A-Engrossed", { links: sb69Links }),
