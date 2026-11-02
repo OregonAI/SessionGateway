@@ -272,11 +272,11 @@ describe("a table that cannot be had", () => {
   });
 });
 
-// A MADE-UP TABLE, in place of the real one. WHY IT STAYS (ticket #54): the real table's disagreements, HB 3723's and HB 3124's, are
-// both entries the text lacks (a repeal list the parser misses, a chapter the text does not name). None has a kind that
-// differs from the text's for the same section, a measure section that differs, an entry for a section the Measure cites and
-// does not change, or an entry at a level that names no Version the Measure has, and a case about the shape of one needs a row
-// of that shape. Its rows are SB 69's, as the real table prints them ("SB 69 A" is the
+// A MADE-UP TABLE, in place of the real one. WHY IT STAYS (ticket #54): the real table's one disagreement, HB 3124's, is an
+// entry the text lacks (a chapter the text does not name); HB 3723's was another (a repeal list the parser missed) until
+// ticket #55. None has a kind that differs from the text's for the same section, a measure section that differs, an entry
+// for a section the Measure cites and does not change, or an entry at a level that names no Version, and a case about the
+// shape of one needs a row of that shape. Its rows are SB 69's, as the real table prints them ("SB 69 A" is the
 // A-Engrossed Version), changed one by one:
 //   653.616 R §8      the real table says A (amends): the same section and measure section, another kind
 //   653.626 A §9      as the real table says it
@@ -319,7 +319,7 @@ describe("a table that was loaded", () => {
   // deployment that names no table, which has the same Versions and never saw one. HB 3723 is read beside it for the same
   // equality: its table rows repeal ORS 247.016 and 247.018 at §1, and since ticket #55 its text does too, so the table agrees
   // with the links and has nothing apart; HB 3124 alone carries the disagreement the case needs.
-  it("leaves HB 3723's and HB 3124's parsed links as the text has them when the real table says otherwise: the table is beside them, never over them", async () => {
+  it("leaves HB 3723's and HB 3124's parsed links as the text has them, whether the real table agrees (HB 3723) or says otherwise (HB 3124): the table is beside them, never over them", async () => {
     for (const measure of ["HB 3723", "HB 3124"]) {
       const shown = linksOf(await rig.ask(measure)).versions.map((entry) => [entry.label, entry.statute_links]);
       const onMain = linksOf(await unset.ask(measure)).versions.map((entry) => [entry.label, entry.statute_links]);

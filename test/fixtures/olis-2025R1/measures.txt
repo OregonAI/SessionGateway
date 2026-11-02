@@ -19,7 +19,7 @@ SB 921   # Alias. A-Engrossed Fiscal Impact Statement 87631 (sample-1 MeasureAna
 # Chosen for a document, not for a Fiscal Impact Statement.
 SB 64    # A document with no text layer. Exhibit 288141 (a CommitteeMeetingDocuments row), "Working Family Household and Dependent Care - Tax Expenditure Report" (SHS, 2025-01-23), is a 2-page PDF where pdftotext finds no text: one of the two scans behind olis-odata.md section 7's "2 of 344 sampled PDFs" (sample-2 CommitteeMeetingDocuments_24; the downloaded copy has the same sha256). Not strictly needed now: SB 921's two Photo Testimony also have none.
 
-# Real disagreements between the Statutes Affected Table and the parsed Statute Links (ticket #54, in place of the made-up
-# table the tests served). Each has one Introduced Version in the feed and no other document.
+# Real Statutes Affected Table cases (ticket #54, in place of the made-up table the tests served): HB 3124 disagrees with
+# its parsed Statute Links; HB 3723 did until ticket #55. Each has one Introduced Version in the feed and no other document.
 HB 3723  # A repeal list that a session-law citation follows (the parser gap ticket #55 closed; the parser read it as citations before). The Table gives it ten entries in ORS chapter 247, each ending in an E alone (the emergency clause, ADR-0033): repeals of 247.016 and 247.018 at §1, and amendments of 247.002 §3, 247.012 §4, 247.014 §9, 247.017 §2, 247.019 §10, 247.171 §5, 247.292 §6 and 247.302 §7. Its §1 reads "ORS 247.016 and 247.018 and section 9, chapter 492, Oregon Laws 2023, are repealed", and the Table lists the session-law repeal under "2023 c. 492" as well.
 HB 3124  # Text and Table disagree on where the law is added. Its §1 reads "Section 2 of this 2025 Act is added to and made a part of the wildlife laws" and names no ORS chapter, while the Table gives "Ch. 496 to Ch. 501  Add §1  HB 3124  E".

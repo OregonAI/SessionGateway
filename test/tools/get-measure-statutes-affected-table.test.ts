@@ -255,12 +255,13 @@ describe.for(eras)("get_measure's Statutes Affected Table for a %s client", (era
     });
   });
 
-  // HB 3723 (ticket #54, which began as the first REAL disagreement of the fixture; ticket #55 ended it). Its Introduced Version is the only one the feed lists, and
-  // the table prints ten rows for it, each ending in an E alone, which is the emergency clause here because the feed lists no
-  // E-Engrossed Version (get-measure-statutes-affected-table-pull.test.ts): "247.002 A §3", "247.012 A §4", "247.014 A §9",
-  // "247.016 R §1", "247.017 A §2", "247.018 R §1", "247.019 A §10", "247.171 A §5", "247.292 A §6" and "247.302 A §7"
-  // (artables2025R1.pdf, pdftotext -layout, pages RS25-T-16 and RS25-T-17). The Version's SECTION 1 reads "ORS 247.016 and
-  // 247.018 and section 9, chapter 492, Oregon Laws 2023, are repealed", and SECTIONS 2 to 10 amend the eight others.
+  // HB 3723 (ticket #54, which began as the first REAL disagreement of the fixture; ticket #55 ended it). Its Introduced
+  // Version is the only one the feed lists, and the table prints ten rows for it, each ending in an E alone, which is the
+  // emergency clause here because the feed lists no E-Engrossed Version
+  // (get-measure-statutes-affected-table-pull.test.ts): "247.002 A §3", "247.012 A §4", "247.014 A §9", "247.016 R §1",
+  // "247.017 A §2", "247.018 R §1", "247.019 A §10", "247.171 A §5", "247.292 A §6" and "247.302 A §7"
+  // (artables2025R1.pdf, pdftotext -layout, pages RS25-T-16 and RS25-T-17). The Version's SECTION 1 reads "ORS 247.016
+  // and 247.018 and section 9, chapter 492, Oregon Laws 2023, are repealed", and SECTIONS 2 to 10 amend the eight others.
   describe("HB 3723, whose repeal list a session-law citation follows", () => {
     // Ticket #55 made the parser read the repeal list, so the two repeals at §1 are links the text has and the table confirms.
     // Before it they were only_in_table, and the Version's repeals were empty.
