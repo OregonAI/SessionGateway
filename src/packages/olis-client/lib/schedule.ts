@@ -23,7 +23,7 @@ export async function readConvenings(
   read: PullRead,
   signal: AbortSignal,
 ): Promise<Convening[]> {
-  const rows = await readSessionRows(options, "ConveneTimes", session, conveneTimeRow, signal, read);
+  const rows = await readSessionRows(options, "ConveneTimes", session, conveneTimeRow, read, signal);
   return rows.map((row) => ({ session, at: row.SessionDate, chamber: row.Chamber }));
 }
 
@@ -46,7 +46,7 @@ export async function readSessionDates(
   read: PullRead,
   signal: AbortSignal,
 ): Promise<SessionDates | undefined> {
-  const rows = await readSessionRows(options, "LegislativeSessions", session, legislativeSessionRow, signal, read);
+  const rows = await readSessionRows(options, "LegislativeSessions", session, legislativeSessionRow, read, signal);
   const row = rows[0];
   if (row === undefined) return undefined;
   return { session, begin: dateOf(row.BeginDate), end: row.EndDate === null ? null : dateOf(row.EndDate) };

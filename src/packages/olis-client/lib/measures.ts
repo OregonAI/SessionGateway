@@ -23,7 +23,7 @@ export async function readMeasureRows(
   selection: RowSelection,
   signal: AbortSignal,
 ): Promise<Measure[]> {
-  const rows = await readSessionRows(options, "Measures", session, measureRow, signal, selection);
+  const rows = await readSessionRows(options, "Measures", session, measureRow, selection, signal);
   return rows.map((row) => ({
     session,
     prefix: row.MeasurePrefix,

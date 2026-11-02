@@ -17,7 +17,7 @@ export async function readLegislatorRows(
   read: PullRead,
   signal: AbortSignal,
 ): Promise<LegislatorRow[]> {
-  const rows = await readSessionRows(options, "Legislators", session, legislatorRow, signal, read);
+  const rows = await readSessionRows(options, "Legislators", session, legislatorRow, read, signal);
   return rows.map((row) => ({
     session,
     code: row.LegislatorCode,

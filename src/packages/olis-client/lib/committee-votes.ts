@@ -25,7 +25,7 @@ export async function readCommitteeVoteRows(
   selection: RowSelection,
   signal: AbortSignal,
 ): Promise<CommitteeVoteEntry[]> {
-  const rows = await readSessionRows(options, "CommitteeVotes", session, committeeVoteRow, signal, selection);
+  const rows = await readSessionRows(options, "CommitteeVotes", session, committeeVoteRow, selection, signal);
   return rows.map((row) => ({
     id: row.CommitteeVoteId,
     measure: { session, prefix: row.MeasurePrefix, number: row.MeasureNumber },

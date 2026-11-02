@@ -60,6 +60,6 @@ export async function readSponsorshipRows(
   read: PullRead,
   signal: AbortSignal,
 ): Promise<Sponsorship[]> {
-  const rows = await readSessionRows(options, "MeasureSponsors", session, sponsorRow, signal, read);
+  const rows = await readSessionRows(options, "MeasureSponsors", session, sponsorRow, read, signal);
   return rows.map((row) => sponsorshipOf(session, row));
 }

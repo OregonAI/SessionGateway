@@ -108,7 +108,7 @@ async function readVersions(
   read: PullRead,
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
-  const rows = await readSessionRows(options, "MeasureDocuments", session, measureDocumentRow, signal, read);
+  const rows = await readSessionRows(options, "MeasureDocuments", session, measureDocumentRow, read, signal);
   // A Printed Amendment points at the Version its description names, but only at one the feed lists.
   const versions = new Set(
     rows
@@ -167,7 +167,7 @@ async function readAnalyses(
   versions: ReadonlySet<DocumentId>,
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
-  const rows = await readSessionRows(options, "MeasureAnalysisDocuments", session, analysisRow, signal, read);
+  const rows = await readSessionRows(options, "MeasureAnalysisDocuments", session, analysisRow, read, signal);
   return rows.map((row) => {
     const key = { session, prefix: row.MeasurePrefix, number: row.MeasureNumber };
     const id = analysisIdOf(session, row.MeasureAnalysisId);
@@ -223,7 +223,7 @@ async function readExhibits(
   read: PullRead,
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
-  const rows = await readSessionRows(options, "CommitteeMeetingDocuments", session, exhibitRow, signal, read);
+  const rows = await readSessionRows(options, "CommitteeMeetingDocuments", session, exhibitRow, read, signal);
   return rows.map((row) => {
     const isRecordingLog = row.DocumentType === "Recording Log";
     const id = isRecordingLog
@@ -271,7 +271,7 @@ async function readTestimony(
   read: PullRead,
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
-  const rows = await readSessionRows(options, "CommitteePublicTestimonies", session, testimonyRow, signal, read);
+  const rows = await readSessionRows(options, "CommitteePublicTestimonies", session, testimonyRow, read, signal);
   return rows.map((row) => {
     const id = testimonyIdOf(session, row.CommTestId);
     const root = sourceUrlOf(row.DocumentUrl).replace(/\/$/, "");
@@ -320,7 +320,7 @@ async function readPostings(
   read: PullRead,
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
-  const rows = await readSessionRows(options, "CommitteeProposedAmendments", session, postingRow, signal, read);
+  const rows = await readSessionRows(options, "CommitteeProposedAmendments", session, postingRow, read, signal);
   return rows.map((row) => {
     const key = { session, prefix: row.MeasurePrefix, number: row.MeasureNumber };
     const amendmentNumber = row.AmendmentNumber.trim();

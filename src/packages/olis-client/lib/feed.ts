@@ -187,8 +187,8 @@ export async function readSessionRows<
   entitySet: PulledEntitySet,
   session: SessionKey,
   rowSchema: z.ZodType<Row>,
-  signal: AbortSignal,
   selection: RowSelection,
+  signal: AbortSignal,
 ): Promise<Row[]> {
   switch (selection.kind) {
     case "whole":

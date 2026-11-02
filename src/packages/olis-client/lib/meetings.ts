@@ -29,7 +29,7 @@ export async function readMeetings(
   read: PullRead,
   signal: AbortSignal,
 ): Promise<Meeting[]> {
-  const rows = await readSessionRows(options, "CommitteeMeetings", session, meetingRow, signal, read);
+  const rows = await readSessionRows(options, "CommitteeMeetings", session, meetingRow, read, signal);
   return rows.map((row) => {
     const id = meetingIdOf(session, row.CommitteeCode, row.MeetingDate);
     const committeeId = committeeIdOf(session, row.CommitteeCode);
@@ -76,7 +76,7 @@ export async function readCommittees(
   read: PullRead,
   signal: AbortSignal,
 ): Promise<Committee[]> {
-  const rows = await readSessionRows(options, "Committees", session, committeeRow, signal, read);
+  const rows = await readSessionRows(options, "Committees", session, committeeRow, read, signal);
   return rows.map((row) => ({
     session,
     code: row.CommitteeCode,
@@ -109,7 +109,7 @@ export async function readAgendaItems(
   read: PullRead,
   signal: AbortSignal,
 ): Promise<AgendaItem[]> {
-  const rows = await readSessionRows(options, "CommitteeAgendaItems", session, agendaItemRow, signal, read);
+  const rows = await readSessionRows(options, "CommitteeAgendaItems", session, agendaItemRow, read, signal);
   return rows.map((row) => ({
     itemId: row.CommitteeAgendaItemId,
     meetingId: meetingIdOf(session, row.CommitteCode, row.MeetingDate),

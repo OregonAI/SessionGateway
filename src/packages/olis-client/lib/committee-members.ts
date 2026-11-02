@@ -34,7 +34,7 @@ export async function readCommitteeMembers(
   read: PullRead,
   signal: AbortSignal,
 ): Promise<CommitteeMember[]> {
-  const rows = await readSessionRows(options, "CommitteeMembers", session, memberRow, signal, read);
+  const rows = await readSessionRows(options, "CommitteeMembers", session, memberRow, read, signal);
   return rows.map((row) => ({
     session,
     key: wholeRowKey(row),

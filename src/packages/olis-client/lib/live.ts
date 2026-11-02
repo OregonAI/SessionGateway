@@ -48,7 +48,7 @@ export async function readMeasureLive(
       readHistoryActionRows(options, key.session, scope, together),
       readFloorVoteRows(options, key.session, scope, together),
       readCommitteeVoteRows(options, key.session, scope, together),
-      readMeasureAgendaItems(options, key.session, together, ahead),
+      readMeasureAgendaItems(options, key.session, ahead, together),
     ]);
     if (measures.length > 1)
       throw new Error(`OLIS listed the Measure ${key.prefix} ${key.number} ${measures.length} times`);

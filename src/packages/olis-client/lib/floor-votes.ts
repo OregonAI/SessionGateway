@@ -27,7 +27,7 @@ export async function readFloorVoteRows(
   selection: RowSelection,
   signal: AbortSignal,
 ): Promise<FloorVoteEntry[]> {
-  const rows = await readSessionRows(options, "MeasureVotes", session, floorVoteRow, signal, selection);
+  const rows = await readSessionRows(options, "MeasureVotes", session, floorVoteRow, selection, signal);
   return rows.map((row) => ({
     id: row.MeasureVoteId,
     measure: { session, prefix: row.MeasurePrefix, number: row.MeasureNumber },

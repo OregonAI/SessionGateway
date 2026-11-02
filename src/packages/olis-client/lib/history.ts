@@ -21,7 +21,7 @@ export async function readHistoryActionRows(
   selection: RowSelection,
   signal: AbortSignal,
 ): Promise<HistoryAction[]> {
-  const rows = await readSessionRows(options, "MeasureHistoryActions", session, historyRow, signal, selection);
+  const rows = await readSessionRows(options, "MeasureHistoryActions", session, historyRow, selection, signal);
   return rows.map((row) => ({
     id: row.MeasureHistoryId,
     measure: { session, prefix: row.MeasurePrefix, number: row.MeasureNumber },
