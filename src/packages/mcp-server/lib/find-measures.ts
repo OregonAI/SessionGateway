@@ -2,15 +2,9 @@
 // Amendments that an Agency Link or a Statute Link ties to an Agency, optionally only the ones whose evidence OLIS created since a time.
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
-import {
-  agencyEvidenceKinds,
-  agencyLinkKey,
-  listedLinkKeys,
-  type LinkedNode,
-  type StoredStatuteLinked,
-} from "#/packages/domain/agency-links.ts";
-import { parseAmendmentNumber, type AmendmentId, type DocumentId, type Listing } from "#/packages/domain/documents.ts";
-import { citationOfMeasureId, measureIdOf, parseMeasureReference, type SessionKey } from "#/packages/domain/index.ts";
+import { agencyEvidenceKinds, type LinkedNode, type StoredStatuteLinked } from "#/packages/domain/agency-links.ts";
+import { parseAmendmentNumber, type Listing } from "#/packages/domain/documents.ts";
+import { citationOfMeasureId, measureIdOf, type SessionKey } from "#/packages/domain/index.ts";
 import {
   parseOrsChapterReference,
   parseOrsSectionReference,
@@ -228,6 +222,8 @@ type Item = Omit<ItemOutput, "created_at" | "last_created_at"> & {
   created_at: Timestamp | null;
   last_created_at: Timestamp | null;
   documents: { id: string; sourceUrl: string }[];
+  /** Whether the feed lists the item: its own row, and for an Agency its link to the node (the item's flag, ADR-0030, ADR-0037). */
+  listing: Listing;
 };
 
 /** Why a call cannot be met, or the answer. Expected outcomes are values; the MCP edge decides they are tool errors. */
@@ -269,8 +265,8 @@ type Piece = {
   listing?: Listing;
 };
 
-/** What makes one node an item: the pieces of evidence, in their order. */
-type Candidate = { node: LinkedNode; pieces: Piece[] };
+/** What makes one node an item: the pieces of evidence, in their order, and for an Agency the Listing of its link to the node. */
+type Candidate = { node: LinkedNode; pieces: Piece[]; link?: Listing };
 
 /** The latest of a piece's times, or undefined when it has none. */
 function latestOf(createdAt: readonly Timestamp[]): Timestamp | undefined {
@@ -285,7 +281,7 @@ function latestOf(createdAt: readonly Timestamp[]): Timestamp | undefined {
 function candidatesOfLinks(links: readonly GatheredLink[]): Candidate[] {
   const byNode = new Map<string, Candidate>();
   for (const { link, createdAt } of links.toSorted((a, b) => compareLinks(a.link, b.link))) {
-    const own = byNode.get(link.node.id) ?? { node: link.node, pieces: [] };
+    const own = byNode.get(link.node.id) ?? { node: link.node, pieces: [], link: link.listing };
     own.pieces.push({
       kind: link.evidence.kind,
       document: { id: link.document.id, sourceUrl: link.document.sourceUrl },
@@ -389,6 +385,8 @@ function itemOf(candidate: Candidate, since: Timestamp | undefined): Item | unde
       return [{ kind, count: ofKind.length, left_out: ofKind.length - examples.length, examples }];
     }),
     documents: shown.map((piece) => piece.document),
+    // The item is flagged when its own row is No longer listed, and for an Agency also when its link to the node is.
+    listing: candidate.link !== undefined && !candidate.link.listed ? candidate.link : candidate.node.listing,
   };
 }
 
@@ -415,34 +413,12 @@ function groupOfCandidates(kind: GroupKind, candidates: readonly Candidate[], si
 }
 
 /**
- * Whether the feed still lists an item's own row (ADR-0030): the Measure's, the Version's, or any posting of the Proposed
- * Amendment's. A row no complete pull has listed reads as listed. An item whose row is no longer listed stays in its
- * groups, flagged, as the tools that list rows keep such a row.
- */
-function itemListed(reader: IndexReader, session: SessionKey, item: Pick<Item, "id" | "type">): boolean {
-  switch (item.type) {
-    case "measure": {
-      const key = parseMeasureReference(item.id, session);
-      if (key === undefined) throw new Error(`The item ${item.id} is no Measure of ${session}`);
-      return reader.measureListing(key).listed;
-    }
-    case "version":
-      return reader.findNoLongerListed(item.id as DocumentId) === undefined;
-    case "proposed_amendment":
-      return reader.findNoLongerListed(item.id as AmendmentId) === undefined;
-    default:
-      return item.type satisfies never;
-  }
-}
-
-/**
  * Cuts the groups to one page of items counted across them in order, keeping each group's total, with the documents the
- * page's examples name once each. An item of the page whose own row the feed no longer lists is flagged (`listed`).
+ * page's examples name once each. An item of the page whose own row the feed no longer lists is flagged.
  */
 function pageOf(
   groups: readonly Group[],
   page: number,
-  listed: (item: Pick<Item, "id" | "type">) => boolean,
 ): { groups: FindMeasuresOutput["groups"]; documents: FindMeasuresOutput["documents"]; total: number } {
   const first = (page - 1) * PAGE_SIZE;
   let before = 0;
@@ -455,9 +431,9 @@ function pageOf(
       evidence_kind: group.kind,
       description: groupDescriptions[group.kind],
       total: group.items.length,
-      items: group.items.slice(start, end).map(({ documents: named, ...item }): ItemOutput => {
+      items: group.items.slice(start, end).map(({ documents: named, listing, ...item }): ItemOutput => {
         for (const document of named) documents.set(document.id, document.sourceUrl);
-        return { ...item, ...noLongerListedFlag(listed(item)) };
+        return { ...item, ...noLongerListedFlag(listing) };
       }),
     };
   });
@@ -523,15 +499,10 @@ export function findMeasures(
     };
   }
   let groups: Group[];
-  // The Agency's links with a listed evidence document, by node (ADR-0037); undefined when the call is not about an Agency.
-  let listedLinks: ((nodeId: string) => boolean) | undefined;
   const notes: string[] = [];
   switch (target.kind) {
     case "agency": {
       const links = reader.findAgencyLinks(session, { agency: target.id });
-      const listed = listedLinkKeys(links);
-      const agency = target.id;
-      listedLinks = (nodeId) => listed.has(agencyLinkKey(agency, nodeId));
       const stored = gatherRepeats(links);
       groups = agencyEvidenceKinds.map((kind) =>
         groupOfCandidates(kind, candidatesOfLinks(stored.filter(({ link }) => link.evidence.kind === kind)), since),
@@ -557,12 +528,7 @@ export function findMeasures(
       return target satisfies never;
   }
   const page = input.page ?? 1;
-  const keys = listedLinks;
-  const paged = pageOf(
-    groups,
-    page,
-    (item) => itemListed(reader, session, item) && (keys === undefined || keys(item.id)),
-  );
+  const paged = pageOf(groups, page);
   const lastPage = Math.max(1, Math.ceil(paged.total / PAGE_SIZE));
   if (page > lastPage) return { kind: "no_such_page", page, lastPage };
   return {

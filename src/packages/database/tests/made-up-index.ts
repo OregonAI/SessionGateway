@@ -29,7 +29,7 @@ import {
   type StoredDocument,
 } from "#/packages/domain/documents.ts";
 import { measureIdOf, type Measure, type MeasureKey, type SessionKey } from "#/packages/domain/index.ts";
-import type { AgencyId } from "#/packages/domain/oregonai.ts";
+import type { AgencyId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openIndexReader, type IndexReader } from "../reader.ts";
 import { openSearchReader, type SearchIndexReader } from "../search.ts";
@@ -53,6 +53,13 @@ export const modelId = "made-up-model";
 
 /** MADE UP: an Agency's slug. */
 export const agency = "bureau-of-made-up-things" as AgencyId;
+
+/** MADE UP: the snapshot of the registry an Agency Link was read with. */
+export const snapshot: SnapshotVersion = {
+  source: "executive-regulatory-frameworks",
+  commit: "0123456789abcdef0123456789abcdef01234567",
+  commitDate: "2099-01-01T00:00:00-08:00" as Timestamp,
+};
 
 /** The made-up pulls' as-of times: pull `n` of a story starts at ten past two in the morning, Pacific, on day `n` of January 2099. */
 export function asOf(n: number): Timestamp {

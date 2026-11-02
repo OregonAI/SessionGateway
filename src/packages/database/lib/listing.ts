@@ -13,7 +13,6 @@
 // another set adds its rows to that function and to nothing else.
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
-import { agencyLinkKey } from "#/packages/domain/agency-links.ts";
 import type {
   AmendmentId,
   DocumentId,
@@ -91,20 +90,30 @@ export function anyListed(reads: readonly ListingRead[]): ListingRead {
   return latest ?? unchecked;
 }
 
+/** What one Agency's links to one node are known by: the Agency and the node the evidence sits on. */
+function agencyLinkKey(agency: AgencyId, nodeId: string): string {
+  return `${agency} ${nodeId}`;
+}
+
 /**
- * The Listing of each Agency Link in a set of evidence, by `agencyLinkKey`: the Agency's link to a node is listed while
+ * The Listing of each Agency Link in a set of evidence, by Agency and node: the Agency's link to a node is listed while
  * any Document its evidence was read from is (ADR-0037). The evidence must be all of an Agency's evidence for the nodes it
  * names, because a link whose other evidence is left out would be judged on part of it.
  */
 export function agencyLinkListings(
   evidence: readonly { agency: AgencyId; nodeId: string; read: ListingRead }[],
-): Map<string, Listing> {
+): (agency: AgencyId, nodeId: string) => Listing {
   const byLink = new Map<string, ListingRead[]>();
   for (const { agency, nodeId, read } of evidence) {
     const key = agencyLinkKey(agency, nodeId);
     byLink.set(key, [...(byLink.get(key) ?? []), read]);
   }
-  return new Map([...byLink].map(([key, reads]) => [key, anyListed(reads).listing]));
+  const listings = new Map([...byLink].map(([key, reads]) => [key, anyListed(reads).listing]));
+  return (agency, nodeId) => {
+    const listing = listings.get(agencyLinkKey(agency, nodeId));
+    if (listing === undefined) throw new Error(`The evidence has no Agency Link of ${agency} to ${nodeId}`);
+    return listing;
+  };
 }
 
 const stateRow = z.object({ pull: z.number(), as_of: z.string(), latest: z.number() });

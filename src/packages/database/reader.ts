@@ -1,9 +1,6 @@
 // The MCP server's side of the database: read-only.
 import { z } from "zod";
 import {
-  agencyLinkKey,
-  listedLinkKeys,
-  type AgencyEvidence,
   type LinkedNode,
   type StoredAgencyLink,
   type StoredStatuteLinked,
@@ -79,7 +76,7 @@ import {
 import { compareTimestamps, type Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceFromJson, storedEvidenceKinds } from "./lib/agency-evidence.ts";
 import { openReadConnection } from "./lib/connection.ts";
-import { openListingReader } from "./lib/listing.ts";
+import { agencyLinkListings, openListingReader, type ListingRead } from "./lib/listing.ts";
 import {
   readFullPullAsOf,
   readSessionsHeld,
@@ -236,8 +233,6 @@ export type IndexReader = {
    * because no pull fetched the file while the feed listed it, and none will now.
    */
   findNoLongerListed(id: DocumentId | AmendmentId): Extract<Listing, { listed: false }> | undefined;
-  /** Whether the feed still lists a Measure the index holds, and when it last did. */
-  measureListing(key: MeasureKey): Listing;
   close(): void;
 };
 
@@ -778,6 +773,7 @@ export function openIndexReader(path: string): IndexReader {
       measure: key,
       label: null,
       sourceUrl: olisPageUrlOf(key),
+      listing: listings.ofRow(key.session, measuresSet, measureIdOf(key)).listing,
     };
   }
   /** The Measure a stored id names. The ids in the store were minted from a Measure of this Session. */
@@ -788,7 +784,14 @@ export function openIndexReader(path: string): IndexReader {
   }
   /** The Version a stored Version document is. */
   function versionNodeOf(key: MeasureKey, id: string, label: string, sourceUrl: string): LinkedNode {
-    return { type: "version", id: id as DocumentId, measure: key, label, sourceUrl };
+    return {
+      type: "version",
+      id: id as DocumentId,
+      measure: key,
+      label,
+      sourceUrl,
+      listing: listings.ofDocument(id as DocumentId).listing,
+    };
   }
   /** The Proposed Amendment a stored posting is of: its number as its earliest posting writes it, and the file served for it. */
   function amendmentNodeOf(key: MeasureKey, id: string): LinkedNode {
@@ -800,6 +803,7 @@ export function openIndexReader(path: string): IndexReader {
       measure: key,
       label: number.label,
       sourceUrl: file.source_url,
+      listing: listings.ofAmendment(id as AmendmentId).listing,
     };
   }
   /**
@@ -912,31 +916,40 @@ export function openIndexReader(path: string): IndexReader {
         : [selectAgencyLinksOfMeasure, selectTestimonyLinksOfMeasure, measureIdOf(of.measure)];
     const stored = links.all(session, asked).map((row) => agencyLinkRow.parse(row));
     const known = new Map<string, LinkedNode>();
-    const read = stored.map((found): StoredAgencyLink => {
+    const measureNode = (measureId: string, key: MeasureKey): LinkedNode => {
+      const node = known.get(`measure ${measureId}`) ?? measureNodeOf(key);
+      known.set(`measure ${measureId}`, node);
+      return node;
+    };
+    // Each link with the Listing of the Document its evidence was read from. The Agency's link to a node is listed while any
+    // of the Documents its evidence rests on is (ADR-0037), so the Listing of a link is read across all of them.
+    const evidence: { link: Omit<StoredAgencyLink, "listing">; read: ListingRead }[] = stored.map((found) => {
       const key = measureKeyOf(found.measure_id, session);
-      const evidence: AgencyEvidence = evidenceFromJson(found.link_kind, found.evidence);
+      // A Proposed Amendment is listed while the feed lists any of its postings (ADR-0030), as its node is.
+      const read =
+        found.document_kind === "proposed_amendment"
+          ? listings.ofAmendment(found.node_id as AmendmentId)
+          : listings.ofDocument(found.document_id as DocumentId);
       return {
-        agency: found.agency_id as AgencyId,
-        evidence,
-        document: {
-          id: found.document_id as DocumentId,
-          sourceUrl: found.document_source_url,
-          createdAt: found.document_created_at as Timestamp | null,
-          // A Proposed Amendment is listed while the feed lists any of its postings (ADR-0030), as its node is.
-          listing: (found.document_kind === "proposed_amendment"
-            ? listings.ofAmendment(found.node_id as AmendmentId)
-            : listings.ofDocument(found.document_id as DocumentId)
-          ).listing,
+        link: {
+          agency: found.agency_id as AgencyId,
+          evidence: evidenceFromJson(found.link_kind, found.evidence),
+          document: {
+            id: found.document_id as DocumentId,
+            sourceUrl: found.document_source_url,
+            createdAt: found.document_created_at as Timestamp | null,
+            listing: read.listing,
+          },
+          node: nodeOfDocument(found, key, known),
         },
-        node: nodeOfDocument(found, key, known),
+        read,
       };
     });
-    const testimony = testimonyLinks
-      .all(session, asked)
-      .map((row) => testimonyLinkRow.parse(row))
-      .map((found): StoredAgencyLink => {
-        const key = measureKeyOf(found.measure_id, session);
-        return {
+    for (const found of testimonyLinks.all(session, asked).map((row) => testimonyLinkRow.parse(row))) {
+      const key = measureKeyOf(found.measure_id, session);
+      const read = listings.ofDocument(found.document_id as DocumentId);
+      evidence.push({
+        link: {
           agency: found.agency_id as AgencyId,
           // The Agency Link extractor matches the Organization with stray spaces trimmed (agency-links, matchOrganization).
           evidence: { kind: "testimony", organization: (found.organization ?? "").trim() },
@@ -944,12 +957,20 @@ export function openIndexReader(path: string): IndexReader {
             id: found.document_id as DocumentId,
             sourceUrl: found.document_source_url,
             createdAt: found.document_created_at as Timestamp | null,
-            listing: listings.ofDocument(found.document_id as DocumentId).listing,
+            listing: read.listing,
           },
-          node: measureNodeOf(key),
-        };
+          node: measureNode(found.measure_id, key),
+        },
+        read,
       });
-    return [...read, ...testimony];
+    }
+    const listingOfLink = agencyLinkListings(
+      evidence.map(({ link, read }) => ({ agency: link.agency, nodeId: link.node.id, read })),
+    );
+    return evidence.map(({ link }): StoredAgencyLink => ({
+      ...link,
+      listing: listingOfLink(link.agency, link.node.id),
+    }));
   }
   return {
     analysisDocuments(key) {
@@ -1010,12 +1031,10 @@ export function openIndexReader(path: string): IndexReader {
     },
     measuresWithAgencyLink(session, agency) {
       // ADR-0037: a link none of whose evidence documents the feed lists is not counted, as a node no longer listed is not.
-      const links = findAgencyLinks(session, { agency });
-      const listed = listedLinkKeys(links);
       return [
         ...new Set(
-          links
-            .filter((link) => listed.has(agencyLinkKey(link.agency, link.node.id)))
+          findAgencyLinks(session, { agency })
+            .filter((link) => link.listing.listed)
             .map((link) => measureIdOf(link.node.measure)),
         ),
       ];
@@ -1260,9 +1279,6 @@ export function openIndexReader(path: string): IndexReader {
       const read = listings.ofDocument(id as DocumentId);
       const listing = read.pull === null ? listings.ofAmendment(id as AmendmentId).listing : read.listing;
       return listing.listed ? undefined : listing;
-    },
-    measureListing(key) {
-      return listings.ofRow(key.session, measuresSet, measureIdOf(key)).listing;
     },
     findFloorLetters(key) {
       return selectFloorLetters.all(measureIdOf(key)).map((row): FloorLetterEntry => {

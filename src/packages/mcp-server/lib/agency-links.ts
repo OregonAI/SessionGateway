@@ -3,8 +3,6 @@
 import { z } from "zod";
 import {
   agencyEvidenceKinds,
-  agencyLinkKey,
-  listedLinkKeys,
   type AgencyEvidence,
   type LinkedNode,
   type StoredAgencyLink,
@@ -295,7 +293,6 @@ export function agencyLinksOf(
     }
     byAgency.set(link.agency, [...(byAgency.get(link.agency) ?? []), link]);
   }
-  const listedLinks = listedLinkKeys(links);
   const named = new Map<string, { sourceUrl: string; listing: StoredAgencyLink["document"]["listing"] }>();
   const entries = [...byAgency.entries()]
     .toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -310,7 +307,7 @@ export function agencyLinksOf(
           return {
             document_id: link.document.id,
             ...nodeOutput(link.node),
-            ...noLongerListedFlag(listedLinks.has(agencyLinkKey(link.agency, link.node.id))),
+            ...noLongerListedFlag(link.listing),
             ...evidenceFieldsOf(link.evidence),
           };
         });
