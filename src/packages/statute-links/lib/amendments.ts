@@ -1,14 +1,24 @@
-import { placeAmendment, versionRankOf, type AmendmentPlacement } from "#/packages/domain/documents.ts";
+import { placeAmendment, versionRankOf } from "#/packages/domain/documents.ts";
 import type { MeasureKey } from "#/packages/domain/index.ts";
 import type { StoredAmendment, StoredVersion } from "#/packages/domain/statute-links.ts";
 
-/** A Proposed Amendment with the Version its evidence names (ADR-0015). */
-export type PlacedAmendment = {
-  amendment: StoredAmendment;
-  placement: AmendmentPlacement;
-  /** The Index's Version that `placement` names: undefined unless it is `version`. */
-  version: StoredVersion | undefined;
-};
+/**
+ * A Proposed Amendment with the Version its evidence names, as far as the evidence goes (ADR-0015). `kind` says how far:
+ * the Version is named and the Index holds it, it is named and the Index does not hold it (its file did not come), or the
+ * evidence names none. `reason` says how the Version was read, or why it is not known.
+ */
+export type PlacedAmendment =
+  | {
+      kind: "version";
+      amendment: StoredAmendment;
+      /** The Version in the words the feed describes Versions in. */
+      description: string;
+      /** The Index's Version that `description` names. */
+      version: StoredVersion;
+      reason: string;
+    }
+  | { kind: "not_held"; amendment: StoredAmendment; description: string; reason: string }
+  | { kind: "unknown"; amendment: StoredAmendment; reason: string };
 
 /** A Proposed Amendment a later Version replaces (GLOSSARY.md, "Superseded amendment"). */
 export type SupersededAmendment = {
@@ -45,11 +55,12 @@ export function placeAmendedVersion(
     case "version": {
       const version = versions.find((held) => held.id === placement.versionId);
       if (version === undefined) throw new Error(`The Version ${placement.versionId} was placed but is not held`);
-      return { amendment, placement, version };
+      return { kind: "version", amendment, description: placement.description, version, reason: placement.reason };
     }
     case "not_held":
+      return { kind: "not_held", amendment, description: placement.description, reason: placement.reason };
     case "unknown":
-      return { amendment, placement, version: undefined };
+      return { kind: "unknown", amendment, reason: placement.reason };
     default:
       return placement satisfies never;
   }
@@ -69,17 +80,17 @@ function nextVersionAfter(rank: number, versions: readonly StoredVersion[]): Sto
  * The Version an amendment's evidence names, held or not, and where it sits in the order of printing. Undefined when the
  * evidence names none, or a Version that sits nowhere in that order.
  */
-function namedVersionOf(placement: AmendmentPlacement): { description: string; rank: number } | undefined {
-  switch (placement.kind) {
+function namedVersionOf(placed: PlacedAmendment): { description: string; rank: number } | undefined {
+  switch (placed.kind) {
     case "version":
     case "not_held": {
-      const rank = versionRankOf(placement.description);
-      return rank === undefined ? undefined : { description: placement.description, rank };
+      const rank = versionRankOf(placed.description);
+      return rank === undefined ? undefined : { description: placed.description, rank };
     }
     case "unknown":
       return undefined;
     default:
-      return placement satisfies never;
+      return placed satisfies never;
   }
 }
 
@@ -98,14 +109,17 @@ export function splitByReplacement(
   const superseded: SupersededAmendment[] = [];
   for (const amendment of amendments) {
     const placed = placeAmendedVersion(amendment, key, versions);
-    const named = namedVersionOf(placed.placement);
+    const named = namedVersionOf(placed);
     const later = named === undefined ? undefined : nextVersionAfter(named.rank, versions);
     if (named === undefined || later === undefined) {
       current.push(placed);
     } else {
       superseded.push({
         amendment,
-        amendedVersion: { description: named.description, held: placed.version },
+        amendedVersion: {
+          description: named.description,
+          held: placed.kind === "version" ? placed.version : undefined,
+        },
         laterVersion: later,
       });
     }

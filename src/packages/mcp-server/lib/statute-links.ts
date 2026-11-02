@@ -133,13 +133,20 @@ const parseResultFields = {
   ),
 };
 
+/** What `parseResultFields` describe, as one value. */
+type ParseResultOutput = {
+  text_read: boolean;
+  not_read_reason: string | null;
+  statute_links: StatuteLinksOutput;
+};
+
 /** The same fields for a Version that may not be known: nothing was read then, so text_read is null. */
 export const maybeParseResultFields = {
   ...parseResultFields,
   text_read: z.boolean().nullable().describe(`${textReadDescription} Null when the Version is not known.`),
 };
 
-export function parseResultShown(parse: StatuteParse): z.infer<z.ZodObject<typeof parseResultFields>> {
+export function parseResultShown(parse: StatuteParse): ParseResultOutput {
   return {
     text_read: parse.textRead,
     not_read_reason: notReadReasonOf(parse),
@@ -202,10 +209,22 @@ export const amendedVersionOutput = z.object({
 });
 
 /** The Version a Proposed Amendment amends, as the entry point placed it from the amendment's headers, number and the Versions held. */
-export function amendedVersionShown({ placement, version }: PlacedAmendment): z.infer<typeof amendedVersionOutput> {
-  return version === undefined
-    ? { known: false, id: null, label: null, source_url: null, reason: placement.reason }
-    : { known: true, id: version.id, label: version.label, source_url: version.sourceUrl, reason: placement.reason };
+export function amendedVersionShown(placed: PlacedAmendment): z.infer<typeof amendedVersionOutput> {
+  switch (placed.kind) {
+    case "version":
+      return {
+        known: true,
+        id: placed.version.id,
+        label: placed.version.label,
+        source_url: placed.version.sourceUrl,
+        reason: placed.reason,
+      };
+    case "not_held":
+    case "unknown":
+      return { known: false, id: null, label: null, source_url: null, reason: placed.reason };
+    default:
+      return placed satisfies never;
+  }
 }
 
 /** What was read of one file posted for a Proposed Amendment: postings whose files read the same are one entry. */

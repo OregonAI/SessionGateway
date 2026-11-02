@@ -91,7 +91,7 @@ function comparedVersionShown(
   const placed = placeAmendedVersion(amendment, key, versions);
   const shown = amendedVersionShown(placed);
   // A Version that is not known has nothing read: there is no comparison.
-  if (placed.version === undefined) return { ...shown, text_read: null, not_read_reason: null, statute_links: noLinks };
+  if (placed.kind !== "version") return { ...shown, text_read: null, not_read_reason: null, statute_links: noLinks };
   return { ...shown, ...parseResultShown(placed.version.parse) };
 }
 

@@ -174,7 +174,12 @@ describe("a Proposed Amendment whose Amended Version has a later Version held", 
     });
 
     expect(result.supersededAmendments).toEqual([]);
-    expect(result.currentAmendments.map((placed) => [placed.amendment.id, placed.version?.id])).toEqual([
+    expect(
+      result.currentAmendments.map((placed) => [
+        placed.amendment.id,
+        placed.kind === "version" ? placed.version.id : placed.kind,
+      ]),
+    ).toEqual([
       ["amendment-2025r1-sb69-1", "version-2025r1-sb69-introduced"],
       ["amendment-2025r1-sb69-2", "version-2025r1-sb69-introduced"],
     ]);
@@ -220,9 +225,9 @@ describe("a Proposed Amendment whose Version cannot be named", () => {
     const result = statuteLinksOfMeasure({ measure: sb69, versions, amendments: [unfetched], table: undefined });
 
     expect(result.supersededAmendments).toEqual([]);
-    expect(
-      result.currentAmendments.map((placed) => [placed.amendment.id, placed.placement.kind, placed.version]),
-    ).toEqual([["amendment-2025r1-sb69-2", "unknown", undefined]]);
+    expect(result.currentAmendments.map((placed) => [placed.amendment.id, placed.kind])).toEqual([
+      ["amendment-2025r1-sb69-2", "unknown"],
+    ]);
   });
 
   // MADE UP from SB 69-2: its file says "SENATE BILL 69" (Introduced) and the number is spelled "-A2", which names the
@@ -241,7 +246,7 @@ describe("a Proposed Amendment whose Version cannot be named", () => {
     const result = statuteLinksOfMeasure({ measure: sb69, versions, amendments: [disagreeing], table: undefined });
 
     expect(result.supersededAmendments).toEqual([]);
-    expect(result.currentAmendments.map((placed) => placed.placement.kind)).toEqual(["unknown"]);
+    expect(result.currentAmendments.map((placed) => placed.kind)).toEqual(["unknown"]);
   });
 
   test("one amendment that names its Version and one that does not: only the first is superseded, and the order given is kept", () => {
@@ -277,8 +282,11 @@ describe("the Version a Proposed Amendment amends, as the evidence places it", (
 
     const placed = placeAmendedVersion(sb69Amendment2, sb69, versions);
 
-    expect(placed.placement.kind).toBe("version");
-    expect(placed.version?.id).toBe("version-2025r1-sb69-introduced");
+    expect(placed).toMatchObject({
+      kind: "version",
+      description: "Introduced",
+      version: { id: "version-2025r1-sb69-introduced" },
+    });
   });
 
   test("HB 3795-A3 amends A-Engrossed, which the Index does not hold: the Version is named and not held", () => {
@@ -286,8 +294,8 @@ describe("the Version a Proposed Amendment amends, as the evidence places it", (
 
     const placed = placeAmendedVersion(hb3795AmendmentA3, hb3795, versions);
 
-    expect(placed.placement).toMatchObject({ kind: "not_held", description: "A-Engrossed" });
-    expect(placed.version).toBeUndefined();
+    expect(placed).toMatchObject({ kind: "not_held", description: "A-Engrossed" });
+    expect(placed).not.toHaveProperty("version");
   });
 
   test("SB 69-2 with no file held amends a Version that is not known", () => {
@@ -303,7 +311,7 @@ describe("the Version a Proposed Amendment amends, as the evidence places it", (
 
     const placed = placeAmendedVersion(unfetched, sb69, [heldVersion(sb69, "Introduced")]);
 
-    expect(placed.placement.kind).toBe("unknown");
-    expect(placed.version).toBeUndefined();
+    expect(placed.kind).toBe("unknown");
+    expect(placed).not.toHaveProperty("version");
   });
 });
