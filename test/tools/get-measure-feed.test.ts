@@ -129,8 +129,8 @@ describe("the deployment's Session", () => {
       serverEnv: { SESSION_KEY: "2025S1" },
     });
     started.push(system);
-    // The premise: the 2025R1 pull was served the stray row, along with the fixture's 8 Measures, and read it.
-    expect(measuresRead(system)).toBe(9);
+    // The premise: the 2025R1 pull was served the stray row, along with the fixture's 10 Measures, and read it.
+    expect(measuresRead(system)).toBe(11);
     stray.Measures.splice(0);
     await system.pullAnotherSession("2025S1");
     const connected = await connectClient("2026-07-28", system.handler);
@@ -210,7 +210,8 @@ describe("a pull that is refused", () => {
 });
 
 describe("the feed's paging", () => {
-  // The fixture holds these eight Measures of 2025R1 (test/fixtures/olis-2025R1/measures.txt).
+  // The fixture holds ten Measures of 2025R1 (test/fixtures/olis-2025R1/measures.txt); these are the first eight, and
+  // HB 3723 and HB 3124 (ticket #54) are not paged here.
   const fixtureMeasures = [
     ["SB 64", "measure-2025r1-sb64"],
     ["SB 69", "measure-2025r1-sb69"],
@@ -248,6 +249,6 @@ describe("the feed's paging", () => {
   it("refuses a pull whose pages hold fewer rows than the feed counted", async () => {
     const pull = startSystem({ clockAt: "2025-12-15T17:00:00Z", olis: { withholdLastRows: 1 } });
 
-    await expect(pull).rejects.toThrow(/counted 8.*read 7/);
+    await expect(pull).rejects.toThrow(/counted 10.*read 9/);
   });
 });

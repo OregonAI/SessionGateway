@@ -14,7 +14,7 @@ import { startCopiedSystem, type System } from "../support/system.ts";
 let system: System;
 
 beforeAll(async () => {
-  // 2026-08-01 10:00 in Oregon: every row of the fixture exists by then, so the pull fetches all 278
+  // 2026-08-01 10:00 in Oregon: every row of the fixture exists by then, so the pull fetches all 280
   // documents, the analysis documents among them.
   // The cases make more than the default 120 tool calls in a minute together (the simulated clock never
   // moves, so the window never ends); the limit has its own file, get-measure-rate-limit.test.ts.

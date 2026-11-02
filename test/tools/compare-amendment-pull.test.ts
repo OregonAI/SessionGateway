@@ -16,7 +16,7 @@ import { startCopiedSystemWith, startSystem, type System } from "../support/syst
 
 const clockAt = "2026-08-01T17:00:00Z";
 
-// A case that builds its own system and serves the documents pulls the fixture's 278 files, about four seconds
+// A case that builds its own system and serves the documents pulls the fixture's 280 files, about four seconds
 // on its own and more with the other files' workers running beside it (the default is five).
 vi.setConfig({ testTimeout: 60_000 });
 const root = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads";

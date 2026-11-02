@@ -64,7 +64,7 @@ export type FakeOlisOptions = {
    */
   pagingFault?: "repeats-the-first-page" | "never-ends";
   /**
-   * Serve the documents themselves. Off by default: extracting the fixture's 278 PDFs takes seconds, so
+   * Serve the documents themselves. Off by default: extracting the fixture's 280 PDFs takes seconds, so
    * only a test that reads documents asks for them. The feed is the same either way, rows that link a
    * document included; when this is off every request for a document is answered 404 (Not Found), as
    * OLIS does for a file it does not have, and the worker lists the document as not fetched.

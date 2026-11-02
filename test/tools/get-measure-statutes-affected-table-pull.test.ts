@@ -4,7 +4,7 @@
 // file that is not a table, refused again without a second reading) until it can; a table that is loaded, fetched again,
 // withdrawn and then changed; a Version whose text could not be read; and made-up tables in shapes the real one never
 // shows (the last describe: a line the parser cannot read, a footer date in November, overturned vetoes, an E alone for a
-// Measure with and without an E-Engrossed Version in the feed). A system pulls the fixture's 278 documents, about four
+// Measure with and without an E-Engrossed Version in the feed). A system pulls the fixture's 280 documents, about four
 // seconds, so a system serves several cases, which run in the order written and each take the table on from the one
 // before. They are read from the top: a case that comes later relies on what the earlier ones did.
 //
@@ -41,7 +41,7 @@ import {
 } from "../support/statutes-affected-table.ts";
 import { startSystem, type System, type SystemOptions } from "../support/system.ts";
 
-// A system serves the documents, which pulls the fixture's 278 files: about four seconds on its own and more beside the
+// A system serves the documents, which pulls the fixture's 280 files: about four seconds on its own and more beside the
 // other files' workers (the default timeout is five seconds).
 vi.setConfig({ testTimeout: 60_000 });
 

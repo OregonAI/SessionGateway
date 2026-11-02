@@ -27,7 +27,7 @@ import {
 } from "../support/statutes-affected-table.ts";
 import { startSystem, type System } from "../support/system.ts";
 
-// The system serves the documents, which pulls the fixture's 278 files: seconds, more beside the other files' workers.
+// The system serves the documents, which pulls the fixture's 280 files: seconds, more beside the other files' workers.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 type VersionEntry = {

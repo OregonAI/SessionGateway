@@ -1,5 +1,5 @@
 // Seam 1 (test/CLAUDE.md): `meetings` as an agent sees it, with the whole system behind it. A fake
-// OLIS serves the committed fixture and its 278 documents as the feed stood at noon Pacific on
+// OLIS serves the committed fixture and its 280 documents as the feed stood at noon Pacific on
 // 2025-01-29 (rows created by then), the ingest worker pulls them into a database, and an MCP client
 // calls the tool in-process. One database serves every case in this file because none of them
 // changes it. The cases that need the Session after the fact are in meetings-past.test.ts, and the

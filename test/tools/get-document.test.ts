@@ -1,5 +1,5 @@
 // Seam 1 (test/CLAUDE.md): get_document as an agent sees it, with the whole system behind it. A fake
-// OLIS serves the committed fixture and its 278 documents as the feed stood in August 2026, the ingest
+// OLIS serves the committed fixture and its 280 documents as the feed stood in August 2026, the ingest
 // worker pulls them into a database, and an MCP client calls the tool in-process. One database serves
 // every case in this file because none of them changes it; cases that build their own are in
 // get-document-pull.test.ts.
@@ -14,7 +14,7 @@ let system: System;
 
 beforeAll(async () => {
   // 2026-08-01 10:00 in Oregon: every row of the fixture exists by then (the newest Exhibit row was
-  // created on 2026-07-27), so the pull fetches all 278 documents.
+  // created on 2026-07-27), so the pull fetches all 280 documents.
   system = await startCopiedSystem({ clockAt: "2026-08-01T17:00:00Z", documents: true });
 }, 60_000);
 
@@ -450,8 +450,8 @@ describe.for(eras)("get_document for a %s client", (era) => {
   });
 
   describe("session_overview", () => {
-    // Counts are literals from the fixture: its README says it holds 8 Measures and 278 documents, and
-    // feed/ has 12 Committees, 36 CommitteeMeetings, 23 MeasureDocuments (5 of them Printed Amendments:
+    // Counts are literals from the fixture: its README says it holds 10 Measures and 280 documents, and
+    // feed/ has 12 Committees, 36 CommitteeMeetings, 25 MeasureDocuments (5 of them Printed Amendments:
     // "Senate Amendments to Introduced" for SB 69, SB 921 and SB 983, "House Amendments to Introduced"
     // and "Senate Amendments to A-Engrossed" for HB 3795), 34 MeasureAnalysisDocuments, 15
     // CommitteeProposedAmendments (postings of 7 amendments), 86 CommitteeMeetingDocuments and 84
@@ -464,14 +464,14 @@ describe.for(eras)("get_document for a %s client", (era) => {
         session: "2025R1",
         as_of: "2026-08-01T10:00:00-07:00",
         counts: {
-          measures: 8,
+          measures: 10,
           committees: 12,
           meetings: 36,
           proposed_amendments: 7,
-          documents: 278,
+          documents: 280,
           documents_without_text_layer: 3,
           documents_by_kind: {
-            version: 18,
+            version: 20,
             printed_amendment: 5,
             proposed_amendment: 15,
             analysis: 34,
