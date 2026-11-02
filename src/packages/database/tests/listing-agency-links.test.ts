@@ -39,11 +39,11 @@ const secondLetter = testimonyRecord(2);
 /** A complete pull that lists the Measure, its Version and these Testimony rows. */
 function pullListing(...letters: (typeof firstLetter)[]): ReturnType<typeof pullOf> {
   return pullOf({
-    measures: [measure],
-    committees: [committee],
-    meetings: [meetingOn(10)],
-    documentLinks: [version, ...letters.map((letter) => letter.link)],
-    testimony: letters,
+    Measures: [measure],
+    Committees: [committee],
+    CommitteeMeetings: [meetingOn(10)],
+    MeasureDocuments: [version],
+    CommitteePublicTestimonies: letters,
   });
 }
 
@@ -124,7 +124,7 @@ describe("an Agency Link the reader hands out", () => {
     index = openMadeUpIndex();
     index.writer.recordFullPull(session, asOf(1), pullListing(firstLetter));
     // Two pulls that list the letter and not the Measure.
-    const withoutMeasure = { ...pullListing(firstLetter), measures: [] };
+    const withoutMeasure = { ...pullListing(firstLetter), Measures: [] };
     index.writer.recordFullPull(session, asOf(2), withoutMeasure);
     index.writer.recordFullPull(session, asOf(3), withoutMeasure);
 
@@ -138,8 +138,14 @@ describe("an Agency Link the reader hands out", () => {
     const first = postingLink(1, 10);
     const second = postingLink(2, 11);
     const meetings = [meetingOn(10), meetingOn(11)];
-    const pulling = (...documentLinks: (typeof version)[]): ReturnType<typeof pullOf> =>
-      pullOf({ measures: [measure], committees: [committee], meetings, documentLinks });
+    const pulling = (...links: (typeof version)[]): ReturnType<typeof pullOf> =>
+      pullOf({
+        Measures: [measure],
+        Committees: [committee],
+        CommitteeMeetings: meetings,
+        MeasureDocuments: links.filter((link) => link.kind === "version"),
+        CommitteeProposedAmendments: links.filter((link) => link.kind === "proposed_amendment"),
+      });
     index.writer.recordFullPull(session, asOf(1), pulling(version, first, second));
     for (const link of [version, first, second])
       storeMadeUpDocument(index, link, "Made-up text that names the Bureau.");
@@ -190,9 +196,9 @@ describe("a Statute Link's node", () => {
       index.reader.findStatuteLinked(session, { section: orsSection.id })[0]?.node.listing;
 
     // The pulls list the Measure but not the Version: one miss, then two.
-    index.writer.recordFullPull(session, asOf(2), pullOf({ measures: [measure] }));
+    index.writer.recordFullPull(session, asOf(2), pullOf({ Measures: [measure] }));
     expect(nodeListing()).toEqual({ listed: true, lastListedAt: asOf(1) });
-    index.writer.recordFullPull(session, asOf(3), pullOf({ measures: [measure] }));
+    index.writer.recordFullPull(session, asOf(3), pullOf({ Measures: [measure] }));
     expect(nodeListing()).toEqual({ listed: false, lastListedAt: asOf(1) });
   });
 });

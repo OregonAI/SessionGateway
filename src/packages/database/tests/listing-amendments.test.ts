@@ -26,7 +26,7 @@ const meetings = [meetingOn(10), meetingOn(11)];
 
 /** A complete pull that reads the committee, its two meetings and these postings. */
 function pullListing(...postings: (typeof first)[]): ReturnType<typeof pullOf> {
-  return pullOf({ committees: [committee], meetings, documentLinks: postings });
+  return pullOf({ Committees: [committee], CommitteeMeetings: meetings, CommitteeProposedAmendments: postings });
 }
 
 describe("a Proposed Amendment", () => {

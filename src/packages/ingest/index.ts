@@ -16,6 +16,7 @@
 import { createHash } from "node:crypto";
 import type { IngestConfig } from "#/packages/config/index.ts";
 import {
+  documentLinksOf,
   openIndexWriter,
   type CommitteeVoteRecord,
   type FullPullRecord,
@@ -381,19 +382,6 @@ async function readFeed(olis: OlisClient, config: IngestConfig, deps: IngestDeps
 /** Everything one Pull read of the feed, before it is resolved and stored: the rows of each entity set. */
 type FeedRead = Awaited<ReturnType<typeof readFeed>>;
 
-/** Every document the feed links in what a Pull read, the meetings' agendas included, in the order they are fetched. */
-function linksOf(feed: FeedRead): DocumentLink[] {
-  return [
-    ...feed.MeasureDocuments,
-    ...feed.MeasureAnalysisDocuments,
-    ...feed.CommitteeProposedAmendments,
-    ...feed.CommitteeMeetingDocuments,
-    ...feed.CommitteePublicTestimonies,
-    ...feed.CommitteeMeetings.flatMap((meeting) => (meeting.agenda === null ? [] : [meeting.agenda])),
-    ...feed.FloorLetters,
-  ];
-}
-
 /** What a run stores of what it read: the rows, with each Legislator Code resolved. */
 function feedRecordOf(
   config: IngestConfig,
@@ -419,24 +407,27 @@ function feedRecordOf(
   const committeeNames = new Map<CommitteeId, string>(
     feed.Committees.map((committee) => [committee.id, committee.name]),
   );
-  const links = linksOf(feed);
   const record: FullPullRecord = {
-    measures: feed.Measures,
-    history: feed.MeasureHistoryActions,
-    legislatorRows: feed.Legislators,
+    Measures: feed.Measures,
+    Legislators: feed.Legislators,
+    MeasureSponsors: sponsors,
+    MeasureHistoryActions: feed.MeasureHistoryActions,
+    MeasureVotes: floorVoteRecords,
+    CommitteeVotes: committeeVoteRecords,
+    Committees: feed.Committees,
+    CommitteeMeetings: feed.CommitteeMeetings,
+    CommitteeAgendaItems: feed.CommitteeAgendaItems,
+    MeasureDocuments: feed.MeasureDocuments,
+    MeasureAnalysisDocuments: feed.MeasureAnalysisDocuments,
+    CommitteeMeetingDocuments: feed.CommitteeMeetingDocuments,
+    CommitteeProposedAmendments: feed.CommitteeProposedAmendments,
+    CommitteePublicTestimonies: snapshotRead.testimonyRecordsOf(feed.CommitteePublicTestimonies),
+    CommitteeMembers: feed.CommitteeMembers,
+    ConveneTimes: feed.ConveneTimes,
+    LegislativeSessions: feed.LegislativeSessions,
+    FloorLetters: feed.FloorLetters,
     legislators: resolver.people,
     legislatorCodes: resolver.codes.map(({ code, legislator }) => ({ code, legislatorId: legislator.id })),
-    sponsors,
-    floorVotes: floorVoteRecords,
-    committeeVotes: committeeVoteRecords,
-    committees: feed.Committees,
-    meetings: feed.CommitteeMeetings,
-    agendaItems: feed.CommitteeAgendaItems,
-    documentLinks: links,
-    testimony: snapshotRead.testimonyRecordsOf(links),
-    committeeMembers: feed.CommitteeMembers,
-    convenings: feed.ConveneTimes,
-    sessionDates: feed.LegislativeSessions,
   };
   return { record, resolver, committeeNames };
 }
@@ -469,7 +460,6 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     setCounts.push(count);
   });
   const feed = await readFeed(olis, config, deps, { kind: "full_pull" });
-  const links = linksOf(feed);
 
   // The pull is complete only when every set it read came with as many rows as the feed counted. One that is not
   // stores nothing: the index goes on answering from the last complete pull, and no row is marked as missed by it.
@@ -501,7 +491,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       deps,
       writer,
       olis,
-      links,
+      links: documentLinksOf(record),
       committeeNames,
       passageCounts,
       notFetched,
@@ -605,7 +595,7 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
       deps,
       writer,
       olis,
-      links: linksOf(feed),
+      links: documentLinksOf(record),
       committeeNames,
       passageCounts,
       notFetched,

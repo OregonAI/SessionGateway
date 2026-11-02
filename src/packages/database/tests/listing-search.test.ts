@@ -64,7 +64,7 @@ function whatSearchHolds(): { keyword: DocumentId[]; vectors: DocumentId[] } {
 describe("a Document a complete Full pull makes No longer listed", () => {
   it("leaves search, comes back when a pull lists it again, and the search generation moves both times", () => {
     index = openMadeUpIndex();
-    index.writer.recordFullPull(session, asOf(1), pullOf({ documentLinks: [version] }));
+    index.writer.recordFullPull(session, asOf(1), pullOf({ MeasureDocuments: [version] }));
     storeMadeUpDocument(index, version, "A zebracrossing is a made-up thing.");
     expect(whatSearchHolds()).toEqual({ keyword: [version.id], vectors: [version.id] });
     const listed = index.search.generation();
@@ -82,14 +82,14 @@ describe("a Document a complete Full pull makes No longer listed", () => {
     expect(served?.held === true ? served.document.text : undefined).toBe("A zebracrossing is a made-up thing.");
 
     // A pull that lists it brings it back to both, and the generation moves again.
-    index.writer.recordFullPull(session, asOf(4), pullOf({ documentLinks: [version] }));
+    index.writer.recordFullPull(session, asOf(4), pullOf({ MeasureDocuments: [version] }));
     expect(whatSearchHolds()).toEqual({ keyword: [version.id], vectors: [version.id] });
     expect(index.search.generation()).toBe(listed + 2);
   });
 
   it("moves the generation when two pulls share an As of", () => {
     index = openMadeUpIndex();
-    index.writer.recordFullPull(session, asOf(1), pullOf({ documentLinks: [version] }));
+    index.writer.recordFullPull(session, asOf(1), pullOf({ MeasureDocuments: [version] }));
     storeMadeUpDocument(index, version, "A zebracrossing is a made-up thing.");
     index.writer.recordFullPull(session, asOf(2), pullOf());
     const before = index.search.generation();
@@ -101,13 +101,13 @@ describe("a Document a complete Full pull makes No longer listed", () => {
 
   it("leaves the generation where it was when a pull changes nothing search holds", () => {
     index = openMadeUpIndex();
-    index.writer.recordFullPull(session, asOf(1), pullOf({ documentLinks: [version] }));
+    index.writer.recordFullPull(session, asOf(1), pullOf({ MeasureDocuments: [version] }));
     storeMadeUpDocument(index, version, "A zebracrossing is a made-up thing.");
     const before = index.search.generation();
 
     // Pulls that list the Document, and pulls that miss it once, leave search as it was.
-    index.writer.recordFullPull(session, asOf(2), pullOf({ documentLinks: [version] }));
-    index.writer.recordFullPull(session, asOf(3), pullOf({ documentLinks: [version] }));
+    index.writer.recordFullPull(session, asOf(2), pullOf({ MeasureDocuments: [version] }));
+    index.writer.recordFullPull(session, asOf(3), pullOf({ MeasureDocuments: [version] }));
     expect(index.search.generation()).toBe(before);
   });
 });
@@ -116,7 +116,7 @@ describe("a Document no complete Full pull has listed", () => {
   it("stays in search however many complete pulls miss it: it has no row for them to miss", () => {
     index = openMadeUpIndex();
     // An Increment stores the Document, and three complete Full pulls follow that never list it.
-    index.writer.recordIncrement(session, asOf(1), pullOf({ documentLinks: [version] }));
+    index.writer.recordIncrement(session, asOf(1), pullOf({ MeasureDocuments: [version] }));
     storeMadeUpDocument(index, version, "A zebracrossing is a made-up thing.");
     index.writer.recordFullPull(session, asOf(2), pullOf());
     index.writer.recordFullPull(session, asOf(3), pullOf());
@@ -129,7 +129,11 @@ describe("a Document no complete Full pull has listed", () => {
   it("is in no note of an item the index holds and the feed no longer lists", () => {
     index = openMadeUpIndex();
     const posting = postingLink(1, 10);
-    index.writer.recordIncrement(session, asOf(1), pullOf({ documentLinks: [posting, version] }));
+    index.writer.recordIncrement(
+      session,
+      asOf(1),
+      pullOf({ MeasureDocuments: [version], CommitteeProposedAmendments: [posting] }),
+    );
     store(posting, "Amends a made-up thing.");
     storeCiting(version, "A made-up thing is under ORS 468.130.");
     index.writer.recordFullPull(session, asOf(2), pullOf());
@@ -147,22 +151,22 @@ describe("what the index holds of an item the feed no longer lists", () => {
     const first = postingLink(1, 10);
     const second = postingLink(2, 11);
     const third = postingLink(3, 12);
-    index.writer.recordFullPull(session, asOf(1), pullOf({ documentLinks: [first, second, third] }));
+    index.writer.recordFullPull(session, asOf(1), pullOf({ CommitteeProposedAmendments: [first, second, third] }));
     for (const posting of [first, second, third]) {
       store(posting, `Amends ${posting.id}.`);
     }
-    index.writer.recordFullPull(session, asOf(2), pullOf({ documentLinks: [second, third] }));
+    index.writer.recordFullPull(session, asOf(2), pullOf({ CommitteeProposedAmendments: [second, third] }));
     expect(index.search.unlistedPostings(amendmentId, session)).toBeUndefined();
 
     // Pull 3 lists only the third: the first (last listed by pull 1) is No longer listed, the second (pull 2) is not yet.
-    index.writer.recordFullPull(session, asOf(3), pullOf({ documentLinks: [third] }));
+    index.writer.recordFullPull(session, asOf(3), pullOf({ CommitteeProposedAmendments: [third] }));
     expect(index.search.unlistedPostings(amendmentId, session)).toEqual({
       count: 1,
       latest: { documentId: first.id, nodeId: amendmentId, lastListedAt: asOf(1) },
     });
 
     // Pull 4 lists none: the second joins it, and the one listed last is the second (pull 2, against pull 1).
-    index.writer.recordFullPull(session, asOf(4), pullOf({ documentLinks: [third] }));
+    index.writer.recordFullPull(session, asOf(4), pullOf({ CommitteeProposedAmendments: [third] }));
     index.writer.recordFullPull(session, asOf(5), pullOf());
     expect(index.search.unlistedPostings(amendmentId, session)).toEqual({
       count: 2,
@@ -173,10 +177,14 @@ describe("what the index holds of an item the feed no longer lists", () => {
   it("counts the Documents that name a citation and are No longer listed, and names the one listed last", () => {
     index = openMadeUpIndex();
     const analysis = analysisLink();
-    index.writer.recordFullPull(session, asOf(1), pullOf({ documentLinks: [version, analysis] }));
+    index.writer.recordFullPull(
+      session,
+      asOf(1),
+      pullOf({ MeasureDocuments: [version], MeasureAnalysisDocuments: [analysis] }),
+    );
     storeCiting(version, "A made-up thing is under ORS 468.130.");
     storeCiting(analysis, "The made-up thing falls under ORS 468.130.");
-    index.writer.recordFullPull(session, asOf(2), pullOf({ documentLinks: [analysis] }));
+    index.writer.recordFullPull(session, asOf(2), pullOf({ MeasureAnalysisDocuments: [analysis] }));
     expect(index.search.unlistedCiting(cited, session)).toBeUndefined();
 
     index.writer.recordFullPull(session, asOf(3), pullOf());

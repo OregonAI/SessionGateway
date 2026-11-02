@@ -41,7 +41,7 @@ const analysis = analysisLink();
 const testimony = testimonyRecord(1);
 const posting = postingLink(1, 10);
 const meeting = meetingOn(10);
-const context = { committees: [committee], meetings: [meeting] };
+const context = { Committees: [committee], CommitteeMeetings: [meeting] };
 
 /** A kind of thing the reader hands out: the pull that lists it, the files its read needs, and the read. */
 type Handout = {
@@ -55,35 +55,35 @@ type Handout = {
 const handouts: Handout[] = [
   {
     name: "a Measure",
-    pull: pullOf({ measures: [measure] }),
+    pull: pullOf({ Measures: [measure] }),
     read: (reader) => reader.findMeasure(measureKey)?.listing,
   },
   {
     name: "a Document",
-    pull: pullOf({ documentLinks: [version] }),
+    pull: pullOf({ MeasureDocuments: [version] }),
     files: [{ link: version, text: "A made-up Version." }],
     read: (reader) => reader.findDocument(version.id)?.listing,
   },
   {
     name: "a Version of a Measure",
-    pull: pullOf({ documentLinks: [version] }),
+    pull: pullOf({ MeasureDocuments: [version] }),
     files: [{ link: version, text: "A made-up Version." }],
     read: (reader) => reader.findMeasureVersions(measureKey)[0]?.listing,
   },
   {
     name: "an analysis document",
-    pull: pullOf({ ...context, documentLinks: [analysis] }),
+    pull: pullOf({ ...context, MeasureAnalysisDocuments: [analysis] }),
     files: [{ link: analysis, text: "A made-up analysis." }],
     read: (reader) => reader.analysisDocuments(measureKey)[0]?.listing,
   },
   {
     name: "a Testimony row",
-    pull: pullOf({ ...context, documentLinks: [testimony.link], testimony: [testimony] }),
+    pull: pullOf({ ...context, CommitteePublicTestimonies: [testimony] }),
     read: (reader) => reader.findTestimony(measureKey)[0]?.listing,
   },
   {
     name: "a Floor Letter",
-    pull: pullOf({ documentLinks: [floorLetterLink()] }),
+    pull: pullOf({ FloorLetters: [floorLetterLink()] }),
     read: (reader) => reader.findFloorLetters(measureKey)[0]?.listing,
   },
   {
@@ -93,42 +93,42 @@ const handouts: Handout[] = [
   },
   {
     name: "an agenda item",
-    pull: pullOf({ ...context, agendaItems: [agendaItem] }),
+    pull: pullOf({ ...context, CommitteeAgendaItems: [agendaItem] }),
     read: (reader) => reader.meetingContents(meeting.id).agendaItems[0]?.listing,
   },
   {
     name: "a meeting's agenda",
-    pull: pullOf({ ...context, documentLinks: [agendaLink()] }),
+    pull: pullOf({ ...context, CommitteeMeetings: [{ ...meeting, agenda: agendaLink() }] }),
     read: (reader) => reader.meetingContents(meeting.id).agenda?.listing,
   },
   {
     name: "an Exhibit",
-    pull: pullOf({ ...context, documentLinks: [exhibitLink()] }),
+    pull: pullOf({ ...context, CommitteeMeetingDocuments: [exhibitLink()] }),
     read: (reader) => reader.meetingContents(meeting.id).exhibits[0]?.listing,
   },
   {
     name: "a Recording Log",
-    pull: pullOf({ ...context, documentLinks: [recordingLogLink()] }),
+    pull: pullOf({ ...context, CommitteeMeetingDocuments: [recordingLogLink()] }),
     read: (reader) => reader.meetingContents(meeting.id).recordingLogs[0]?.listing,
   },
   {
     name: "a Posting as a meeting lists it",
-    pull: pullOf({ ...context, documentLinks: [posting] }),
+    pull: pullOf({ ...context, CommitteeProposedAmendments: [posting] }),
     read: (reader) => reader.meetingContents(meeting.id).amendments[0]?.listing,
   },
   {
     name: "a Posting as its Proposed Amendment lists it",
-    pull: pullOf({ ...context, documentLinks: [posting] }),
+    pull: pullOf({ ...context, CommitteeProposedAmendments: [posting] }),
     read: (reader) => reader.findAmendment(amendmentId)?.postings[0]?.listing,
   },
   {
     name: "a Proposed Amendment",
-    pull: pullOf({ ...context, documentLinks: [posting] }),
+    pull: pullOf({ ...context, CommitteeProposedAmendments: [posting] }),
     read: (reader) => reader.findAmendment(amendmentId)?.listing,
   },
   {
     name: "a Proposed Amendment of a Measure",
-    pull: pullOf({ ...context, documentLinks: [posting] }),
+    pull: pullOf({ ...context, CommitteeProposedAmendments: [posting] }),
     read: (reader) => reader.findMeasureAmendments(measureKey)[0]?.listing,
   },
 ];

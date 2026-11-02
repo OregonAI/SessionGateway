@@ -23,7 +23,7 @@ const version = versionLink();
 describe("a row a complete Full pull listed", () => {
   it("is listed after the next complete pull misses it, is no longer listed after a second, and is listed again when a pull lists it", () => {
     index = openMadeUpIndex();
-    index.writer.recordFullPull(session, asOf(1), pullOf({ documentLinks: [version] }));
+    index.writer.recordFullPull(session, asOf(1), pullOf({ MeasureDocuments: [version] }));
     storeMadeUpDocument(index, version, "Section 1. A made-up thing is created.");
     expect(index.reader.findDocument(version.id)?.listing).toEqual({ listed: true, lastListedAt: asOf(1) });
 
@@ -36,7 +36,7 @@ describe("a row a complete Full pull listed", () => {
     expect(index.reader.findDocument(version.id)?.listing).toEqual({ listed: false, lastListedAt: asOf(1) });
 
     // Pull 4 lists it: listed again, last listed by pull 4.
-    index.writer.recordFullPull(session, asOf(4), pullOf({ documentLinks: [version] }));
+    index.writer.recordFullPull(session, asOf(4), pullOf({ MeasureDocuments: [version] }));
     expect(index.reader.findDocument(version.id)?.listing).toEqual({ listed: true, lastListedAt: asOf(4) });
   });
 });
@@ -45,7 +45,7 @@ describe("a Full pull the worker refused", () => {
   // A refused pull is an attempt that stored nothing: the worker records only that it began (`recordFullPullAttempt`).
   it("counts for nothing toward the two pulls: the row it did not list is listed after one complete miss", () => {
     index = openMadeUpIndex();
-    index.writer.recordFullPull(session, asOf(1), pullOf({ documentLinks: [version] }));
+    index.writer.recordFullPull(session, asOf(1), pullOf({ MeasureDocuments: [version] }));
     storeMadeUpDocument(index, version, "Section 1. A made-up thing is created.");
 
     index.writer.recordFullPullAttempt(session, asOf(2));
@@ -59,7 +59,7 @@ describe("a Full pull the worker refused", () => {
 
   it("does not stand between two complete pulls that miss the row: it is no longer listed after the second", () => {
     index = openMadeUpIndex();
-    index.writer.recordFullPull(session, asOf(1), pullOf({ documentLinks: [version] }));
+    index.writer.recordFullPull(session, asOf(1), pullOf({ MeasureDocuments: [version] }));
     storeMadeUpDocument(index, version, "Section 1. A made-up thing is created.");
     index.writer.recordFullPull(session, asOf(2), pullOf());
 
@@ -75,7 +75,7 @@ describe("a row an increment stored, which no complete Full pull has listed", ()
   it("is listed with no last listing, and stays so however many complete pulls miss it", () => {
     index = openMadeUpIndex();
     index.writer.recordFullPull(session, asOf(1), pullOf());
-    index.writer.recordIncrement(session, asOf(2), pullOf({ documentLinks: [version] }));
+    index.writer.recordIncrement(session, asOf(2), pullOf({ MeasureDocuments: [version] }));
     storeMadeUpDocument(index, version, "Section 1. A made-up thing is created.");
     expect(index.reader.findDocument(version.id)?.listing).toEqual({ listed: true, lastListedAt: null });
 
@@ -88,19 +88,19 @@ describe("a row an increment stored, which no complete Full pull has listed", ()
 
   it("is given a last listing by the first complete pull that lists it", () => {
     index = openMadeUpIndex();
-    index.writer.recordIncrement(session, asOf(1), pullOf({ documentLinks: [version] }));
+    index.writer.recordIncrement(session, asOf(1), pullOf({ MeasureDocuments: [version] }));
     storeMadeUpDocument(index, version, "Section 1. A made-up thing is created.");
-    index.writer.recordFullPull(session, asOf(2), pullOf({ documentLinks: [version] }));
+    index.writer.recordFullPull(session, asOf(2), pullOf({ MeasureDocuments: [version] }));
     expect(index.reader.findDocument(version.id)?.listing).toEqual({ listed: true, lastListedAt: asOf(2) });
   });
 
   it("counts for nothing toward the two pulls of a row a complete pull listed", () => {
     index = openMadeUpIndex();
-    index.writer.recordFullPull(session, asOf(1), pullOf({ documentLinks: [version] }));
+    index.writer.recordFullPull(session, asOf(1), pullOf({ MeasureDocuments: [version] }));
     storeMadeUpDocument(index, version, "Section 1. A made-up thing is created.");
     index.writer.recordFullPull(session, asOf(2), pullOf());
     // An increment sees the row again between the two misses; it writes nothing to the row's listing.
-    index.writer.recordIncrement(session, asOf(3), pullOf({ documentLinks: [version] }));
+    index.writer.recordIncrement(session, asOf(3), pullOf({ MeasureDocuments: [version] }));
     expect(index.reader.findDocument(version.id)?.listing).toEqual({ listed: true, lastListedAt: asOf(1) });
 
     index.writer.recordFullPull(session, asOf(4), pullOf());

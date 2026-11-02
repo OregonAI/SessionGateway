@@ -28,12 +28,12 @@ afterEach(() => {
 const exhibit = exhibitLink();
 const testimony = testimonyRecord(1);
 const posting = postingLink(1, 10);
-const context = { committees: [committee], meetings: [meetingOn(10)] };
+const context = { Committees: [committee], CommitteeMeetings: [meetingOn(10)] };
 
 describe("an id the feed has a row for and the index holds no file of", () => {
   it("is handed out with its Listing: listed after one miss, No longer listed after two", () => {
     index = openMadeUpIndex();
-    index.writer.recordFullPull(session, asOf(1), pullOf({ ...context, documentLinks: [exhibit] }));
+    index.writer.recordFullPull(session, asOf(1), pullOf({ ...context, CommitteeMeetingDocuments: [exhibit] }));
     expect(index.reader.findDocument(exhibit.id)).toEqual({
       held: false,
       testimony: false,
@@ -51,11 +51,7 @@ describe("an id the feed has a row for and the index holds no file of", () => {
 
   it("says when the row is Testimony, whose file the next pull fetches while the feed lists it", () => {
     index = openMadeUpIndex();
-    index.writer.recordFullPull(
-      session,
-      asOf(1),
-      pullOf({ ...context, documentLinks: [testimony.link], testimony: [testimony] }),
-    );
+    index.writer.recordFullPull(session, asOf(1), pullOf({ ...context, CommitteePublicTestimonies: [testimony] }));
     expect(index.reader.findDocument(testimony.link.id)).toEqual({
       held: false,
       testimony: true,
@@ -74,11 +70,7 @@ describe("an id the feed has a row for and the index holds no file of", () => {
   it("says that Testimony an Increment stored is listed with no last listing", () => {
     index = openMadeUpIndex();
     index.writer.recordFullPull(session, asOf(1), pullOf());
-    index.writer.recordIncrement(
-      session,
-      asOf(2),
-      pullOf({ ...context, documentLinks: [testimony.link], testimony: [testimony] }),
-    );
+    index.writer.recordIncrement(session, asOf(2), pullOf({ ...context, CommitteePublicTestimonies: [testimony] }));
     expect(index.reader.findDocument(testimony.link.id)).toEqual({
       held: false,
       testimony: true,
@@ -88,7 +80,7 @@ describe("an id the feed has a row for and the index holds no file of", () => {
 
   it("is a Proposed Amendment's Listing, when the amendment's Postings are listed and none of their files is held", () => {
     index = openMadeUpIndex();
-    index.writer.recordFullPull(session, asOf(1), pullOf({ ...context, documentLinks: [posting] }));
+    index.writer.recordFullPull(session, asOf(1), pullOf({ ...context, CommitteeProposedAmendments: [posting] }));
     index.writer.recordFullPull(session, asOf(2), pullOf());
     index.writer.recordFullPull(session, asOf(3), pullOf());
     expect(index.reader.findDocument(amendmentId)).toEqual({
@@ -112,7 +104,7 @@ describe("a Document the index holds", () => {
   it("says it is held, with its text and its Listing", () => {
     index = openMadeUpIndex();
     const version = versionLink();
-    index.writer.recordFullPull(session, asOf(1), pullOf({ documentLinks: [version] }));
+    index.writer.recordFullPull(session, asOf(1), pullOf({ MeasureDocuments: [version] }));
     storeMadeUpDocument(index, version, "A made-up Version.");
     const found = index.reader.findDocument(version.id);
     expect(found).toMatchObject({ held: true, listing: { listed: true, lastListedAt: asOf(1) } });

@@ -3,22 +3,14 @@
 import { z } from "zod";
 import {
   meetingDocumentKinds,
-  type AgendaItem,
   type AmendmentHeader,
-  type Committee,
-  type CommitteeMember,
-  type Convening,
   type DocumentId,
   type DocumentKind,
   type DocumentLink,
-  type Meeting,
-  type SessionDates,
   type SessionSpan,
   type StoredDocument,
-  type TestimonyDetails,
 } from "#/packages/domain/documents.ts";
-import type { HistoryAction, Measure, MeasureId, MeasureKey, SessionKey } from "#/packages/domain/index.ts";
-import type { Legislator, LegislatorId, LegislatorRow, SponsorLevel } from "#/packages/domain/legislators.ts";
+import type { MeasureId, SessionKey } from "#/packages/domain/index.ts";
 import type { AgencyId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
 import type { AgencyLink } from "#/packages/domain/agency-links.ts";
 import type { Citation } from "#/packages/domain/citations.ts";
@@ -29,7 +21,6 @@ import type {
   StatuteLinkSource,
   StatutesAffectedEntry,
 } from "#/packages/domain/statute-links.ts";
-import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceToJson } from "./lib/agency-evidence.ts";
 import { openWriteConnection } from "./lib/connection.ts";
@@ -43,93 +34,29 @@ import {
   readSessionDates,
 } from "./lib/run-state.ts";
 import { countListedRows, listedRowsOf, recordCompletePull } from "./lib/listing.ts";
+import {
+  documentLinksOf,
+  type CommitteeVoteRecord,
+  type FloorVoteRecord,
+  type FullPullRecord,
+  type LegislatorCodeRecord,
+  type PulledRows,
+  type SponsorRecord,
+  type TestimonyAgency,
+  type TestimonyRecord,
+} from "./lib/pull-record.ts";
 import { statuteLinkOfRow, statuteLinkRow } from "./lib/statute-link-rows.ts";
 
-type SponsorRecordFields = {
-  id: number;
-  measure: MeasureKey;
-  level: SponsorLevel;
-  printOrder: number;
-};
-
-/**
- * One MeasureSponsors row of the feed. A Member row carries the Legislator its code resolved to, if
- * any; a Committee row names a committee and a Presession row carries a message, and neither names a
- * Legislator.
- */
-export type SponsorRecord =
-  | (SponsorRecordFields & { kind: "member"; legislatorCode: string; legislatorId: LegislatorId | null })
-  | (SponsorRecordFields & { kind: "committee"; committeeCode: string })
-  | (SponsorRecordFields & { kind: "presession"; message: string });
-
-/** A Legislator Code and the id of the Legislator it names. */
-export type LegislatorCodeRecord = { code: string; legislatorId: LegislatorId };
-
-/** What the worker stores of a floor vote entry: the entry and the Legislator its code resolved to, if any. */
-export type FloorVoteRecord = FloorVoteEntry & { legislatorId: LegislatorId | null };
-
-/** What the worker stores of a committee vote entry: the entry and the Legislator its code resolved to, if any. */
-export type CommitteeVoteRecord = CommitteeVoteEntry & { legislatorId: LegislatorId | null };
-
-/**
- * What a run does with the Agency of a Testimony row. `matched`: the run matched the row's `Organization` with the
- * snapshot the index reports, and stores the result, an Agency or null when the Organization names none. `left_to_full_pull`:
- * the run did not match the row, because an increment's snapshot file is not the one the index reports (ADR-0047). The row's
- * stored Agency stays as it is, and a row new to the index is stored with none. Only an increment gives this to the writer;
- * recording a full pull with it is a bug and throws.
- */
-export type TestimonyAgency = { kind: "matched"; agencyId: AgencyId | null } | { kind: "left_to_full_pull" };
-
-/**
- * One CommitteePublicTestimonies row of the feed, with what the run does with the Agency its `Organization` names. The
- * link is the Testimony's document link, which carries what the feed says of it (`testimony`), and the
- * Measure, committee and meeting it points at.
- */
-export type TestimonyRecord = {
-  link: DocumentLink & { testimony: TestimonyDetails };
-  agency: TestimonyAgency;
-};
-
-/**
- * Everything a full pull read, ready to store: one field for each kind of row. A ticket that makes the
- * pull read another kind of row adds a field here, not a parameter to `recordFullPull`.
- */
-export type FullPullRecord = {
-  measures: readonly Measure[];
-  history: readonly HistoryAction[];
-  /** The feed's Legislators rows, one for each Legislator Code, as the pull read them: the rows the index keeps and lists. */
-  legislatorRows: readonly LegislatorRow[];
-  /** The Legislators the resolver can name. */
-  legislators: readonly Legislator[];
-  /** Every Legislator Code the resolver can resolve, with the id of the Legislator it names (the live lookup resolves codes OLIS sends later). */
-  legislatorCodes: readonly LegislatorCodeRecord[];
-  /** The MeasureSponsors rows, with the Legislator each Member row's code resolved to. */
-  sponsors: readonly SponsorRecord[];
-  floorVotes: readonly FloorVoteRecord[];
-  committeeVotes: readonly CommitteeVoteRecord[];
-  committees: readonly Committee[];
-  /** The committee meetings. A meeting's status is the feed's latest. */
-  meetings: readonly Meeting[];
-  /** The agenda items of every meeting. An item's action is the feed's latest. */
-  agendaItems: readonly AgendaItem[];
-  /**
-   * Every document the feed links, the meetings' agendas included, whether or not its file is fetched
-   * yet. What each meeting lists (its agenda, Exhibits, Recording Logs and the postings of Proposed
-   * Amendments) and which analysis documents each Measure has are stored from these before any file is
-   * fetched, so a file that fails to come is still listed (ADR-0011, "Order of a pull").
-   */
-  documentLinks: readonly DocumentLink[];
-  /**
-   * The Testimony rows of the feed, each with the Agency its `Organization` names. They are listed here, and
-   * not only as document links, so the server can say who testified before every file is fetched.
-   */
-  testimony: readonly TestimonyRecord[];
-  /** The CommitteeMembers rows, every one: the set's declared key is not unique (`CommitteeMember.key` is the whole row). */
-  committeeMembers: readonly CommitteeMember[];
-  /** The ConveneTimes rows: the days with a floor convening. A full pull reads them whole; an increment does not read them (ADR-0042). */
-  convenings: readonly Convening[];
-  /** The Session's LegislativeSessions row, or undefined when the feed has none or the run did not read it. */
-  sessionDates: SessionDates | undefined;
+export { documentLinksOf };
+export type {
+  CommitteeVoteRecord,
+  FloorVoteRecord,
+  FullPullRecord,
+  LegislatorCodeRecord,
+  PulledRows,
+  SponsorRecord,
+  TestimonyAgency,
+  TestimonyRecord,
 };
 
 /** A file the store holds that has not been read for Statute Links yet: one document stands for every document with the same file. */
@@ -679,9 +606,11 @@ export function openIndexWriter(path: string): IndexWriter {
       "INSERT OR REPLACE INTO version_listing (document_id, session_key, measure_id, label) VALUES (?, ?, ?, ?)",
     );
     const clearVersionListing = database.prepare("DELETE FROM version_listing WHERE session_key = ?");
+    // Every document the feed links in what was read, in the order the worker fetches them (pull-record.ts).
+    const documentLinks = documentLinksOf(pulled);
     database.exec("BEGIN IMMEDIATE");
     try {
-      for (const measure of pulled.measures) {
+      for (const measure of pulled.Measures) {
         upsertMeasure.run(
           measure.session,
           measure.prefix,
@@ -696,7 +625,7 @@ export function openIndexWriter(path: string): IndexWriter {
       }
       for (const legislator of pulled.legislators) upsertLegislator.run(session, legislator.id, legislator.name);
       for (const record of pulled.legislatorCodes) upsertLegislatorCode.run(session, record.code, record.legislatorId);
-      for (const sponsor of pulled.sponsors) {
+      for (const sponsor of pulled.MeasureSponsors) {
         const columns = kindColumnsOf(sponsor);
         upsertSponsor.run(
           session,
@@ -712,7 +641,7 @@ export function openIndexWriter(path: string): IndexWriter {
           columns.message,
         );
       }
-      for (const entry of pulled.floorVotes) {
+      for (const entry of pulled.MeasureVotes) {
         upsertFloorVote.run(
           session,
           entry.id,
@@ -727,7 +656,7 @@ export function openIndexWriter(path: string): IndexWriter {
           entry.vote,
         );
       }
-      for (const entry of pulled.committeeVotes) {
+      for (const entry of pulled.CommitteeVotes) {
         upsertCommitteeVote.run(
           session,
           entry.id,
@@ -741,7 +670,7 @@ export function openIndexWriter(path: string): IndexWriter {
           entry.vote,
         );
       }
-      for (const action of pulled.history) {
+      for (const action of pulled.MeasureHistoryActions) {
         upsertHistory.run(
           session,
           action.id,
@@ -752,13 +681,13 @@ export function openIndexWriter(path: string): IndexWriter {
           action.text,
         );
       }
-      for (const committee of pulled.committees) {
+      for (const committee of pulled.Committees) {
         upsertCommittee.run(session, committee.code, committee.id, committee.name);
       }
-      for (const meeting of pulled.meetings) {
+      for (const meeting of pulled.CommitteeMeetings) {
         upsertMeeting.run(meeting.id, session, meeting.committeeCode, meeting.committeeId, meeting.at, meeting.status);
       }
-      for (const item of pulled.agendaItems) {
+      for (const item of pulled.CommitteeAgendaItems) {
         upsertAgendaItem.run(
           item.itemId,
           item.meetingId,
@@ -775,7 +704,7 @@ export function openIndexWriter(path: string): IndexWriter {
       }
       // Every CommitteeMembers row, by the whole row (the set's declared key is not unique). Two rows with one
       // whole-row key are the same row, and a row the feed changes is a new one; the old one stops being listed.
-      for (const member of pulled.committeeMembers) {
+      for (const member of pulled.CommitteeMembers) {
         upsertCommitteeMember.run(
           session,
           member.key,
@@ -787,12 +716,12 @@ export function openIndexWriter(path: string): IndexWriter {
         );
       }
       // The days with a floor convening, and the dates the Session is in progress between (ADR-0042).
-      for (const convening of pulled.convenings) upsertConvening.run(session, convening.at, convening.chamber);
-      if (pulled.sessionDates !== undefined) {
-        upsertSessionDates.run(session, pulled.sessionDates.begin, pulled.sessionDates.end);
+      for (const convening of pulled.ConveneTimes) upsertConvening.run(session, convening.at, convening.chamber);
+      if (pulled.LegislativeSessions !== undefined) {
+        upsertSessionDates.run(session, pulled.LegislativeSessions.begin, pulled.LegislativeSessions.end);
       }
       // What each meeting lists. A link to any other kind of document, or to no meeting, is not listed.
-      for (const link of pulled.documentLinks) {
+      for (const link of documentLinks) {
         const listing = meetingListingOf(link);
         if (listing === undefined) continue;
         upsertMeetingDocument.run(
@@ -809,7 +738,7 @@ export function openIndexWriter(path: string): IndexWriter {
         );
       }
       // Who testified: every Testimony row as the feed says it, whether or not its file is fetched.
-      for (const { link, agency } of pulled.testimony) {
+      for (const { link, agency } of pulled.CommitteePublicTestimonies) {
         const committee = link.relations.find((relation) => relation.relation === "committee");
         if (committee === undefined) throw new Error(`The Testimony ${link.id} names no committee`);
         const { agencyId, keepStored } = testimonyAgencyValues(agency, link.id, mode);
@@ -832,7 +761,7 @@ export function openIndexWriter(path: string): IndexWriter {
         );
       }
       // Every Floor Letter row as the feed says it, whether or not its file is fetched (ADR-0045).
-      for (const link of pulled.documentLinks) {
+      for (const link of documentLinks) {
         const letter = link.floorLetter;
         if (letter === undefined) continue;
         upsertFloorLetter.run(
@@ -848,13 +777,13 @@ export function openIndexWriter(path: string): IndexWriter {
         );
       }
       // When OLIS created the row of each document the feed links.
-      for (const link of pulled.documentLinks) {
+      for (const link of documentLinks) {
         if (link.createdAt !== undefined) upsertCreated.run(link.id, link.createdAt);
       }
       // Which analysis documents the feed lists for each Measure, as this pull read it. The rows are kept, not
       // replaced: a row this pull does not list is still counted until two complete pulls in a row have missed it,
       // and the count reads that from the listing state (ADR-0030).
-      for (const link of pulled.documentLinks) {
+      for (const link of documentLinks) {
         if (link.kind !== "analysis") continue;
         const measure = link.relations.find((relation) => relation.relation === "measure");
         if (measure === undefined) throw new Error(`The analysis document ${link.id} names no Measure`);
@@ -863,7 +792,7 @@ export function openIndexWriter(path: string): IndexWriter {
       // Which Versions the feed lists for each Measure, as this pull read them (a Printed Amendment is not a Version).
       // A full pull replaces the listing; an increment read only the rows that changed, so it adds to it.
       if (mode === "full_pull") clearVersionListing.run(session);
-      for (const link of pulled.documentLinks) {
+      for (const link of documentLinks) {
         if (link.kind !== "version") continue;
         const measure = link.relations.find((relation) => relation.relation === "measure");
         if (measure === undefined) throw new Error(`The Version ${link.id} names no Measure`);
