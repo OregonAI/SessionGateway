@@ -79,9 +79,9 @@ module.exports = {
     {
       name: "server-reads-only",
       comment:
-        "The MCP server opens the database read-only (ADR-0009): its code and its entry script may import database/reader.ts, never database/writer.ts. A server that cannot reach the writer cannot write by mistake.",
+        "The MCP server opens the database read-only (ADR-0009): its code and its entry script may import database/reader.ts, never database/writer.ts. A server that cannot reach the writer cannot write by mistake. The package's own tests are not the server: a seam-4 test arranges an Index through the writer and reads it through the reader (test/CLAUDE.md, ticket #98).",
       severity: "error",
-      from: { path: `^(${R}/mcp-server/|src/bin/server\\.ts$)` },
+      from: { path: `^(${R}/mcp-server/|src/bin/server\\.ts$)`, pathNot: `^${R}/mcp-server/tests/` },
       to: { path: `^${R}/database/writer\\.ts$` },
     },
     {

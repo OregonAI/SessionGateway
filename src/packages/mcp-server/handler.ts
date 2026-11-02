@@ -103,7 +103,8 @@ function buildServer(
   ): ((...args: Arguments) => Promise<CallToolResult>) => {
     return async (...args: Arguments): Promise<CallToolResult> => {
       const answer = await callback(...args);
-      const warning = stalenessWarning(reader, config, clock);
+      const latestUpdate = reader.asOf(config.session);
+      const warning = latestUpdate === undefined ? undefined : stalenessWarning(reader, config, clock, latestUpdate);
       return warning === undefined
         ? answer
         : { ...answer, content: [...answer.content, { type: "text", text: warning }] };
