@@ -4,6 +4,7 @@
 import { parseSessionKey } from "#/packages/domain/index.ts";
 import { readTimestamp } from "#/packages/time/pacific.ts";
 import type { FullPullRecord } from "../writer.ts";
+import { pullOf } from "./made-up-index.ts";
 
 export const session = parseSessionKey("2025R1") ?? failed("2025R1 is a Session key");
 
@@ -13,24 +14,7 @@ export const pulledAt =
 /** What a reader answers for `lastFullPull(session)` after the pull, written out and not computed from `pulledAt`. */
 export const pulledAtText = "2025-03-01T10:00:00-08:00";
 
-export const nothingPulled: FullPullRecord = {
-  measures: [],
-  history: [],
-  legislatorRows: [],
-  legislators: [],
-  legislatorCodes: [],
-  sponsors: [],
-  floorVotes: [],
-  committeeVotes: [],
-  committees: [],
-  meetings: [],
-  agendaItems: [],
-  documentLinks: [],
-  testimony: [],
-  committeeMembers: [],
-  convenings: [],
-  sessionDates: undefined,
-};
+export const nothingPulled: FullPullRecord = pullOf();
 
 function failed(message: string): never {
   throw new Error(message);

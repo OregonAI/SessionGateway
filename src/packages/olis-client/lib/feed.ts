@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { PulledEntitySet } from "#/packages/domain/documents.ts";
 import type { MeasureKey, SessionKey } from "#/packages/domain/index.ts";
 import { pacificWallClock, type Timestamp } from "#/packages/time/pacific.ts";
-import type { OlisClientOptions } from "./options.ts";
+import type { OlisClientOptions, PullRead } from "./options.ts";
 
 /** A page that takes longer than this is an outage, not a slow answer (olis-odata.md gotcha 15). */
 const REQUEST_TIMEOUT_MS = 60_000;
@@ -147,10 +147,14 @@ export async function readEntitySet<Row>(
  * set. `also` adds one more term to the filter.
  */
 export type MeasureScope = {
+  kind: "measure";
   measure: MeasureKey;
   /** A further `$filter` term, such as `MeetingDate ge datetime'2025-01-29T09:00:00'`. */
   also?: string;
 };
+
+/** Which rows of a Session a read of a set asks for: a Pull's (`PullRead`) or one Measure's, for the live lookup. */
+export type RowSelection = PullRead | MeasureScope;
 
 /** An OData string literal: single quotes doubled. */
 function literal(text: string): string {
@@ -170,10 +174,11 @@ function changedSinceTerm(since: Timestamp): string {
 }
 
 /**
- * Reads the rows of one Session of an entity set, or with a `scope`, the rows of one Measure of it. The
- * feed is asked for one Session, but a row of another one is never taken for it: measure numbers restart
- * every Session, so SB 69 of one Session is not SB 69 of another, and a Legislator Code can name a
- * different person in another Session. Nor is a row of another Measure taken for the scope's.
+ * Reads the rows of one Session of an entity set that the `selection` asks for: all of them, those changed since a time,
+ * or the rows of one Measure of it. The feed is asked for one Session, but a row of another one is never taken for it:
+ * measure numbers restart every Session, so SB 69 of one Session is not SB 69 of another, and a Legislator Code can name a
+ * different person in another Session. Nor is a row of another Measure taken for the scope's. The selection is the
+ * caller's to make: this reads whichever set it is given as it is asked to, with no rule about sets.
  */
 export async function readSessionRows<
   Row extends { SessionKey: string; MeasurePrefix?: string | null; MeasureNumber?: number | null },
@@ -182,27 +187,46 @@ export async function readSessionRows<
   entitySet: PulledEntitySet,
   session: SessionKey,
   rowSchema: z.ZodType<Row>,
+  selection: RowSelection,
   signal: AbortSignal,
-  scope?: MeasureScope,
 ): Promise<Row[]> {
-  if (scope === undefined) {
-    const changed =
-      options.changedSince === undefined || entitySet === "Legislators" || entitySet === "Committees"
-        ? []
-        : [changedSinceTerm(options.changedSince)];
-    const filter = [`SessionKey eq ${literal(session)}`, ...changed].join(" and ");
-    const rows = await readEntitySet(options, entitySet, filter, rowSchema, signal);
-    return rows.filter((row) => row.SessionKey === session);
+  switch (selection.kind) {
+    case "whole":
+      return readWholeSession(options, entitySet, session, [], rowSchema, signal);
+    case "changed_since":
+      return readWholeSession(options, entitySet, session, [changedSinceTerm(selection.since)], rowSchema, signal);
+    case "above_id":
+      // Only the FloorLetters reader reads above an id (floor-letters.ts); every other set is read by dates.
+      throw new Error(`${entitySet} cannot be read above an id: its rows are read by their dates`);
+    case "measure": {
+      const { measure } = selection;
+      const terms = [
+        `SessionKey eq ${literal(session)}`,
+        `MeasurePrefix eq ${literal(measure.prefix)}`,
+        `MeasureNumber eq ${String(measure.number)}`,
+        ...(selection.also === undefined ? [] : [selection.also]),
+      ];
+      const rows = await readEntitySet(options, entitySet, terms.join(" and "), rowSchema, signal, "inlinecount");
+      return rows.filter(
+        (row) =>
+          row.SessionKey === session && row.MeasurePrefix === measure.prefix && row.MeasureNumber === measure.number,
+      );
+    }
+    default:
+      return selection satisfies never;
   }
-  const { measure } = scope;
-  const terms = [
-    `SessionKey eq ${literal(session)}`,
-    `MeasurePrefix eq ${literal(measure.prefix)}`,
-    `MeasureNumber eq ${String(measure.number)}`,
-    ...(scope.also === undefined ? [] : [scope.also]),
-  ];
-  const rows = await readEntitySet(options, entitySet, terms.join(" and "), rowSchema, signal, "inlinecount");
-  return rows.filter(
-    (row) => row.SessionKey === session && row.MeasurePrefix === measure.prefix && row.MeasureNumber === measure.number,
-  );
+}
+
+/** The rows of the Session, narrowed by `also` terms, counted with `/$count` and `$inlinecount`: a Pull's read of a set. */
+async function readWholeSession<Row extends { SessionKey: string }>(
+  options: OlisClientOptions,
+  entitySet: PulledEntitySet,
+  session: SessionKey,
+  also: readonly string[],
+  rowSchema: z.ZodType<Row>,
+  signal: AbortSignal,
+): Promise<Row[]> {
+  const filter = [`SessionKey eq ${literal(session)}`, ...also].join(" and ");
+  const rows = await readEntitySet(options, entitySet, filter, rowSchema, signal);
+  return rows.filter((row) => row.SessionKey === session);
 }

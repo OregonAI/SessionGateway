@@ -14,28 +14,24 @@
 // version 1 of the index (ADR-0048) and is left as it was
 // (connection.ts says the first numbered upgrade step another ticket adds should drop the view).
 //
-// Which entity set and key a row is kept under is named here too (`listedRowsOf`), so that a ticket that makes the pull read
-// another set adds its rows to that function and to nothing else.
+// Which entity set and key a row is kept under is named here too (`listedRowsOf`), one entry for each name in
+// `pulledEntitySets`, so that a ticket that makes the pull read another set adds its rows to that table and to nothing else.
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
-import type {
-  AmendmentId,
-  DocumentId,
-  DocumentKind,
-  DocumentLink,
-  Listing,
-  ListedSet,
-  CommitteeMember,
-  Committee,
-  Meeting,
-  AgendaItem,
-  Convening,
-  SessionDates,
+import {
+  pulledEntitySets,
+  type AmendmentId,
+  type Convening,
+  type DocumentId,
+  type DocumentLink,
+  type Listing,
+  type ListedSet,
+  type PulledEntitySet,
 } from "#/packages/domain/documents.ts";
-import { measureIdOf, type HistoryAction, type Measure, type SessionKey } from "#/packages/domain/index.ts";
-import type { LegislatorRow } from "#/packages/domain/legislators.ts";
+import { measureIdOf, type SessionKey } from "#/packages/domain/index.ts";
 import type { AgencyId } from "#/packages/domain/oregonai.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
+import type { PulledRows } from "./pull-record.ts";
 
 /**
  * How many complete Full pulls in a row must miss a row before it is No longer listed (ADR-0005). One miss is not a
@@ -191,71 +187,61 @@ export function openListingReader(database: DatabaseSync): ListingReader {
 /** One row of the feed the index keeps: the entity set it came from, its key there, and the document it links, if any. */
 export type ListedRow = { entitySet: ListedSet; key: string; documentId: DocumentId | null };
 
-/**
- * The entity set of the feed row that links a document of this kind. An agenda is linked by a column of a
- * CommitteeMeetings row, not by a row of its own, so it is named for the column: the meeting stays listed when
- * OLIS stops linking its agenda, and the agenda does not.
- */
-export function entitySetOfDocument(kind: DocumentKind): ListedSet {
-  switch (kind) {
-    case "version":
-    case "printed_amendment":
-      return "MeasureDocuments";
-    case "analysis":
-      return "MeasureAnalysisDocuments";
-    case "proposed_amendment":
-      return "CommitteeProposedAmendments";
-    case "exhibit":
-    case "recording_log":
-      return "CommitteeMeetingDocuments";
-    case "testimony":
-      return "CommitteePublicTestimonies";
-    case "agenda":
-      return "CommitteeMeetings.AgendaUrl";
-    case "floor_letter":
-      return "FloorLetters";
-    default:
-      return kind satisfies never;
-  }
+/** A row of the feed the Listing keeps: the entity set (or column) it came from, its key there, and the document it links, if any. */
+function listed(entitySet: ListedSet, key: string, documentId: DocumentId | null = null): ListedRow {
+  return { entitySet, key, documentId };
 }
 
-/** What a full pull read, as far as listing it needs: one field for each kind of row the index keeps. */
-export type ListedSources = {
-  measures: readonly Measure[];
-  legislatorRows: readonly LegislatorRow[];
-  sponsors: readonly { id: number }[];
-  history: readonly HistoryAction[];
-  floorVotes: readonly { id: number }[];
-  committeeVotes: readonly { id: number }[];
-  committees: readonly Committee[];
-  meetings: readonly Meeting[];
-  agendaItems: readonly AgendaItem[];
-  documentLinks: readonly DocumentLink[];
-  committeeMembers: readonly CommitteeMember[];
-  convenings: readonly Convening[];
-  sessionDates: SessionDates | undefined;
+/** The rows of an entity set whose rows are documents: each is kept under its document's id, which it links. */
+function listedLinks(entitySet: ListedSet, links: readonly DocumentLink[]): ListedRow[] {
+  return links.map((link) => listed(entitySet, link.id, link.id));
+}
+
+/**
+ * How the Listing keys the rows of each entity set (ADR-0030): one entry for each name in `pulledEntitySets`, so that a set
+ * added there does not compile until its rows are listed here. A row is kept under its entity set and its key in the feed;
+ * a set whose rows link documents also keeps the document's id with the row, so that the Listing of a Document is its row's.
+ * A meeting's agenda is linked by a column of its CommitteeMeetings row and not by a row of its own, so it is named for the
+ * column: the meeting stays listed when OLIS stops linking its agenda, and the agenda does not.
+ */
+const listedRowsOfSet: Readonly<Record<PulledEntitySet, (pulled: PulledRows) => ListedRow[]>> = {
+  Measures: (pulled) => pulled.Measures.map((measure) => listed("Measures", measureIdOf(measure))),
+  Legislators: (pulled) => pulled.Legislators.map((row) => listed("Legislators", row.code)),
+  MeasureSponsors: (pulled) => pulled.MeasureSponsors.map((sponsor) => listed("MeasureSponsors", String(sponsor.id))),
+  MeasureHistoryActions: (pulled) =>
+    pulled.MeasureHistoryActions.map((action) => listed("MeasureHistoryActions", String(action.id))),
+  MeasureVotes: (pulled) => pulled.MeasureVotes.map((entry) => listed("MeasureVotes", String(entry.id))),
+  CommitteeVotes: (pulled) => pulled.CommitteeVotes.map((entry) => listed("CommitteeVotes", String(entry.id))),
+  Committees: (pulled) => pulled.Committees.map((committee) => listed("Committees", committee.id)),
+  CommitteeMeetings: (pulled) => [
+    ...pulled.CommitteeMeetings.map((meeting) => listed("CommitteeMeetings", meeting.id)),
+    ...listedLinks(
+      "CommitteeMeetings.AgendaUrl",
+      pulled.CommitteeMeetings.flatMap((meeting) => (meeting.agenda === null ? [] : [meeting.agenda])),
+    ),
+  ],
+  CommitteeAgendaItems: (pulled) =>
+    pulled.CommitteeAgendaItems.map((item) => listed("CommitteeAgendaItems", String(item.itemId))),
+  MeasureDocuments: (pulled) => listedLinks("MeasureDocuments", pulled.MeasureDocuments),
+  MeasureAnalysisDocuments: (pulled) => listedLinks("MeasureAnalysisDocuments", pulled.MeasureAnalysisDocuments),
+  CommitteeMeetingDocuments: (pulled) => listedLinks("CommitteeMeetingDocuments", pulled.CommitteeMeetingDocuments),
+  CommitteeProposedAmendments: (pulled) =>
+    listedLinks("CommitteeProposedAmendments", pulled.CommitteeProposedAmendments),
+  CommitteePublicTestimonies: (pulled) =>
+    listedLinks(
+      "CommitteePublicTestimonies",
+      pulled.CommitteePublicTestimonies.map((testimony) => testimony.link),
+    ),
+  CommitteeMembers: (pulled) => pulled.CommitteeMembers.map((member) => listed("CommitteeMembers", member.key)),
+  ConveneTimes: (pulled) => pulled.ConveneTimes.map((convening) => listed("ConveneTimes", conveningKeyOf(convening))),
+  LegislativeSessions: (pulled) =>
+    pulled.LegislativeSessions === undefined ? [] : [listed("LegislativeSessions", pulled.LegislativeSessions.session)],
+  FloorLetters: (pulled) => listedLinks("FloorLetters", pulled.FloorLetters),
 };
 
 /** Every row the pull listed, once for each key. */
-export function listedRowsOf(pulled: ListedSources): ListedRow[] {
-  const rows: ListedRow[] = [];
-  const add = (entitySet: ListedSet, key: string, documentId: DocumentId | null = null): void => {
-    rows.push({ entitySet, key, documentId });
-  };
-  for (const measure of pulled.measures) add("Measures", measureIdOf(measure));
-  for (const row of pulled.legislatorRows) add("Legislators", row.code);
-  for (const sponsor of pulled.sponsors) add("MeasureSponsors", String(sponsor.id));
-  for (const action of pulled.history) add("MeasureHistoryActions", String(action.id));
-  for (const entry of pulled.floorVotes) add("MeasureVotes", String(entry.id));
-  for (const entry of pulled.committeeVotes) add("CommitteeVotes", String(entry.id));
-  for (const committee of pulled.committees) add("Committees", committee.id);
-  for (const meeting of pulled.meetings) add("CommitteeMeetings", meeting.id);
-  for (const item of pulled.agendaItems) add("CommitteeAgendaItems", String(item.itemId));
-  for (const link of pulled.documentLinks) add(entitySetOfDocument(link.kind), link.id, link.id);
-  for (const member of pulled.committeeMembers) add("CommitteeMembers", member.key);
-  for (const convening of pulled.convenings) add("ConveneTimes", conveningKeyOf(convening));
-  if (pulled.sessionDates !== undefined) add("LegislativeSessions", pulled.sessionDates.session);
-  return rows;
+export function listedRowsOf(pulled: PulledRows): ListedRow[] {
+  return pulledEntitySets.flatMap((entitySet) => listedRowsOfSet[entitySet](pulled));
 }
 
 /** A ConveneTimes row's key in the feed: its Session, date and Chamber (the metadata's key, olis-odata.md section 2). */

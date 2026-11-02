@@ -7,6 +7,7 @@ import { pacificWallClock } from "#/packages/time/pacific.ts";
 import { readMeasureAgendaItems } from "./agenda-items.ts";
 import { readCommitteeVoteRows } from "./committee-votes.ts";
 import { readFloorVoteRows } from "./floor-votes.ts";
+import type { MeasureScope } from "./feed.ts";
 import { readHistoryActionRows } from "./history.ts";
 import { readMeasureRows } from "./measures.ts";
 import type { OlisClientOptions } from "./options.ts";
@@ -35,19 +36,19 @@ export async function readMeasureLive(
   readAt: Date,
   signal: AbortSignal,
 ): Promise<MeasureLiveRead> {
-  const scope = { measure: key };
+  const scope: MeasureScope = { kind: "measure", measure: key };
   // Only the meetings still ahead: a past meeting is history, which the Measure's history rows tell.
-  const ahead = { measure: key, also: `MeetingDate ge ${datetimeLiteral(readAt)}` };
+  const ahead: MeasureScope = { kind: "measure", measure: key, also: `MeetingDate ge ${datetimeLiteral(readAt)}` };
   // The reads do not depend on each other, so they run together; the first to fail stops the others.
   const failed = new AbortController();
   const together = AbortSignal.any([signal, failed.signal]);
   try {
     const [measures, history, floorVotes, committeeVotes, schedule] = await Promise.all([
-      readMeasureRows(options, key.session, together, scope),
-      readHistoryActionRows(options, key.session, together, scope),
-      readFloorVoteRows(options, key.session, together, scope),
-      readCommitteeVoteRows(options, key.session, together, scope),
-      readMeasureAgendaItems(options, key.session, together, ahead),
+      readMeasureRows(options, key.session, scope, together),
+      readHistoryActionRows(options, key.session, scope, together),
+      readFloorVoteRows(options, key.session, scope, together),
+      readCommitteeVoteRows(options, key.session, scope, together),
+      readMeasureAgendaItems(options, key.session, ahead, together),
     ]);
     if (measures.length > 1)
       throw new Error(`OLIS listed the Measure ${key.prefix} ${key.number} ${measures.length} times`);

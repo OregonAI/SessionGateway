@@ -14,23 +14,36 @@ export type SetCount = {
   read: number;
 };
 
+/**
+ * How much of an entity set one read of the Session asks for. The caller decides, and for a Pull that is the ingest
+ * worker's register: the client carries the decision out for the set it reads and has no rule of its own about which set
+ * is read how.
+ */
+export type PullRead =
+  /** Every row of the Session. */
+  | { kind: "whole" }
+  /**
+   * Only the rows OLIS created or modified after `since` (an Increment's, ADR-0005, ADR-0039): `CreatedDate gt X or
+   * ModifiedDate gt X`. A set whose rows carry no such dates cannot be read this way.
+   */
+  | { kind: "changed_since"; since: Timestamp }
+  /**
+   * Only the rows whose id is greater than `id` (an Increment's read of a set that has no dates: FloorLetters, ADR-0045).
+   * A set without such an id cannot be read this way.
+   */
+  | { kind: "above_id"; id: number };
+
 export type OlisClientOptions = {
   /** The service root, ending in a slash: https://api.oregonlegislature.gov/odata/odataservice.svc/ */
   baseUrl: string;
   fetch: typeof fetch;
   /**
-   * Told, for every whole entity set that is read (the pull's reads, not the live lookup's), how many rows the feed
+   * Told, for every entity set that is read (the pull's reads, not the live lookup's), how many rows the feed
    * counted and how many came. When it is given, a set that is short of its count is not an error: it is handed on
    * like any other, so that a pull can read every set and report each short one before it stops. When it is absent,
    * as in the server's client, a short read throws.
    */
   onSetRead?: (count: SetCount) => void;
-  /**
-   * Makes every read of a whole Session an increment's (ADR-0005, ADR-0039): only the rows OLIS created or modified
-   * after this time, `CreatedDate gt X or ModifiedDate gt X`. Legislators and Committees are small and carry the
-   * names the rest resolve against, so they are still read whole.
-   */
-  changedSince?: Timestamp;
   /** How documents are fetched. Only the worker's client has them: the server's reads the feed alone. */
   documents?: {
     /** The origin the documents are fetched from: OLIS's own, https://olis.oregonlegislature.gov, except in a test. */

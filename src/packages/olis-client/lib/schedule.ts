@@ -5,7 +5,7 @@ import type { Convening, SessionDates } from "#/packages/domain/documents.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import { feedChamber } from "./chamber.ts";
 import { readSessionRows } from "./feed.ts";
-import type { OlisClientOptions } from "./options.ts";
+import type { OlisClientOptions, PullRead } from "./options.ts";
 import { feedTimestamp } from "./timestamps.ts";
 
 // ConveneTimes is keyed by SessionKey, SessionDate and Chamber; its one other property is RecessUntil
@@ -20,9 +20,10 @@ const conveneTimeRow = z.looseObject({
 export async function readConvenings(
   options: OlisClientOptions,
   session: SessionKey,
+  read: PullRead,
   signal: AbortSignal,
 ): Promise<Convening[]> {
-  const rows = await readSessionRows(options, "ConveneTimes", session, conveneTimeRow, signal);
+  const rows = await readSessionRows(options, "ConveneTimes", session, conveneTimeRow, read, signal);
   return rows.map((row) => ({ session, at: row.SessionDate, chamber: row.Chamber }));
 }
 
@@ -42,9 +43,10 @@ function dateOf(at: string): string {
 export async function readSessionDates(
   options: OlisClientOptions,
   session: SessionKey,
+  read: PullRead,
   signal: AbortSignal,
 ): Promise<SessionDates | undefined> {
-  const rows = await readSessionRows(options, "LegislativeSessions", session, legislativeSessionRow, signal);
+  const rows = await readSessionRows(options, "LegislativeSessions", session, legislativeSessionRow, read, signal);
   const row = rows[0];
   if (row === undefined) return undefined;
   return { session, begin: dateOf(row.BeginDate), end: row.EndDate === null ? null : dateOf(row.EndDate) };

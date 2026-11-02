@@ -23,21 +23,32 @@ import {
   type AgendaItem,
   type AmendmentId,
   type Committee,
+  type CommitteeMember,
   type DocumentId,
   type DocumentLink,
   type Meeting,
   type StoredDocument,
 } from "#/packages/domain/documents.ts";
-import { measureIdOf, type Measure, type MeasureKey, type SessionKey } from "#/packages/domain/index.ts";
+import {
+  measureIdOf,
+  type HistoryAction,
+  type Measure,
+  type MeasureKey,
+  type SessionKey,
+} from "#/packages/domain/index.ts";
+import type { LegislatorRow } from "#/packages/domain/legislators.ts";
 import type { AgencyId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openIndexReader, type IndexReader } from "../reader.ts";
 import { openSearchReader, type SearchIndexReader } from "../search.ts";
 import {
   openIndexWriter,
+  type CommitteeVoteRecord,
+  type FloorVoteRecord,
   type FullPullRecord,
   type IndexWriter,
   type SearchRecord,
+  type SponsorRecord,
   type TestimonyRecord,
 } from "../writer.ts";
 
@@ -95,25 +106,29 @@ export function openMadeUpIndex(): MadeUpIndex {
   };
 }
 
-/** A complete Full pull's record that reads nothing, with these parts. */
+/** A complete Full pull's record that reads nothing, with these parts: the rows of an entity set are named for it. */
 export function pullOf(parts: Partial<FullPullRecord> = {}): FullPullRecord {
   return {
-    measures: [],
-    history: [],
-    legislatorRows: [],
+    Measures: [],
+    Legislators: [],
+    MeasureSponsors: [],
+    MeasureHistoryActions: [],
+    MeasureVotes: [],
+    CommitteeVotes: [],
+    Committees: [],
+    CommitteeMeetings: [],
+    CommitteeAgendaItems: [],
+    MeasureDocuments: [],
+    MeasureAnalysisDocuments: [],
+    CommitteeMeetingDocuments: [],
+    CommitteeProposedAmendments: [],
+    CommitteePublicTestimonies: [],
+    CommitteeMembers: [],
+    ConveneTimes: [],
+    LegislativeSessions: undefined,
+    FloorLetters: [],
     legislators: [],
     legislatorCodes: [],
-    sponsors: [],
-    floorVotes: [],
-    committeeVotes: [],
-    committees: [],
-    meetings: [],
-    agendaItems: [],
-    documentLinks: [],
-    testimony: [],
-    committeeMembers: [],
-    convenings: [],
-    sessionDates: undefined,
     ...parts,
   };
 }
@@ -124,6 +139,61 @@ export const measure: Measure = {
   catchline: "Relating to made-up things",
   location: { current: "In Senate Committee", committeeCode: "MADE" },
   digest: "Creates a made-up thing.",
+  createdAt: "2099-01-01T00:00:00-08:00" as Timestamp,
+  modifiedAt: null,
+};
+
+/** MADE UP: a Legislators row, and SB 9001's Member sponsor, history action and votes by the Legislator Code it names. */
+export const legislatorRow: LegislatorRow = { session, code: "Rep Upp", firstName: "Maude", lastName: "Upp" };
+
+export const sponsor: SponsorRecord = {
+  kind: "member",
+  id: 5001,
+  measure: measureKey,
+  level: "chief",
+  printOrder: 1,
+  legislatorCode: legislatorRow.code,
+  legislatorId: null,
+};
+
+export const historyAction: HistoryAction = {
+  id: 6001,
+  measure: measureKey,
+  chamber: "senate",
+  date: "2099-01-02T00:00:00-08:00" as Timestamp,
+  text: "Introduction and first reading. Referred to President's desk.",
+};
+
+export const floorVote: FloorVoteRecord = {
+  id: 7001,
+  measure: measureKey,
+  legislatorCode: legislatorRow.code,
+  vote: "Aye",
+  historyId: historyAction.id,
+  chamber: "senate",
+  date: "2099-01-03T00:00:00-08:00" as Timestamp,
+  action: "Third reading. Passed.",
+  legislatorId: null,
+};
+
+export const committeeVote: CommitteeVoteRecord = {
+  id: 8001,
+  measure: measureKey,
+  legislatorCode: legislatorRow.code,
+  vote: "Aye",
+  reportId: 1,
+  committeeCode: "MADE",
+  meetingDate: "2099-01-10T08:00:00-08:00" as Timestamp,
+  legislatorId: null,
+};
+
+/** MADE UP: a CommitteeMembers row of the committee MADE, kept by the whole row. */
+export const committeeMember: CommitteeMember = {
+  session,
+  key: '[["CommitteeCode","MADE"],["LegislatorCode","Rep Upp"]]',
+  committeeCode: "MADE",
+  legislatorCode: legislatorRow.code,
+  title: "Chair",
   createdAt: "2099-01-01T00:00:00-08:00" as Timestamp,
   modifiedAt: null,
 };

@@ -96,11 +96,11 @@ type Increment = PullArranged & { pull: "increment" };
 
 /** The feed a Pull stores: the Snapshot read matches the Agency of its Testimony rows. */
 function feedOf({ fetched, testimony = [] }: PullArranged, read: SnapshotRead): FullPullRecord {
-  const links = [...fetched, ...testimony];
   return pulledFeed({
-    meetings: [humanServicesMeeting],
-    documentLinks: links,
-    testimony: read.testimonyRecordsOf(links),
+    CommitteeMeetings: [humanServicesMeeting],
+    MeasureDocuments: fetched.filter((link) => link.kind === "version"),
+    CommitteeProposedAmendments: fetched.filter((link) => link.kind === "proposed_amendment"),
+    CommitteePublicTestimonies: read.testimonyRecordsOf(testimony),
   });
 }
 
@@ -314,7 +314,7 @@ describe("finish, called a second time", () => {
       rig.writer.recordIncrement(
         session,
         incrementAt,
-        pulledFeed({ meetings: [humanServicesMeeting], documentLinks: [posting] }),
+        pulledFeed({ CommitteeMeetings: [humanServicesMeeting], CommitteeProposedAmendments: [posting] }),
       );
       storeDocuments(rig.writer, posting);
 

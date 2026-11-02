@@ -25,10 +25,10 @@ const agendaItemRow = z.looseObject({
 export async function readMeasureAgendaItems(
   options: OlisClientOptions,
   session: SessionKey,
-  signal: AbortSignal,
   scope: MeasureScope,
+  signal: AbortSignal,
 ): Promise<AgendaItem[]> {
-  const rows = await readSessionRows(options, "CommitteeAgendaItems", session, agendaItemRow, signal, scope);
+  const rows = await readSessionRows(options, "CommitteeAgendaItems", session, agendaItemRow, scope, signal);
   return rows.map((row) => ({
     id: row.CommitteeAgendaItemId,
     measure: scope.measure,

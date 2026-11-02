@@ -23,7 +23,7 @@ import {
 import { readSessionRows } from "./feed.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { feedTimestamp } from "./timestamps.ts";
-import type { OlisClientOptions } from "./options.ts";
+import type { OlisClientOptions, PullRead } from "./options.ts";
 
 /** Every document OLIS links is on this origin (docs/research/olis-odata.md section 4). */
 const OLIS_LINK_ORIGIN = "https://olis.oregonlegislature.gov";
@@ -105,9 +105,10 @@ const measureDocumentRow = z.looseObject({
 async function readVersions(
   options: OlisClientOptions,
   session: SessionKey,
+  read: PullRead,
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
-  const rows = await readSessionRows(options, "MeasureDocuments", session, measureDocumentRow, signal);
+  const rows = await readSessionRows(options, "MeasureDocuments", session, measureDocumentRow, read, signal);
   // A Printed Amendment points at the Version its description names, but only at one the feed lists.
   const versions = new Set(
     rows
@@ -162,10 +163,11 @@ const analysisRow = z.looseObject({
 async function readAnalyses(
   options: OlisClientOptions,
   session: SessionKey,
+  read: PullRead,
   versions: ReadonlySet<DocumentId>,
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
-  const rows = await readSessionRows(options, "MeasureAnalysisDocuments", session, analysisRow, signal);
+  const rows = await readSessionRows(options, "MeasureAnalysisDocuments", session, analysisRow, read, signal);
   return rows.map((row) => {
     const key = { session, prefix: row.MeasurePrefix, number: row.MeasureNumber };
     const id = analysisIdOf(session, row.MeasureAnalysisId);
@@ -218,9 +220,10 @@ const exhibitRow = z.looseObject({
 async function readExhibits(
   options: OlisClientOptions,
   session: SessionKey,
+  read: PullRead,
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
-  const rows = await readSessionRows(options, "CommitteeMeetingDocuments", session, exhibitRow, signal);
+  const rows = await readSessionRows(options, "CommitteeMeetingDocuments", session, exhibitRow, read, signal);
   return rows.map((row) => {
     const isRecordingLog = row.DocumentType === "Recording Log";
     const id = isRecordingLog
@@ -265,9 +268,10 @@ const testimonyRow = z.looseObject({
 async function readTestimony(
   options: OlisClientOptions,
   session: SessionKey,
+  read: PullRead,
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
-  const rows = await readSessionRows(options, "CommitteePublicTestimonies", session, testimonyRow, signal);
+  const rows = await readSessionRows(options, "CommitteePublicTestimonies", session, testimonyRow, read, signal);
   return rows.map((row) => {
     const id = testimonyIdOf(session, row.CommTestId);
     const root = sourceUrlOf(row.DocumentUrl).replace(/\/$/, "");
@@ -313,9 +317,10 @@ const postingRow = z.looseObject({
 async function readPostings(
   options: OlisClientOptions,
   session: SessionKey,
+  read: PullRead,
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
-  const rows = await readSessionRows(options, "CommitteeProposedAmendments", session, postingRow, signal);
+  const rows = await readSessionRows(options, "CommitteeProposedAmendments", session, postingRow, read, signal);
   return rows.map((row) => {
     const key = { session, prefix: row.MeasurePrefix, number: row.MeasureNumber };
     const amendmentNumber = row.AmendmentNumber.trim();
@@ -345,18 +350,41 @@ async function readPostings(
   });
 }
 
+/**
+ * The document links of the five entity sets whose rows link documents, each under the feed's name for its set. A meeting's
+ * agenda (a column of a CommitteeMeetings row) and the Floor Letters (their own reader) are not among them.
+ */
+export type DocumentSets = {
+  MeasureDocuments: DocumentLink[];
+  MeasureAnalysisDocuments: DocumentLink[];
+  CommitteeMeetingDocuments: DocumentLink[];
+  CommitteeProposedAmendments: DocumentLink[];
+  CommitteePublicTestimonies: DocumentLink[];
+};
+
+/**
+ * Reads the five sets together, each the way `read` says, because an analysis document is placed on the Version the feed
+ * lists for it (ADR-0013), so the Versions are read first and the analyses are read against them.
+ */
 export async function readDocumentLinks(
   options: OlisClientOptions,
   session: SessionKey,
+  read: PullRead,
   signal: AbortSignal,
-): Promise<DocumentLink[]> {
-  const versions = await readVersions(options, session, signal);
+): Promise<DocumentSets> {
+  const versions = await readVersions(options, session, read, signal);
   const versionIds = new Set(versions.filter((link) => link.kind === "version").map((link) => link.id));
-  const analyses = await readAnalyses(options, session, versionIds, signal);
-  const exhibits = await readExhibits(options, session, signal);
-  const postings = await readPostings(options, session, signal);
-  const testimony = await readTestimony(options, session, signal);
-  return [...versions, ...analyses, ...postings, ...exhibits, ...testimony];
+  const analyses = await readAnalyses(options, session, read, versionIds, signal);
+  const exhibits = await readExhibits(options, session, read, signal);
+  const postings = await readPostings(options, session, read, signal);
+  const testimony = await readTestimony(options, session, read, signal);
+  return {
+    MeasureDocuments: versions,
+    MeasureAnalysisDocuments: analyses,
+    CommitteeMeetingDocuments: exhibits,
+    CommitteeProposedAmendments: postings,
+    CommitteePublicTestimonies: testimony,
+  };
 }
 
 /**

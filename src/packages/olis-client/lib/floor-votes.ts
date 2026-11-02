@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { FloorVoteEntry } from "#/packages/domain/votes.ts";
 import { feedChamber } from "./chamber.ts";
-import { readSessionRows, type MeasureScope } from "./feed.ts";
+import { readSessionRows, type RowSelection } from "./feed.ts";
 import type { OlisClientOptions } from "./options.ts";
 import { feedTimestamp } from "./timestamps.ts";
 
@@ -24,10 +24,10 @@ const floorVoteRow = z.looseObject({
 export async function readFloorVoteRows(
   options: OlisClientOptions,
   session: SessionKey,
+  selection: RowSelection,
   signal: AbortSignal,
-  scope?: MeasureScope,
 ): Promise<FloorVoteEntry[]> {
-  const rows = await readSessionRows(options, "MeasureVotes", session, floorVoteRow, signal, scope);
+  const rows = await readSessionRows(options, "MeasureVotes", session, floorVoteRow, selection, signal);
   return rows.map((row) => ({
     id: row.MeasureVoteId,
     measure: { session, prefix: row.MeasurePrefix, number: row.MeasureNumber },

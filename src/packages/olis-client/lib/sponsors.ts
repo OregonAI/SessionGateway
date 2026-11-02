@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { Sponsorship } from "#/packages/domain/legislators.ts";
 import { readSessionRows } from "./feed.ts";
-import type { OlisClientOptions } from "./options.ts";
+import type { OlisClientOptions, PullRead } from "./options.ts";
 
 // The feed serializes decimal keys as strings: "MeasureSponsorId":"154809", "PrintOrder":"1"
 // (docs/research/olis-odata.md section 8, gotcha 7).
@@ -57,8 +57,9 @@ function sponsorshipOf(session: SessionKey, row: SponsorRow): Sponsorship {
 export async function readSponsorshipRows(
   options: OlisClientOptions,
   session: SessionKey,
+  read: PullRead,
   signal: AbortSignal,
 ): Promise<Sponsorship[]> {
-  const rows = await readSessionRows(options, "MeasureSponsors", session, sponsorRow, signal);
+  const rows = await readSessionRows(options, "MeasureSponsors", session, sponsorRow, read, signal);
   return rows.map((row) => sponsorshipOf(session, row));
 }

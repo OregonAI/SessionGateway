@@ -8,7 +8,7 @@ import { floorLetterIdOf, type DocumentLink, type DocumentRelation } from "#/pac
 import { feedChamber } from "./chamber.ts";
 import { sourceUrlOf } from "./documents.ts";
 import { readEntitySet } from "./feed.ts";
-import type { OlisClientOptions } from "./options.ts";
+import type { OlisClientOptions, PullRead } from "./options.ts";
 import { feedTimestamp } from "./timestamps.ts";
 
 // MeasurePrefix and MeasureNumber are null on a letter that names no Measure, as on FloorLetterId 4220
@@ -30,6 +30,20 @@ function literal(text: string): string {
   return `'${text.replaceAll("'", "''")}'`;
 }
 
+/** The id a read asks for the letters above, or undefined for the whole set. */
+function aboveIdOf(read: PullRead): number | undefined {
+  switch (read.kind) {
+    case "whole":
+      return undefined;
+    case "above_id":
+      return read.id;
+    case "changed_since":
+      throw new Error("FloorLetters cannot be read by the time its rows changed: the set has no dates");
+    default:
+      return read satisfies never;
+  }
+}
+
 /** What a hit and `get_document` call a letter: its title, else its description, else what it is. */
 function labelOf(title: string | null, description: string | null): string {
   const named = [title, description].find((text) => text !== null && text.trim() !== "");
@@ -37,16 +51,18 @@ function labelOf(title: string | null, description: string | null): string {
 }
 
 /**
- * The Session's Floor Letters, as document links that carry their row. With `aboveId`, only the letters whose
- * `FloorLetterId` is greater (an increment's read); without it, the whole set, counted with `$count` like every set a
- * full pull reads. A row of another Session is never taken for this one.
+ * The Session's Floor Letters, as document links that carry their row. A `whole` read takes the whole set, counted with
+ * `$count` like every set a full pull reads; an `above_id` read, an increment's, takes only the letters whose
+ * `FloorLetterId` is greater. The set has no dates, so a `changed_since` read is refused. A row of another Session is never
+ * taken for this one.
  */
 export async function readFloorLetters(
   options: OlisClientOptions,
   session: SessionKey,
-  aboveId: number | undefined,
+  read: PullRead,
   signal: AbortSignal,
 ): Promise<DocumentLink[]> {
+  const aboveId = aboveIdOf(read);
   const terms = [
     `SessionKey eq ${literal(session)}`,
     ...(aboveId === undefined ? [] : [`FloorLetterId gt ${aboveId}`]),

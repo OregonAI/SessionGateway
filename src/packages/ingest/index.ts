@@ -16,6 +16,7 @@
 import { createHash } from "node:crypto";
 import type { IngestConfig } from "#/packages/config/index.ts";
 import {
+  documentLinksOf,
   openIndexWriter,
   type CommitteeVoteRecord,
   type FullPullRecord,
@@ -27,8 +28,19 @@ import {
 } from "#/packages/database/writer.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
 import { findCitations } from "#/packages/domain/citations.ts";
-import type { CommitteeId, DocumentLink } from "#/packages/domain/documents.ts";
-import type { LegislatorId, Sponsorship } from "#/packages/domain/legislators.ts";
+import type {
+  AgendaItem,
+  Committee,
+  CommitteeId,
+  CommitteeMember,
+  Convening,
+  DocumentLink,
+  Meeting,
+  PulledEntitySet,
+  SessionDates,
+} from "#/packages/domain/documents.ts";
+import type { HistoryAction, Measure } from "#/packages/domain/index.ts";
+import type { LegislatorId, LegislatorRow, Sponsorship } from "#/packages/domain/legislators.ts";
 import type { Passage, SearchEntry } from "#/packages/domain/search.ts";
 import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
 import type { LegislatorAlias } from "#/packages/legislators/aliases.ts";
@@ -38,14 +50,20 @@ import {
   type Resolution,
   type UnresolvedLegislatorCode,
 } from "#/packages/legislators/resolver.ts";
-import { createOlisClient, type OlisClient, type SetCount } from "#/packages/olis-client/index.ts";
+import {
+  createOlisClient,
+  type DocumentSets,
+  type OlisClient,
+  type PullRead,
+  type SetCount,
+} from "#/packages/olis-client/index.ts";
 import { loadSnapshot } from "#/packages/oregonai-snapshot/index.ts";
 import { extractPdfText, type ExtractedPdf } from "#/packages/pdf-text/index.ts";
 import { searchEntryOf } from "#/packages/search/documents.ts";
 import { splitPassages } from "#/packages/search/passages.ts";
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import type { Clock } from "#/packages/time/clock.ts";
-import { compareTimestamps, formatPacific, pacificTimestampOf, type Timestamp } from "#/packages/time/pacific.ts";
+import { formatPacific, pacificTimestampOf, type Timestamp } from "#/packages/time/pacific.ts";
 import { buildReportPath, writeBuildReport, type BuildReport, type SetReport } from "./lib/build-report.ts";
 import {
   hashSampleReportPath,
@@ -55,6 +73,7 @@ import {
   writeHashSampleReport,
   type HashSampleReport,
 } from "./lib/hash-sample.ts";
+import { documentSetsReadOf, pullReadOf, type PullRun } from "./lib/pull-register.ts";
 import {
   beginFullPullSnapshotRead,
   beginIncrementSnapshotRead,
@@ -320,67 +339,73 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
   return documentsFetched;
 }
 
-/** Everything one run read of the feed, before it is resolved and stored. */
-type FeedRead = {
-  measures: Awaited<ReturnType<OlisClient["readMeasures"]>>;
-  legislatorRows: Awaited<ReturnType<OlisClient["readLegislators"]>>;
-  sponsorships: Awaited<ReturnType<OlisClient["readSponsorships"]>>;
-  history: Awaited<ReturnType<OlisClient["readHistoryActions"]>>;
-  committeeVotes: Awaited<ReturnType<OlisClient["readCommitteeVotes"]>>;
-  floorVotes: Awaited<ReturnType<OlisClient["readFloorVotes"]>>;
-  committees: Awaited<ReturnType<OlisClient["readCommittees"]>>;
-  meetings: Awaited<ReturnType<OlisClient["readMeetings"]>>;
-  agendaItems: Awaited<ReturnType<OlisClient["readAgendaItems"]>>;
-  committeeMembers: Awaited<ReturnType<OlisClient["readCommitteeMembers"]>>;
-  /** The floor convenings and the Session's begin and end dates: read by a full pull, empty in an increment (ADR-0042). */
-  convenings: Awaited<ReturnType<OlisClient["readConvenings"]>>;
-  sessionDates: Awaited<ReturnType<OlisClient["readSessionDates"]>>;
-  /** Every document the feed links in what was read, the meetings' agendas included. */
-  links: DocumentLink[];
+/** No documents linked: what a Pull that leaves the five document sets alone has of them. */
+const noDocuments: DocumentSets = {
+  MeasureDocuments: [],
+  MeasureAnalysisDocuments: [],
+  CommitteeMeetingDocuments: [],
+  CommitteeProposedAmendments: [],
+  CommitteePublicTestimonies: [],
 };
 
-/** Reads the sets a pull and an increment store, from the client given: a whole Session's rows, or an increment's. */
-async function readFeed(
-  olis: OlisClient,
-  config: IngestConfig,
-  deps: IngestDeps,
-  kind: "full_pull" | "increment",
-  floorLettersAbove: number | undefined,
-): Promise<FeedRead> {
-  const measures = await olis.readMeasures(config.session, deps.signal);
-  const legislatorRows = await olis.readLegislators(config.session, deps.signal);
-  const sponsorships = await olis.readSponsorships(config.session, deps.signal);
-  const history = await olis.readHistoryActions(config.session, deps.signal);
-  const committeeVotes = await olis.readCommitteeVotes(config.session, deps.signal);
-  const floorVotes = await olis.readFloorVotes(config.session, deps.signal);
-  const committees = await olis.readCommittees(config.session, deps.signal);
-  const meetings = await olis.readMeetings(config.session, deps.signal);
-  const agendaItems = await olis.readAgendaItems(config.session, deps.signal);
-  const committeeMembers = await olis.readCommitteeMembers(config.session, deps.signal);
-  // The sets the schedule reads (ADR-0042) are whole-Session sets the full pull counts; an increment does not read them.
-  const convenings = kind === "full_pull" ? await olis.readConvenings(config.session, deps.signal) : [];
-  const sessionDates = kind === "full_pull" ? await olis.readSessionDates(config.session, deps.signal) : undefined;
-  const links = [
-    ...(await olis.readDocumentLinks(config.session, deps.signal)),
-    ...meetings.flatMap((meeting) => (meeting.agenda === null ? [] : [meeting.agenda])),
-    // FloorLetters carry no dates, so an increment asks for the ids above the highest one held (ADR-0005, ADR-0045).
-    ...(await olis.readFloorLetters(config.session, floorLettersAbove, deps.signal)),
-  ];
-  return {
-    measures,
-    legislatorRows,
-    sponsorships,
-    history,
-    committeeVotes,
-    floorVotes,
-    committees,
-    meetings,
-    agendaItems,
-    committeeMembers,
-    convenings,
-    sessionDates,
-    links,
+/** Everything one Pull read of the feed, before it is resolved and stored: the rows of each entity set, under the feed's name for it. */
+type FeedRead = DocumentSets & {
+  Measures: Measure[];
+  Legislators: LegislatorRow[];
+  MeasureSponsors: Sponsorship[];
+  MeasureHistoryActions: HistoryAction[];
+  MeasureVotes: FloorVoteEntry[];
+  CommitteeVotes: CommitteeVoteEntry[];
+  Committees: Committee[];
+  CommitteeMeetings: Meeting[];
+  CommitteeAgendaItems: AgendaItem[];
+  CommitteeMembers: CommitteeMember[];
+  ConveneTimes: Convening[];
+  LegislativeSessions: SessionDates | undefined;
+  FloorLetters: DocumentLink[];
+};
+
+/**
+ * Reads the sets a Pull stores, each the way the register says this kind of Pull reads it (`lib/pull-register.ts`): the
+ * Pull's reads are the register's, and this holds no rule about a set. A set the register leaves alone gives no rows. The
+ * sets are read in the order the Build report lists them, and the result has one field for each entity set: the compiler
+ * refuses a set `pulledEntitySets` names that is not read here.
+ */
+async function readFeed(olis: OlisClient, config: IngestConfig, deps: IngestDeps, run: PullRun): Promise<FeedRead> {
+  const { session } = config;
+  const { signal } = deps;
+  const readSet = async <Rows>(
+    entitySet: PulledEntitySet,
+    unread: Rows,
+    read: (how: PullRead) => Promise<Rows>,
+  ): Promise<Rows> => {
+    const how = pullReadOf(entitySet, run);
+    return how === undefined ? unread : read(how);
   };
+  // The five sets that link documents are read in one call, in the mode their entries in the register agree on.
+  const documentsRead = documentSetsReadOf(run);
+  return {
+    Measures: await readSet("Measures", [], (how) => olis.readMeasures(session, how, signal)),
+    Legislators: await readSet("Legislators", [], (how) => olis.readLegislators(session, how, signal)),
+    MeasureSponsors: await readSet("MeasureSponsors", [], (how) => olis.readSponsorships(session, how, signal)),
+    MeasureHistoryActions: await readSet("MeasureHistoryActions", [], (how) =>
+      olis.readHistoryActions(session, how, signal),
+    ),
+    CommitteeVotes: await readSet("CommitteeVotes", [], (how) => olis.readCommitteeVotes(session, how, signal)),
+    MeasureVotes: await readSet("MeasureVotes", [], (how) => olis.readFloorVotes(session, how, signal)),
+    Committees: await readSet("Committees", [], (how) => olis.readCommittees(session, how, signal)),
+    CommitteeMeetings: await readSet("CommitteeMeetings", [], (how) => olis.readMeetings(session, how, signal)),
+    CommitteeAgendaItems: await readSet("CommitteeAgendaItems", [], (how) =>
+      olis.readAgendaItems(session, how, signal),
+    ),
+    CommitteeMembers: await readSet("CommitteeMembers", [], (how) => olis.readCommitteeMembers(session, how, signal)),
+    ConveneTimes: await readSet("ConveneTimes", [], (how) => olis.readConvenings(session, how, signal)),
+    LegislativeSessions: await readSet("LegislativeSessions", undefined, (how) =>
+      olis.readSessionDates(session, how, signal),
+    ),
+    ...(documentsRead === undefined ? noDocuments : await olis.readDocumentLinks(session, documentsRead, signal)),
+    FloorLetters: await readSet("FloorLetters", [], (how) => olis.readFloorLetters(session, how, signal)),
+  } satisfies Record<PulledEntitySet, unknown>;
 }
 
 /** What a run stores of what it read: the rows, with each Legislator Code resolved. */
@@ -390,43 +415,65 @@ function feedRecordOf(
   feed: FeedRead,
   snapshotRead: SnapshotRead,
 ): { record: FullPullRecord; resolver: LegislatorResolver; committeeNames: Map<CommitteeId, string> } {
-  const { measures, legislatorRows, sponsorships, history, committeeVotes, floorVotes, committees } = feed;
-  const { meetings, agendaItems, committeeMembers, convenings, sessionDates, links } = feed;
   // A Member sponsor and the voter of a vote entry each name a Legislator by a Legislator Code; the
   // resolver says who that is.
   const resolver = createLegislatorResolver({
     session: config.session,
-    rows: legislatorRows,
+    rows: feed.Legislators,
     aliases: deps.legislatorAliases,
   });
-  const sponsors = sponsorships.map((sponsorship) => sponsorRecordOf(sponsorship, resolver));
+  const sponsors = feed.MeasureSponsors.map((sponsorship) => sponsorRecordOf(sponsorship, resolver));
   // A CommitteeMembers row names a person by a Legislator Code, but a task force's members are not all Legislators
   // ("Shanbo Zhang", olis-odata.md gotcha 5): the code is stored as the feed writes it, and one that names no
   // Legislator is reported with the others, never an error.
-  for (const member of committeeMembers) resolver.resolve("CommitteeMembers", member.legislatorCode);
-  const floorVoteRecords = floorVotes.map((entry) => floorVoteRecordOf(entry, resolver));
-  const committeeVoteRecords = committeeVotes.map((entry) => committeeVoteRecordOf(entry, resolver));
+  for (const member of feed.CommitteeMembers) resolver.resolve("CommitteeMembers", member.legislatorCode);
+  const floorVoteRecords = feed.MeasureVotes.map((entry) => floorVoteRecordOf(entry, resolver));
+  const committeeVoteRecords = feed.CommitteeVotes.map((entry) => committeeVoteRecordOf(entry, resolver));
 
-  const committeeNames = new Map<CommitteeId, string>(committees.map((committee) => [committee.id, committee.name]));
+  const committeeNames = new Map<CommitteeId, string>(
+    feed.Committees.map((committee) => [committee.id, committee.name]),
+  );
   const record: FullPullRecord = {
-    measures,
-    history,
-    legislatorRows,
+    Measures: feed.Measures,
+    Legislators: feed.Legislators,
+    MeasureSponsors: sponsors,
+    MeasureHistoryActions: feed.MeasureHistoryActions,
+    MeasureVotes: floorVoteRecords,
+    CommitteeVotes: committeeVoteRecords,
+    Committees: feed.Committees,
+    CommitteeMeetings: feed.CommitteeMeetings,
+    CommitteeAgendaItems: feed.CommitteeAgendaItems,
+    MeasureDocuments: feed.MeasureDocuments,
+    MeasureAnalysisDocuments: feed.MeasureAnalysisDocuments,
+    CommitteeMeetingDocuments: feed.CommitteeMeetingDocuments,
+    CommitteeProposedAmendments: feed.CommitteeProposedAmendments,
+    CommitteePublicTestimonies: snapshotRead.testimonyRecordsOf(feed.CommitteePublicTestimonies),
+    CommitteeMembers: feed.CommitteeMembers,
+    ConveneTimes: feed.ConveneTimes,
+    LegislativeSessions: feed.LegislativeSessions,
+    FloorLetters: feed.FloorLetters,
     legislators: resolver.people,
     legislatorCodes: resolver.codes.map(({ code, legislator }) => ({ code, legislatorId: legislator.id })),
-    sponsors,
-    floorVotes: floorVoteRecords,
-    committeeVotes: committeeVoteRecords,
-    committees,
-    meetings,
-    agendaItems,
-    documentLinks: links,
-    testimony: snapshotRead.testimonyRecordsOf(links),
-    committeeMembers,
-    convenings,
-    sessionDates,
   };
   return { record, resolver, committeeNames };
+}
+
+/**
+ * The OLIS client every run of the worker is made with: the feed, and the documents' origin, timeout and pause. A Full
+ * pull gives `onSetRead` to be told each set's counts, so a set that is short is reported and the pull refused whole; a run
+ * that gives none throws on a short read (ADR-0005).
+ */
+function createWorkerClient(config: IngestConfig, deps: IngestDeps, onSetRead?: (count: SetCount) => void): OlisClient {
+  return createOlisClient({
+    baseUrl: config.olisBaseUrl,
+    fetch: deps.fetch,
+    ...(onSetRead === undefined ? {} : { onSetRead }),
+    documents: {
+      origin: config.olisDocumentOrigin,
+      timeoutMs: deps.documentTimeoutMs ?? DEFAULT_DOCUMENT_TIMEOUT_MS,
+      pause: deps.pause,
+    },
+  });
 }
 
 export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promise<FullPullResult> {
@@ -435,20 +482,10 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
   const asOf = formatPacific(deps.clock.now());
   // Every whole set the pull reads says how many rows the feed counted and how many came (ADR-0005).
   const setCounts: SetCount[] = [];
-  const olis = createOlisClient({
-    baseUrl: config.olisBaseUrl,
-    fetch: deps.fetch,
-    onSetRead: (count) => {
-      setCounts.push(count);
-    },
-    documents: {
-      origin: config.olisDocumentOrigin,
-      timeoutMs: deps.documentTimeoutMs ?? DEFAULT_DOCUMENT_TIMEOUT_MS,
-      pause: deps.pause,
-    },
+  const olis = createWorkerClient(config, deps, (count) => {
+    setCounts.push(count);
   });
-  const feed = await readFeed(olis, config, deps, "full_pull", undefined);
-  const { measures, links } = feed;
+  const feed = await readFeed(olis, config, deps, { kind: "full_pull" });
 
   // The pull is complete only when every set it read came with as many rows as the feed counted. One that is not
   // stores nothing: the index goes on answering from the last complete pull, and no row is marked as missed by it.
@@ -480,7 +517,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       deps,
       writer,
       olis,
-      links,
+      links: documentLinksOf(record),
       committeeNames,
       passageCounts,
       notFetched,
@@ -533,7 +570,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
       ...(statutesAffectedTable === undefined ? {} : { statutes_affected_table: statutesAffectedTable }),
     });
     return {
-      measures: measures.length,
+      measures: feed.Measures.length,
       asOf,
       documentsFetched,
       documentsNotFetched: notFetched.length,
@@ -567,25 +604,13 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
   const asOf = formatPacific(deps.clock.now());
   const writer = openIndexWriter(config.databasePath);
   try {
-    const runs = writer.lastRuns(config.session);
-    const lastRun = [runs.fullPull, runs.increment]
-      .filter((at): at is Timestamp => at !== undefined)
-      .toSorted(compareTimestamps)
-      .at(-1);
+    // The Index's As of is when the last run began: the same time the server answers with.
+    const lastRun = writer.asOf(config.session);
     if (lastRun === undefined)
       throw new Error("An increment needs a complete full pull before it: the index holds none");
     const since = pacificTimestampOf(Temporal.Instant.from(lastRun).subtract({ hours: INCREMENT_OVERLAP_HOURS }));
-    const olis = createOlisClient({
-      baseUrl: config.olisBaseUrl,
-      fetch: deps.fetch,
-      changedSince: since,
-      documents: {
-        origin: config.olisDocumentOrigin,
-        timeoutMs: deps.documentTimeoutMs ?? DEFAULT_DOCUMENT_TIMEOUT_MS,
-        pause: deps.pause,
-      },
-    });
-    const feed = await readFeed(olis, config, deps, "increment", writer.highestFloorLetterId(config.session));
+    const olis = createWorkerClient(config, deps);
+    const feed = await readFeed(olis, config, deps, { kind: "increment", since, writer, session: config.session });
     const snapshotRead = beginIncrementSnapshotRead({ writer, session: config.session, snapshot });
     const { record, committeeNames } = feedRecordOf(config, deps, feed, snapshotRead);
     writer.recordIncrement(config.session, asOf, record);
@@ -596,7 +621,7 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
       deps,
       writer,
       olis,
-      links: feed.links,
+      links: documentLinksOf(record),
       committeeNames,
       passageCounts,
       notFetched,
@@ -623,15 +648,7 @@ export async function runHashSample(
   deps: IngestDeps & { random: () => number },
   deadline: Timestamp | undefined,
 ): Promise<HashSampleReport> {
-  const olis = createOlisClient({
-    baseUrl: config.olisBaseUrl,
-    fetch: deps.fetch,
-    documents: {
-      origin: config.olisDocumentOrigin,
-      timeoutMs: deps.documentTimeoutMs ?? DEFAULT_DOCUMENT_TIMEOUT_MS,
-      pause: deps.pause,
-    },
-  });
+  const olis = createWorkerClient(config, deps);
   const writer = openIndexWriter(config.databasePath);
   let documents: StoredDocumentHash[];
   try {
