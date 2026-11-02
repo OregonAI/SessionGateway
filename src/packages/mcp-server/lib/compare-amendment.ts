@@ -4,15 +4,16 @@ import type { IndexReader } from "#/packages/database/reader.ts";
 import { parseAmendmentReference } from "#/packages/domain/documents.ts";
 import { parseMeasureReference, type MeasureKey, type SessionKey } from "#/packages/domain/index.ts";
 import type { StoredAmendment, StoredVersion } from "#/packages/domain/statute-links.ts";
+import { placeAmendedVersion } from "#/packages/statute-links/measure.ts";
 import type { Outcome } from "./outcome.ts";
 import {
   amendedVersionOutput,
+  amendedVersionShown,
   fileOutput,
   fileShown,
   maybeParseResultFields,
   noLinks,
   parseResultShown,
-  placeStoredAmendment,
   postingOutput,
   postingShown,
   relatingClauseEditOutput,
@@ -87,10 +88,11 @@ function comparedVersionShown(
   key: MeasureKey,
   versions: readonly StoredVersion[],
 ): CompareAmendmentOutput["amended_version"] {
-  const { version, shown } = placeStoredAmendment(amendment, key, versions);
+  const placed = placeAmendedVersion(amendment, key, versions);
+  const shown = amendedVersionShown(placed);
   // A Version that is not known has nothing read: there is no comparison.
-  if (version === undefined) return { ...shown, text_read: null, not_read_reason: null, statute_links: noLinks };
-  return { ...shown, ...parseResultShown(version.parse) };
+  if (placed.version === undefined) return { ...shown, text_read: null, not_read_reason: null, statute_links: noLinks };
+  return { ...shown, ...parseResultShown(placed.version.parse) };
 }
 
 export function compareAmendment(

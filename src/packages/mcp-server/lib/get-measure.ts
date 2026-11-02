@@ -10,13 +10,13 @@ import {
 } from "#/packages/domain/index.ts";
 import type { AgendaItem } from "#/packages/domain/schedule.ts";
 import type { CommitteeVote, FloorVote, LegislatorVote } from "#/packages/domain/votes.ts";
+import { statuteLinksOfMeasure } from "#/packages/statute-links/measure.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import type { Outcome } from "./outcome.ts";
 import { agencyLinksOf, agencyLinksOutput } from "./agency-links.ts";
 import { analysisDocumentsOf, analysisDocumentsOutput } from "./analysis.ts";
 import { floorLettersOutput, floorLettersShown } from "./floor-letters.ts";
 import { measureListingOutput, listingShown } from "./listing.ts";
-import { statuteLinksBySourceOf, versionsWithSameLinksAs } from "./statute-links.ts";
 import { statuteLinksBySourceWithTable, statuteLinksBySourceWithTableOutput } from "./statutes-affected-table.ts";
 import type { LiveLookup, LiveStatusReader } from "./live-status.ts";
 
@@ -353,13 +353,12 @@ export async function getMeasure(
   const committeeVotes = reader.findCommitteeVotes(measure);
   // The Measure is in the index, so OLIS is asked about it; a reference the index does not know never reaches OLIS.
   const live = await liveStatus.lookup(measure);
-  const statuteLinksBySource = statuteLinksBySourceOf(measure, versions, reader.findMeasureAmendments(measure));
-  // The table's blocks are set beside the Versions first; same_links_as keeps each Version's own block (ADR-0036).
-  const withTable = statuteLinksBySourceWithTable(
-    statuteLinksBySource,
+  const statuteLinks = statuteLinksOfMeasure({
+    measure,
     versions,
-    reader.statutesAffectedTableOf(measure),
-  );
+    amendments: reader.findMeasureAmendments(measure),
+    table: reader.statutesAffectedTableOf(measure),
+  });
   return {
     kind: "answer",
     answer: {
@@ -373,10 +372,10 @@ export async function getMeasure(
         reader.analysisNotHeld(measure),
       ),
       floor_letters: floorLettersShown(reader.findFloorLetters(measure)),
-      statute_links_by_source: { ...withTable, versions: versionsWithSameLinksAs(withTable.versions) },
+      statute_links_by_source: statuteLinksBySourceWithTable(statuteLinks),
       agency_links: agencyLinksOf(reader.findAgencyLinks(session, { measure }), reader.findUnresolvedUnits(measure), {
         parents: reader.agencyParents(),
-        supersededAmendments: new Set(statuteLinksBySource.superseded_amendments.map((amendment) => amendment.id)),
+        supersededAmendments: statuteLinks.supersededAmendments,
       }),
       source_url: olisPageUrlOf(measure),
       location: { current: measure.location.current, committee_code: measure.location.committeeCode },

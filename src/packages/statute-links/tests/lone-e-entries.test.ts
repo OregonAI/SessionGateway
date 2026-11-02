@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { parseStatutesAffectedTable } from "../index.ts";
 import { statuteLinksOfMeasure, tallyLoneEEntries, type StatuteLinksOfMeasure } from "../measure.ts";
-import { heldVersion, link, measureOf, tableOfMeasure, tripleOf } from "./measure-cases.ts";
+import { heldVersion, link, measureOf, heldTable, tripleOf } from "./measure-cases.ts";
 
 // Seam 4: which Version a Table entry that ends in an E alone names (ticket #99; ADR-0033, GLOSSARY.md "Table entry"). The
 // table's legend gives "E" both as the mark that an emergency clause applies (column 4) and, by its examples, as the level of an
@@ -35,7 +35,7 @@ describe("an entry that ends in an E alone", () => {
       measure: hb2052,
       versions: [introduced],
       amendments: [],
-      table: tableOfMeasure(hb2052, [row], ["Introduced"]),
+      table: heldTable(hb2052, [row], ["Introduced"]),
     });
 
     const table = versionNamed(result, "Introduced").table;
@@ -50,7 +50,7 @@ describe("an entry that ends in an E alone", () => {
       measure: hb2052,
       versions: [introduced, heldVersion(hb2052, "E-Engrossed")],
       amendments: [],
-      table: tableOfMeasure(hb2052, [row], ["Introduced", "E-Engrossed"]),
+      table: heldTable(hb2052, [row], ["Introduced", "E-Engrossed"]),
     });
 
     expect(versionNamed(result, "Introduced").table).toBeUndefined();
@@ -67,7 +67,7 @@ describe("an entry that ends in an E alone", () => {
       measure: hb2052,
       versions: [introduced],
       amendments: [],
-      table: tableOfMeasure(hb2052, [row], ["Introduced", "E-Engrossed"]),
+      table: heldTable(hb2052, [row], ["Introduced", "E-Engrossed"]),
     });
 
     expect(versionNamed(result, "Introduced").table).toBeUndefined();
@@ -88,7 +88,7 @@ describe("an entry that ends in an E alone", () => {
       measure: sb98,
       versions,
       amendments: [],
-      table: tableOfMeasure(sb98, ["2.150 A §20 SB 98 B E"], ["Introduced", "B-Engrossed", "E-Engrossed"]),
+      table: heldTable(sb98, ["2.150 A §20 SB 98 B E"], ["Introduced", "B-Engrossed", "E-Engrossed"]),
     });
 
     const table = versionNamed(result, "B-Engrossed").table;

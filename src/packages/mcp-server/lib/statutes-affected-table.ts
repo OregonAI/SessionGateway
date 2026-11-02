@@ -5,25 +5,18 @@
 // the parsed links the table lacks. Nothing is listed twice, and a list that can grow with a series is cut at a fixed
 // number of targets with a count of what it left out.
 import { z } from "zod";
+import { compareMeasureSections, statuteChangeKinds, type StatuteLink } from "#/packages/domain/statute-links.ts";
+import type { StatuteLinksOfMeasure, TableOfMeasure, TableOfVersion } from "#/packages/statute-links/measure.ts";
 import {
-  compareMeasureSections,
-  statuteChangeKinds,
-  statuteLinkKindOfTableAction,
-  versionDescriptionOfEntry,
-  type StatuteLink,
-  type StatutesAffectedEntry,
-  type StatutesAffectedTableOfMeasure,
-  type StoredVersion,
-} from "#/packages/domain/statute-links.ts";
-import {
+  amendmentsShown,
   chapterTargetOutput,
   sectionTargetOutput,
   statuteLinksBySourceOutput,
   statuteLinksShown,
   targetsOutput,
   versionEntryOutput,
+  versionEntryShown,
   versionsOutputOf,
-  type StatuteLinksBySourceOutput,
 } from "./statute-links.ts";
 
 /**
@@ -146,17 +139,17 @@ export const tableOfMeasureOutput = z.object({
   note: z.string().describe("What the table is and how its entries are set beside the parsed links."),
 });
 
+const versionEntryWithTableOutput = versionEntryOutput.extend({
+  statutes_affected_table: tableOfVersionOutput
+    .optional()
+    .describe(
+      "Present when the Statutes Affected Table has entries that name this Version: which of the parsed links that change the law the table confirms, and where the table and the parsed links disagree. Absent when the table names no entry for this Version, or the index holds no table.",
+    ),
+});
+
 /** get_measure's Statute Links by source, with the table's entries beside the parsed links of the Version each names. */
 export const statuteLinksBySourceWithTableOutput = statuteLinksBySourceOutput.extend({
-  versions: versionsOutputOf(
-    versionEntryOutput.extend({
-      statutes_affected_table: tableOfVersionOutput
-        .optional()
-        .describe(
-          "Present when the Statutes Affected Table has entries that name this Version: which of the parsed links that change the law the table confirms, and where the table and the parsed links disagree. Absent when the table names no entry for this Version, or the index holds no table.",
-        ),
-    }),
-  ),
+  versions: versionsOutputOf(versionEntryWithTableOutput),
   statutes_affected_table: tableOfMeasureOutput
     .optional()
     .describe(
@@ -168,25 +161,6 @@ export type StatuteLinksBySourceWithTable = z.infer<typeof statuteLinksBySourceW
 
 export const STATUTES_AFFECTED_TABLE_NOTE =
   "Legislative Counsel's Statutes Affected Table is a second source for the Statute Links. Its entries are set beside the links parsed from the text of the Version each names, in that Version's statutes_affected_table, and never replace them. A Version no entry names has no such block, and citations are not compared, because the table does not list them.";
-
-/** A link to compare: what a parsed link or a table entry says, by the three things that must agree. */
-function keyOf(link: Pick<StatuteLink, "kind" | "measureSection"> & { target: { id: string } }): string {
-  return JSON.stringify([link.kind, link.target.id, link.measureSection]);
-}
-
-/** A table entry as a Statute Link, so that it is shown as one is. The table's "A" is amends, its "R" repeals, its "Add" adds-to. */
-function linkOfEntry(entry: StatutesAffectedEntry): StatuteLink {
-  return {
-    kind: statuteLinkKindOfTableAction[entry.action],
-    target: entry.target,
-    measureSection: entry.measureSection,
-  };
-}
-
-/** The links the table says, each once, in the table's order. */
-function distinctLinks(links: readonly StatuteLink[]): StatuteLink[] {
-  return [...new Map(links.map((link) => [keyOf(link), link])).values()];
-}
 
 /** The first targets of a list and how many it leaves out (undefined when it leaves none out). */
 function cut<Target>(targets: readonly Target[]): { shown: Target[]; notShown: number | undefined } {
@@ -256,114 +230,89 @@ function parsedChangesShown(
   >;
 }
 
-/** The table's entries for a Version, set beside what was parsed of its text. A list with nothing in it is null. */
-function tableOfVersion(
-  version: StoredVersion,
-  entries: readonly StatutesAffectedEntry[],
-): z.infer<typeof tableOfVersionOutput> {
-  const inTable = distinctLinks(entries.map(linkOfEntry));
+/** The Version's block: which of its parsed links that change the law the table confirms, and where the two disagree. */
+function tableOfVersionShown(table: TableOfVersion): z.infer<typeof tableOfVersionOutput> {
   const listed = (links: readonly StatuteLink[]): z.infer<typeof changeLinksOutput> | null =>
     links.length === 0 ? null : changeLinksShown(links);
-  if (!version.parse.textRead) {
-    return {
-      compared: false,
-      not_compared_reason:
-        "This index did not read the Version's text for Statute Links (it has no text layer, or the index has not read it yet), so there are no parsed links to set the entries beside.",
-      parsed_changes: null,
-      only_in_table: null,
-      only_in_parsed_links: null,
-      entries_not_compared: listed(inTable),
-    };
+  switch (table.kind) {
+    case "not_compared":
+      return {
+        compared: false,
+        not_compared_reason:
+          "This index did not read the Version's text for Statute Links (it has no text layer, or the index has not read it yet), so there are no parsed links to set the entries beside.",
+        parsed_changes: null,
+        only_in_table: null,
+        only_in_parsed_links: null,
+        entries_not_compared: listed(table.entries),
+      };
+    case "compared": {
+      const parsed = [
+        ...table.confirmed.map((link) => ({ link, confirmed: true })),
+        ...table.onlyInParsedLinks.map((link) => ({ link, confirmed: false })),
+      ];
+      return {
+        compared: true,
+        not_compared_reason: null,
+        parsed_changes: parsed.length === 0 ? null : parsedChangesShown(parsed),
+        only_in_table: listed(table.onlyInTable),
+        only_in_parsed_links: listed(table.onlyInParsedLinks),
+        entries_not_compared: null,
+      };
+    }
+    default:
+      return table satisfies never;
   }
-  const parsed = distinctLinks(version.parse.links.filter((link) => link.kind !== "cites"));
-  const parsedKeys = new Set(parsed.map(keyOf));
-  const tableKeys = new Set(inTable.map(keyOf));
-  return {
-    compared: true,
-    not_compared_reason: null,
-    parsed_changes:
-      parsed.length === 0
-        ? null
-        : parsedChangesShown(parsed.map((link) => ({ link, confirmed: tableKeys.has(keyOf(link)) }))),
-    only_in_table: listed(inTable.filter((link) => !parsedKeys.has(keyOf(link)))),
-    only_in_parsed_links: listed(parsed.filter((link) => !tableKeys.has(keyOf(link)))),
-    entries_not_compared: null,
-  };
-}
-
-/** What the table printed after the Measure number, as the entries are grouped by it: the level, or the "E" alone that may be one. */
-function printedLevelOf(entry: StatutesAffectedEntry): string | null {
-  return entry.loneE ? "E" : entry.level;
-}
-
-/** Entries grouped by what they print after the Measure number, in the order the groups first appear. */
-function byPrintedLevel(entries: readonly StatutesAffectedEntry[]): Map<string | null, StatutesAffectedEntry[]> {
-  const groups = new Map<string | null, StatutesAffectedEntry[]>();
-  for (const entry of entries) {
-    const level = printedLevelOf(entry);
-    groups.set(level, [...(groups.get(level) ?? []), entry]);
-  }
-  return groups;
 }
 
 /**
  * Why entries are set beside no Version's links: the table does not name a Version (a level of more than one letter, or an
  * E alone for a Measure the feed lists an E-Engrossed Version of), or the Version it names is not held.
  */
-function reasonOf(entry: StatutesAffectedEntry, version: string | undefined): string {
-  if (version !== undefined) {
-    return `This index does not hold the ${version} Version of the Measure, so there are no parsed links to set these entries beside.`;
+function reasonOf({ printed, why }: TableOfMeasure["apart"][number]): string {
+  switch (why.kind) {
+    case "version_not_held":
+      return `This index does not hold the ${why.version} Version of the Measure, so there are no parsed links to set these entries beside.`;
+    case "e_alone_may_be_a_level":
+      return "The table printed an “E” alone after the Measure number. Its legend gives “E” as the mark that an emergency clause applies and gives engrossing levels as letters beside the number, and the feed lists an E-Engrossed Version of this Measure, so this E is either that Version's level or the emergency clause of a row at the Introduced Version, and the table's text does not say which. Nothing is guessed: these entries are set beside no Version's links.";
+    case "level_names_no_version":
+      return `The table's level "${printed ?? ""}" names no Version in the order Versions are printed in, so its entries are set beside no Version's links.`;
+    default:
+      return why satisfies never;
   }
-  return entry.loneE
-    ? "The table printed an “E” alone after the Measure number. Its legend gives “E” as the mark that an emergency clause applies and gives engrossing levels as letters beside the number, and the feed lists an E-Engrossed Version of this Measure, so this E is either that Version's level or the emergency clause of a row at the Introduced Version, and the table's text does not say which. Nothing is guessed: these entries are set beside no Version's links."
-    : `The table's level "${entry.level ?? ""}" names no Version in the order Versions are printed in, so its entries are set beside no Version's links.`;
+}
+
+/** Where the table came from, and the entries that name a Version this index does not hold or a level that names none. */
+function tableOfMeasureShown(table: TableOfMeasure): z.infer<typeof tableOfMeasureOutput> {
+  return {
+    source_url: table.sourceUrl,
+    retrieved_at: table.retrievedAt,
+    lists_measure: table.listsMeasure,
+    other_entries: table.apart.map((apart) => ({
+      level: apart.printed,
+      version: apart.why.kind === "version_not_held" ? apart.why.version : null,
+      reason: reasonOf(apart),
+      entries: changeLinksShown(apart.links),
+    })),
+    note: STATUTES_AFFECTED_TABLE_NOTE,
+  };
 }
 
 /**
- * Adds the Statutes Affected Table to a Measure's Statute Links by source. With no table the links are returned as
- * they were, so a deployment that does not load the table, or a table that is not published, changes nothing. The
- * table's entries go beside the Version each names (an entry's level names it: none is Introduced, "A" is A-Engrossed; an
- * E alone is the Introduced Version's emergency clause unless the feed lists an E-Engrossed Version of the Measure), and
- * entries that name a Version the index does not hold, or a level that names none, are listed apart.
+ * A Measure's Statute Links by source, with the Statutes Affected Table's entries beside the Version each names. With no
+ * table the answer is the Statute Links alone, so a deployment that does not load the table, or a table that is not
+ * published, changes nothing. The entry point has decided which links the table confirms, which amendments are superseded
+ * and which Versions have the same links as the one before; this writes them down, each Version's block beside its entry
+ * whether or not its links are repeated (ADR-0036).
  */
-export function statuteLinksBySourceWithTable(
-  shown: StatuteLinksBySourceOutput,
-  versions: readonly StoredVersion[],
-  table: StatutesAffectedTableOfMeasure | undefined,
-): StatuteLinksBySourceWithTable {
-  if (table === undefined) return shown;
-  const groups = byPrintedLevel(table.entries);
-  const heldLabels = new Set(versions.map((version) => version.label));
-  const named = (version: StoredVersion): StatutesAffectedEntry[] =>
-    table.entries.filter((entry) => versionDescriptionOfEntry(entry, table.listedVersions) === version.label);
-  const otherEntries: z.infer<typeof tableOfMeasureOutput>["other_entries"] = [];
-  for (const [level, entries] of groups) {
-    const [first] = entries;
-    if (first === undefined) continue;
-    const version = versionDescriptionOfEntry(first, table.listedVersions);
-    if (version !== undefined && heldLabels.has(version)) continue;
-    otherEntries.push({
-      level,
-      version: version ?? null,
-      reason: reasonOf(first, version),
-      entries: changeLinksShown(distinctLinks(entries.map(linkOfEntry))),
-    });
-  }
+export function statuteLinksBySourceWithTable(links: StatuteLinksOfMeasure): StatuteLinksBySourceWithTable {
   return {
-    ...shown,
-    versions: shown.versions.map((entry) => {
-      const stored = versions.find((version) => version.id === entry.id);
-      const entries = stored === undefined ? [] : named(stored);
-      return stored === undefined || entries.length === 0
-        ? entry
-        : { ...entry, statutes_affected_table: tableOfVersion(stored, entries) };
-    }),
-    statutes_affected_table: {
-      source_url: table.sourceUrl,
-      retrieved_at: table.retrievedAt,
-      lists_measure: table.entries.length > 0,
-      other_entries: otherEntries,
-      note: STATUTES_AFFECTED_TABLE_NOTE,
-    },
+    versions: links.versions.map((entry) =>
+      versionEntryShown(
+        entry,
+        entry.table === undefined ? {} : { statutes_affected_table: tableOfVersionShown(entry.table) },
+      ),
+    ),
+    ...amendmentsShown(links),
+    ...(links.table === undefined ? {} : { statutes_affected_table: tableOfMeasureShown(links.table) }),
   };
 }

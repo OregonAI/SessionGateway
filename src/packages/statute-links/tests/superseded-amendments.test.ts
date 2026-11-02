@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import type { MeasureKey } from "#/packages/domain/index.ts";
 import type { StoredAmendment, StoredVersion } from "#/packages/domain/statute-links.ts";
-import { statuteLinksOfMeasure } from "../measure.ts";
+import { placeAmendedVersion, statuteLinksOfMeasure } from "../measure.ts";
 import { headerNaming, heldVersion, measureOf, proposedAmendment } from "./measure-cases.ts";
 
 // Seam 4: which Proposed Amendments of a Measure are Superseded amendments (ticket #99; ADR-0015, GLOSSARY.md "Superseded
@@ -266,5 +266,44 @@ describe("a Proposed Amendment whose Version cannot be named", () => {
       "amendment-2025r1-sb69-1",
     ]);
     expect(result.currentAmendments.map((placed) => placed.amendment.id)).toEqual(["amendment-2025r1-sb69-2"]);
+  });
+});
+
+// compare_amendment answers for an amendment whether or not a Version replaces it, so the question "which Version does this
+// amendment amend?" is the entry point's too (ADR-0015): the header and the number must agree, and the Index may not hold the Version.
+describe("the Version a Proposed Amendment amends, as the evidence places it", () => {
+  test("SB 69-2, whose header says SENATE BILL 69 and whose number has no letter, amends Introduced, which the Index holds", () => {
+    const versions = [heldVersion(sb69, "Introduced"), heldVersion(sb69, "A-Engrossed")];
+
+    const placed = placeAmendedVersion(sb69Amendment2, sb69, versions);
+
+    expect(placed.placement.kind).toBe("version");
+    expect(placed.version?.id).toBe("version-2025r1-sb69-introduced");
+  });
+
+  test("HB 3795-A3 amends A-Engrossed, which the Index does not hold: the Version is named and not held", () => {
+    const versions = [heldVersion(hb3795, "Introduced"), heldVersion(hb3795, "B-Engrossed")];
+
+    const placed = placeAmendedVersion(hb3795AmendmentA3, hb3795, versions);
+
+    expect(placed.placement).toMatchObject({ kind: "not_held", description: "A-Engrossed" });
+    expect(placed.version).toBeUndefined();
+  });
+
+  test("SB 69-2 with no file held amends a Version that is not known", () => {
+    const unfetched = proposedAmendment(sb69, "-2", [
+      {
+        proposedAmendmentId: 26286,
+        committee: slb,
+        at: "2025-01-28T08:00:00-08:00",
+        meaning: "Proposed",
+        header: undefined,
+      },
+    ]);
+
+    const placed = placeAmendedVersion(unfetched, sb69, [heldVersion(sb69, "Introduced")]);
+
+    expect(placed.placement.kind).toBe("unknown");
+    expect(placed.version).toBeUndefined();
   });
 });

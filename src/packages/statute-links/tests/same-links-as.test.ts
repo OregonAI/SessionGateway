@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { statuteLinksOfMeasure } from "../measure.ts";
-import { heldVersion, link, measureOf, sb69Links, tableOfMeasure, tripleOf } from "./measure-cases.ts";
+import { heldVersion, link, measureOf, sb69Links, heldTable, tripleOf } from "./measure-cases.ts";
 
 // Seam 4: which Versions have the same links as the Version before them (ticket #99; ADR-0036, which supersedes ADR-0027's
 // `same_as`). A Version whose reading, the text read and the Statute Links, is exactly that of the Version before it in print
@@ -147,7 +147,7 @@ describe("a Version that has the same links as the one before it keeps its own t
       measure: sb69,
       versions,
       amendments: [],
-      table: tableOfMeasure(sb69, ["653.616 A §8 SB 69 B"], ["Introduced", "A-Engrossed", "B-Engrossed", "Enrolled"]),
+      table: heldTable(sb69, ["653.616 A §8 SB 69 B"], ["Introduced", "A-Engrossed", "B-Engrossed", "Enrolled"]),
     });
 
     expect(sameLinksOf(result)).toEqual([

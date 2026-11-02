@@ -97,7 +97,7 @@ export const eEngrossedVersion = versionDescriptionOfLetter("E");
  * Introduced Version: an E can be a level only if that Version exists. When the feed lists one, the E may be its level or the
  * clause, the table's text does not say which, and nothing is guessed: undefined (ADR-0033, ADR-0013's rule).
  */
-function versionNamedByEntry(
+function versionDescriptionOfEntry(
   entry: Pick<StatutesAffectedEntry, "level" | "loneE">,
   listsEEngrossed: boolean,
 ): string | undefined {
@@ -125,8 +125,9 @@ export function tallyLoneEEntries(
   const loneE = entries.filter((entry) => entry.loneE);
   return {
     entries: loneE.length,
-    namingNoVersion: loneE.filter((entry) => versionNamedByEntry(entry, listsEEngrossed(entry.measure)) === undefined)
-      .length,
+    namingNoVersion: loneE.filter(
+      (entry) => versionDescriptionOfEntry(entry, listsEEngrossed(entry.measure)) === undefined,
+    ).length,
   };
 }
 
@@ -136,7 +137,7 @@ export function tableOfVersion(
   table: StatutesAffectedTableOfMeasure,
 ): TableOfVersion | undefined {
   const listsEEngrossed = table.listedVersions.includes(eEngrossedVersion);
-  const entries = table.entries.filter((entry) => versionNamedByEntry(entry, listsEEngrossed) === version.label);
+  const entries = table.entries.filter((entry) => versionDescriptionOfEntry(entry, listsEEngrossed) === version.label);
   return entries.length === 0 ? undefined : compareWithText(version, entries);
 }
 
@@ -175,7 +176,7 @@ export function tableOfMeasure(
   for (const [printed, entries] of byPrintedLevel(table.entries)) {
     const [first] = entries;
     if (first === undefined) continue;
-    const version = versionNamedByEntry(first, listsEEngrossed);
+    const version = versionDescriptionOfEntry(first, listsEEngrossed);
     if (version !== undefined && heldLabels.has(version)) continue;
     apart.push({ printed, why: whyApart(first, version), links: distinctLinks(entries.map(linkOfEntry)) });
   }

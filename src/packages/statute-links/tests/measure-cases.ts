@@ -135,7 +135,7 @@ export function tripleOf(statuteLink: StatuteLink): [kind: string, targetId: str
  * text of artables2025R1.pdf has, which the parser reads) and the descriptions of the Versions the feed lists for the Measure.
  * Only the rows of the Measure are kept, as the Index keeps them.
  */
-export function tableOfMeasure(
+export function heldTable(
   key: MeasureKey,
   rows: readonly string[],
   listedVersions: readonly string[],

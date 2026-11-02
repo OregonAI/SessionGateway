@@ -1,3 +1,11 @@
+// The Statute Links of a Measure (ticket #99; ADR-0015, ADR-0033, ADR-0036): what the Index's stored Statute Links, the
+// Versions it holds and Legislative Counsel's Statutes Affected Table add up to. Three rules were decided where the tools write
+// their output, and are decided here, as domain values, so that a tool only renders them:
+//  - which Proposed Amendments are Superseded amendments (a later Version is held than the one they amend);
+//  - which links the table confirms, and where the table and the text disagree, for the Version each Table entry names (an
+//    entry that ends in an E alone names the Introduced Version unless the feed lists an E-Engrossed Version of its Measure);
+//  - which Versions have the same links as the Version before them.
+// Pure, like `index.ts`: no I/O, no database, no MCP, no feed. Its seam-4 tests are in tests/.
 import type { MeasureKey } from "#/packages/domain/index.ts";
 import type {
   StatutesAffectedTableOfMeasure,
@@ -14,6 +22,7 @@ import { statuteLinksByKind } from "./lib/links-by-kind.ts";
 import { tableOfMeasure, tableOfVersion, type TableOfMeasure, type TableOfVersion } from "./lib/table-comparison.ts";
 
 export type { PlacedAmendment, SupersededAmendment } from "./lib/amendments.ts";
+export { placeAmendedVersion } from "./lib/amendments.ts";
 export type { LinkedTarget, StatuteLinksByKind } from "./lib/links-by-kind.ts";
 export type { EntriesApart, LoneETally, TableOfMeasure, TableOfVersion, WhyApart } from "./lib/table-comparison.ts";
 export { statuteLinksByKind } from "./lib/links-by-kind.ts";
@@ -75,6 +84,11 @@ function sameLinksAs(version: StoredVersion, before: StoredVersion | undefined):
   return readingKeyOf(version) === readingKeyOf(before) ? before : undefined;
 }
 
+/**
+ * The Statute Links of a Measure, decided from what the Index holds. The Versions come back in print order, each with its own
+ * comparison with the table and the Version it repeats (if any); the Proposed Amendments come back in the order they were
+ * given, split into the ones whose links apply now and the Superseded amendments. With no table, no Version has a comparison.
+ */
 export function statuteLinksOfMeasure(input: StatuteLinksOfMeasureInput): StatuteLinksOfMeasure {
   const { current, superseded } = splitByReplacement(input.amendments, input.measure, input.versions);
   const { table } = input;

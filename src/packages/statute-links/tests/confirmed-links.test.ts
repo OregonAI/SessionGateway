@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { statuteLinksOfMeasure, type StatuteLinksOfMeasure, type TableOfVersion } from "../measure.ts";
-import { heldVersion, link, measureOf, sb69Links, tableOfMeasure, tripleOf } from "./measure-cases.ts";
+import { heldVersion, link, measureOf, sb69Links, heldTable, tripleOf } from "./measure-cases.ts";
 
 // Seam 4: which links the Statutes Affected Table confirms, and where the table and the links disagree (ticket #99;
 // ADR-0033, GLOSSARY.md "Confirmed link" and "Table entry"). A Table entry names one Version by its engrossing level, and
@@ -55,7 +55,7 @@ describe("a Table entry that names a Version", () => {
       measure: sb69,
       versions: sb69Versions,
       amendments: [],
-      table: tableOfMeasure(sb69, sb69Rows, sb69Listed),
+      table: heldTable(sb69, sb69Rows, sb69Listed),
     });
 
     const table = compared(versionNamed(result, "A-Engrossed").table);
@@ -79,7 +79,7 @@ describe("a Table entry that names a Version", () => {
       measure: sb69,
       versions: sb69Versions,
       amendments: [],
-      table: tableOfMeasure(sb69, sb69Rows, sb69Listed),
+      table: heldTable(sb69, sb69Rows, sb69Listed),
     });
 
     expect(versionNamed(result, "Introduced").table).toBeUndefined();
@@ -109,11 +109,7 @@ describe("a Table entry that names a Version", () => {
       measure: hb3795,
       versions,
       amendments: [],
-      table: tableOfMeasure(
-        hb3795,
-        ["409.711 A §1 HB 3795 B", "418.808 A §2 HB 3795 B"],
-        ["Introduced", "B-Engrossed"],
-      ),
+      table: heldTable(hb3795, ["409.711 A §1 HB 3795 B", "418.808 A §2 HB 3795 B"], ["Introduced", "B-Engrossed"]),
     });
 
     const table = compared(versionNamed(result, "B-Engrossed").table);
@@ -146,7 +142,7 @@ describe("a table that disagrees with the text of SB 69's A-Engrossed Version", 
       measure: sb69,
       versions: sb69Versions,
       amendments: [],
-      table: tableOfMeasure(sb69, disagreeingRows, sb69Listed),
+      table: heldTable(sb69, disagreeingRows, sb69Listed),
     });
 
     const table = compared(versionNamed(result, "A-Engrossed").table);
@@ -178,7 +174,7 @@ describe("a table that disagrees with the text of SB 69's A-Engrossed Version", 
       measure: sb69,
       versions: sb69Versions,
       amendments: [],
-      table: tableOfMeasure(sb69, disagreeingRows, sb69Listed),
+      table: heldTable(sb69, disagreeingRows, sb69Listed),
     });
 
     expect(versionNamed(result, "A-Engrossed")).toMatchObject({ version: { parse: { links: sb69Links } } });
@@ -189,7 +185,7 @@ describe("a table that disagrees with the text of SB 69's A-Engrossed Version", 
       measure: sb69,
       versions: sb69Versions,
       amendments: [],
-      table: tableOfMeasure(sb69, disagreeingRows, sb69Listed),
+      table: heldTable(sb69, disagreeingRows, sb69Listed),
     });
 
     expect(result.table?.listsMeasure).toBe(true);
@@ -210,7 +206,7 @@ describe("a Version whose text was not read", () => {
       measure: sb69,
       versions,
       amendments: [],
-      table: tableOfMeasure(sb69, ["657B.080 A §5 SB 69 B", "657B.090 R §6 SB 69 B"], [...sb69Listed, "B-Engrossed"]),
+      table: heldTable(sb69, ["657B.080 A §5 SB 69 B", "657B.090 R §6 SB 69 B"], [...sb69Listed, "B-Engrossed"]),
     });
 
     const table = versionNamed(result, "B-Engrossed").table;
@@ -232,7 +228,7 @@ describe("a Measure the table has no row for, and an Index with no table", () =>
       measure: hb3131,
       versions: [heldVersion(hb3131, "Introduced")],
       amendments: [],
-      table: tableOfMeasure(hb3131, sb69Rows, ["Introduced"]),
+      table: heldTable(hb3131, sb69Rows, ["Introduced"]),
     });
 
     expect(result.table).toMatchObject({ listsMeasure: false, apart: [] });

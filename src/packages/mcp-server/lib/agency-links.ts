@@ -10,6 +10,7 @@ import {
 } from "#/packages/domain/agency-links.ts";
 import type { AgencyId } from "#/packages/domain/oregonai.ts";
 import { statuteLinkKinds } from "#/packages/domain/statute-links.ts";
+import type { SupersededAmendment } from "#/packages/statute-links/measure.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { documentListingFields, listingShown, noLongerListedFlag, noLongerListedOutput } from "./listing.ts";
 
@@ -265,7 +266,7 @@ export type AgencyLinksContext = {
   /** The parent of each Agency that has one, from the snapshot the worker stored. */
   parents: ReadonlyMap<AgencyId, AgencyId>;
   /** The Proposed Amendments whose Statute Links `statute_links_by_source` does not list, because a later Version replaces them. */
-  supersededAmendments: ReadonlySet<string>;
+  supersededAmendments: readonly SupersededAmendment[];
 };
 
 /**
@@ -278,6 +279,7 @@ export function agencyLinksOf(
   units: readonly StoredUnresolvedUnit[],
   context: AgencyLinksContext,
 ): AgencyLinksOutput {
+  const supersededIds = new Set<string>(context.supersededAmendments.map(({ amendment }) => amendment.id));
   const leftOut = new Set<string>();
   let leftOutLinks = 0;
   const byAgency = new Map<string, StoredAgencyLink[]>();
@@ -285,7 +287,7 @@ export function agencyLinksOf(
     if (
       link.evidence.kind === "derived" &&
       link.node.type === "proposed_amendment" &&
-      context.supersededAmendments.has(link.node.id)
+      supersededIds.has(link.node.id)
     ) {
       leftOut.add(link.node.id);
       leftOutLinks += 1;
