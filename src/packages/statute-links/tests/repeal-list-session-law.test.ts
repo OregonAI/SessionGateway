@@ -38,8 +38,8 @@ describe("a repeal list with no session-law citation after it (constructed sente
   });
 
   test("a session-law citation that no repeal follows leaves the ORS sections as citations", () => {
-    expect(linksOf("SECTION 4. ORS 238A.010 and section 9, chapter 492, Oregon Laws 2023, apply to a member.")).toEqual([
-      ["cites", "ors-238a.010", "4"],
-    ]);
+    expect(linksOf("SECTION 4. ORS 238A.010 and section 9, chapter 492, Oregon Laws 2023, apply to a member.")).toEqual(
+      [["cites", "ors-238a.010", "4"]],
+    );
   });
 });
