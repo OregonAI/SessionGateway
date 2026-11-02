@@ -95,7 +95,7 @@ function replacements(
   versions: readonly StoredVersion[],
   amendments: readonly StoredAmendment[],
 ): [amendment: string, amended: string | undefined, later: string][] {
-  const found = statuteLinksOfMeasure({ measure, versions, amendments });
+  const found = statuteLinksOfMeasure({ measure, versions, amendments, table: undefined });
   return found.supersededAmendments.map((superseded) => [
     superseded.amendment.id,
     superseded.amendedVersion.held?.id,
@@ -107,7 +107,12 @@ describe("a Proposed Amendment whose Amended Version has a later Version held", 
   test("SB 69-1 and -2 amend Introduced, and A-Engrossed is held: both are Superseded amendments, replaced by A-Engrossed", () => {
     const versions = [heldVersion(sb69, "Introduced"), heldVersion(sb69, "A-Engrossed"), heldVersion(sb69, "Enrolled")];
 
-    const result = statuteLinksOfMeasure({ measure: sb69, versions, amendments: [sb69Amendment1, sb69Amendment2] });
+    const result = statuteLinksOfMeasure({
+      measure: sb69,
+      versions,
+      amendments: [sb69Amendment1, sb69Amendment2],
+      table: undefined,
+    });
 
     expect(result.currentAmendments).toEqual([]);
     expect(replacements(sb69, versions, [sb69Amendment1, sb69Amendment2])).toEqual([
@@ -143,6 +148,7 @@ describe("a Proposed Amendment whose Amended Version has a later Version held", 
       measure: hb3795,
       versions,
       amendments: [hb3795Amendment1, hb3795AmendmentA3],
+      table: undefined,
     });
 
     expect(result.supersededAmendments.map((superseded) => superseded.amendedVersion)).toEqual([
@@ -160,7 +166,12 @@ describe("a Proposed Amendment whose Amended Version has a later Version held", 
   test("SB 69-1 and -2 while only Introduced is held: no Version is later than the one they amend, so neither is superseded", () => {
     const versions = [heldVersion(sb69, "Introduced")];
 
-    const result = statuteLinksOfMeasure({ measure: sb69, versions, amendments: [sb69Amendment1, sb69Amendment2] });
+    const result = statuteLinksOfMeasure({
+      measure: sb69,
+      versions,
+      amendments: [sb69Amendment1, sb69Amendment2],
+      table: undefined,
+    });
 
     expect(result.supersededAmendments).toEqual([]);
     expect(result.currentAmendments.map((placed) => [placed.amendment.id, placed.version?.id])).toEqual([
@@ -175,7 +186,12 @@ describe("a Proposed Amendment whose Amended Version has a later Version held", 
   test("SB 69-1 and -2 while the only Version after Introduced is a Minority Report A-Engrossed: it sits in no place in the order, so neither is superseded", () => {
     const versions = [heldVersion(sb69, "Introduced"), heldVersion(sb69, "Minority Report A-Engrossed")];
 
-    const result = statuteLinksOfMeasure({ measure: sb69, versions, amendments: [sb69Amendment1, sb69Amendment2] });
+    const result = statuteLinksOfMeasure({
+      measure: sb69,
+      versions,
+      amendments: [sb69Amendment1, sb69Amendment2],
+      table: undefined,
+    });
 
     expect(result.supersededAmendments).toEqual([]);
     expect(result.currentAmendments.map((placed) => placed.amendment.id)).toEqual([
@@ -201,7 +217,7 @@ describe("a Proposed Amendment whose Version cannot be named", () => {
       },
     ]);
 
-    const result = statuteLinksOfMeasure({ measure: sb69, versions, amendments: [unfetched] });
+    const result = statuteLinksOfMeasure({ measure: sb69, versions, amendments: [unfetched], table: undefined });
 
     expect(result.supersededAmendments).toEqual([]);
     expect(
@@ -222,7 +238,7 @@ describe("a Proposed Amendment whose Version cannot be named", () => {
       },
     ]);
 
-    const result = statuteLinksOfMeasure({ measure: sb69, versions, amendments: [disagreeing] });
+    const result = statuteLinksOfMeasure({ measure: sb69, versions, amendments: [disagreeing], table: undefined });
 
     expect(result.supersededAmendments).toEqual([]);
     expect(result.currentAmendments.map((placed) => placed.placement.kind)).toEqual(["unknown"]);
@@ -239,7 +255,12 @@ describe("a Proposed Amendment whose Version cannot be named", () => {
       },
     ]);
 
-    const result = statuteLinksOfMeasure({ measure: sb69, versions, amendments: [unfetched, sb69Amendment1] });
+    const result = statuteLinksOfMeasure({
+      measure: sb69,
+      versions,
+      amendments: [unfetched, sb69Amendment1],
+      table: undefined,
+    });
 
     expect(result.supersededAmendments.map((superseded) => superseded.amendment.id)).toEqual([
       "amendment-2025r1-sb69-1",

@@ -13,10 +13,12 @@ import {
   sectionTarget,
   type StatuteLink,
   type StatuteLinkKind,
+  type StatutesAffectedTableOfMeasure,
   type StoredAmendment,
   type StoredVersion,
 } from "#/packages/domain/statute-links.ts";
 import { readTimestamp } from "#/packages/time/pacific.ts";
+import { parseStatutesAffectedTable } from "../index.ts";
 
 // Builders for the Measures the cases of the Statute Links of a Measure are taken from. A case writes what the stored
 // documents say as literals (the links a Version's text has, the header a Proposed Amendment's first page prints) and
@@ -120,5 +122,33 @@ export function proposedAmendment(key: MeasureKey, number: string, postings: rea
         .map((posting) => postingIdOf(key.session, posting.proposedAmendmentId)),
       parse: { textRead: true, amendedVersionHeader: header, links: [], relatingClauseEdits: [] },
     })),
+  };
+}
+
+/** A link as [kind, target id, measure section], the form a case writes the links it expects in. */
+export function tripleOf(statuteLink: StatuteLink): [kind: string, targetId: string, measureSection: string | null] {
+  return [statuteLink.kind, statuteLink.target.id, statuteLink.measureSection];
+}
+
+/**
+ * The Statutes Affected Table as the Index holds it for a Measure, from the rows of the table's text (the lines the PDF.js
+ * text of artables2025R1.pdf has, which the parser reads) and the descriptions of the Versions the feed lists for the Measure.
+ * Only the rows of the Measure are kept, as the Index keeps them.
+ */
+export function tableOfMeasure(
+  key: MeasureKey,
+  rows: readonly string[],
+  listedVersions: readonly string[],
+): StatutesAffectedTableOfMeasure {
+  const parsed = parseStatutesAffectedTable({ text: rows.join("\n"), orsSections: [] });
+  const retrievedAt = readTimestamp("2026-08-01T10:00:00-07:00");
+  if (retrievedAt === undefined) throw new Error("not a Pacific timestamp");
+  return {
+    sourceUrl: "https://www.oregonlegislature.gov/AutoPubs/artables2025R1.pdf",
+    retrievedAt,
+    entries: parsed.entries.filter(
+      (entry) => entry.measure.prefix === key.prefix && entry.measure.number === key.number,
+    ),
+    listedVersions: [...listedVersions],
   };
 }
