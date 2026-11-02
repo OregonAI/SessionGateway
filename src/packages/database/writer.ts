@@ -72,12 +72,12 @@ export type CommitteeVoteRecord = CommitteeVoteEntry & { legislatorId: Legislato
 
 /**
  * What a run does with the Agency of a Testimony row. `matched`: the run matched the row's `Organization` with the
- * snapshot the index reports, and stores the result, an Agency or null when the Organization names none. `leftToFullPull`:
+ * snapshot the index reports, and stores the result, an Agency or null when the Organization names none. `left_to_full_pull`:
  * the run did not match the row, because an increment's snapshot file is not the one the index reports (ADR-0047). The row's
  * stored Agency stays as it is, and a row new to the index is stored with none. Only an increment gives this to the writer;
  * recording a full pull with it is a bug and throws.
  */
-export type TestimonyAgency = { kind: "matched"; agencyId: AgencyId | null } | { kind: "leftToFullPull" };
+export type TestimonyAgency = { kind: "matched"; agencyId: AgencyId | null } | { kind: "left_to_full_pull" };
 
 /**
  * One CommitteePublicTestimonies row of the feed, with what the run does with the Agency its `Organization` names. The
@@ -227,7 +227,7 @@ function testimonyAgencyValues(
   switch (agency.kind) {
     case "matched":
       return { agencyId: agency.agencyId, keepStored: 0 };
-    case "leftToFullPull":
+    case "left_to_full_pull":
       if (mode === "full_pull") {
         throw new Error(
           `A full pull must match every Testimony row, but it left the Agency of ${documentId} unmatched`,
@@ -280,7 +280,7 @@ export type IndexWriter = {
    * the two-pull rule (ADR-0030): it writes no `feed_pull` and no `feed_row`, so a row a complete pull has seen keeps the
    * number of the latest complete pull that listed it, and a row it sees first has no listing row (read as listed, not yet
    * checked). It never marks anything no longer listed, and it replaces no listing: the Versions it reads are added to the
-   * listing of Versions, none removed. A Testimony row whose Agency it leaves to the next full pull (`leftToFullPull`,
+   * listing of Versions, none removed. A Testimony row whose Agency it leaves to the next full pull (`left_to_full_pull`,
    * ADR-0047) keeps the Agency the index holds for it, and a row new to the index is stored with none.
    */
   recordIncrement(session: SessionKey, asOf: Timestamp, pulled: FullPullRecord): void;
@@ -310,9 +310,10 @@ export type IndexWriter = {
   reportedSnapshotCommit(session: SessionKey): string | undefined;
   /**
    * Records which snapshot the index's links were all read with, and the parent of each Agency it gives one, in one
-   * transaction so that the two always agree (ADR-0029). It is the last step of a pull, after the Statute Links and the
-   * Agency Links have been read with this snapshot (ADR-0035): until then `session_overview` reports the snapshot of
-   * the last pull that finished, and a pull that stops part-way leaves it so.
+   * transaction so that the two always agree (ADR-0029). It is the last step of a pull, after the Statute Links, the
+   * Agency Links and the series of the Statutes Affected Table have been read with this snapshot (ADR-0035, ADR-0044):
+   * until then `session_overview` reports the snapshot of the last pull that finished, and a pull that stops part-way
+   * leaves it so.
    */
   recordSnapshotRead(
     session: SessionKey,
