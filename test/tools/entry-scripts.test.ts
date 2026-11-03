@@ -337,9 +337,8 @@ describe("the entry scripts", () => {
       return { stopped, held, reportPath };
     }
 
-    it.for(["SIGTERM", "SIGINT"] as const)(
-      "%s: exits 0 with one JSON line saying it stopped, how many documents the index holds and that the next pull fetches the rest",
-      async (signal) => {
+    describe.for(["SIGTERM", "SIGINT"] as const)("%s", (signal) => {
+      it("exits 0 with one JSON line saying it stopped, how many documents the index holds and that the next pull fetches the rest", async () => {
         const { stopped, held, reportPath } = await pullThenStopDuringSecond(signal);
 
         expect(stopped.code, stopped.stderr).toBe(0);
@@ -355,9 +354,8 @@ describe("the entry scripts", () => {
         expect(stopped.stderr).toBe("");
         expect(stopped.stdout).not.toContain("AbortError");
         expect(existsSync(reportPath)).toBe(false);
-      },
-      90_000,
-    );
+      });
+    });
   });
 
   describe("src/bin/server.ts logs", () => {
