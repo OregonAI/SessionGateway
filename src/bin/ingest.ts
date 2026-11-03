@@ -12,7 +12,7 @@ import { pino } from "pino";
 import { loadIngestConfig } from "#/packages/config/index.ts";
 import { modelLockPath } from "#/packages/embedder/lock.ts";
 import { loadOnnxEmbedder } from "#/packages/embedder/onnx.ts";
-import { runFullPull, type FullPullResult, type IngestDeps } from "#/packages/ingest/index.ts";
+import { FullPullStopped, runFullPull, type FullPullResult, type IngestDeps } from "#/packages/ingest/index.ts";
 import { runIngestLoop } from "#/packages/ingest/loop.ts";
 import { committedAliasFilePath, readLegislatorAliases } from "#/packages/legislators/aliases.ts";
 import { systemClock } from "#/packages/time/clock.ts";
@@ -21,8 +21,11 @@ import { systemClock } from "#/packages/time/clock.ts";
 const logger = pino();
 
 const shutdown = new AbortController();
+// The signal that asked for the stop, for the line that says why the pull ended.
+let stoppedBy: NodeJS.Signals | undefined;
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
+    stoppedBy = signal;
     shutdown.abort();
   });
 }
@@ -54,7 +57,16 @@ async function writeUnresolvedCodesReport(pull: FullPullResult): Promise<void> {
 }
 
 if (process.argv.includes("--once")) {
-  await writeUnresolvedCodesReport(await runFullPull(config, deps));
+  try {
+    await writeUnresolvedCodesReport(await runFullPull(config, deps));
+  } catch (error) {
+    // A stop that was asked for is not a failure: exit 0, and write no report, because its list would be incomplete.
+    if (!(error instanceof FullPullStopped)) throw error;
+    logger.info(
+      { signal: stoppedBy, documentsStored: error.documentsStored },
+      `The full pull stopped on ${stoppedBy ?? "the shutdown signal"}; the index holds ${error.documentsStored} documents, and the next pull fetches the rest`,
+    );
+  }
 } else {
   await runIngestLoop(config, {
     ...deps,

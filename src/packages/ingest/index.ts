@@ -476,7 +476,43 @@ function createWorkerClient(config: IngestConfig, deps: IngestDeps, onSetRead?: 
   });
 }
 
+/**
+ * Whether `error` is the abort of this signal, the shutdown asking the run to stop, and not a failure. The deadline's
+ * own abort (`AbortSignal.timeout`) is a `TimeoutError`, so it is not one; an error of another kind that happens after
+ * the shutdown is not one either, and is reported as itself.
+ */
+export function isStopRequest(signal: AbortSignal, error: unknown): boolean {
+  return signal.aborted && error instanceof Error && error.name === "AbortError";
+}
+
+/** A full pull that the shutdown stopped, with what the Index held when it did. Not a failure: the next pull fetches the rest. */
+export class FullPullStopped extends Error {
+  /** The documents the Index holds for the Session: this pull's and the earlier pulls', which a pull does not fetch again. */
+  readonly documentsStored: number;
+
+  constructor(documentsStored: number, options: { cause: unknown }) {
+    super(`The full pull was stopped by the shutdown; the index holds ${documentsStored} documents`, options);
+    this.name = "FullPullStopped";
+    this.documentsStored = documentsStored;
+  }
+}
+
+/** Runs the full pull. A stop asked for through `deps.signal` ends it with `FullPullStopped`; any other failure throws as itself. */
 export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promise<FullPullResult> {
+  try {
+    return await pullEverything(config, deps);
+  } catch (error) {
+    if (!isStopRequest(deps.signal, error)) throw error;
+    const writer = openIndexWriter(config.databasePath);
+    try {
+      throw new FullPullStopped(writer.storedDocumentIds(config.session).size, { cause: error });
+    } finally {
+      writer.close();
+    }
+  }
+}
+
+async function pullEverything(config: IngestConfig, deps: IngestDeps): Promise<FullPullResult> {
   // The snapshot is read before OLIS is: a build with no usable snapshot fails at once, naming the file.
   const snapshot = await loadSnapshot(config.snapshotPath);
   const asOf = formatPacific(deps.clock.now());

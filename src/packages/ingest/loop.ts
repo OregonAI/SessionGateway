@@ -5,6 +5,8 @@ import type { IngestConfig } from "#/packages/config/index.ts";
 import { openIndexWriter } from "#/packages/database/writer.ts";
 import { formatPacific, type Timestamp } from "#/packages/time/pacific.ts";
 import {
+  FullPullStopped,
+  isStopRequest,
   lastHashSampleAt,
   runFullPull,
   runHashSample,
@@ -74,6 +76,11 @@ function recordFullPullBegun(config: IngestConfig, startedAt: Timestamp): void {
   }
 }
 
+/** A run that ended because the shutdown asked it to. The 6 am deadline's abort is not that: it is a timeout. */
+function stoppedByShutdown(shutdown: AbortSignal, error: unknown): boolean {
+  return error instanceof FullPullStopped || isStopRequest(shutdown, error);
+}
+
 /** Runs what the schedule says is due, at most once for each slot, until the signal aborts. */
 export async function runIngestLoop(config: IngestConfig, deps: LoopDeps): Promise<void> {
   const settings = { increments: config.increments, fullPull: config.fullPull };
@@ -125,7 +132,8 @@ export async function runIngestLoop(config: IngestConfig, deps: LoopDeps): Promi
           await runIncrement(config, deps);
         }
       } catch (error) {
-        deps.onRunFailed(due.kind, error);
+        // A stop that was asked for ends the run and the loop, and is not a failure to report.
+        if (!stoppedByShutdown(deps.signal, error)) deps.onRunFailed(due.kind, error);
       }
     }
     // The hash sample runs every night, after the night's increment, once; it needs documents to fetch again. Whether
@@ -139,7 +147,7 @@ export async function runIngestLoop(config: IngestConfig, deps: LoopDeps): Promi
         const report = await runHashSample(config, deps, hashSampleDeadline(sampleAt, settings));
         deps.afterHashSample?.(report);
       } catch (error) {
-        deps.onRunFailed("hash_sample", error);
+        if (!stoppedByShutdown(deps.signal, error)) deps.onRunFailed("hash_sample", error);
       }
     }
     await deps.sleep(TICK_MILLISECONDS - (deps.clock.now().getTime() % TICK_MILLISECONDS), deps.signal);
