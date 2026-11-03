@@ -147,6 +147,33 @@ describe("a full pull that is still running at 6 am", () => {
   });
 });
 
+describe("a worker told to stop in the middle of a full pull (ticket #113)", () => {
+  it("ends the loop without logging the run as failed: a requested stop is not a failure", async () => {
+    // The full-pull night, 2025-01-17 at 3:30 pm Pacific. MADE UP: a Testimony row that the feed does not list, whose
+    // file OLIS never answers, so the pull is in the middle of fetching documents when the stop comes (a SIGTERM
+    // in the worker's entry script aborts the loop's signal: the test aborts the same signal).
+    const path = "/liz/2025R1/Downloads/PublicTestimonyDocument/900202";
+    const system = await start({
+      clockAt: "2025-01-17T22:00:00Z",
+      olis: { strayDocuments: { [path]: "testimony/117166.pdf" } },
+    });
+    system.olis.addRows("CommitteePublicTestimonies", [madeUpTestimony(900202, "2025-01-17T15:00:00")]);
+    system.olis.failDocuments(`https://olis.oregonlegislature.gov${path}`, ["hang"]);
+    system.clock.set("2025-01-17T23:30:00Z");
+    const stop = new AbortController();
+    const waited = vi.waitFor(() => {
+      if (!system.olis.documentRequests().includes(path)) throw new Error("the worker has not asked for the file yet");
+    });
+    const running = system.runSchedule("2025-01-18T16:00:00Z", { stop: stop.signal });
+    await waited;
+    stop.abort();
+
+    // A failed run throws out of runSchedule ("A run of the worker's loop failed"); a stopped one does not.
+    await expect(running).resolves.toBeUndefined();
+    expect(runsOf(system.olis)).toEqual({ increments: 0, fullPulls: 1 });
+  });
+});
+
 describe("a meeting day", () => {
   // Wednesday 2025-01-22: HALNRW met at 8 am (feed/CommitteeMeetings.json), so the Session meets that day. The span
   // runs from 5 am that Wednesday to 5:30 am on Thursday.

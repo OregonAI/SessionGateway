@@ -130,8 +130,9 @@ export type System = {
    * Runs the worker's loop (`runIngestLoop`) from the clock's time now until the clock reaches `until`, an ISO-8601
    * instant. The loop's sleep is the harness's: it moves the simulated clock by the time it was asked to wait, so a
    * test runs a day of the worker's schedule at once and no timer runs. A run that fails throws out of this call.
+   * A test that gives `stop` ends the loop when it aborts, as a SIGTERM to the worker does (ticket #113).
    */
-  runSchedule(until: string): Promise<void>;
+  runSchedule(until: string, options?: { stop?: AbortSignal }): Promise<void>;
   /**
    * From now on every request to the fake OLIS, feed or document, moves the simulated clock on by this many
    * milliseconds: OLIS takes time, so a run can be seen to start before a moment and end after it.
@@ -330,13 +331,13 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
     runFullPull(loadIngestConfig(env), workerDeps(pullOptions.embedder ?? embedder));
   const pullSession = (sessionKey: string): Promise<FullPullResult> =>
     runFullPull(loadIngestConfig({ ...env, SESSION_KEY: sessionKey }), workerDeps(embedder));
-  const schedule = async (until: string): Promise<void> => {
+  const schedule = async (until: string, scheduleOptions: { stop?: AbortSignal } = {}): Promise<void> => {
     const stop = new AbortController();
     const end = new Date(until).getTime();
     const failures: unknown[] = [];
     await runIngestLoop(loadIngestConfig(env), {
       ...workerDeps(embedder),
-      signal: stop.signal,
+      signal: scheduleOptions.stop === undefined ? stop.signal : AbortSignal.any([stop.signal, scheduleOptions.stop]),
       random: options.random ?? (() => 0),
       sleep: (milliseconds) => {
         clock.advance(milliseconds);

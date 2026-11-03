@@ -46,6 +46,37 @@ function run(script: string, env: Record<string, string>, limitMs = 60_000): Pro
   });
 }
 
+/**
+ * Runs a script until `ready()` is true, sends it `signal`, and waits for it to end. `ready` is polled, so it reads the
+ * fake OLIS's request log, never the child's output. A child that has not ended after `limitMs` is killed (code null).
+ */
+async function runUntilSignalled(
+  script: string,
+  env: Record<string, string>,
+  ready: () => boolean,
+  signal: NodeJS.Signals,
+  limitMs = 60_000,
+): Promise<Finished & { signal: NodeJS.Signals | null }> {
+  const child = spawn(process.execPath, script.split(" "), { env: childEnvironment(env) });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+  child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+  const ended = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (code, by) => {
+      resolve({ code, signal: by });
+    });
+  });
+  const deadline = Date.now() + limitMs;
+  while (!ready() && Date.now() < deadline && child.exitCode === null) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  child.kill(child.exitCode === null && ready() ? signal : "SIGKILL");
+  const { code, signal: by } = await ended;
+  return { code, signal: by, stdout, stderr };
+}
+
 async function freePort(): Promise<number> {
   const probe = createServer();
   await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
@@ -253,6 +284,80 @@ describe("the entry scripts", () => {
     expect(finished.stderr).toContain("Serverless PDF.js bundle could not be resolved");
     expect(finished.stderr).toContain("version-2025r1-");
     expect(existsSync(join(dirname(database.path), "build-report.json"))).toBe(false);
+  });
+
+  describe("ingest.ts --once told to stop by a signal in the middle of the pull (ticket #113)", () => {
+    // The worker is stopped as a container stop or a watchdog stops it. Its first pull stores the early fixture's
+    // documents; the second is held up on a file OLIS never answers, and is stopped there.
+    const clockAt = "2025-01-10T21:30:00Z";
+    const hungPath = "/liz/2025R1/Downloads/PublicTestimonyDocument/900203";
+    const hungUrl = `https://olis.oregonlegislature.gov${hungPath}`;
+
+    async function pullThenStopDuringSecond(signal: NodeJS.Signals): Promise<{
+      stopped: Awaited<ReturnType<typeof runUntilSignalled>>;
+      held: number;
+      reportPath: string;
+    }> {
+      const { olis, database } = await fakeOlisAndDatabase({
+        clockAt,
+        documents: true,
+        strayDocuments: { [hungPath]: "testimony/117166.pdf" },
+      });
+      const env = workerEnvironment(olis, database.path);
+      const first = await run("src/bin/ingest.ts --once", env);
+      expect(first.code, first.stderr).toBe(0);
+      const held = new Set(olis.documentRequests()).size;
+      const reportPath = join(dirname(database.path), "unresolved-legislator-codes.json");
+      rmSync(reportPath);
+      // MADE UP: a Testimony row the feed does not list, whose file never comes.
+      olis.addRows("CommitteePublicTestimonies", [
+        {
+          SessionKey: "2025R1",
+          CommTestId: 900203,
+          SubmitterFirstName: "Made",
+          SubmitterLastName: "Up 900203",
+          PositionOnMeasureId: 3983,
+          CommitteeCode: "HALNRW",
+          MeetingDate: "2025-01-22T08:00:00",
+          DocumentDescription: "Testimony",
+          MeasurePrefix: "HB",
+          MeasureNumber: 3131,
+          DocumentUrl: "https://olis.oregonlegislature.gov/liz/2025R1",
+          CreatedDate: "2025-01-10T10:00:00",
+          ModifiedDate: null,
+        },
+      ]);
+      olis.failDocuments(hungUrl, ["hang"]);
+      const stopped = await runUntilSignalled(
+        "src/bin/ingest.ts --once",
+        env,
+        () => olis.documentRequests().includes(hungPath),
+        signal,
+      );
+      return { stopped, held, reportPath };
+    }
+
+    it.for(["SIGTERM", "SIGINT"] as const)(
+      "%s: exits 0 with one JSON line saying it stopped, how many documents the index holds and that the next pull fetches the rest",
+      async (signal) => {
+        const { stopped, held, reportPath } = await pullThenStopDuringSecond(signal);
+
+        expect(stopped.code, stopped.stderr).toBe(0);
+        const lines = stopped.stdout.split("\n").filter((line) => line !== "");
+        expect(lines).toHaveLength(1);
+        expect(JSON.parse(lines[0] ?? "")).toMatchObject({
+          level: 30,
+          signal,
+          documentsStored: held,
+          msg: `The full pull stopped on ${signal}; the index holds ${held} documents, and the next pull fetches the rest`,
+        });
+        // No stack trace anywhere, and no report: the list of unresolved codes would be incomplete.
+        expect(stopped.stderr).toBe("");
+        expect(stopped.stdout).not.toContain("AbortError");
+        expect(existsSync(reportPath)).toBe(false);
+      },
+      90_000,
+    );
   });
 
   describe("src/bin/server.ts logs", () => {
