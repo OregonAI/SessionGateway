@@ -6,15 +6,19 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { connect, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { startFakeOlis, type FakeOlis, type FakeOlisOptions } from "../support/fake-olis.ts";
 import { createSimulatedClock } from "../support/clock.ts";
 import { callTool, connectClientToUrl } from "../support/mcp-clients.ts";
+import { madeUpHb3131TestimonyRow } from "../support/testimony.ts";
 import { memberSponsorRow } from "../support/sponsors.ts";
 import { createTempDatabase, type TempDatabase } from "../support/temp-database.ts";
 import { snapshotFixturePath } from "../support/oregonai-snapshot.ts";
 import { modelPath } from "../support/real-embedder.ts";
 import { modelLockPath, readModelLock } from "#/packages/embedder/lock.ts";
+
+// Two cases run two child pulls one after the other, which takes longer than one pull under load (test/CLAUDE.md, "Timeouts under load").
+vi.setConfig({ testTimeout: 120_000 });
 
 type Finished = { code: number | null; stdout: string; stderr: string };
 
@@ -64,8 +68,8 @@ async function runUntilSignalled(
   child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
   const ended = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
     child.once("error", reject);
-    child.once("close", (code, by) => {
-      resolve({ code, signal: by });
+    child.once("close", (code, endedBy) => {
+      resolve({ code, signal: endedBy });
     });
   });
   const deadline = Date.now() + limitMs;
@@ -73,8 +77,8 @@ async function runUntilSignalled(
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   child.kill(child.exitCode === null && ready() ? signal : "SIGKILL");
-  const { code, signal: by } = await ended;
-  return { code, signal: by, stdout, stderr };
+  const { code, signal: endedBy } = await ended;
+  return { code, signal: endedBy, stdout, stderr };
 }
 
 async function freePort(): Promise<number> {
@@ -310,23 +314,7 @@ describe("the entry scripts", () => {
       const reportPath = join(dirname(database.path), "unresolved-legislator-codes.json");
       rmSync(reportPath);
       // MADE UP: a Testimony row the feed does not list, whose file never comes.
-      olis.addRows("CommitteePublicTestimonies", [
-        {
-          SessionKey: "2025R1",
-          CommTestId: 900203,
-          SubmitterFirstName: "Made",
-          SubmitterLastName: "Up 900203",
-          PositionOnMeasureId: 3983,
-          CommitteeCode: "HALNRW",
-          MeetingDate: "2025-01-22T08:00:00",
-          DocumentDescription: "Testimony",
-          MeasurePrefix: "HB",
-          MeasureNumber: 3131,
-          DocumentUrl: "https://olis.oregonlegislature.gov/liz/2025R1",
-          CreatedDate: "2025-01-10T10:00:00",
-          ModifiedDate: null,
-        },
-      ]);
+      olis.addRows("CommitteePublicTestimonies", [madeUpHb3131TestimonyRow(900203, "2025-01-10T10:00:00")]);
       olis.failDocuments(hungUrl, ["hang"]);
       const stopped = await runUntilSignalled(
         "src/bin/ingest.ts --once",
@@ -336,6 +324,26 @@ describe("the entry scripts", () => {
       );
       return { stopped, held, reportPath };
     }
+
+    it("exits 0 and creates no database when the stop comes before the first document, on a first-ever pull", async () => {
+      // OLIS never answers, so the pull has read nothing and the database does not exist when SIGTERM arrives.
+      const { olis, database } = await fakeOlisAndDatabase({ clockAt });
+      olis.behave({ kind: "hang" });
+
+      const stopped = await runUntilSignalled(
+        "src/bin/ingest.ts --once",
+        workerEnvironment(olis, database.path),
+        () => olis.requests().length > 0,
+        "SIGTERM",
+      );
+
+      expect(stopped.code, stopped.stderr).toBe(0);
+      expect(stopped.stderr).toBe("");
+      const lines = stopped.stdout.split("\n").filter((line) => line !== "");
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0] ?? "")).toMatchObject({ level: 30, signal: "SIGTERM", documentsStored: 0 });
+      expect(existsSync(database.path)).toBe(false);
+    });
 
     describe.for(["SIGTERM", "SIGINT"] as const)("%s", (signal) => {
       it("exits 0 with one JSON line saying it stopped, how many documents the index holds and that the next pull fetches the rest", async () => {

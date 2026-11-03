@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { setTimeout as nodePause } from "node:timers/promises";
 import { loadIngestConfig, loadServerConfig, type ServerConfig } from "#/packages/config/index.ts";
 import { checkpointIndex } from "#/packages/database/checkpoint.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
@@ -69,6 +70,12 @@ export type SystemOptions = {
   statutesAffectedTableUrl?: (olisOrigin: string) => string;
   /** How long the worker waits for one attempt to fetch a document; a test that makes one hang sets it short. */
   documentTimeoutMs?: number;
+  /**
+   * Makes the worker's pause between attempts to fetch a document the real one: `timers/promises` `setTimeout`, which
+   * waits the real time and, when the signal aborts, rejects with an `AbortError` whose `cause` is the signal's reason
+   * (ticket #113). Off by default, so the worker never pauses and a test reads how many attempts there were.
+   */
+  pauseLikeNode?: boolean;
   /**
    * Rewrites the fake OLIS's service root, ending in a slash, into the OLIS_BASE_URL the worker is
    * given. For writing the root the way docs/research/olis-odata.md does, without the slash.
@@ -321,8 +328,11 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
     clock,
     // Wall time, so it is generous: a full pull of the fixture can take longer than 30 s on a loaded machine.
     signal: AbortSignal.timeout(120_000),
-    // The worker does not wait between attempts to fetch a document: a test reads how many there were.
-    pause: () => Promise.resolve(),
+    // By default the worker does not wait between attempts to fetch a document: a test reads how many there were.
+    pause:
+      options.pauseLikeNode === true
+        ? (milliseconds, signal) => nodePause(milliseconds, undefined, { signal })
+        : () => Promise.resolve(),
     ...(options.documentTimeoutMs === undefined ? {} : { documentTimeoutMs: options.documentTimeoutMs }),
     legislatorAliases: readLegislatorAliases(options.legislatorAliasesPath ?? committedAliasFilePath),
     embedder: workerEmbedder,

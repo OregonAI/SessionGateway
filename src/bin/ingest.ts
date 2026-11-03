@@ -12,7 +12,7 @@ import { pino } from "pino";
 import { loadIngestConfig } from "#/packages/config/index.ts";
 import { modelLockPath } from "#/packages/embedder/lock.ts";
 import { loadOnnxEmbedder } from "#/packages/embedder/onnx.ts";
-import { FullPullStopped, runFullPull, type FullPullResult, type IngestDeps } from "#/packages/ingest/index.ts";
+import { isFullPullStopped, runFullPull, type FullPullResult, type IngestDeps } from "#/packages/ingest/index.ts";
 import { runIngestLoop } from "#/packages/ingest/loop.ts";
 import { committedAliasFilePath, readLegislatorAliases } from "#/packages/legislators/aliases.ts";
 import { systemClock } from "#/packages/time/clock.ts";
@@ -61,10 +61,16 @@ if (process.argv.includes("--once")) {
     await writeUnresolvedCodesReport(await runFullPull(config, deps));
   } catch (error) {
     // A stop that was asked for is not a failure: exit 0, and write no report, because its list would be incomplete.
-    if (!(error instanceof FullPullStopped)) throw error;
+    if (!isFullPullStopped(error)) throw error;
+    const on = stoppedBy ?? "the shutdown signal";
+    // A count that failed is left out of the line, and the message says so.
+    const held =
+      error.documentsStored === undefined
+        ? "the documents the index holds could not be counted"
+        : `the index holds ${error.documentsStored} documents`;
     logger.info(
-      { signal: stoppedBy, documentsStored: error.documentsStored },
-      `The full pull stopped on ${stoppedBy ?? "the shutdown signal"}; the index holds ${error.documentsStored} documents, and the next pull fetches the rest`,
+      { signal: stoppedBy, ...(error.documentsStored === undefined ? {} : { documentsStored: error.documentsStored }) },
+      `The full pull stopped on ${on}; ${held}, and the next pull fetches the rest`,
     );
   }
 } else {

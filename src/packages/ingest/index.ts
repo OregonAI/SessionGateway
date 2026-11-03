@@ -14,6 +14,7 @@
 // (docs/adr/0035-statute-links-are-read-again-when-the-snapshot-changes-before-the-agency-links.md,
 // docs/adr/0044-the-held-statutes-affected-table-is-read-again-when-the-snapshot-changes-from-the-held-copy-if-it-cannot-be-fetched.md).
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import type { IngestConfig } from "#/packages/config/index.ts";
 import {
   documentLinksOf,
@@ -28,6 +29,7 @@ import {
 } from "#/packages/database/writer.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
 import { findCitations } from "#/packages/domain/citations.ts";
+import { fullPullStopped, isStopRequest } from "./lib/stop.ts";
 import type {
   AgendaItem,
   Committee,
@@ -476,24 +478,21 @@ function createWorkerClient(config: IngestConfig, deps: IngestDeps, onSetRead?: 
   });
 }
 
-/**
- * Whether `error` is the abort of this signal, the shutdown asking the run to stop, and not a failure. The deadline's
- * own abort (`AbortSignal.timeout`) is a `TimeoutError`, so it is not one; an error of another kind that happens after
- * the shutdown is not one either, and is reported as itself.
- */
-export function isStopRequest(signal: AbortSignal, error: unknown): boolean {
-  return signal.aborted && error instanceof Error && error.name === "AbortError";
-}
+export { isFullPullStopped, type FullPullStopped } from "./lib/stop.ts";
 
-/** A full pull that the shutdown stopped, with what the Index held when it did. Not a failure: the next pull fetches the rest. */
-export class FullPullStopped extends Error {
-  /** The documents the Index holds for the Session: this pull's and the earlier pulls', which a pull does not fetch again. */
-  readonly documentsStored: number;
-
-  constructor(documentsStored: number, options: { cause: unknown }) {
-    super(`The full pull was stopped by the shutdown; the index holds ${documentsStored} documents`, options);
-    this.name = "FullPullStopped";
-    this.documentsStored = documentsStored;
+/** How many documents the Index holds for the Session, or `undefined` when it cannot be counted: a count must not turn a stop into a crash. */
+function countStoredDocuments(config: IngestConfig): number | undefined {
+  // A first-ever pull stopped before it stored anything has no database, and counting must not create one.
+  if (!existsSync(config.databasePath)) return 0;
+  try {
+    const writer = openIndexWriter(config.databasePath);
+    try {
+      return writer.storedDocumentIds(config.session).size;
+    } finally {
+      writer.close();
+    }
+  } catch {
+    return undefined;
   }
 }
 
@@ -503,12 +502,7 @@ export async function runFullPull(config: IngestConfig, deps: IngestDeps): Promi
     return await pullEverything(config, deps);
   } catch (error) {
     if (!isStopRequest(deps.signal, error)) throw error;
-    const writer = openIndexWriter(config.databasePath);
-    try {
-      throw new FullPullStopped(writer.storedDocumentIds(config.session).size, { cause: error });
-    } finally {
-      writer.close();
-    }
+    throw fullPullStopped(countStoredDocuments(config), error);
   }
 }
 
