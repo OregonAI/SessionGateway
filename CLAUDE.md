@@ -39,7 +39,7 @@ ADR-0008 records the picks and why:
 - Node 26 runs the `.ts` source directly, with no build step.
 - `tsc` from TypeScript 7 does type checking.
 - TypeScript 6 is aliased as `typescript`, only for typescript-eslint and dependency-cruiser.
-- ESLint, Prettier, Vitest, zod, pino and MCP SDK v2. (pino logs from `src/bin/server.ts`: where the server listens, the errors the Node adapter reports and the live lookups that fail and fall back to the cache; and from `src/bin/ingest.ts`: each scheduled run that fails, as JSON lines on stdout. A failed start-up, and a failed `--once` pull, leave Node's own uncaught-error text on stderr.)
+- ESLint, Prettier, Vitest, zod, pino and MCP SDK v2. (pino logs from `src/bin/server.ts`: where the server listens, the errors the Node adapter reports and the live lookups that fail and fall back to the cache; and from `src/bin/ingest.ts`: each scheduled run that fails, as JSON lines on stdout. A failed start-up, and a failed `--once` pull, leave Node's own uncaught-error text on stderr. A `--once` pull stopped by SIGINT or SIGTERM is not a failure: it logs one line, with the documents the index holds (left out if they cannot be counted), and exits 0. On a stop no Legislator Codes report is written, and the loop does not log a stop as a failed run (ticket #113).)
 
 `npm run check` fails unless `tsc --version` reports 7.x and the boundary check cruised more than 0 modules. A boundary check that cruised nothing checked nothing. `scripts/guard.ts` runs both commands and reads their output.
 

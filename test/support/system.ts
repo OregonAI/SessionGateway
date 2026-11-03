@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { setTimeout as nodePause } from "node:timers/promises";
 import { loadIngestConfig, loadServerConfig, type ServerConfig } from "#/packages/config/index.ts";
 import { checkpointIndex } from "#/packages/database/checkpoint.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
@@ -70,6 +71,12 @@ export type SystemOptions = {
   /** How long the worker waits for one attempt to fetch a document; a test that makes one hang sets it short. */
   documentTimeoutMs?: number;
   /**
+   * Makes the worker's pause between attempts to fetch a document the real one: `timers/promises` `setTimeout`, which
+   * waits the real time and, when the signal aborts, rejects with an `AbortError` whose `cause` is the signal's reason
+   * (ticket #113). Off by default, so the worker never pauses and a test reads how many attempts there were.
+   */
+  pauseLikeNode?: boolean;
+  /**
    * Rewrites the fake OLIS's service root, ending in a slash, into the OLIS_BASE_URL the worker is
    * given. For writing the root the way docs/research/olis-odata.md does, without the slash.
    */
@@ -130,8 +137,9 @@ export type System = {
    * Runs the worker's loop (`runIngestLoop`) from the clock's time now until the clock reaches `until`, an ISO-8601
    * instant. The loop's sleep is the harness's: it moves the simulated clock by the time it was asked to wait, so a
    * test runs a day of the worker's schedule at once and no timer runs. A run that fails throws out of this call.
+   * A test that gives `stop` ends the loop when it aborts, as a SIGTERM to the worker does (ticket #113).
    */
-  runSchedule(until: string): Promise<void>;
+  runSchedule(until: string, options?: { stop?: AbortSignal }): Promise<void>;
   /**
    * From now on every request to the fake OLIS, feed or document, moves the simulated clock on by this many
    * milliseconds: OLIS takes time, so a run can be seen to start before a moment and end after it.
@@ -320,8 +328,11 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
     clock,
     // Wall time, so it is generous: a full pull of the fixture can take longer than 30 s on a loaded machine.
     signal: AbortSignal.timeout(120_000),
-    // The worker does not wait between attempts to fetch a document: a test reads how many there were.
-    pause: () => Promise.resolve(),
+    // By default the worker does not wait between attempts to fetch a document: a test reads how many there were.
+    pause:
+      options.pauseLikeNode === true
+        ? (milliseconds, signal) => nodePause(milliseconds, undefined, { signal })
+        : () => Promise.resolve(),
     ...(options.documentTimeoutMs === undefined ? {} : { documentTimeoutMs: options.documentTimeoutMs }),
     legislatorAliases: readLegislatorAliases(options.legislatorAliasesPath ?? committedAliasFilePath),
     embedder: workerEmbedder,
@@ -330,13 +341,13 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
     runFullPull(loadIngestConfig(env), workerDeps(pullOptions.embedder ?? embedder));
   const pullSession = (sessionKey: string): Promise<FullPullResult> =>
     runFullPull(loadIngestConfig({ ...env, SESSION_KEY: sessionKey }), workerDeps(embedder));
-  const schedule = async (until: string): Promise<void> => {
+  const schedule = async (until: string, scheduleOptions: { stop?: AbortSignal } = {}): Promise<void> => {
     const stop = new AbortController();
     const end = new Date(until).getTime();
     const failures: unknown[] = [];
     await runIngestLoop(loadIngestConfig(env), {
       ...workerDeps(embedder),
-      signal: stop.signal,
+      signal: scheduleOptions.stop === undefined ? stop.signal : AbortSignal.any([stop.signal, scheduleOptions.stop]),
       random: options.random ?? (() => 0),
       sleep: (milliseconds) => {
         clock.advance(milliseconds);

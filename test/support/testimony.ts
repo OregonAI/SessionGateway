@@ -46,3 +46,25 @@ export function madeUpTestimonyRow(testimony: MadeUpTestimony): Row {
 export function testimonyDownloadPath(commTestId: number): string {
   return `/liz/2025R1/Downloads/PublicTestimonyDocument/${commTestId}`;
 }
+
+/**
+ * A made-up Testimony row for HB 3131 that the feed does not list, for the tests of the worker's schedule and of its
+ * stop (ingest-schedule.test.ts, entry-scripts.test.ts): the test serves a file for it at `testimonyDownloadPath`.
+ */
+export function madeUpHb3131TestimonyRow(commTestId: number, createdDate: string): Row {
+  return {
+    SessionKey: "2025R1",
+    CommTestId: commTestId,
+    SubmitterFirstName: "Made",
+    SubmitterLastName: `Up ${commTestId}`,
+    PositionOnMeasureId: 3983,
+    CommitteeCode: "HALNRW",
+    MeetingDate: "2025-01-22T08:00:00",
+    DocumentDescription: "Testimony",
+    MeasurePrefix: "HB",
+    MeasureNumber: 3131,
+    DocumentUrl: "https://olis.oregonlegislature.gov/liz/2025R1",
+    CreatedDate: createdDate,
+    ModifiedDate: null,
+  };
+}

@@ -13,6 +13,7 @@ import {
   type HashSampleReport,
   type IngestDeps,
 } from "./index.ts";
+import { endedByShutdown } from "./lib/stop.ts";
 import {
   fullPullDeadline,
   hashSampleAt,
@@ -125,7 +126,8 @@ export async function runIngestLoop(config: IngestConfig, deps: LoopDeps): Promi
           await runIncrement(config, deps);
         }
       } catch (error) {
-        deps.onRunFailed(due.kind, error);
+        // A stop that was asked for ends the run and the loop, and is not a failure to report.
+        if (!endedByShutdown(deps.signal, error)) deps.onRunFailed(due.kind, error);
       }
     }
     // The hash sample runs every night, after the night's increment, once; it needs documents to fetch again. Whether
@@ -139,7 +141,7 @@ export async function runIngestLoop(config: IngestConfig, deps: LoopDeps): Promi
         const report = await runHashSample(config, deps, hashSampleDeadline(sampleAt, settings));
         deps.afterHashSample?.(report);
       } catch (error) {
-        deps.onRunFailed("hash_sample", error);
+        if (!endedByShutdown(deps.signal, error)) deps.onRunFailed("hash_sample", error);
       }
     }
     await deps.sleep(TICK_MILLISECONDS - (deps.clock.now().getTime() % TICK_MILLISECONDS), deps.signal);
