@@ -129,13 +129,13 @@ ADR-0046 sets no threshold: it says a GPU path is built "when that time or the h
 
 ## 6. Follow-ups
 
-Each list that was not empty has a ticket draft; the drafts are for the owner to open and are not in the repository.
+Each list that was not empty has a ticket, opened on 2026-11-04.
 
 | List | Result | Status | Ticket |
 |---|---|---|---|
 | Unresolved Legislator Codes | empty | verified | none |
-| Documents with no text layer | 651 | verified (the report) | drafts: Floor Letters (163 of 163); the other 488 (testimony 465, exhibit 19, proposed amendment 4) |
-| Documents not fetched | 90 | verified (the report) | draft: 58 empty or invalid files; the 32 timeouts are left to the next full pull |
+| Documents with no text layer | 651 | verified (the report) | #115: Floor Letters (163 of 163); #117: the other 488 (testimony 465, exhibit 19, proposed amendment 4) |
+| Documents not fetched | 90 | verified (the report) | #116: 58 empty or invalid files; the 32 timeouts are left to the next full pull, and #116 checks them |
 | Statutes Affected Table | read, 0 unread lines | verified | none |
 | Embedding time | 16.4 minutes on the desktop's CPU | local measurement | none, by the owner's decision (section 5) |
 | Bytes downloaded a minute | not measured | verified | none, waived by the owner (section 3) |
