@@ -248,6 +248,72 @@ node scripts/snapshot/build.ts --erf <checkout of executive-regulatory-framework
 The checkout is only read, and the build stops if the path is not the root of a git checkout or a file it reads has uncommitted changes. Needs no network.
 `session_overview` reports the commit and its date.
 
+## Rebuilding a Session: the backfill
+
+A Session is built once, on the GPU desktop, and its finished database is copied to the deploy box (ADR-0007, ADR-0046).
+The embedder has no GPU path (ADR-0026), so the build runs on the CPU. The 2026R1 backfill (#24) took two runs on two
+nights; how long it took, how fast it went, what it stored, what it needed and what it left unfetched are in
+`docs/research/2026r1-backfill.md`, and this section keeps to the steps. The three scripts the run used (prepare, run,
+summary) are not in this repository: they hard-code the desktop's paths, and everything they do is below.
+
+**Prerequisites.**
+- Node 26.13.0, a clean checkout of `main` at a commit you name, at or after c57a985 (the first with #114's clean stop on
+  SIGTERM; the 2026R1 run used 946f61d, which predates it), `npm ci`, and `npm run model:fetch` followed by
+  `npm run model:verify`.
+- A checkout of `executive-regulatory-frameworks` at the commit to snapshot (2026R1 used `6c41efefb5683a35437c9db6baf235c2051cef4b`,
+  sparse: `/_meta/catalog/agencies.yml`, `/_meta/graph.json` and `/statutes/`), and the snapshot built from it, whole,
+  with `node scripts/snapshot/build.ts --erf <checkout> --out <data>/snapshot.json` (see "Building the OregonAI snapshot").
+  Neither step sends a request to OLIS.
+- Room for the database and for the worker's memory (the note has what 2026R1 needed). Set `SESSION_KEY`,
+  `DATABASE_PATH`, `SNAPSHOT_PATH`, `OLIS_BASE_URL`, `MODEL_PATH`, `MODEL_THREADS` and `STATUTES_AFFECTED_TABLE_URL` as in
+  "Running it". The 2026R1 run used `MODEL_THREADS=8`.
+
+**Run.** Start `node src/bin/ingest.ts --once` from the checkout, detached, **between 00:00 and 06:00 Pacific**, and
+stop it **before 06:00**. It reads the whole feed once, then fetches every linked document the database lacks, one at a
+time, and embeds each as it goes. Time it with `/usr/bin/time -v` and keep its stdout.
+- **The window.** The Acceptable Use Agreement allows a full refresh once a day, between 5 pm and 6 am. ADR-0039 supersedes
+  ADR-0005's schedule and says why a full pull runs from midnight to 6 am of its date: "A pull at 3 am and the next at 5
+  pm fall on one calendar date, which 'once per day' can be read to forbid". So a run, and a resumed run, starts between
+  00:00 and 06:00, and each full pull falls on one calendar date.
+- **`--once` has no deadline.** `fullPullDeadline` (6 am) applies only to the loop (`ingest/loop.ts`), so a `--once` run
+  goes on past 06:00 unless the operator stops it. Stop it with SIGTERM before 06:00 Pacific. The run's watchdog sent it at
+  05:50, so the window for a `--once` backfill run is 00:00 to 05:50.
+- **Watch it.** Count `select count(*) from document where session_key = '2026R1'` (the Session being built) on the
+  database, which can be opened read-only beside the worker (WAL). The run sampled that count and the database's size every
+  5 minutes.
+- **Stop it** with SIGTERM. At or after c57a985 that is a clean stop: exit 0, one log line, the Legislator Codes report not
+  written. Before #114 the same stop ended with an uncaught `AbortError` and exit 1, with nothing lost.
+- **Resume** by starting it again after midnight on a later night (00:00 to 05:50 again). Each document is committed in its
+  own transaction, so a stop loses nothing; the second start is one more full pull of the feed (allowed once a day) and
+  fetches only the documents still missing. A file that failed (a timeout, an empty or unreadable PDF) is fetched again by
+  every full pull.
+- **Plan the nights.** The window is under 6 hours, so a run the length of 2026R1's (the note has it) needs three nights,
+  not the two that the 2026R1 run took with its evening start.
+
+**Finish.** The build is complete when `build-report.json` (beside the database) says `pull.complete: true`, every set's `read`
+equals its `counted`, and `documents_not_fetched` lists only files that failed. Check:
+- `unresolved-legislator-codes.json` is empty, or a ticket adds alias-file entries for the Session;
+- `documents_without_text_layer` and `documents_not_fetched` have no new kind of quirk, or each new one has a ticket;
+- `statutes_affected_table.outcome` is `loaded` and its `unread_lines` is 0;
+- the counts to record: documents, passages and vectors from the `document`, `passage` and `passage_vector` tables (the
+  report's `search_index` counts only the last run's pull), the database's size, the snapshot's commit, and the wall times
+  from `/usr/bin/time`. The download's bytes are not recorded anywhere (the note says why).
+
+**Copy to the deploy box** (once, #25), with the worker stopped.
+1. Move the database's WAL into the file, from the checkout (there is no npm script or bin for it; `checkpointIndex` is
+   the entry point `database/checkpoint.ts`, written for the test harness, and it throws if a reader held the checkpoint
+   back, so stop every reader and run it again):
+   ```
+   node --input-type=module -e 'import { checkpointIndex } from "./src/packages/database/checkpoint.ts"; checkpointIndex(process.argv[1])' <DATABASE_PATH>
+   ```
+2. Copy `index.db` alone: a checkpointed file is the whole database, so neither `-wal` nor `-shm` goes.
+3. Copy the snapshot file the worker reads (`SNAPSHOT_PATH`), which the database's stored snapshot version names.
+4. Copy `build-report.json` and `unresolved-legislator-codes.json` too. They are the backfill's own record of what was
+   pulled and what was not, and the deploy box's first full pull rewrites them, so copying keeps that record beside the
+   database it describes until then.
+
+The model is in the image. The database is never committed.
+
 ## How the code is written
 
 Test-first, at the two seams spec #1 agreed. The rules agents and people
