@@ -248,6 +248,52 @@ node scripts/snapshot/build.ts --erf <checkout of executive-regulatory-framework
 The checkout is only read, and the build stops if the path is not the root of a git checkout or a file it reads has uncommitted changes. Needs no network.
 `session_overview` reports the commit and its date.
 
+## Rebuilding a Session: the backfill
+
+A Session is built once, on the GPU desktop, and its finished database is copied to the deploy box (ADR-0007, ADR-0046).
+The 2026R1 backfill (#24) did it in two nights: 17 hours 13 minutes of worker wall time at `MODEL_THREADS=8`, 39,533
+documents, a 0.34 GB database (`docs/research/2026r1-backfill.md` has the numbers). The embedder has no GPU path
+(ADR-0026), so the build runs on the CPU. The three scripts the run used (prepare, run, summary) are not in this
+repository: they hard-code the desktop's paths, and everything they do is below.
+
+**Prerequisites.**
+- Node 26.13.0, a clean checkout of `main` at a commit you name (the run used `946f61d`), `npm ci`, and `npm run model:fetch`
+  followed by `npm run model:verify`.
+- A checkout of `executive-regulatory-frameworks` at the commit to snapshot (2026R1 used `6c41efefb5683a35437c9db6baf235c2051cef4b`,
+  sparse: `/_meta/catalog/agencies.yml`, `/_meta/graph.json` and `/statutes/`), and the snapshot built from it, whole,
+  with `node scripts/snapshot/build.ts --erf <checkout> --out <data>/snapshot.json` (see "Building the OregonAI snapshot").
+  Neither step sends a request to OLIS.
+- Room for the database (about 0.35 GB) and about 1 GB of memory for the worker (largest resident set seen: 0.88 GB).
+  Set `SESSION_KEY`, `DATABASE_PATH`, `SNAPSHOT_PATH`, `OLIS_BASE_URL`, `MODEL_PATH`, `MODEL_THREADS` and
+  `STATUTES_AFFECTED_TABLE_URL` as in "Running it". The run used `MODEL_THREADS=8`.
+
+**Run.** Start `node src/bin/ingest.ts --once` from the checkout, detached, between 5 pm and 6 am Pacific only (ADR-0005:
+one full pull a day, in the night window). It reads the whole feed once, then fetches every linked document the database
+lacks, one at a time, and embeds each as it goes. Time it with `/usr/bin/time -v` and keep its stdout.
+- **Watch it.** Count `select count(*) from document where session_key = ?` on the database, which can be opened
+  read-only beside the worker (WAL). The run sampled that count and the database's size every 5 minutes.
+- **Stop it** with SIGTERM. Since #114 that is a clean stop: exit 0, one log line, the Legislator Codes report not
+  written. The run's watchdog sent SIGTERM at 05:50 Pacific so that the worker never ran past the window. Before #114 the
+  same stop ended with an uncaught `AbortError` and exit 1, with nothing lost.
+- **Resume** by starting it again the next evening. Each document is committed in its own transaction, so a stop loses
+  nothing; the second start is one more full pull of the feed (allowed once a day) and fetches only the documents
+  still missing. A file that failed (a timeout, an empty or unreadable PDF) is fetched again by every full pull.
+- **Plan for two nights.** About 38 documents a minute came out of the 2026R1 run.
+
+**Finish.** The build is complete when `build-report.json` (beside the database) says `pull.complete: true`, every set's `read`
+equals its `counted`, and `documents_not_fetched` lists only files that failed. Check:
+- `unresolved-legislator-codes.json` is empty, or a ticket adds alias-file entries for the Session;
+- `documents_without_text_layer` and `documents_not_fetched` have no new kind of quirk, or each new one has a ticket;
+- `statutes_affected_table.outcome` is `loaded` and its `unread_lines` is 0;
+- the counts to record: documents, passages and vectors from the `document`, `passage` and `passage_vector` tables (the
+  report's `search_index` counts only the last run's pull), the database's size, the snapshot's commit, and the wall times
+  from `/usr/bin/time`. The download's bytes are not recorded anywhere.
+
+**Copy to the deploy box** (once, #25), with the worker stopped: `index.db`, and its `-wal` file if it is not empty (a clean
+exit leaves it empty), but not `-shm`; the snapshot file the worker reads (`SNAPSHOT_PATH`), which the database's stored
+snapshot version names; and `build-report.json` and `unresolved-legislator-codes.json`, which the next full pull rewrites.
+The model is in the image. The database is never committed.
+
 ## How the code is written
 
 Test-first, at the two seams spec #1 agreed. The rules agents and people
