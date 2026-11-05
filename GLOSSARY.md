@@ -172,7 +172,7 @@ A Meeting's published agenda, a Document of its own.
 The `AgendaRevisionNumber` on a Meeting's row in the feed, which OLIS raises when the committee posts a changed agenda at the same address. The index keeps the revision each stored Agenda was fetched at; an Agenda is the one Document fetched again, when the row's revision is another one (ADR-0005, ADR-0041). Every other Document is treated as unchanging.
 
 **Agenda item**:
-One line of a Meeting's agenda: a Measure the Committee takes up (a Public Hearing, a Work Session, or both) or another item, such as an executive appointment. The feed's `CommitteeAgendaItems` rows give them, each with its committee, meeting time and kind of meeting, and the Action says what the Committee did with each. The feed's property for the committee is `CommitteCode`; the OLIS client hands it on as the committee's code. An item about no Measure is not a Measure's Schedule (`docs/research/olis-live.md` §2). In a Recording Log, a line is an Agenda item when it matches one of the Meeting's feed items (the measure id and its action, or the item's text); the parser falls back to the line's wording only when no feed item is given or none matches, and says which way it found each.
+One line of a Meeting's agenda: a Measure the Committee takes up (a Public Hearing, a Work Session, or both) or another item, such as an executive appointment. The feed's `CommitteeAgendaItems` rows give them, each with its committee, meeting time and kind of meeting, and the Action says what the Committee did with each. The feed's property for the committee is `CommitteCode`; the OLIS client hands it on as the committee's code. An item about no Measure is not a Measure's Schedule (`docs/research/olis-live.md` §2). In a Recording Log each line is decided on its own (ADR-0052): it is an Agenda item when it matches one of the Meeting's feed items (the measure id and its action, or the item's text), and the feed wins; otherwise the line's wording decides that line, except that a line shaped like a person ("Name, Title", or "Name - Organization" where the right side reads like an organisation or is "Self") is never taken by the wording. The parser says which way it found each.
 _Avoid_: agenda entry
 
 **Meeting status**:
@@ -187,7 +187,7 @@ One timecoded line of a Recording Log that names who spoke: the speaker as logge
 _Avoid_: speech, statement
 
 **Speaker-turn index**:
-What the index holds of a Recording Log: its Event ID and each Speaker turn, with the speaker as logged, the Legislator Code and Legislator where the speaker resolved, the Agenda item and its Measure, the second on the recording's clock and the Player link. The worker reads it from the log's link annotations when it fetches the file. A log with no Event ID, or with two, has no index. A turn whose speaker does not resolve is kept with its text.
+What the index holds of a Recording Log: its Event ID and each Speaker turn, with the speaker as logged, the Legislator Code and Legislator where the speaker resolved (among the Meeting's committee first, then among all the Session's Legislators, by title, chamber, surname and first name: ADR-0052), the Agenda item and its Measure (kept only when the index holds that Measure), the second on the recording's clock and the Player link. The worker reads it from the log's link annotations when it fetches the file. A log with no Event ID, or with two, has no index. A turn whose speaker does not resolve is kept with its text.
 _Avoid_: transcript (the index holds no words that were spoken)
 
 **Player link**:
