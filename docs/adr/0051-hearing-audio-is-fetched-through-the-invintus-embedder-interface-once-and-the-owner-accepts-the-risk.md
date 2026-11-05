@@ -12,7 +12,7 @@ On 2026-11-05 the owner decided to use **path A** knowingly: a separate tool, `O
 
 ### Reasoning and research
 
-The research is `docs/research/hearing-video-discovery.md` (written 2026-11-04; it lands with ticket #125, so the path does not exist on `main` until that merges) and `docs/research/hearing-video.md`. What it found:
+The research is `docs/research/hearing-video-discovery.md` (written 2026-11-04; it lands with ticket #125, so the path does not exist on `main` until that merges; the path is kept here on purpose) and `docs/research/hearing-video.md`. What it found:
 
 - The embedder credential is vendor-wide and public. It is a constant in Invintus's generic `loader.js`, sent to every browser, and the client is chosen only by the `clientID` in the request body. streamlink, yt-dlp and other tools use the same interface without stated permission. Nothing is bypassed: no login, no paywall, no hidden endpoint, and the request is the one the player makes.
 - On the reading of *Van Buren v. United States* (2021) and *hiQ Labs v. LinkedIn* (9th Cir. 2022), there is probably no CFAA exposure for a public interface with no gate. *Van Buren* footnote 8 leaves open whether contract or policy limits count as gates, and *hiQ* shows that a contract or terms claim survives where the CFAA does not. ORS 164.377(4) turns on "without authorization", which the statute does not define. These are considerations, not legal advice.
@@ -26,20 +26,29 @@ The research is `docs/research/hearing-video-discovery.md` (written 2026-11-04; 
 
 ### Limits
 
-These bound the use and are enforced in the downloader's code, not left to the operator:
+Some limits are enforced by the downloader's code and tested against a local fake server; the rest only the operator can keep. This ADR does not claim the code enforces what it cannot.
+
+**Enforced in code:**
+
+- **The window.** 00:00-06:00 Pacific only. Outside it the downloader refuses to start, and it checks again before every request.
+- **Pacing.** One request at a time, about 3 seconds apart, measured on a monotonic clock. Invintus's documented limit is 1 per second per endpoint; the project stays well under it.
+- **Once only.** The downloader records each fetched event (`event_id`, `sha256`, `bytes`) in a record file and fetches nothing already recorded. A damaged record file stops the run before any request. A fetch is recorded only after the MP3 is whole on disk.
+- **MP3 only.** Event IDs are digits only. The audio address from `getDetailed` must be `https` on the expected download host (default `m-download.invintus.com`, the host of the MP3 URL in the research) and end in `.mp3`, or the run halts without requesting it. The reply must be an audio type with a matching Content-Length, a non-empty body and an MP3 start (an ID3 header or an MPEG frame sync). Video is never requested.
+- **The User-Agent.** Every request carries `SessionGateway-transcripts/1 (+https://github.com/OregonAI/SessionGateway)`.
+- **Halt on refusal or an unexpected reply.** See the stop rules.
+- **No proxies and no redirects.** Proxy settings in the environment are ignored, and a redirect is an unexpected reply.
+- **Tests never contact Invintus.** A session-wide guard in the test suite makes any connect or name lookup other than to loopback raise, and CI clears the proxy variables.
+
+**The operator's to keep (not enforced by code):**
 
 - **One-time backfill.** It is not a recurring job. A later Session, or a live Session, needs a new decision.
-- **2026R1 committee MP3s only.** No floor sessions, no other sessions, and never MP4 or video.
-- **Each recording fetched once.** The downloader records every fetched event ID with its sha256 and fetches nothing already recorded.
-- **About one request every 3 seconds**, one at a time. Invintus's documented limit is 1 per second per endpoint; the project stays well under it.
-- **00:00-06:00 Pacific only.** Outside the window the downloader refuses to start.
-- **From the GPU desktop only**, in runs the owner approves one by one.
-- **A User-Agent that names the project:** `SessionGateway-transcripts/1 (+https://github.com/OregonAI/SessionGateway)`, so anyone at Invintus or the Legislature can see who is asking and how to reach us.
-- The embedder key is read from the environment and is never committed. Tests run against a local fake server and never contact Invintus.
+- **2026R1 committee recordings only.** No floor sessions, no other sessions. The downloader fetches whatever event IDs it is given.
+- **Run from the GPU desktop only**, in runs the owner approves one by one.
+- **The embedder key** is read from the environment and is never committed.
 
 ### Stop rules
 
-The downloader halts the whole run at the first 401, 403 or 429, or any unexpected response (another status, or a body that does not have the documented shape), prints what happened, and waits for the owner. It does not retry around a refusal, and nothing resumes until the owner decides. A refusal is Invintus saying no, and the project takes it as an answer.
+The downloader halts the whole run at the first 401, 403 or 429, or any unexpected response (another status, a body that does not have the documented shape, an MP3 reply that is not a whole MP3, or a connection or protocol error), prints what happened, and waits for the owner. It does not retry around a refusal, and nothing resumes until the owner decides. A refusal is Invintus saying no, and the project takes it as an answer.
 
 ### No evasion
 
@@ -47,7 +56,7 @@ No rotating addresses, no proxies, no disguised or changed User-Agent, no headle
 
 ### Audio is never kept or redistributed
 
-The MP3 is hashed, transcribed locally, then deleted. It is never committed, served, or shared, and the repository ignores audio files. The record keeps the sha256 and the duration, not the audio.
+The MP3 is hashed, transcribed locally, then deleted. It is never committed, served, or shared, and the repository ignores audio files. The record keeps the `event_id`, the `sha256` and the byte count, not the audio. The duration is not in the download record; the transcription step reports it later, in the transcript file.
 
 ### Transcripts stay behind a publication gate
 
@@ -63,4 +72,4 @@ The transcripts derived from the audio are built and checked locally and are kep
 
 ## Consequences
 
-The new repository `OregonAI/hearing-transcripts` holds the downloader and enforces the limits and stop rules in code, with tests against a fake server (ticket #131). SessionGateway never calls Invintus. If the Legislature or Invintus objects, the project stops at once and the owner decides what follows; if permission or a client key arrives, a new ADR supersedes this one. Transcripts do not appear on the public deployment until the publication-gate ADR and the owner's "publish".
+The new repository `OregonAI/hearing-transcripts` holds the downloader and enforces in code the limits listed above as enforced, and the stop rules, with tests against a fake server (ticket #131). SessionGateway never calls Invintus. If the Legislature or Invintus objects, the project stops at once and the owner decides what follows; if permission or a client key arrives, a new ADR supersedes this one. Transcripts do not appear on the public deployment until the publication-gate ADR and the owner's "publish".
