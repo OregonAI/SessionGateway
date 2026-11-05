@@ -172,7 +172,7 @@ A Meeting's published agenda, a Document of its own.
 The `AgendaRevisionNumber` on a Meeting's row in the feed, which OLIS raises when the committee posts a changed agenda at the same address. The index keeps the revision each stored Agenda was fetched at; an Agenda is the one Document fetched again, when the row's revision is another one (ADR-0005, ADR-0041). Every other Document is treated as unchanging.
 
 **Agenda item**:
-One line of a Meeting's agenda: a Measure the Committee takes up (a Public Hearing, a Work Session, or both) or another item, such as an executive appointment. The feed's `CommitteeAgendaItems` rows give them, each with its committee, meeting time and kind of meeting, and the Action says what the Committee did with each. The feed's property for the committee is `CommitteCode`; the OLIS client hands it on as the committee's code. An item about no Measure is not a Measure's Schedule (`docs/research/olis-live.md` §2).
+One line of a Meeting's agenda: a Measure the Committee takes up (a Public Hearing, a Work Session, or both) or another item, such as an executive appointment. The feed's `CommitteeAgendaItems` rows give them, each with its committee, meeting time and kind of meeting, and the Action says what the Committee did with each. The feed's property for the committee is `CommitteCode`; the OLIS client hands it on as the committee's code. An item about no Measure is not a Measure's Schedule (`docs/research/olis-live.md` §2). In a Recording Log, a line is an Agenda item when it matches one of the Meeting's feed items (the measure id and its action, or the item's text); the parser falls back to the line's wording only when no feed item is given or none matches, and says which way it found each.
 _Avoid_: agenda entry
 
 **Meeting status**:
@@ -181,6 +181,14 @@ What the feed's `MeetingStatus` says of a Meeting: Scheduled, Cancelled or No Me
 **Recording Log**:
 A committee's timecoded index of one meeting's recording: agenda items, motions, votes and each speaker.
 _Avoid_: minutes
+
+**Speaker turn**:
+One timecoded line of a Recording Log that names who spoke: the speaker as logged (a name and title, a title that wraps onto a second line joined), the timecode, the offset in seconds the player link on that line gives, and the Agenda item the log has most recently named. The log's other timecoded lines (the call to order, an Agenda item, a motion, a vote, a recess, the adjournment) are entries, not turns. The parser reads the offset from the link, and from the timecode only for a page whose links it cannot match to the page's timecode lines.
+_Avoid_: speech, statement
+
+**Event ID**:
+The Invintus identifier of one recorded Meeting (such as `2025011038`), the `eventID` of the Legislature's player links in a Recording Log. A log with no player link has none, and a log whose links carry two different ones has two: the parser reports either and picks neither.
+_Avoid_: video ID, recording ID
 
 **Fiscal Impact Statement**:
 The Legislative Fiscal Office's statement of what a Version would cost government, naming the Agencies affected under "Government Unit(s) Affected".
@@ -233,7 +241,7 @@ The text of a MeasureSponsors row of type Presession, as OLIS publishes it: "(Pr
 One Legislator's answer in a floor vote or a committee vote, in the feed's own word. Committee votes have "Aye", "Nay" and "Excused"; floor votes add "Excused for Business" and "Absent" (`docs/research/olis-votes.md` §2 has the counts). The voter is named by a Legislator Code, so it resolves to a Legislator like a Sponsor does.
 
 **Floor vote**:
-One chamber's roll call on a Measure, taken at one action of its History: the feed's MeasureVotes rows that share a `MeasureHistoryId`, with the chamber, when it voted and the action's text ("Third reading.  Carried by Bonham.  Passed."). `get_measure` lists a Measure's floor votes in the order they were taken, each with every Legislator's Vote in the order of the feed's ids for the entries. In the cache that is the order the feed lists them in (`docs/research/olis-votes.md` §5).
+One chamber's roll call on a Measure, taken at one action of its History: the feed's MeasureVotes rows that share a `MeasureHistoryId`, with the chamber, when it voted and the action's text ("Third reading. Carried by Bonham. Passed."). `get_measure` lists a Measure's floor votes in the order they were taken, each with every Legislator's Vote in the order of the feed's ids for the entries. In the cache that is the order the feed lists them in (`docs/research/olis-votes.md` §5).
 _Avoid_: roll call, when the chamber matters
 
 **Committee vote**:
