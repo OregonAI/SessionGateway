@@ -115,7 +115,14 @@ describe.for(eras)("meetings with a database of its own, for a %s client", (era)
 
       const byId = new Map(meetings.map((meeting) => [meeting.id, meeting]));
       expect(byId.get("meeting-2025r1-slb-2025-01-30-0800")?.["recording_logs"]).toEqual([
-        { id: "recording-log-2025r1-900101", label: "Recording Log", source_url: recordingLogUrl, fetched: true },
+        {
+          id: "recording-log-2025r1-900101",
+          label: "Recording Log",
+          source_url: recordingLogUrl,
+          fetched: true,
+          // The file served is an Exhibit's, which has no player link: the log has no index (ticket #126).
+          speaker_turn_index: null,
+        },
       ]);
       // It is the meeting's Recording Log and not an Exhibit, and no other meeting has it.
       expect(

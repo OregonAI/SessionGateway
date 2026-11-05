@@ -3,7 +3,6 @@
 // writer's entry points and asserts what the reader's entry points return. Every value is MADE UP (made-up-index.ts):
 // the log, its event ID, its turns. The real logs' turns are seam 1's.
 import { afterEach, describe, expect, test } from "vitest";
-import type { DocumentId, MeetingId } from "#/packages/domain/documents.ts";
 import type { MeasureId } from "#/packages/domain/index.ts";
 import type { LegislatorId } from "#/packages/domain/legislators.ts";
 import type { SpeakerTurn } from "#/packages/domain/speaker-turns.ts";
@@ -27,7 +26,7 @@ import {
 let index: MadeUpIndex;
 
 const log = recordingLogLink();
-const logId = log.id as DocumentId;
+const logId = log.id;
 const meeting = meetingOn(10);
 
 const turn = (offsetSeconds: number, parts: Partial<SpeakerTurn> = {}): SpeakerTurn => ({
@@ -140,14 +139,14 @@ describe("the speaker-turn index of a stored Recording Log", () => {
 
   test("the meeting's listing says per Recording Log whether it has an index: its event ID and turn count", () => {
     pulledWithLog();
-    const before = index.reader.meetingContents(meeting.id as MeetingId).recordingLogs;
+    const before = index.reader.meetingContents(meeting.id).recordingLogs;
     index.writer.storeSpeakerTurnIndex({
       documentId: logId,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: [turn(1), turn(2), turn(3)] },
     });
-    const indexed = index.reader.meetingContents(meeting.id as MeetingId).recordingLogs;
+    const indexed = index.reader.meetingContents(meeting.id).recordingLogs;
     index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" } });
-    const gap = index.reader.meetingContents(meeting.id as MeetingId).recordingLogs;
+    const gap = index.reader.meetingContents(meeting.id).recordingLogs;
 
     expect(before.map((entry) => entry.speakerTurnIndex)).toEqual([null]);
     expect(indexed.map((entry) => entry.speakerTurnIndex)).toEqual([{ eventId: "2099010001", turnCount: 3 }]);

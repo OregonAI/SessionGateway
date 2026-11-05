@@ -172,7 +172,7 @@ describe.for(eras)("made-up Recording Logs for a %s client", (era) => {
       outcome.structured?.["meetings"] as { recording_logs: { id: string; speaker_turn_index: unknown }[] }[]
     )[0]?.recording_logs;
     expect(Object.fromEntries((logs ?? []).map((log) => [log.id, log.speaker_turn_index]))).toMatchObject({
-      "recording-log-2025r1-288741": { event_id: "2025011038", turn_count: expect.any(Number) },
+      "recording-log-2025r1-288741": { event_id: "2025011038", turn_count: expect.any(Number) as unknown },
       "recording-log-2025r1-999001": null,
       "recording-log-2025r1-999002": null,
       "recording-log-2025r1-999003": { event_id: "2099000003", turn_count: 2 },
@@ -221,7 +221,7 @@ describe("a database a worker left before the index existed", () => {
         expect(outcome.structured?.["speaker_turns"]).toMatchObject({
           indexed: true,
           event_id: "2025011038",
-          turn_count: expect.any(Number),
+          turn_count: expect.any(Number) as unknown,
         });
       } finally {
         await connected.close();

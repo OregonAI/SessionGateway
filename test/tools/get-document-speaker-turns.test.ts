@@ -115,7 +115,7 @@ describe.for(eras)("the speaker-turn index in get_document for a %s client", (er
       offset_source: "link",
       speaker: "Co-Chair Helm",
       legislator_code: "Rep Helm",
-      legislator: { id: expect.stringMatching(/^legislator-2025r1-/), name: "Ken Helm" },
+      legislator: { id: expect.stringMatching(/^legislator-2025r1-/) as unknown, name: "Ken Helm" },
       agenda_item: null,
       measure_id: null,
       player_link: playerLink("2025011038", 4),
@@ -161,7 +161,7 @@ describe.for(eras)("the speaker-turn index in get_document for a %s client", (er
       offset_source: "link",
       speaker: "Chair Taylor",
       legislator_code: "Sen Taylor",
-      legislator: { id: expect.stringMatching(/^legislator-2025r1-/), name: "Kathleen Taylor" },
+      legislator: { id: expect.stringMatching(/^legislator-2025r1-/) as unknown, name: "Kathleen Taylor" },
       agenda_item: null,
       measure_id: null,
       player_link: playerLink("2025011109", 7),
@@ -315,7 +315,7 @@ describe.for(eras)("the speaker-turn index in meetings for a %s client", (era) =
       recording_logs: [
         {
           id: "recording-log-2025r1-288741",
-          speaker_turn_index: { event_id: "2025011038", turn_count: expect.any(Number) },
+          speaker_turn_index: { event_id: "2025011038", turn_count: expect.any(Number) as unknown },
         },
       ],
     });
