@@ -13,13 +13,13 @@ export type SpeakerTurn = {
   offsetSource: "link" | "timecode";
   /** The speaker as logged: a name and title. */
   speaker: string;
-  /** The Legislator Code of the committee member the speaker line names, or null when it names none that resolves. */
+  /** The Legislator Code of the Legislator the speaker line names (a committee member, else one of the Session's), or null when it names none that resolves. */
   legislatorCode: string | null;
   /** The Legislator that code names. The store keeps the id and the reader joins the name from the Legislators it holds. */
   legislator: Legislator | null;
   /** The text of the most recent Agenda item line before the turn in the log, or null before the first. */
   agendaItem: string | null;
-  /** The Measure that Agenda item line begins with, or null. */
+  /** The Measure that Agenda item line begins with, when the index holds that Measure, or null (the Agenda item's text is kept either way). */
   measureId: MeasureId | null;
   /** The official player at the turn's second, built from the log's own player link. */
   playerLink: string;

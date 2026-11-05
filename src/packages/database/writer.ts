@@ -11,7 +11,7 @@ import {
   type SessionSpan,
   type StoredDocument,
 } from "#/packages/domain/documents.ts";
-import type { MeasureId, SessionKey } from "#/packages/domain/index.ts";
+import { measureIdOf, type MeasureId, type SessionKey } from "#/packages/domain/index.ts";
 import type { AgencyId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
 import type { AgencyLink } from "#/packages/domain/agency-links.ts";
 import type { Citation } from "#/packages/domain/citations.ts";
@@ -175,17 +175,26 @@ export type SpeakerTurnIndexRecord = { documentId: DocumentId; outcome: SpeakerT
 
 /** What the build report says of how the Recording Logs were read. */
 export type RecordingLogReadingNotes = {
-  gaps: { id: DocumentId; sourceUrl: string; kind: "no_event_id" | "conflicting_event_ids"; eventIds: string[] }[];
+  gaps: {
+    id: DocumentId;
+    sourceUrl: string;
+    /** `not_read`: the log is stored and its links have not been read (its file could not be fetched again, or came back changed). */
+    kind: "no_event_id" | "conflicting_event_ids" | "not_read";
+    eventIds: string[];
+  }[];
   readByTimecode: { id: DocumentId; sourceUrl: string; pages: number[] }[];
 };
 
+/** A stored Recording Log with its reading: the outcome and what goes with it are null for a log no reading of is stored. */
 const readingNoteRow = z.object({
   id: z.string(),
   source_url: z.string(),
-  outcome: z.enum(["indexed", "no_event_id", "conflicting_event_ids"]),
+  outcome: z.enum(["indexed", "no_event_id", "conflicting_event_ids"]).nullable(),
   event_ids: z.string().nullable(),
-  pages_read_by_timecode: z.string(),
+  pages_read_by_timecode: z.string().nullable(),
 });
+const heldMeasureRow = z.object({ prefix: z.string(), number: z.number() });
+const contentHashRow = z.object({ content_hash: z.string() });
 
 const agendaItemFields = z.object({
   measure_prefix: z.string().nullable(),
@@ -352,6 +361,10 @@ export type IndexWriter = {
    * ID, or conflicting ones) and the logs some of whose pages were read by timecode, each with its source URL.
    */
   recordingLogReadingNotes(session: SessionKey): RecordingLogReadingNotes;
+  /** The Measures the store holds for the Session, as the ids of the Measures: what a turn's Agenda item may name. */
+  heldMeasureIds(session: SessionKey): Set<MeasureId>;
+  /** The hash of the file a stored document was made from, or undefined when the store holds no such document. */
+  storedContentHash(document: DocumentId): string | undefined;
   /** The Agenda items the store holds for a Meeting, as the feed gave them, for the parser to match a log's lines against. */
   agendaItemsOfMeeting(meeting: MeetingId): {
     measurePrefix: string | null;
@@ -1057,24 +1070,40 @@ export function openIndexWriter(path: string): IndexWriter {
       const rows = database
         .prepare(
           `SELECT d.id, d.source_url, i.outcome, i.event_ids, i.pages_read_by_timecode
-           FROM speaker_turn_index i JOIN document d ON d.id = i.document_id
-           WHERE d.session_key = ? ORDER BY d.id`,
+           FROM document d LEFT JOIN speaker_turn_index i ON i.document_id = d.id
+           WHERE d.session_key = ? AND d.kind = 'recording_log' ORDER BY d.id`,
         )
         .all(session)
-        .map((row) => readingNoteRow.parse(row))
-        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+        .map((row) => readingNoteRow.parse(row));
       const notes: RecordingLogReadingNotes = { gaps: [], readByTimecode: [] };
       for (const row of rows) {
         const id = row.id as DocumentId;
+        if (row.outcome === null) {
+          notes.gaps.push({ id, sourceUrl: row.source_url, kind: "not_read", eventIds: [] });
+          continue;
+        }
         if (row.outcome !== "indexed") {
           const eventIds = z.array(z.string()).parse(JSON.parse(row.event_ids ?? "[]"));
           notes.gaps.push({ id, sourceUrl: row.source_url, kind: row.outcome, eventIds });
           continue;
         }
-        const pages = z.array(z.number()).parse(JSON.parse(row.pages_read_by_timecode));
+        const pages = z.array(z.number()).parse(JSON.parse(row.pages_read_by_timecode ?? "[]"));
         if (pages.length > 0) notes.readByTimecode.push({ id, sourceUrl: row.source_url, pages });
       }
       return notes;
+    },
+    heldMeasureIds(session) {
+      const rows = database.prepare("SELECT prefix, number FROM measure WHERE session_key = ?").all(session);
+      return new Set(
+        rows.map((row) => {
+          const { prefix, number } = heldMeasureRow.parse(row);
+          return measureIdOf({ session, prefix, number });
+        }),
+      );
+    },
+    storedContentHash(document) {
+      const found = database.prepare("SELECT content_hash FROM document WHERE id = ?").get(document);
+      return found === undefined ? undefined : contentHashRow.parse(found).content_hash;
     },
     agendaItemsOfMeeting(meeting) {
       return database

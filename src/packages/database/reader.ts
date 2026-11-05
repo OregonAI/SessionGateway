@@ -77,7 +77,7 @@ import {
 } from "#/packages/domain/votes.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceFromJson, storedEvidenceKinds } from "./lib/agency-evidence.ts";
-import { readSpeakerTurnIndex } from "./lib/speaker-turns.ts";
+import { readSpeakerTurnIndex, readSpeakerTurnSummary } from "./lib/speaker-turns.ts";
 import type { SpeakerTurnIndexOutcome } from "#/packages/domain/speaker-turns.ts";
 import { openReadConnection } from "./lib/connection.ts";
 import { agencyLinkListings, openListingReader, type ListingRead } from "./lib/listing.ts";
@@ -1304,14 +1304,10 @@ export function openIndexReader(path: string): IndexReader {
               listing: listings.ofDocument(stored.id as DocumentId).listing,
             }))
             .sort((a, b) => numbersInOrder.compare(a.id, b.id));
-        const recordingLogs = documentsOfKind("recording_log").map((log): RecordingLogDocument => {
-          const stored = readSpeakerTurnIndex(database, log.id);
-          return {
-            ...log,
-            speakerTurnIndex:
-              stored?.kind === "indexed" ? { eventId: stored.eventId, turnCount: stored.turns.length } : null,
-          };
-        });
+        const recordingLogs = documentsOfKind("recording_log").map((log): RecordingLogDocument => ({
+          ...log,
+          speakerTurnIndex: readSpeakerTurnSummary(database, log.id),
+        }));
         const amendments = listed
           .filter((stored) => stored.kind === "proposed_amendment")
           .map((stored): PostedAmendment => {

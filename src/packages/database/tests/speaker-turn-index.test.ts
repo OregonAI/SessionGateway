@@ -8,17 +8,26 @@ import type { LegislatorId } from "#/packages/domain/legislators.ts";
 import type { SpeakerTurn } from "#/packages/domain/speaker-turns.ts";
 import { openIndexReader } from "../reader.ts";
 import { openIndexWriter } from "../writer.ts";
-import { buildFrozenVersionOne, createIndexFile, type IndexFile } from "./arranged-files.ts";
+import {
+  buildFrozenVersionOne,
+  createIndexFile,
+  forgetStoredEventId,
+  setStoredTurnCount,
+  type IndexFile,
+} from "./arranged-files.ts";
 import {
   agendaItem,
   asOf,
   committee,
   exhibitLink,
+  measure,
+  measureId,
   meetingOn,
   openMadeUpIndex,
   pullOf,
   recordingLogLink,
   session,
+  storedOf,
   storeMadeUpDocument,
   type MadeUpIndex,
 } from "./made-up-index.ts";
@@ -52,6 +61,7 @@ function pulledWithLog(): void {
       CommitteeMeetings: [meeting],
       CommitteeMeetingDocuments: [log, exhibitLink()],
       CommitteeAgendaItems: [agendaItem],
+      Measures: [measure],
       legislators: [{ id: "legislator-2099r1-upp" as LegislatorId, name: "Maude Upp" }],
     }),
   );
@@ -155,8 +165,6 @@ describe("the speaker-turn index of a stored Recording Log", () => {
 
   test("the writer reports for the build report the logs with a gap and the pages read by timecode, each with its source URL", () => {
     pulledWithLog();
-    expect(index.writer.recordingLogReadingNotes(session)).toEqual({ gaps: [], readByTimecode: [] });
-
     index.writer.storeSpeakerTurnIndex({
       documentId: logId,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [2, 3], turns: [turn(1)] },
@@ -181,6 +189,63 @@ describe("the speaker-turn index of a stored Recording Log", () => {
     expect(index.writer.recordingLogReadingNotes(session).gaps).toEqual([
       { id: logId, sourceUrl: log.sourceUrl, kind: "no_event_id", eventIds: [] },
     ]);
+  });
+
+  test("a stored log with no index at all is a gap of its own, not_read, until a reading of it is stored", () => {
+    pulledWithLog();
+
+    expect(index.writer.recordingLogReadingNotes(session)).toEqual({
+      gaps: [{ id: logId, sourceUrl: log.sourceUrl, kind: "not_read", eventIds: [] }],
+      readByTimecode: [],
+    });
+
+    index.writer.storeSpeakerTurnIndex({
+      documentId: logId,
+      outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: [turn(1)] },
+    });
+    expect(index.writer.recordingLogReadingNotes(session)).toEqual({ gaps: [], readByTimecode: [] });
+  });
+
+  test("the meeting's listing gives the stored turn count and does not read the turns to count them", () => {
+    pulledWithLog();
+    index.writer.storeSpeakerTurnIndex({
+      documentId: logId,
+      outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: [turn(1), turn(2)] },
+    });
+    // Arranged: the count the worker stored differs from the rows, which only a read of the stored count shows.
+    setStoredTurnCount(index.path, logId, 7);
+
+    expect(index.reader.meetingContents(meeting.id).recordingLogs.map((entry) => entry.speakerTurnIndex)).toEqual([
+      { eventId: "2099010001", turnCount: 7 },
+    ]);
+    expect(index.reader.speakerTurnIndexOf(logId)).toMatchObject({ kind: "indexed", turns: [turn(1), turn(2)] });
+  });
+
+  test("a stored index that says it is indexed and has no event ID throws an error that carries the stored row as its cause", () => {
+    pulledWithLog();
+    index.writer.storeSpeakerTurnIndex({
+      documentId: logId,
+      outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: [turn(1)] },
+    });
+    forgetStoredEventId(index.path, logId);
+
+    let thrown: unknown;
+    try {
+      index.reader.speakerTurnIndexOf(logId);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toMatch(/stored with no event ID/);
+    expect((thrown as Error).cause).toMatchObject({ outcome: "indexed", event_id: null });
+  });
+
+  test("the writer lists the Measures the index holds, and the hash of a stored document's file", () => {
+    pulledWithLog();
+
+    expect(index.writer.heldMeasureIds(session)).toEqual(new Set([measureId]));
+    expect(index.writer.storedContentHash(logId)).toBe(storedOf(log, "").contentHash);
+    expect(index.writer.storedContentHash("recording-log-2099r1-1" as typeof logId)).toBeUndefined();
   });
 
   test("the writer hands over the meeting's Agenda items as the feed gave them", () => {

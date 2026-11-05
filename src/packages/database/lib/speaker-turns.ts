@@ -65,6 +65,28 @@ export function storeSpeakerTurnIndex(
   }
 }
 
+const summaryRow = z.object({ outcome: z.enum(outcomes), event_id: z.string().nullable(), turn_count: z.number() });
+
+/**
+ * What the index says of a log without its turns: its event ID and the turn count the worker stored with it, or null when it
+ * has no index or is a gap. The listing of a Meeting calls this for each of its logs, so it reads the one row.
+ */
+export function readSpeakerTurnSummary(
+  database: DatabaseSync,
+  documentId: DocumentId,
+): { eventId: string; turnCount: number } | null {
+  const found = database
+    .prepare("SELECT outcome, event_id, turn_count FROM speaker_turn_index WHERE document_id = ?")
+    .get(documentId);
+  if (found === undefined) return null;
+  const row = summaryRow.parse(found);
+  if (row.outcome !== "indexed") return null;
+  if (row.event_id === null) {
+    throw new Error(`The speaker-turn index of ${documentId} is stored with no event ID`, { cause: row });
+  }
+  return { eventId: row.event_id, turnCount: row.turn_count };
+}
+
 const indexRow = z.object({
   outcome: z.enum(outcomes),
   event_id: z.string().nullable(),
@@ -104,7 +126,9 @@ export function readSpeakerTurnIndex(
     case "conflicting_event_ids":
       return { kind: "conflicting_event_ids", eventIds: texts.parse(JSON.parse(row.event_ids ?? "[]")) };
     case "indexed": {
-      if (row.event_id === null) throw new Error(`The speaker-turn index of ${documentId} is stored with no event ID`);
+      if (row.event_id === null) {
+        throw new Error(`The speaker-turn index of ${documentId} is stored with no event ID`, { cause: row });
+      }
       const turns = database
         .prepare(
           `SELECT t.timecode, t.offset_seconds, t.offset_source, t.speaker, t.legislator_code, t.legislator_id,
