@@ -7,7 +7,7 @@
 // Expected values are literals from outside the fixture: the full feed cache's CommitteeMeetingDocuments
 // rows of DocumentType "Recording Log", counted against the fixture's 36 meetings on 2026-11-05 (34 have
 // exactly one, and HHED 2025-02-13 and SHS 2025-05-22 have none), and the id of HALNRW's log of 2025-01-22
-// (row 288741, titled "HALNRW 1-22-2025 (recording log)").
+// (row 288741).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";
@@ -22,7 +22,7 @@ afterAll(async () => {
   await system.stop();
 });
 
-type Listed = { id: string; title: string; source_url: string };
+type Listed = { id: string; label: string; source_url: string };
 type MeetingOutput = { id: string; at: string; recording_logs: Listed[] };
 
 describe.for(eras)("meetings and the fixture's Recording Logs, for a %s client", (era) => {
@@ -58,7 +58,7 @@ describe.for(eras)("meetings and the fixture's Recording Logs, for a %s client",
     ]);
   });
 
-  it("names HALNRW's Recording Log of 2025-01-22 with the title and address OLIS gives", async () => {
+  it("names HALNRW's Recording Log of 2025-01-22 with the address OLIS gives", async () => {
     const outcome = await callTool(connected, "meetings", { committee: "HALNRW", from: "2025-01-22", to: "2025-01-22" });
 
     const meetings = outcome.structured?.["meetings"] as MeetingOutput[];
@@ -66,7 +66,7 @@ describe.for(eras)("meetings and the fixture's Recording Logs, for a %s client",
     expect(meetings[0]?.recording_logs).toMatchObject([
       {
         id: "recording-log-2025r1-288741",
-        title: "HALNRW 1-22-2025 (recording log)",
+        label: "Recording Log",
         source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/288741",
       },
     ]);
