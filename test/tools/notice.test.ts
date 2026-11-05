@@ -58,7 +58,10 @@ describe.for(eras)("the notice for a %s client", (era) => {
   });
 
   it("of a search with no hit has no source_url clause", async () => {
-    const outcome = await callTool(connected, "search", { query: "waive supplemental nutrition", kind: "floor_letter" });
+    const outcome = await callTool(connected, "search", {
+      query: "waive supplemental nutrition",
+      kind: "floor_letter",
+    });
 
     expect(outcome.isError).toBe(false);
     expect(outcome.structured?.["results"]).toEqual([]);
