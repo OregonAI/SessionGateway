@@ -28,6 +28,28 @@ const segment = z
     start: seconds.describe("Second of the audio at which the segment starts."),
     end: seconds.describe("Second of the audio at which the segment ends."),
     text: z.string().describe("The segment's text."),
+    avg_logprob: z
+      .number()
+      .optional()
+      .describe("faster-whisper's avg_logprob for the segment: the mean log probability of its tokens."),
+    compression_ratio: z
+      .number()
+      .min(0)
+      .optional()
+      .describe(
+        "faster-whisper's compression_ratio for the segment: its text's length over its zlib-compressed length.",
+      ),
+    no_speech_prob: z
+      .number()
+      .min(0)
+      .max(1)
+      .optional()
+      .describe("faster-whisper's no_speech_prob for the segment: the chance the stretch holds no speech."),
+    temperature: z
+      .number()
+      .min(0)
+      .optional()
+      .describe("faster-whisper's temperature for the segment: the sampling temperature that produced its text."),
     words: z.array(word).describe("The segment's words in order. May be empty when the model gave none."),
   })
   .describe("One stretch of speech the model wrote as a unit.");
@@ -35,7 +57,11 @@ const segment = z
 /** What a version-1 file holds: one Meeting's machine transcript. */
 export const transcriptFileSchema = z
   .strictObject({
-    format_version: z.literal(transcriptFormatVersion).describe("The version of this format. It only increases."),
+    format_version: z
+      .literal(transcriptFormatVersion)
+      // A whole number, fixed at 1: the JSON Schema says `type: integer` beside `const: 1`.
+      .meta({ type: "integer" })
+      .describe("The version of this format. It only increases."),
     event_id: z
       .string()
       .min(1)
@@ -58,7 +84,13 @@ export const transcriptFileSchema = z
             device: z.string().min(1).describe("The device it ran on, such as cpu or cuda."),
             compute_type: z.string().min(1).describe("The compute type, such as int8 or float16."),
             language: z.string().min(1).describe("The language the model was told to expect, such as en."),
-            beam_size: z.number().int().min(1).describe("The beam size."),
+            beam_size: z
+              .number()
+              .int()
+              .min(1)
+              // zod adds the largest safe integer as a maximum; the format has no upper bound.
+              .meta({ maximum: undefined })
+              .describe("The beam size."),
           })
           .describe("The settings the model ran with."),
       })

@@ -25,7 +25,7 @@ const committed = JSON.parse(readFileSync(schemaPath, "utf8")) as CommittedSchem
  * what turns red. A change to the format is a NEW file, transcript-v2.schema.json, a new format_version and a new
  * reader module, never an edit of v1; until the first merge of ticket #130 this value moves with the ticket.
  */
-const V1_SCHEMA_SHA256 = "12595be9381803b606134687ca7aeb9ae2298912134fd7ad354f9f337151e752";
+const V1_SCHEMA_SHA256 = "d5fc48f8e639dad2f113895ac7f00c62ad3a5cee20956c780471e8d6ebac73a0";
 
 function withoutProse(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(withoutProse);
@@ -54,7 +54,7 @@ describe("the committed JSON Schema and the read's zod schema agree", () => {
 
   test("the format version is an integer fixed at 1, and beam_size is an integer with no upper bound artifact", () => {
     expect(committed.properties.format_version).toMatchObject({ type: "integer", const: 1 });
-    const settings = (committed.properties.model as { properties: { settings: { properties: Record<string, Node> } } })
+    const settings = (committed.properties.model as { properties: { settings: { properties: { beam_size: Node } } } })
       .properties.settings.properties;
     expect(settings.beam_size).toMatchObject({ type: "integer", minimum: 1 });
     expect(settings.beam_size).not.toHaveProperty("maximum");

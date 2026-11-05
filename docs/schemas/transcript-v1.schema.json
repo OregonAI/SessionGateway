@@ -5,7 +5,7 @@
   "type": "object",
   "properties": {
     "format_version": {
-      "type": "number",
+      "type": "integer",
       "const": 1,
       "description": "The version of this format. It only increases."
     },
@@ -69,7 +69,6 @@
             "beam_size": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 9007199254740991,
               "description": "The beam size."
             }
           },
@@ -115,6 +114,26 @@
           "text": {
             "type": "string",
             "description": "The segment's text."
+          },
+          "avg_logprob": {
+            "description": "faster-whisper's avg_logprob for the segment: the mean log probability of its tokens.",
+            "type": "number"
+          },
+          "compression_ratio": {
+            "description": "faster-whisper's compression_ratio for the segment: its text's length over its zlib-compressed length.",
+            "type": "number",
+            "minimum": 0
+          },
+          "no_speech_prob": {
+            "description": "faster-whisper's no_speech_prob for the segment: the chance the stretch holds no speech.",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "temperature": {
+            "description": "faster-whisper's temperature for the segment: the sampling temperature that produced its text.",
+            "type": "number",
+            "minimum": 0
           },
           "words": {
             "type": "array",

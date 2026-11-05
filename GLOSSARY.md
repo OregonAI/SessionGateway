@@ -203,7 +203,7 @@ One stretch of speech the model wrote as a unit: its start and end seconds, its 
 _Avoid_: utterance, caption
 
 **Drift** (of a Speaker turn):
-The distance in seconds from a Speaker turn's second to the nearest word boundary (start or end of a word) of the Meeting's Transcript. More than 10 seconds is flagged (ADR-0054).
+The distance in seconds from a Speaker turn's second to the nearest Transcript segment start. A turn over 10 seconds is flagged, and so is the Meeting when the median over its turns is over 10 seconds; the maximum is reported too (ADR-0054). It is a rough alarm: a segment start is not a speaker change.
 
 **Event ID**:
 The Invintus identifier of one recorded Meeting (such as `2025011038`), the `eventID` of the Legislature's player links in a Recording Log. A log with no player link has none, and a log whose links carry two different ones has two: the parser reports either and picks neither.
