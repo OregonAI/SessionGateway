@@ -172,6 +172,7 @@ describe("the speaker-turn index of a stored Recording Log", () => {
     expect(index.writer.recordingLogReadingNotes(session)).toEqual({
       gaps: [],
       readByTimecode: [{ id: logId, sourceUrl: log.sourceUrl, pages: [2, 3] }],
+      turnsWithoutPassage: [],
     });
 
     index.writer.storeSpeakerTurnIndex({
@@ -183,6 +184,7 @@ describe("the speaker-turn index of a stored Recording Log", () => {
         { id: logId, sourceUrl: log.sourceUrl, kind: "conflicting_event_ids", eventIds: ["2099010001", "2099010002"] },
       ],
       readByTimecode: [],
+      turnsWithoutPassage: [],
     });
 
     index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" } });
@@ -197,13 +199,18 @@ describe("the speaker-turn index of a stored Recording Log", () => {
     expect(index.writer.recordingLogReadingNotes(session)).toEqual({
       gaps: [{ id: logId, sourceUrl: log.sourceUrl, kind: "not_read", eventIds: [] }],
       readByTimecode: [],
+      turnsWithoutPassage: [],
     });
 
     index.writer.storeSpeakerTurnIndex({
       documentId: logId,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: [turn(1)] },
     });
-    expect(index.writer.recordingLogReadingNotes(session)).toEqual({ gaps: [], readByTimecode: [] });
+    expect(index.writer.recordingLogReadingNotes(session)).toEqual({
+      gaps: [],
+      readByTimecode: [],
+      turnsWithoutPassage: [],
+    });
   });
 
   test("the meeting's listing gives the stored turn count and does not read the turns to count them", () => {
@@ -300,6 +307,6 @@ describe("the second schema step", () => {
     files.push(file);
     buildFrozenVersionOne(file.path);
 
-    expect(() => openIndexReader(file.path)).toThrow(/version 1\b.*version 2\b/);
+    expect(() => openIndexReader(file.path)).toThrow(/version 1\b.*version 3\b/);
   });
 });

@@ -74,10 +74,11 @@ _Avoid_: status, unqualified; live data
 
 **Passage**:
 One slice of a Document's text that search indexes and embeds: whole lines, at most 510 tokens by the embedding model's own count, with no overlap with the next. A Passage is a slice of the Document's text, so what a hit shows is exactly what the Document says (ADR-0025).
+A Recording Log with a Speaker-turn index is cut around its turns (ADR-0053): each Speaker turn's lines are a Passage of their own, linked to the turn by its position, and the text between the turns is cut as any text is, so every line is in exactly one Passage.
 _Avoid_: chunk, Part (a Part is what `get_document` serves)
 
 **Hit**:
-One result of `search`: a Document, or for a Proposed Amendment the amendment, with its id, kind, title, Measure, date, a snippet of the Passage that matched, its `source_url`, and how it was found (`found_by`).
+One result of `search`: a Document, or for a Proposed Amendment the amendment, with its id, kind, title, Measure, date, a snippet of the Passage that matched, its `source_url`, and how it was found (`found_by`). A Speaker turn of a Recording Log that matched is a Hit of its own (ADR-0053): the log's id, and a `turn` with the speaker, Meeting, Agenda item, Measure, timecode and Player link.
 _Avoid_: result, match
 
 **Exact citation**:
@@ -189,6 +190,10 @@ _Avoid_: speech, statement
 **Speaker-turn index**:
 What the index holds of a Recording Log: its Event ID and each Speaker turn, with the speaker as logged, the Legislator Code and Legislator where the speaker resolved (among the Meeting's committee first, then among all the Session's Legislators, by title, chamber, surname and first name: ADR-0052), the Agenda item and its Measure (kept only when the index holds that Measure), the second on the recording's clock and the Player link. The worker reads it from the log's link annotations when it fetches the file. A log with no Event ID, or with two, has no index. A turn whose speaker does not resolve is kept with its text.
 _Avoid_: transcript (the index holds no words that were spoken)
+
+**Hearing**:
+In `get_measure`, an Agenda item of a Recording Log with a Speaker-turn index that names the Measure, with the first Speaker turn under it and its Player link (ADR-0053; owner decision of 2026-11-05). A Public Hearing and a Work Session are each one, labelled by kind, and so is an item with other wording ("Informational Meeting"). An Agenda line that names several Measures ("SB 1542 and SB 1543 - Public Hearing") is a hearing of each, and lists them all; the turn keeps the first as its Measure. A log's hearings of a Measure come in the order of the recording.
+_Avoid_: meeting (a Meeting may hold several hearings of a Measure, and one hearing may be of several Measures)
 
 **Player link**:
 The Legislature's own media player at a Speaker turn's second: the log's own player link (its address, `clientID` and Event ID) with the turn's `startStreamAt`. The service builds it from the log's link and never invents any part of it.

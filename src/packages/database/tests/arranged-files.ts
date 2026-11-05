@@ -49,12 +49,18 @@ export function buildFrozenVersionOne(path: string): void {
 
 /**
  * Makes a file look as one built before the listing tables and before versions: the tables the listing and the
- * Committee Members added are gone, the rows of the others stay, and it records no version. Close the writer first.
+ * Committee Members added are gone, the rows of the others stay, and it records no version. What step 3 adds to the tables
+ * that existed before it (ticket #127) is gone too, so that step 3 is a plain `ALTER TABLE` applied once, as on a deployed
+ * file (ADR-0048). Close the writer first.
  */
 export function leaveAsBeforeVersions(path: string): void {
   withSql(
     path,
     `DROP VIEW IF EXISTS feed_row_state; DROP TABLE feed_row; DROP TABLE feed_pull; DROP TABLE committee_member;
+     DROP TABLE speaker_turn_item_measure; DROP INDEX passage_turn;
+     ALTER TABLE passage DROP COLUMN turn_position;
+     ALTER TABLE speaker_turn_index DROP COLUMN turns_without_passage;
+     ALTER TABLE speaker_turn_index DROP COLUMN item_measures_read;
      PRAGMA user_version = 0`,
   );
 }

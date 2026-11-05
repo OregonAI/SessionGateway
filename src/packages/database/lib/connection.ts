@@ -516,6 +516,29 @@ const speakerTurnSchema = `
 `;
 
 /**
+ * Step 3's text (ticket #127, ADR-0053), applied once, in order, after the `ALTER TABLE`s of the step itself:
+ * - a Passage of a Recording Log may be a speaker turn's. Its `turn_position` is the turn's position in `speaker_turn` (the
+ *   log's `document_id` and that position name the turn), and null for every other passage. The turn's lines are the
+ *   passage's text, so the log's passages still cover its text once;
+ * - `speaker_turn_index.turns_without_passage` is null until the worker has cut the log's text around its turns, and then
+ *   the number of its turns the text could not place or that were too long for a Passage (the build report counts them);
+ * - `speaker_turn_index.item_measures_read` is 0 until the worker has read the Measures the log's Agenda items name, which
+ *   `speaker_turn_item_measure` holds: one row for each Measure of each Agenda item (by its text) of the log, with the
+ *   Measure's place in the line. A Measure the index does not hold is kept too, and the reader leaves it out.
+ */
+const turnPassageSchema = `
+  CREATE INDEX IF NOT EXISTS passage_turn ON passage (document_id, turn_position) WHERE turn_position IS NOT NULL;
+  CREATE TABLE IF NOT EXISTS speaker_turn_item_measure (
+    document_id TEXT NOT NULL,
+    agenda_item TEXT NOT NULL,
+    ordinal INTEGER NOT NULL,
+    measure_id TEXT NOT NULL,
+    PRIMARY KEY (document_id, agenda_item, ordinal)
+  ) STRICT, WITHOUT ROWID;
+  CREATE INDEX IF NOT EXISTS speaker_turn_item_measure_measure ON speaker_turn_item_measure (measure_id, document_id);
+`;
+
+/**
  * The numbered upgrade steps (ADR-0048): step N takes a file from version N - 1 to version N, and the file's version
  * is the number of steps there are. The worker applies the ones a file lacks, in order, in one transaction when it opens
  * the file, so a file is never left half upgraded. Step 1 is today's schema: its pass of `CREATE ... IF NOT EXISTS`
@@ -535,6 +558,15 @@ const upgradeSteps: readonly ((database: DatabaseSync) => void)[] = [
   // Step 2 (ticket #126, ADR-0052): the speaker-turn index of a Recording Log, and the end of the view nothing reads.
   (database) => {
     database.exec(speakerTurnSchema);
+  },
+  // Step 3 (ticket #127, ADR-0053): a Passage may be a speaker turn's, and a log's Agenda items name their Measures. A log
+  // stored before it has none of either, and the worker reads them for such a log on its next pull from the text and the
+  // turns the store holds, without fetching it.
+  (database) => {
+    database.exec("ALTER TABLE passage ADD COLUMN turn_position INTEGER");
+    database.exec("ALTER TABLE speaker_turn_index ADD COLUMN turns_without_passage INTEGER");
+    database.exec("ALTER TABLE speaker_turn_index ADD COLUMN item_measures_read INTEGER NOT NULL DEFAULT 0");
+    database.exec(turnPassageSchema);
   },
 ];
 

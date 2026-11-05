@@ -25,7 +25,13 @@ import type {
 } from "#/packages/domain/statute-links.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceToJson } from "./lib/agency-evidence.ts";
-import { storeSpeakerTurnIndex } from "./lib/speaker-turns.ts";
+import {
+  markTurnPassagesCut,
+  readLogsWithoutItemMeasures,
+  readLogsWithoutTurnPassages,
+  storeItemMeasuresOf,
+  storeSpeakerTurnIndex,
+} from "./lib/speaker-turns.ts";
 import { openWriteConnection } from "./lib/connection.ts";
 import {
   readAsOf,
@@ -183,6 +189,8 @@ export type RecordingLogReadingNotes = {
     eventIds: string[];
   }[];
   readByTimecode: { id: DocumentId; sourceUrl: string; pages: number[] }[];
+  /** The logs with turns the text could not place or that were too long for a Passage (ADR-0053), and how many of each. */
+  turnsWithoutPassage: { id: DocumentId; sourceUrl: string; turns: number }[];
 };
 
 /** A stored Recording Log with its reading: the outcome and what goes with it are null for a log no reading of is stored. */
@@ -192,6 +200,7 @@ const readingNoteRow = z.object({
   outcome: z.enum(["indexed", "no_event_id", "conflicting_event_ids"]).nullable(),
   event_ids: z.string().nullable(),
   pages_read_by_timecode: z.string().nullable(),
+  turns_without_passage: z.number().nullable(),
 });
 const heldMeasureRow = z.object({ prefix: z.string(), number: z.number() });
 const contentHashRow = z.object({ content_hash: z.string() });
@@ -356,6 +365,35 @@ export type IndexWriter = {
   storeSpeakerTurnIndex(record: SpeakerTurnIndexRecord): void;
   /** The stored Recording Logs of the Session that have no speaker-turn index yet (a gap counts as one): the ones to fetch again to read their links. */
   recordingLogsWithoutIndex(session: SessionKey): Set<DocumentId>;
+  /**
+   * The stored Recording Logs of the Session that have an index with turns and have not been cut around them (ticket #127,
+   * ADR-0053): a log stored before schema step 3, one whose links were just read, one whose index was stored again. Each comes
+   * with its text and its turns' timecodes and speakers in the order of the log: what the worker cuts the text around, with no
+   * fetch. A log that has been cut is not listed again, even when no turn of it was placed.
+   */
+  recordingLogsWithoutTurnPassages(
+    session: SessionKey,
+  ): { id: DocumentId; text: string; turns: { timecode: string; speaker: string }[] }[];
+  /**
+   * Replaces a stored document's passages with these, in one transaction (the text stays): a passage with a `turn` is the
+   * turn's lines, linked to it by its position. `turnsWithoutPassage` is how many of the log's turns the text could not
+   * place or that were too long for a Passage, which the log keeps for the build report; the log is marked as cut. Only a
+   * Keyword-only document has its passages replaced this way, so no vector moves.
+   */
+  replacePassages(document: DocumentId, passages: readonly Passage[], turnsWithoutPassage: number): void;
+  /**
+   * The stored Recording Logs of the Session with an index whose Agenda items' Measures have not been read (ticket #127,
+   * ADR-0053), each with its Agenda items' texts in the order of the log: what the worker reads the Measures from, with no fetch.
+   */
+  recordingLogsWithoutItemMeasures(session: SessionKey): { id: DocumentId; agendaItems: string[] }[];
+  /**
+   * Keeps the Measures each Agenda item of a stored Recording Log names, in the order the line names them, whether or not the
+   * index holds them (the reader leaves out the ones it does not), and marks the log's items as read.
+   */
+  storeItemMeasures(
+    document: DocumentId,
+    items: readonly { agendaItem: string; measures: readonly MeasureId[] }[],
+  ): void;
   /**
    * What the stored readings of the Session's Recording Logs say for the build report: the logs left with no index (no event
    * ID, or conflicting ones) and the logs some of whose pages were read by timecode, each with its source URL.
@@ -874,6 +912,42 @@ export function openIndexWriter(path: string): IndexWriter {
       throw error;
     }
   }
+  const insertPassage = database.prepare(
+    "INSERT INTO passage (document_id, ordinal, start_offset, end_offset, text_hash, turn_position) VALUES (?, ?, ?, ?, ?, ?)",
+  );
+  const insertPassageText = database.prepare("INSERT INTO passage_fts (rowid, text) VALUES (?, ?)");
+
+  /** Inserts a document's passages in this order, each with its text in the keyword index. The caller holds the transaction. */
+  function insertPassagesOf(documentId: DocumentId, passages: readonly Passage[]): void {
+    passages.forEach((passage, ordinal) => {
+      const inserted = insertPassage.run(
+        documentId,
+        ordinal,
+        passage.start,
+        passage.end,
+        passage.hash,
+        passage.turn ?? null,
+      );
+      insertPassageText.run(inserted.lastInsertRowid, passage.text);
+    });
+  }
+
+  /**
+   * Deletes a document's passages and their keyword entries. Each statement reads its result as BigInt: deleting from the
+   * contentless FTS5 table leaves the connection's last rowid beyond what a JavaScript number holds, which `run` would
+   * refuse to convert for the next statement. The caller holds the transaction.
+   */
+  function deletePassagesOf(documentId: DocumentId): void {
+    for (const sql of [
+      "DELETE FROM passage_fts WHERE rowid IN (SELECT id FROM passage WHERE document_id = ?)",
+      "DELETE FROM passage WHERE document_id = ?",
+    ]) {
+      const statement = database.prepare(sql);
+      statement.setReadBigInts(true);
+      statement.run(documentId);
+    }
+  }
+
   /**
    * Writes one fetched document with its relations, filing, passages, citations and vectors in one transaction. A
    * document it replaces (an agenda fetched again, ADR-0041) is deleted first, in the same transaction, so a reader
@@ -899,10 +973,6 @@ export function openIndexWriter(path: string): IndexWriter {
                                     dated_at, keyword_only)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
-    const insertPassage = database.prepare(
-      "INSERT INTO passage (document_id, ordinal, start_offset, end_offset, text_hash) VALUES (?, ?, ?, ?, ?)",
-    );
-    const insertPassageText = database.prepare("INSERT INTO passage_fts (rowid, text) VALUES (?, ?)");
     const insertCitation = database.prepare(
       "INSERT INTO document_citation (citation_id, document_id, first_offset) VALUES (?, ?, ?)",
     );
@@ -913,15 +983,12 @@ export function openIndexWriter(path: string): IndexWriter {
     database.exec("BEGIN IMMEDIATE");
     try {
       if (replacing) {
-        // Each statement reads its result as BigInt: deleting from the contentless FTS5 table leaves the connection's
-        // last rowid beyond what a JavaScript number holds, which `run` would refuse to convert for the next statement.
+        deletePassagesOf(document.id);
         const deleteFor = (sql: string): void => {
           const statement = database.prepare(sql);
           statement.setReadBigInts(true);
           statement.run(document.id);
         };
-        deleteFor("DELETE FROM passage_fts WHERE rowid IN (SELECT id FROM passage WHERE document_id = ?)");
-        deleteFor("DELETE FROM passage WHERE document_id = ?");
         deleteFor("DELETE FROM document_citation WHERE document_id = ?");
         deleteFor("DELETE FROM search_document WHERE document_id = ?");
         deleteFor("DELETE FROM document_relation WHERE document_id = ?");
@@ -959,10 +1026,7 @@ export function openIndexWriter(path: string): IndexWriter {
         search.entry.date,
         search.entry.keywordOnly ? 1 : 0,
       );
-      search.passages.forEach((passage, ordinal) => {
-        const inserted = insertPassage.run(document.id, ordinal, passage.start, passage.end, passage.hash);
-        insertPassageText.run(inserted.lastInsertRowid, passage.text);
-      });
+      insertPassagesOf(document.id, search.passages);
       for (const citation of search.citations) insertCitation.run(citation.id, document.id, citation.index);
       for (const row of search.vectors.rows) insertVector.run(row.hash, search.vectors.modelId, row.vector);
       // The vectors of a keyword-only document are not loaded, so storing one changes nothing the server holds.
@@ -1056,6 +1120,27 @@ export function openIndexWriter(path: string): IndexWriter {
     storeSpeakerTurnIndex(record) {
       storeSpeakerTurnIndex(database, record.documentId, record.outcome);
     },
+    recordingLogsWithoutTurnPassages(session) {
+      return readLogsWithoutTurnPassages(database, session);
+    },
+    replacePassages(document, passages, turnsWithoutPassage) {
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        deletePassagesOf(document);
+        insertPassagesOf(document, passages);
+        markTurnPassagesCut(database, document, turnsWithoutPassage);
+        database.exec("COMMIT");
+      } catch (error) {
+        if (database.isTransaction) database.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    recordingLogsWithoutItemMeasures(session) {
+      return readLogsWithoutItemMeasures(database, session);
+    },
+    storeItemMeasures(document, items) {
+      storeItemMeasuresOf(database, document, items);
+    },
     recordingLogsWithoutIndex(session) {
       const rows = database
         .prepare(
@@ -1069,13 +1154,13 @@ export function openIndexWriter(path: string): IndexWriter {
     recordingLogReadingNotes(session) {
       const rows = database
         .prepare(
-          `SELECT d.id, d.source_url, i.outcome, i.event_ids, i.pages_read_by_timecode
+          `SELECT d.id, d.source_url, i.outcome, i.event_ids, i.pages_read_by_timecode, i.turns_without_passage
            FROM document d LEFT JOIN speaker_turn_index i ON i.document_id = d.id
            WHERE d.session_key = ? AND d.kind = 'recording_log' ORDER BY d.id`,
         )
         .all(session)
         .map((row) => readingNoteRow.parse(row));
-      const notes: RecordingLogReadingNotes = { gaps: [], readByTimecode: [] };
+      const notes: RecordingLogReadingNotes = { gaps: [], readByTimecode: [], turnsWithoutPassage: [] };
       for (const row of rows) {
         const id = row.id as DocumentId;
         if (row.outcome === null) {
@@ -1089,6 +1174,9 @@ export function openIndexWriter(path: string): IndexWriter {
         }
         const pages = z.array(z.number()).parse(JSON.parse(row.pages_read_by_timecode ?? "[]"));
         if (pages.length > 0) notes.readByTimecode.push({ id, sourceUrl: row.source_url, pages });
+        if (row.turns_without_passage !== null && row.turns_without_passage > 0) {
+          notes.turnsWithoutPassage.push({ id, sourceUrl: row.source_url, turns: row.turns_without_passage });
+        }
       }
       return notes;
     },

@@ -1,5 +1,12 @@
 import { describe, expect, test } from "vitest";
-import { legislatorOfSpeaker, measureOfAgendaItem, playerLinkOf, type RecordingLogLink } from "../index.ts";
+import {
+  hearingKindOf,
+  legislatorOfSpeaker,
+  measureOfAgendaItem,
+  measuresOfAgendaItem,
+  playerLinkOf,
+  type RecordingLogLink,
+} from "../index.ts";
 
 // Seam 2: what the worker adds to a parsed speaker turn (ticket #126): the Legislator Code of a speaker, the Measure of
 // an Agenda item, and the player link of a turn.
@@ -259,6 +266,91 @@ describe("measureOfAgendaItem", () => {
   ])("%s", ([text, expected]) => {
     // Quoted from log 288741's agenda lines (HB 2167, HB 3131, the committee rules) and the log's lack of one before the first.
     expect(measureOfAgendaItem(text)).toEqual(expected);
+  });
+});
+
+describe("measuresOfAgendaItem", () => {
+  // Owner decision of 2026-11-05 (ticket #127): an Agenda line that names several Measures counts for each. The rows are
+  // lines of the 2026R1 Recording Logs, as the stored text prints them (the log is named in each row), and the lines that
+  // name one Measure or none are the 2025R1 fixture's (288741).
+  test.for<[string, string | null, { prefix: string; number: number }[]]>([
+    [
+      "315069 SCT 2026-02-09",
+      "SB 1542 and SB 1543 - Public Hearing",
+      [
+        { prefix: "SB", number: 1542 },
+        { prefix: "SB", number: 1543 },
+      ],
+    ],
+    [
+      "312105 SCT 2026-02-02",
+      "SB 1542 and SB 1543 - Informational Meeting",
+      [
+        { prefix: "SB", number: 1542 },
+        { prefix: "SB", number: 1543 },
+      ],
+    ],
+    [
+      "316088 SEE 2026-02-25",
+      "HB 4077 and HB 4076 A - Public Hearing",
+      [
+        { prefix: "HB", number: 4077 },
+        { prefix: "HB", number: 4076 },
+      ],
+    ],
+    [
+      "315410 SED 2026-02-24",
+      "HB 4079 A and HB 4160 A - Public Hearing",
+      [
+        { prefix: "HB", number: 4079 },
+        { prefix: "HB", number: 4160 },
+      ],
+    ],
+    [
+      "315321 SED 2026-02-05",
+      "SB 1538, SB 1581, and SB 1596 - Public Hearing",
+      [
+        { prefix: "SB", number: 1538 },
+        { prefix: "SB", number: 1581 },
+        { prefix: "SB", number: 1596 },
+      ],
+    ],
+    [
+      "317279 HRULES 2026-02-17",
+      "HB 4159, HB 4161, and HB 4177 - Public Hearing",
+      [
+        { prefix: "HB", number: 4159 },
+        { prefix: "HB", number: 4161 },
+        { prefix: "HB", number: 4177 },
+      ],
+    ],
+    ["288741 HALNRW 2025-01-22", "HB 3131 - Public Hearing", [{ prefix: "HB", number: 3131 }]],
+    ["316088 SEE 2026-02-25", "HB 4076 A - Work Session", [{ prefix: "HB", number: 4076 }]],
+    ["288741 HALNRW 2025-01-22", "Adoption of Committee Rules - Organizational Meeting", []],
+    // A Measure named inside a title is not one the line begins with: the line is a topic, not that Measure's hearing.
+    ["2026R1 HB 4046 informational", "Nuclear Energy Study (HB 4046, 2026) - Informational Meeting", []],
+  ])("%s: %s", ([, text, expected]) => {
+    expect(measuresOfAgendaItem(text)).toEqual(expected);
+  });
+
+  test("an Agenda item with no text names no Measure", () => {
+    expect(measuresOfAgendaItem(null)).toEqual([]);
+  });
+});
+
+describe("hearingKindOf", () => {
+  test.for<[string, string]>([
+    ["HB 3131 - Public Hearing", "Public Hearing"],
+    ["HB 3131 - Work Session", "Work Session"],
+    ["HB 4079 A and HB 4160 A - Public Hearing", "Public Hearing"],
+    ["SB 1542 and SB 1543 - Informational Meeting", "Informational Meeting"],
+    // The item's own wording when it is neither: the text after the Measures, without the hyphen.
+    ["HB 4102 - Subcommittee Review", "Subcommittee Review"],
+    // No wording after the Measures: the line itself.
+    ["HB 4102", "HB 4102"],
+  ])("%s is a %s", ([text, kind]) => {
+    // The first four rows are real lines (288741, 292588, 315410 and 312105); the last two are MADE UP.
+    expect(hearingKindOf(text)).toBe(kind);
   });
 });
 

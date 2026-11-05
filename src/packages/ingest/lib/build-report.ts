@@ -84,6 +84,12 @@ export type BuildReport = {
   };
   /** The Recording Logs some of whose pages have no links that match their timecode lines, so those turns' seconds are the timecodes. */
   recording_log_pages_read_by_timecode: { id: DocumentId; source_url: string; pages: number[] }[];
+  /**
+   * The Recording Logs some of whose speaker turns have no Passage of their own, and how many (ticket #127, ADR-0053): a turn
+   * the log's text does not hold as the index has it, or whose lines are longer than a Passage may be (510 tokens). Its lines
+   * are part of the text between the turns, so a search still finds the words, but not as that turn: the Hit has no turn.
+   */
+  recording_log_turns_without_passage: { id: DocumentId; source_url: string; turns: number }[];
   /** What this pull made of the passages of the documents it stored, or refiled as embeddable (ADR-0025). */
   search_index: {
     /** The embedder's model id: the vectors this pull stored are under it. */

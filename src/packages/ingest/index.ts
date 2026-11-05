@@ -41,7 +41,7 @@ import type {
   PulledEntitySet,
   SessionDates,
 } from "#/packages/domain/documents.ts";
-import type { HistoryAction, Measure } from "#/packages/domain/index.ts";
+import { measureIdOf, type HistoryAction, type Measure } from "#/packages/domain/index.ts";
 import type { LegislatorId, LegislatorRow, Sponsorship } from "#/packages/domain/legislators.ts";
 import type { Passage, SearchEntry } from "#/packages/domain/search.ts";
 import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
@@ -62,7 +62,8 @@ import {
 import { loadSnapshot } from "#/packages/oregonai-snapshot/index.ts";
 import { extractPdfText, type ExtractedPdf } from "#/packages/pdf-text/index.ts";
 import { searchEntryOf } from "#/packages/search/documents.ts";
-import { splitPassages } from "#/packages/search/passages.ts";
+import { measuresOfAgendaItem, speakerTurnSpans } from "#/packages/recording-log/index.ts";
+import { splitAroundTurns, splitPassages } from "#/packages/search/passages.ts";
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, pacificTimestampOf, type Timestamp } from "#/packages/time/pacific.ts";
@@ -268,7 +269,10 @@ function committeeMembersReportOf(
 /** What the build report says of how the Recording Logs were read: the logs left with no index, and the pages read by timecode. */
 function recordingLogNotesOf(
   notes: ReturnType<IndexWriter["recordingLogReadingNotes"]>,
-): Pick<BuildReport, "recording_log_gaps" | "recording_log_pages_read_by_timecode"> {
+): Pick<
+  BuildReport,
+  "recording_log_gaps" | "recording_log_pages_read_by_timecode" | "recording_log_turns_without_passage"
+> {
   return {
     recording_log_gaps: notes.gaps.map((gap) => ({
       id: gap.id,
@@ -280,6 +284,11 @@ function recordingLogNotesOf(
       id: note.id,
       source_url: note.sourceUrl,
       pages: note.pages,
+    })),
+    recording_log_turns_without_passage: notes.turnsWithoutPassage.map((note) => ({
+      id: note.id,
+      source_url: note.sourceUrl,
+      turns: note.turns,
     })),
   };
 }
@@ -398,6 +407,26 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
     }
     stored.add(link.id);
     documentsFetched += 1;
+  }
+  // A Recording Log whose turns are stored and that has not been cut around them is cut from the text and the turns the store
+  // holds (ticket #127, ADR-0053): a log just read, one stored before the passages were linked, one whose index was stored
+  // again. Nothing is fetched, and every line of the text stays in one passage. A turn the text cannot place, or that is longer
+  // than a Passage may be, is counted and the log is marked, so it is not cut again on every pull.
+  for (const log of writer.recordingLogsWithoutTurnPassages(config.session)) {
+    const passages = splitAroundTurns(log.text, speakerTurnSpans(log.text, log.turns), deps.embedder);
+    const placed = passages.filter((passage) => passage.turn !== undefined).length;
+    writer.replacePassages(log.id, passages, log.turns.length - placed);
+  }
+  // The Measures each Agenda item of a stored log names are read from the item's text, for a log just read and for one stored
+  // before step 3, in the same way (ADR-0053). The index may not hold a Measure yet: the reader leaves out the ones it lacks.
+  for (const log of writer.recordingLogsWithoutItemMeasures(config.session)) {
+    writer.storeItemMeasures(
+      log.id,
+      log.agendaItems.map((agendaItem) => ({
+        agendaItem,
+        measures: measuresOfAgendaItem(agendaItem).map((named) => measureIdOf({ session: config.session, ...named })),
+      })),
+    );
   }
   return documentsFetched;
 }

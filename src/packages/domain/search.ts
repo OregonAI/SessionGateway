@@ -31,4 +31,9 @@ export type Passage = {
   text: string;
   /** The sha256 of the passage's text as UTF-8, in lower-case hex: what its vector is kept under. */
   hash: string;
+  /**
+   * For a Recording Log's speaker turn (ticket #127): the turn's position in the log's speaker-turn index, which the passage is
+   * the lines of. Absent for any other passage.
+   */
+  turn?: number;
 };

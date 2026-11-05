@@ -6,6 +6,16 @@ export type Block = {
   page: number;
   /** The text after the timecode and each continuation line, one string for each line. */
   lines: string[];
+  /** Where the timecode line starts in the log's text, in UTF-16 code units. */
+  start: number;
+  /**
+   * Where the block's own lines end in the text, after the last line's break: the timecode line and the continuation lines
+   * that follow it with nothing between. A continuation line that comes after the page's repeated lines is the block's text
+   * (`lines`) and is not in this span.
+   */
+  end: number;
+  /** Whether a line of the page's own (its repeated lines) came between the block's lines: later lines are not in the span. */
+  interrupted: boolean;
 };
 
 const TIMECODE_LINE = /^(\d{2}:\d{2}:\d{2})(?:\s+(.*))?$/;
@@ -34,12 +44,23 @@ export function seconds(timecode: string): number {
 export function readBlocks(text: string): Block[] {
   const blocks: Block[] = [];
   let open: Block | null = null;
+  let pageStart = 0;
   text.split("\f").forEach((pageText, pageIndex) => {
     const lines = pageText.split("\n");
+    let lineStart = pageStart;
     lines.forEach((line, index) => {
+      // The line's own break goes with it when it has one: the last line of a page ends at the form feed or the text's end.
+      const lineEnd = lineStart + line.length + (index < lines.length - 1 ? 1 : 0);
       const timecoded = TIMECODE_LINE.exec(line);
       if (timecoded !== null) {
-        open = { timecode: timecoded[1] ?? "", page: pageIndex + 1, lines: [(timecoded[2] ?? "").trim()] };
+        open = {
+          timecode: timecoded[1] ?? "",
+          page: pageIndex + 1,
+          lines: [(timecoded[2] ?? "").trim()],
+          start: lineStart,
+          end: lineEnd,
+          interrupted: false,
+        };
         blocks.push(open);
       } else if (SECTION_LABEL.test(line) || ROSTER_LINE.test(line)) {
         open = null;
@@ -49,11 +70,15 @@ export function readBlocks(text: string): Block[] {
         PAGE_LINE.test(line) ||
         (COMMITTEE_CODE_LINE.test(line) && DATE_LINE.test(lines[index + 1] ?? ""))
       ) {
-        // Page furniture: the block that was open stays open.
+        // Page furniture: the block that was open stays open, and its span stops before this line.
+        if (open !== null) open.interrupted = true;
       } else if (open !== null && line.trim() !== "") {
         open.lines.push(line.trim());
+        if (!open.interrupted) open.end = lineEnd;
       }
+      lineStart = lineEnd;
     });
+    pageStart += pageText.length + 1;
   });
   return blocks;
 }

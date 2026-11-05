@@ -4,9 +4,12 @@
 import { z } from "zod";
 import type { AmendmentId, CommitteeId, DocumentId, DocumentKind } from "#/packages/domain/documents.ts";
 import type { MeasureId, SessionKey } from "#/packages/domain/index.ts";
+import type { MeetingId } from "#/packages/domain/documents.ts";
+import type { SearchedSpeakerTurn } from "#/packages/domain/speaker-turns.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openReadConnection } from "./lib/connection.ts";
 import { listedDocumentSql, noLongerListedThrough, unlistedAmong } from "./lib/listing.ts";
+import { readSpeakerTurn } from "./lib/speaker-turns.ts";
 
 /** Which documents a search may return. Every field given must hold. */
 export type SearchFilter = {
@@ -70,6 +73,8 @@ export type PassageMatch = {
   documentId: DocumentId;
   /** The id a hit carries: the document's, or a posting's Proposed Amendment's. */
   nodeId: DocumentId | AmendmentId;
+  /** The position of the speaker turn the passage is the lines of (ticket #127), or null for any other passage. */
+  turnPosition: number | null;
 };
 
 /**
@@ -81,6 +86,8 @@ export type CitedDocument = {
   passageId: number | null;
   documentId: DocumentId;
   nodeId: DocumentId | AmendmentId;
+  /** The position of the speaker turn the passage is the lines of (ticket #127), or null: a hit is ranked as its turn. */
+  turnPosition: number | null;
   citedAt?: number;
 };
 
@@ -110,6 +117,8 @@ export type HitDetails = {
    * citation that starts in the passage, the text runs on past the passage's end far enough to hold the mention.
    */
   passageText: string;
+  /** The speaker turn the passage is the lines of, with its Meeting, or null when the passage is not a turn's (ticket #127). */
+  turn: SearchedSpeakerTurn | null;
 };
 
 export type SearchIndexReader = {
@@ -168,6 +177,7 @@ const citedRow = z.object({
   node_id: z.string(),
   passage_id: z.number().nullable(),
   cited_at: z.number().nullable().optional(),
+  turn_position: z.number().nullable().optional(),
 });
 const countRow = z.object({ n: z.number() });
 const candidateRow = z.object({ document_id: z.string(), node_id: z.string() });
@@ -182,7 +192,12 @@ const vectorRow = z.object({
   dated_at: z.string().nullable(),
   vector: z.instanceof(Uint8Array),
 });
-const matchRow = z.object({ passage_id: z.number(), document_id: z.string(), node_id: z.string() });
+const matchRow = z.object({
+  passage_id: z.number(),
+  document_id: z.string(),
+  node_id: z.string(),
+  turn_position: z.number().nullable(),
+});
 const detailsRow = z.object({
   document_id: z.string(),
   node_id: z.string(),
@@ -194,7 +209,9 @@ const detailsRow = z.object({
   text: z.string(),
   start_offset: z.number().nullable(),
   end_offset: z.number().nullable(),
+  turn_position: z.number().nullable(),
 });
+const meetingOfRow = z.object({ meeting_id: z.string() });
 
 /**
  * The WHERE terms of a filter over `search_document` (aliased `sd`), and the values they take. They leave out a document
@@ -246,7 +263,7 @@ export function openSearchReader(path: string): SearchIndexReader {
   const unlistedThrough = (session: SessionKey): number => noLongerListedThrough(database, session);
   const selectDetails = database.prepare(
     `SELECT d.id AS document_id, sd.node_id, sd.kind, sd.title, sd.measure_id, sd.dated_at, d.source_url, d.text,
-            p.start_offset, p.end_offset
+            p.start_offset, p.end_offset, p.turn_position
      FROM document d
        JOIN search_document sd ON sd.document_id = d.id
        LEFT JOIN passage p ON p.id = ? AND p.document_id = d.id
@@ -256,6 +273,7 @@ export function openSearchReader(path: string): SearchIndexReader {
        JOIN search_document sd ON sd.document_id = p.document_id
        JOIN passage_vector v ON v.text_hash = p.text_hash AND v.model_id = ?2
      WHERE sd.session_key = ?1 AND sd.keyword_only = 0 AND ${listedDocumentSql("sd", "?3")}`;
+  const selectMeetingOfDocument = database.prepare("SELECT meeting_id FROM meeting_document WHERE document_id = ?");
   const selectGeneration = database.prepare("SELECT generation FROM search_generation WHERE id = 1");
   const selectVectorCount = database.prepare(`SELECT COUNT(*) AS n ${vectorSelection}`);
   const selectVectors = database.prepare(
@@ -270,6 +288,7 @@ export function openSearchReader(path: string): SearchIndexReader {
       passageId: stored.passage_id,
       documentId: stored.document_id as DocumentId,
       nodeId: stored.node_id as DocumentId | AmendmentId,
+      turnPosition: stored.turn_position ?? null,
       ...(stored.cited_at === null || stored.cited_at === undefined ? {} : { citedAt: stored.cited_at }),
     };
   };
@@ -307,7 +326,7 @@ export function openSearchReader(path: string): SearchIndexReader {
       const terms = filterTerms(filter, unlistedThrough(filter.session));
       const rows = database
         .prepare(
-          `SELECT p.id AS passage_id, p.document_id, sd.node_id
+          `SELECT p.id AS passage_id, p.document_id, sd.node_id, p.turn_position
            FROM passage_fts
              JOIN passage p ON p.id = passage_fts.rowid
              JOIN search_document sd ON sd.document_id = p.document_id
@@ -322,6 +341,7 @@ export function openSearchReader(path: string): SearchIndexReader {
           passageId: stored.passage_id,
           documentId: stored.document_id as DocumentId,
           nodeId: stored.node_id as DocumentId | AmendmentId,
+          turnPosition: stored.turn_position,
         };
       });
     },
@@ -355,18 +375,23 @@ export function openSearchReader(path: string): SearchIndexReader {
       const terms = filterTerms(filter, unlistedThrough(filter.session));
       return database
         .prepare(
-          `SELECT sd.document_id, sd.node_id,
-                  COALESCE(
-                    (SELECT p.id FROM passage p
-                     WHERE p.document_id = sd.document_id AND p.start_offset <= dc.first_offset
-                       AND dc.first_offset < p.end_offset
-                     ORDER BY p.ordinal LIMIT 1),
-                    ${firstPassage}) AS passage_id,
-                  dc.first_offset AS cited_at
-           FROM document_citation dc
-             JOIN search_document sd ON sd.document_id = dc.document_id
-           WHERE dc.citation_id = ? AND ${terms.sql}
-           ORDER BY sd.dated_at IS NULL, sd.dated_at, sd.document_id
+          `SELECT cited.document_id, cited.node_id, cited.passage_id, cited.cited_at,
+                  (SELECT p.turn_position FROM passage p WHERE p.id = cited.passage_id) AS turn_position
+           FROM (
+             SELECT sd.document_id, sd.node_id,
+                    COALESCE(
+                      (SELECT p.id FROM passage p
+                       WHERE p.document_id = sd.document_id AND p.start_offset <= dc.first_offset
+                         AND dc.first_offset < p.end_offset
+                       ORDER BY p.ordinal LIMIT 1),
+                      ${firstPassage}) AS passage_id,
+                    dc.first_offset AS cited_at,
+                    sd.dated_at
+             FROM document_citation dc
+               JOIN search_document sd ON sd.document_id = dc.document_id
+             WHERE dc.citation_id = ? AND ${terms.sql}
+           ) cited
+           ORDER BY cited.dated_at IS NULL, cited.dated_at, cited.document_id
            LIMIT ?`,
         )
         .all(citationId, ...terms.values, limit)
@@ -407,6 +432,15 @@ export function openSearchReader(path: string): SearchIndexReader {
       const row = selectDetails.get(match.passageId, match.documentId);
       if (row === undefined) throw new Error(`The index has no document ${match.documentId}`);
       const stored = detailsRow.parse(row);
+      const documentId = stored.document_id as DocumentId;
+      const turn =
+        stored.turn_position === null ? undefined : readSpeakerTurn(database, documentId, stored.turn_position);
+      if (stored.turn_position !== null && turn === undefined) {
+        throw new Error(
+          `The passage of ${documentId} is turn ${String(stored.turn_position)}, which the index does not hold`,
+        );
+      }
+      const meetingRow = turn === undefined ? undefined : selectMeetingOfDocument.get(documentId);
       return {
         documentId: stored.document_id as DocumentId,
         nodeId: stored.node_id as DocumentId | AmendmentId,
@@ -416,6 +450,13 @@ export function openSearchReader(path: string): SearchIndexReader {
         date: stored.dated_at as Timestamp | null,
         sourceUrl: stored.source_url,
         passageText: passageTextOf(stored, match.citedAt),
+        turn:
+          turn === undefined
+            ? null
+            : {
+                ...turn,
+                meeting: meetingRow === undefined ? null : (meetingOfRow.parse(meetingRow).meeting_id as MeetingId),
+              },
       };
     },
     close() {

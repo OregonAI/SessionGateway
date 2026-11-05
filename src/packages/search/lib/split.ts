@@ -144,3 +144,36 @@ export function splitPassages(text: string, meter: TokenMeter): Passage[] {
     return { start: span.start, end: span.end, text: passageText, hash: hashOf(passageText) };
   });
 }
+
+/** Where a speaker turn's lines are in a text: `text.slice(start, end)`; null for a turn the text does not hold. */
+export type TurnSpan = { start: number; end: number };
+
+/**
+ * Cuts a Recording Log's text around its speaker turns (ticket #127, ADR-0053): each turn's lines are a passage of their own,
+ * tagged with the turn's position in `turns`, and the text between the turns is cut as `splitPassages` cuts any text. Every
+ * line of the text is in one passage, so nothing is lost and nothing is held twice, and the passages come in the order of
+ * the text. A turn with no span, or whose lines are longer than a passage may be, is not a passage of its own: its lines are
+ * part of the text between the turns, and a search finds them as it finds any line of the log.
+ */
+export function splitAroundTurns(text: string, turns: readonly (TurnSpan | null)[], meter: TokenMeter): Passage[] {
+  const own = turns
+    .flatMap((span, position) => (span === null ? [] : [{ ...span, position }]))
+    .filter((span) => meter.countTokens(text.slice(span.start, span.end)) <= meter.maxPassageTokens)
+    .toSorted((a, b) => a.start - b.start);
+  const passages: Passage[] = [];
+  const between = (start: number, end: number): void => {
+    for (const passage of splitPassages(text.slice(start, end), meter)) {
+      passages.push({ ...passage, start: passage.start + start, end: passage.end + start });
+    }
+  };
+  let cursor = 0;
+  for (const span of own) {
+    if (span.start < cursor) continue;
+    between(cursor, span.start);
+    const turnText = text.slice(span.start, span.end);
+    passages.push({ start: span.start, end: span.end, text: turnText, hash: hashOf(turnText), turn: span.position });
+    cursor = span.end;
+  }
+  between(cursor, text.length);
+  return passages;
+}
