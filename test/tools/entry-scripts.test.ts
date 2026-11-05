@@ -26,8 +26,7 @@ import { snapshotFixturePath } from "../support/oregonai-snapshot.ts";
 import { modelPath } from "../support/real-embedder.ts";
 import { modelLockPath, readModelLock } from "#/packages/embedder/lock.ts";
 import { openIndexWriter } from "#/packages/database/writer.ts";
-import { buildFrozenVersionOne } from "#/packages/database/tests/arranged-files.ts";
-import { userVersionOf } from "../support/old-database.ts";
+import { buildVersionOneFile, userVersionOf } from "../support/old-database.ts";
 
 // Two cases run two child pulls one after the other, which takes longer than one pull under load (test/CLAUDE.md, "Timeouts under load").
 vi.setConfig({ testTimeout: 120_000 });
@@ -762,7 +761,7 @@ describe("the entry scripts", () => {
 
     it("prints a version-1 file's version and leaves the file as it was", async () => {
       const database = aDatabaseFile();
-      buildFrozenVersionOne(database.path);
+      buildVersionOneFile(database.path);
 
       const finished = await runLeavingFileAlone(database.path);
 
