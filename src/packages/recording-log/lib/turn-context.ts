@@ -1,3 +1,4 @@
+import { playerUrl } from "./event-id.ts";
 import type { RecordingLogLink } from "./types.ts";
 
 /** A Legislator the resolver can name: the Legislator Code the feed gives and the Legislator's name, "First Last". */
@@ -122,22 +123,33 @@ export function measureOfAgendaItem(text: string | null): { prefix: string; numb
   return found === null ? null : { prefix: found[1] ?? "", number: Number(found[2]) };
 }
 
+/** The `startStreamAt` parameter of a query string: at its start or after an `&`, up to the next `&`. */
+const START_STREAM_AT = /(^|&)startStreamAt=[^&]*/;
+
 /**
- * The official player at a second of the recording: the log's own player link for that event, with its second
- * replaced. Its address, clientID and eventID are the log's, never made up; null when the log has no player link for the
- * event.
+ * The official player at a second of the recording: the log's own player link for that event, with its `startStreamAt`
+ * replaced and every other byte of the link as the log has it. A link is a player link by event-id.ts's rule (the
+ * Legislature's `/liz/mediaplayer` page) and is the event's when its `eventID` is the event ID. Null when the log has no
+ * such link. A link without a `startStreamAt` gets one at the end of its query.
  */
 export function playerLinkOf(
   links: readonly RecordingLogLink[],
   eventId: string,
   offsetSeconds: number,
 ): string | null {
-  for (const link of links) {
-    if (!URL.canParse(link.url)) continue;
-    const url = new URL(link.url);
-    if (!url.pathname.includes("mediaplayer") || url.searchParams.get("eventID") !== eventId) continue;
-    url.searchParams.set("startStreamAt", String(offsetSeconds));
-    return url.toString();
-  }
-  return null;
+  const link = links.find((candidate) => playerUrl(candidate)?.searchParams.get("eventID") === eventId);
+  if (link === undefined) return null;
+  const hash = link.url.indexOf("#");
+  const address = hash === -1 ? link.url : link.url.slice(0, hash);
+  const fragment = hash === -1 ? "" : link.url.slice(hash);
+  const mark = address.indexOf("?");
+  const path = mark === -1 ? address : address.slice(0, mark);
+  const query = mark === -1 ? "" : address.slice(mark + 1);
+  const second = `startStreamAt=${offsetSeconds}`;
+  const rewritten = START_STREAM_AT.test(query)
+    ? query.replace(START_STREAM_AT, (_, before: string) => `${before}${second}`)
+    : query === ""
+      ? second
+      : `${query}&${second}`;
+  return `${path}?${rewritten}${fragment}`;
 }
