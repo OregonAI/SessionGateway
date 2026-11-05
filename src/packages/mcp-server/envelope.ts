@@ -36,7 +36,14 @@ function withEnvelopeFields(output: z.ZodObject): StandardSchemaWithJSON {
 
 /** The notice every result carries (ADR-0002, spec #1 "What every result must carry"). */
 const NON_OFFICIAL_NOTICE =
-  "Not the official record of the Oregon Legislature. This is an unofficial copy of public information from the Legislature's Open Data Service; use source_url for the Legislature's own page.";
+  "Not the official record of the Oregon Legislature. This is an unofficial copy of public information from the Legislature's Open Data Service";
+
+/** The notice for a tool: the full text when its results can carry a source_url, else without the clause (ticket #120). */
+function noticeOf(carriesSourceUrl: boolean): string {
+  return carriesSourceUrl
+    ? `${NON_OFFICIAL_NOTICE}; use source_url for the Legislature's own page.`
+    : `${NON_OFFICIAL_NOTICE}.`;
+}
 
 /** The MCP annotations a tool is registered with. */
 type Annotations = { readOnlyHint: true; openWorldHint: boolean };
@@ -50,6 +57,13 @@ export type Tool<Input extends z.ZodObject, Output extends z.ZodObject, Fault> =
   title: string;
   description: string;
   annotations: Annotations;
+  /**
+   * Whether this tool's results can carry a `source_url` (ticket #120): the tool's own fact, known from what it
+   * returns and not found by scanning a payload, so a result that happens to hold none (an empty page) keeps the full
+   * notice. A tool that returns no document, such as session_overview, says false, and its notice leaves out the
+   * clause that tells the reader to use one.
+   */
+  carriesSourceUrl: boolean;
   input: Input;
   output: Output;
   /** Answers a call, given the As of the envelope read for it. */
@@ -120,7 +134,7 @@ export function createEnvelope(deps: EnvelopeDeps): Envelope {
     const outcome = await tool.run(input, asOf);
     switch (outcome.kind) {
       case "answer": {
-        const stamped = { ...outcome.answer, as_of: asOf, notice: NON_OFFICIAL_NOTICE };
+        const stamped = { ...outcome.answer, as_of: asOf, notice: noticeOf(tool.carriesSourceUrl) };
         return { content: [{ type: "text", text: JSON.stringify(stamped) }], structuredContent: stamped };
       }
       case "fault":
