@@ -571,7 +571,7 @@ const upgradeSteps: readonly ((database: DatabaseSync) => void)[] = [
 ];
 
 /** The version the newest step leaves a file at. The server opens a file at this version only. */
-const schemaVersion = upgradeSteps.length;
+export const schemaVersion = upgradeSteps.length;
 
 /** The default timeout of 0 fails at once on a busy database, so both sides wait up to 5 seconds. */
 const BUSY_TIMEOUT_MS = 5000;
@@ -662,6 +662,21 @@ export function openReadConnection(path: string): DatabaseSync {
     );
   }
   return database;
+}
+
+/**
+ * The schema version a database file records, for a gate that decides whether an image may run against it (ticket #146). It
+ * opens the file read-only and runs no upgrade step, so the file is never changed; a path with no file is null, and a file
+ * that cannot be read as SQLite throws. A file nobody has stamped is 0.
+ */
+export function readRecordedVersion(path: string): number | null {
+  if (!existsSync(path)) return null;
+  const database = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
+  try {
+    return recordedVersionOf(database);
+  } finally {
+    database.close();
+  }
 }
 
 /**

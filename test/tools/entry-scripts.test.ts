@@ -2,7 +2,16 @@
 // containers run them, with their configuration in the environment. The fake OLIS is the only
 // thing in this process; the worker and the server are child processes.
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { connect, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -16,6 +25,9 @@ import { createTempDatabase, type TempDatabase } from "../support/temp-database.
 import { snapshotFixturePath } from "../support/oregonai-snapshot.ts";
 import { modelPath } from "../support/real-embedder.ts";
 import { modelLockPath, readModelLock } from "#/packages/embedder/lock.ts";
+import { openIndexWriter } from "#/packages/database/writer.ts";
+import { buildFrozenVersionOne } from "#/packages/database/tests/arranged-files.ts";
+import { userVersionOf } from "../support/old-database.ts";
 
 // Two cases run two child pulls one after the other, which takes longer than one pull under load (test/CLAUDE.md, "Timeouts under load").
 vi.setConfig({ testTimeout: 120_000 });
@@ -711,5 +723,93 @@ describe("the entry scripts", () => {
 
     expect(finished.code).not.toBe(0);
     expect(finished.stderr).toContain("WAL");
+  });
+  describe("src/bin/schema-version.ts (ticket #146, for platform-deploy#45's schema gate)", () => {
+    // The image knows three upgrade steps (version 3 is the speaker-turn passages of ticket #127). The literal moves with the
+    // next step, as the seam-4 schema-version test's does.
+    const imageVersion = 3;
+    const script = "src/bin/schema-version.ts";
+
+    function aDatabaseFile(): TempDatabase {
+      const database = createTempDatabase();
+      cleanups.push(() => {
+        database.remove();
+      });
+      return database;
+    }
+
+    /** Runs the script on a file and shows that it left the file as it found it: the same bytes, the same `user_version`. */
+    async function runLeavingFileAlone(databasePath: string): Promise<Finished> {
+      const directoryBefore = readdirSync(dirname(databasePath)).sort();
+      const bytesBefore = readFileSync(databasePath);
+      const versionBefore = userVersionOf(databasePath);
+      const finished = await run(`${script} --database ${databasePath}`, {});
+      expect(readFileSync(databasePath).equals(bytesBefore)).toBe(true);
+      expect(userVersionOf(databasePath)).toBe(versionBefore);
+      // A read-only open may add the -shm of a WAL file, and must not leave a journal that holds a write.
+      expect(readdirSync(dirname(databasePath)).filter((name) => !directoryBefore.includes(name))).not.toContain(
+        "index.db-journal",
+      );
+      return finished;
+    }
+
+    it("prints the version the image knows, and only that, when no database is given", async () => {
+      const finished = await run(script, {});
+
+      expect(finished.code).toBe(0);
+      expect(finished.stdout).toBe(`{"image":${String(imageVersion)}}\n`);
+    });
+
+    it("prints a version-1 file's version and leaves the file as it was", async () => {
+      const database = aDatabaseFile();
+      buildFrozenVersionOne(database.path);
+
+      const finished = await runLeavingFileAlone(database.path);
+
+      expect(finished.code).toBe(0);
+      expect(finished.stdout).toBe(`{"image":${String(imageVersion)},"database":1}\n`);
+    });
+
+    it("prints a current file's version and leaves the file as it was", async () => {
+      const database = aDatabaseFile();
+      openIndexWriter(database.path).close();
+
+      const finished = await runLeavingFileAlone(database.path);
+
+      expect(finished.code).toBe(0);
+      expect(finished.stdout).toBe(`{"image":${String(imageVersion)},"database":${String(imageVersion)}}\n`);
+    });
+
+    it("prints null for a path with no file, and does not create one", async () => {
+      const database = aDatabaseFile();
+
+      const finished = await run(`${script} --database ${database.path}`, {});
+
+      expect(finished.code).toBe(0);
+      expect(finished.stdout).toBe(`{"image":${String(imageVersion)},"database":null}\n`);
+      expect(existsSync(database.path)).toBe(false);
+    });
+
+    it("exits non-zero, with the path in its message, on a file that is not a database", async () => {
+      const database = aDatabaseFile();
+      writeFileSync(database.path, "this is not a SQLite file, and it is longer than the header of one\n".repeat(4));
+
+      const finished = await run(`${script} --database ${database.path}`, {});
+
+      expect(finished.code).toBe(1);
+      expect(finished.stdout).toBe("");
+      expect(finished.stderr).toContain(database.path);
+    });
+
+    it("exits non-zero on an argument it does not know, and on --database with no path", async () => {
+      const unknown = await run(`${script} --upgrade`, {});
+      const noPath = await run(`${script} --database`, {});
+
+      expect(unknown.code).not.toBe(0);
+      expect(unknown.stdout).toBe("");
+      expect(unknown.stderr).toContain("--upgrade");
+      expect(noPath.code).not.toBe(0);
+      expect(noPath.stdout).toBe("");
+    });
   });
 });

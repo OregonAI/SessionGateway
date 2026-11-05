@@ -94,3 +94,15 @@ export function leaveTurnsUnlinkedFromPassages(databasePath: string): void {
     database.close();
   }
 }
+
+/** The `user_version` the file records, read with a read-only connection: for a test to show that a script left it alone. */
+export function userVersionOf(databasePath: string): number {
+  const database = new DatabaseSync(databasePath, { readOnly: true, timeout: 5000 });
+  try {
+    const version = database.prepare("PRAGMA user_version").get()?.["user_version"];
+    if (typeof version !== "number") throw new Error(`no user_version in ${databasePath}`);
+    return version;
+  } finally {
+    database.close();
+  }
+}
