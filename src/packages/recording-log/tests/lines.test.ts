@@ -5,7 +5,7 @@ import { e, playerLinks, turnsOf, vote, type ExpectedTurn, type QuotedLink } fro
 // Seam 2: a Recording Log's text and link annotations in; the event ID, the speaker turns and the other entries out
 // (#125, spec #123 stage 1). One row for each wording variant, each quoting a real log and naming it: the document and
 // the lines of its pdf-text extraction, with the annotations of those lines' rows (real-logs.ts says how they are quoted).
-// A quote that skips lines between two it keeps says so in its name.
+// A quote from page 2 starts with a form feed, the page break of the page it omits. A quote that skips lines between two it keeps says so in its name.
 
 type Row = {
   name: string;
@@ -124,7 +124,7 @@ This recording log is in compliance with Senate and House Rules. For complete co
     source:
       "research cache video-research/dl/logs/halnrw_0122.pdf (HALNRW 2025-01-22, feed document 288741), lines 00:02:49 to 00:12:05, page 2",
     eventId: "2025011038",
-    text: `00:02:49 Kurt Williams, Director, Oregon Veterinary Diagnostics Lab, Oregon State
+    text: `\f00:02:49 Kurt Williams, Director, Oregon Veterinary Diagnostics Lab, Oregon State
 University (OSU)
 00:06:15 Melissa Rice, student, Carlson College of Veterinary Medicine, OSU
 00:08:44 Wendy Krebs, graduate, Carlson College of Veterinary Medicine, OSU;
@@ -171,7 +171,7 @@ equine veterinarian, co-owner, Bend Equine Medical Center
     source:
       "research cache video-research/dl/logs/halnrw_0122.pdf (HALNRW 2025-01-22, feed document 288741), lines 00:21:43 to 00:23:06, page 2",
     eventId: "2025011038",
-    text: `00:21:43 Vice-Chair Finger McDonald
+    text: `\f00:21:43 Vice-Chair Finger McDonald
 00:22:39 HB 2168 - Public Hearing
 00:22:38 Co-Chair Helm
 00:23:06 Anna Glueder, LPRO Analyst`,
@@ -281,7 +281,7 @@ equine veterinarian, co-owner, Bend Equine Medical Center
     source:
       "research cache video-research/dl/logs/sample/309305.pdf (HREV 2025-06-11, feed document 309305), lines 00:21:30 to 00:23:31, page 2",
     eventId: "2025061107",
-    text: `00:21:30 HB 2725 Work Session
+    text: `\f00:21:30 HB 2725 Work Session
 00:21:31 Chair Nathanson
 00:21:35 Beau Olen, Economist
 00:22:22 Chair Nathanson
@@ -416,6 +416,74 @@ MOTION CARRIES
       e("motion", "00:00:36", 36, "MOTION: Rep. Owens reads the Subcommittee Recommendation"),
       vote("00:01:58", 118, "VOTE: 18-0-5", [18, 0, 5]),
       e("agenda-item", "00:02:05", 125, "Department of Fish and Wildlife - Keno Fish Passage"),
+    ],
+  },
+  {
+    name: "a roll call, and a roster of members that follows a turn with no label over it",
+    source:
+      "research cache video-research/dl/logs/sample/315920.pdf (JLAC 2025-06-13, feed document 315920), lines 00:00:03 to 00:01:52, page 1",
+    eventId: "2025061121",
+    text: `00:00:03 Meeting Called to Order
+00:00:04 Co-Chair Fahey
+00:00:18 ROLL CALL
+00:00:40 Adoption of Committee Rules - Organizational Meeting
+00:00:41 Co-Chair Fahey
+00:00:49 MOTION: CO-CHAIR WAGNER MOVES ADOPTION OF COMMITTEE
+RULES
+00:01:03 VOTE: 7-0-3
+AYE: SENS. ANDERSON, BONHAM, PATTERSON, WAGNER; REPS.
+BOWMAN, GOMBERG, FAHEY
+EXCUSED: SEN. MANNING JR.; REPS. DRAZAN, G. SMITH
+00:01:51 Confirmation of Capitol Foundation Board Members - Work Session
+00:01:52 Co-Chair Fahey
+Sen. Rob Wagner, Co-Chair
+Sen. Dick Anderson
+Sen. Daniel Bonham
+Sen. Deb Patterson
+Rep. Julie Fahey, Co-Chair
+Rep. Ben Bowman
+Rep. David Gomberg
+Rep. Greg Smith
+Sen. James Manning Jr. Rep. Christine Drazan\fJLAC
+06/13/2025
+Page 2 of 3
+This recording log is in compliance with Senate and House Rules. For complete contents, refer to the digital audio recording.`,
+    links: [
+      [1, [69.75, 269.14, 122.29, 282.94], 3],
+      [1, [141.75, 269.14, 273.64, 282.94], 3],
+      [1, [69.75, 255.34, 122.29, 269.14], 4],
+      [1, [141.75, 255.34, 230.95, 269.14], 4],
+      [1, [69.75, 241.54, 122.29, 255.34], 18],
+      [1, [141.75, 241.54, 210.5, 255.34], 18],
+      [1, [69.75, 215.09, 122.29, 228.89], 40],
+      [1, [141.75, 215.09, 457.59, 228.89], 40],
+      [1, [69.75, 201.29, 122.29, 215.09], 41],
+      [1, [141.75, 201.29, 230.95, 215.09], 41],
+      [1, [69.75, 187.5, 122.29, 201.29], 49],
+      [1, [141.75, 187.5, 542.25, 201.29], 49],
+      [1, [69.75, 173.7, 186.26, 187.5], 49],
+      [1, [69.75, 159.9, 122.29, 173.7], 63],
+      [1, [141.75, 159.9, 542.25, 173.7], 63],
+      [1, [69.75, 146.1, 542.25, 159.9], 63],
+      [1, [69.75, 132.3, 542.25, 146.1], 63],
+      [1, [69.75, 118.5, 475.62, 132.3], 63],
+      [1, [69.75, 92.05, 122.29, 105.85], 111],
+      [1, [141.75, 92.05, 532.04, 105.85], 111],
+      [1, [69.75, 78.25, 122.29, 92.05], 112],
+      [1, [141.75, 78.25, 230.95, 92.05], 112],
+    ],
+    turns: [
+      ["00:00:04", 4, "link", "Co-Chair Fahey", null],
+      ["00:00:41", 41, "link", "Co-Chair Fahey", "Adoption of Committee Rules - Organizational Meeting"],
+      ["00:01:52", 112, "link", "Co-Chair Fahey", "Confirmation of Capitol Foundation Board Members - Work Session"],
+    ],
+    entries: [
+      e("call-to-order", "00:00:03", 3, "Meeting Called to Order"),
+      e("roll-call", "00:00:18", 18, "ROLL CALL"),
+      e("agenda-item", "00:00:40", 40, "Adoption of Committee Rules - Organizational Meeting"),
+      e("motion", "00:00:49", 49, "MOTION: CO-CHAIR WAGNER MOVES ADOPTION OF COMMITTEE RULES"),
+      vote("00:01:03", 63, "VOTE: 7-0-3", [7, 0, 3]),
+      e("agenda-item", "00:01:51", 111, "Confirmation of Capitol Foundation Board Members - Work Session"),
     ],
   },
 ];

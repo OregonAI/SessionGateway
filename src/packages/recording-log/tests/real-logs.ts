@@ -35,7 +35,8 @@ export function turnsOf(expected: readonly ExpectedTurn[]): SpeakerTurn[] {
 
 /** An entry that is not a vote, read from a link. */
 export function e(
-  kind: "call-to-order" | "agenda-item" | "motion" | "motion-result" | "recess" | "reconvene" | "adjournment",
+  kind:
+    "call-to-order" | "roll-call" | "agenda-item" | "motion" | "motion-result" | "recess" | "reconvene" | "adjournment",
   timecode: string,
   offsetSeconds: number,
   text: string,
