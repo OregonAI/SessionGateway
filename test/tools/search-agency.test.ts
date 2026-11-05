@@ -1,5 +1,5 @@
 // Seam 1 (test/CLAUDE.md): `search` filtered by Agency (ticket #16, spec #1 story 10), over the whole committed
-// fixture as the feed stood on 2026-08-01. The filter keeps the hits whose Measure has an Agency Link to the Agency, of
+// fixture as the feed stood on 2026-08-05. The filter keeps the hits whose Measure has an Agency Link to the Agency, of
 // any evidence (ADR-0028). It does not depend on how a meaning ranks, so the embedder is the fake
 // (test/support/fake-embedder.ts), as in search-whole-session.test.ts; the filter is applied to both sides of the
 // search, the words and the vectors, and the fake's vectors are what the meaning side scans.
@@ -19,7 +19,7 @@ let system: System;
 
 beforeAll(async () => {
   system = await startCopiedSystem({
-    clockAt: "2026-08-01T17:00:00Z",
+    clockAt: "2026-08-05T17:00:00Z",
     documents: true,
     serverEnv: { MCP_RATE_LIMIT: "100000" },
   });

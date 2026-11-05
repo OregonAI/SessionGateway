@@ -3,7 +3,7 @@
 // is no longer listed is flagged and leaves search's Agency filter. It matters for the two kinds of evidence whose
 // document is not the node the link sits on: a Fiscal Impact Statement and Testimony. Read with both kinds of client.
 //
-// Two systems, each as the feed stood on 2026-08-01 (every row exists, the documents are served, the embedder is the fake:
+// Two systems, each as the feed stood on 2026-08-05 (every row exists, the documents are served, the embedder is the fake:
 // which documents a filter keeps does not depend on how a meaning ranks, search-agency.test.ts), each changed once.
 //
 // The statement. SB 69's Fiscal Impact Statement is analysis 85414 (feed/MeasureAnalysisDocuments.json: MeasureAnalysisId
@@ -113,7 +113,7 @@ describe("the Fiscal Impact Statement 85414 the feed no longer lists", () => {
 
   beforeAll(async () => {
     system = await startCopiedSystem({
-      clockAt: "2026-08-01T17:00:00Z",
+      clockAt: "2026-08-05T17:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "100000" },
     });
@@ -123,9 +123,9 @@ describe("the Fiscal Impact Statement 85414 the feed no longer lists", () => {
         before.set(key(era, agency), await readAgency(clientAt(clients, index), agency, "SB 69"));
     }
     stopListing(system.olis, "MeasureAnalysisDocuments", (row) => row["MeasureAnalysisId"] === "85414");
-    system.clock.set("2026-08-02T17:00:00Z");
+    system.clock.set("2026-08-06T17:00:00Z");
     await system.pullAgain();
-    system.clock.set("2026-08-03T17:00:00Z");
+    system.clock.set("2026-08-07T17:00:00Z");
     await system.pullAgain();
     for (const [index, era] of eras.entries()) {
       for (const agency of agencies)
@@ -152,7 +152,7 @@ describe("the Fiscal Impact Statement 85414 the feed no longer lists", () => {
 
       expect(documentOf(was, statement)?.no_longer_listed).toBeUndefined();
       expect(documentOf(now, statement)?.no_longer_listed).toBe(true);
-      expect(documentOf(now, statement)?.last_listed_at).toBe("2026-08-01T10:00:00-07:00");
+      expect(documentOf(now, statement)?.last_listed_at).toBe("2026-08-05T10:00:00-07:00");
       expect(now.measure.agency_links.documents.filter((document) => document.id !== statement)).toSatisfy(
         (others: Measure["agency_links"]["documents"]) => others.every((d) => d.no_longer_listed === undefined),
       );
@@ -168,7 +168,7 @@ describe("the Fiscal Impact Statement 85414 the feed no longer lists", () => {
         expect(exampleOfItem(was, "fiscal-impact-statement", statement)?.no_longer_listed).toBeUndefined();
         expect(exampleOfItem(now, "fiscal-impact-statement", statement)?.no_longer_listed).toBe(true);
         expect(exampleOfItem(now, "fiscal-impact-statement", statement)?.last_listed_at).toBe(
-          "2026-08-01T10:00:00-07:00",
+          "2026-08-05T10:00:00-07:00",
         );
       }
     });
@@ -251,7 +251,7 @@ describe("Testimony the feed no longer lists", () => {
 
   beforeAll(async () => {
     system = await startCopiedSystem({
-      clockAt: "2026-08-01T17:00:00Z",
+      clockAt: "2026-08-05T17:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "100000" },
     });
@@ -260,7 +260,7 @@ describe("Testimony the feed no longer lists", () => {
     system.olis.addRows("CommitteePublicTestimonies", [
       madeUpTestimonyRow({ commTestId: 900001, organization: "Oregon State Treasury" }),
     ]);
-    system.clock.set("2026-08-02T17:00:00Z");
+    system.clock.set("2026-08-06T17:00:00Z");
     await system.pullAgain();
     for (const [index, era] of eras.entries()) {
       before.set(key(era, boli), await readAgency(clientAt(clients, index), boli, "SB 69"));
@@ -269,9 +269,9 @@ describe("Testimony the feed no longer lists", () => {
     const isTestimony = (row: Record<string, unknown>): boolean =>
       row["CommTestId"] === 196915 || row["CommTestId"] === 900001;
     stopListing(system.olis, "CommitteePublicTestimonies", isTestimony);
-    system.clock.set("2026-08-03T17:00:00Z");
+    system.clock.set("2026-08-07T17:00:00Z");
     await system.pullAgain();
-    system.clock.set("2026-08-04T17:00:00Z");
+    system.clock.set("2026-08-08T17:00:00Z");
     await system.pullAgain();
     for (const [index, era] of eras.entries()) {
       after.set(key(era, boli), await readAgency(clientAt(clients, index), boli, "SB 69"));
@@ -297,7 +297,7 @@ describe("Testimony the feed no longer lists", () => {
 
       expect(documentOf(was, real)?.no_longer_listed).toBeUndefined();
       expect(documentOf(now, real)?.no_longer_listed).toBe(true);
-      expect(documentOf(now, real)?.last_listed_at).toBe("2026-08-02T10:00:00-07:00");
+      expect(documentOf(now, real)?.last_listed_at).toBe("2026-08-06T10:00:00-07:00");
     });
 
     it("flags the Bureau's Testimony link in get_measure and find_measures, and no other link of the Bureau", () => {
@@ -353,7 +353,7 @@ describe("Testimony the feed no longer lists, beside Testimony it still lists", 
 
   beforeAll(async () => {
     system = await startCopiedSystem({
-      clockAt: "2026-08-01T17:00:00Z",
+      clockAt: "2026-08-05T17:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "100000" },
     });
@@ -362,14 +362,14 @@ describe("Testimony the feed no longer lists, beside Testimony it still lists", 
       madeUpTestimonyRow({ commTestId: 900001, organization: "Oregon State Treasury" }),
       madeUpTestimonyRow({ commTestId: 900002, organization: "Oregon State Treasury" }),
     ]);
-    system.clock.set("2026-08-02T17:00:00Z");
+    system.clock.set("2026-08-06T17:00:00Z");
     await system.pullAgain();
     for (const [index, era] of eras.entries())
       before.set(era, await readAgency(clientAt(clients, index), treasury, "SB 983"));
     stopListing(system.olis, "CommitteePublicTestimonies", (row) => row["CommTestId"] === 900001);
-    system.clock.set("2026-08-03T17:00:00Z");
+    system.clock.set("2026-08-07T17:00:00Z");
     await system.pullAgain();
-    system.clock.set("2026-08-04T17:00:00Z");
+    system.clock.set("2026-08-08T17:00:00Z");
     await system.pullAgain();
     for (const [index, era] of eras.entries())
       after.set(era, await readAgency(clientAt(clients, index), treasury, "SB 983"));
@@ -418,7 +418,7 @@ describe("a statement named only by an unresolved unit that the feed no longer l
 
   beforeAll(async () => {
     system = await startCopiedSystem({
-      clockAt: "2026-08-01T17:00:00Z",
+      clockAt: "2026-08-05T17:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "100000" },
     });
@@ -426,9 +426,9 @@ describe("a statement named only by an unresolved unit that the feed no longer l
     for (const [index, era] of eras.entries())
       before.set(era, (await call(clientAt(clients, index), "get_measure", { measure: "SB 983" })) as Measure);
     stopListing(system.olis, "MeasureAnalysisDocuments", (row) => row["MeasureAnalysisId"] === "91466");
-    system.clock.set("2026-08-02T17:00:00Z");
+    system.clock.set("2026-08-06T17:00:00Z");
     await system.pullAgain();
-    system.clock.set("2026-08-03T17:00:00Z");
+    system.clock.set("2026-08-07T17:00:00Z");
     await system.pullAgain();
     for (const [index, era] of eras.entries())
       after.set(era, (await call(clientAt(clients, index), "get_measure", { measure: "SB 983" })) as Measure);
@@ -448,7 +448,7 @@ describe("a statement named only by an unresolved unit that the feed no longer l
       expect(find(before, "analysis-2025r1-91466")).toBeDefined();
       expect(find(before, "analysis-2025r1-91466")?.no_longer_listed).toBeUndefined();
       expect(find(after, "analysis-2025r1-91466")?.no_longer_listed).toBe(true);
-      expect(find(after, "analysis-2025r1-91466")?.last_listed_at).toBe("2026-08-01T10:00:00-07:00");
+      expect(find(after, "analysis-2025r1-91466")?.last_listed_at).toBe("2026-08-05T10:00:00-07:00");
       expect(find(after, "analysis-2025r1-88044")).toBeDefined();
       expect(find(after, "analysis-2025r1-88044")?.no_longer_listed).toBeUndefined();
     });

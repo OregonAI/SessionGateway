@@ -1,10 +1,10 @@
 // Seam 1 (test/CLAUDE.md): `meetings` as an agent sees it, with the whole system behind it. A fake
-// OLIS serves the committed fixture and its 280 documents as the feed stood at noon Pacific on
-// 2025-01-29 (rows created by then), the ingest worker pulls them into a database, and an MCP client
+// OLIS serves the committed fixture (314 documents in all; the rows created by then, with no Recording Log among
+// them, as the feed stood at noon Pacific on 2025-01-29), the ingest worker pulls them into a database, and an MCP client
 // calls the tool in-process. One database serves every case in this file because none of them
 // changes it. The cases that need the Session after the fact are in meetings-past.test.ts, and the
-// ones that need a database of their own (another clock, a failed fetch, a row the fixture lacks, such
-// as a Recording Log) are in meetings-pull.test.ts.
+// ones that need a database of their own (another clock, a failed fetch, a made-up row) are in
+// meetings-pull.test.ts.
 //
 // The database is built by this file, with the documents on, and not copied from the template. Its clock is the one
 // of spec #1's case (c).

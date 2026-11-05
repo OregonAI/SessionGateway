@@ -841,6 +841,22 @@
       ]
     },
     {
+      "path": "documents/committee-meeting-documents/288741.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/288741",
+      "retrieved_at": "2026-11-05T08:20:12+00:00",
+      "sha256": "2c15bd4f8e78dde82c0a6cf399346eee306c4c66aa4077e437d037a7241defd2",
+      "bytes": 175030,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 288741
+          }
+        }
+      ]
+    },
+    {
       "path": "documents/committee-meeting-documents/288752.pdf",
       "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/288752",
       "retrieved_at": "2026-10-30T06:18:07+00:00",
@@ -857,6 +873,38 @@
       ]
     },
     {
+      "path": "documents/committee-meeting-documents/288906.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/288906",
+      "retrieved_at": "2026-11-05T08:20:14+00:00",
+      "sha256": "33eef85f705821b078262f0ed69ebe5665bc728ef5fbfd4facb278a78e734092",
+      "bytes": 133453,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 288906
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/289010.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/289010",
+      "retrieved_at": "2026-11-05T08:20:18+00:00",
+      "sha256": "18fd040799158b7869acd76629c485ba212ad622ed6944690c90c1894cfc6546",
+      "bytes": 168853,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 289010
+          }
+        }
+      ]
+    },
+    {
       "path": "documents/committee-meeting-documents/289203.pdf",
       "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/289203",
       "retrieved_at": "2026-10-30T06:18:09+00:00",
@@ -868,6 +916,22 @@
           "entity_set": "CommitteeMeetingDocuments",
           "row_key": {
             "CommitteeMeetingDocumentId": 289203
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/289259.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/289259",
+      "retrieved_at": "2026-11-05T08:20:20+00:00",
+      "sha256": "04a2c9d07ca6d85a87690ad5b647e8a214e0801e78639a6b6b49888f04bf70c2",
+      "bytes": 175086,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 289259
           }
         }
       ]
@@ -916,6 +980,22 @@
           "entity_set": "CommitteeMeetingDocuments",
           "row_key": {
             "CommitteeMeetingDocumentId": 289967
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/290006.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/290006",
+      "retrieved_at": "2026-11-05T08:20:23+00:00",
+      "sha256": "457028ac8534c4645a4ca3a098999ddaa3f1c21b4900ded726fb8935bbde74c6",
+      "bytes": 180048,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 290006
           }
         }
       ]
@@ -980,6 +1060,54 @@
           "entity_set": "CommitteeMeetingDocuments",
           "row_key": {
             "CommitteeMeetingDocumentId": 290903
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/292588.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/292588",
+      "retrieved_at": "2026-11-05T08:20:25+00:00",
+      "sha256": "730fe24460683d923a426d34846959b5bf7170286a4d72d6b14d57d6a2941820",
+      "bytes": 238975,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 292588
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/292593.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/292593",
+      "retrieved_at": "2026-11-05T08:20:29+00:00",
+      "sha256": "bf20b91da1f5ed52c95c229388b833bd85c64e93c3d437e318b64a94493394e8",
+      "bytes": 170181,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 292593
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/293235.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/293235",
+      "retrieved_at": "2026-11-05T08:20:31+00:00",
+      "sha256": "4efd1838fae6baa760cd889ccbc7f84cfa68c47fe16d477f7e0b8baeff2bd5c9",
+      "bytes": 179502,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 293235
           }
         }
       ]
@@ -1113,6 +1241,22 @@
       ]
     },
     {
+      "path": "documents/committee-meeting-documents/295094.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/295094",
+      "retrieved_at": "2026-11-05T08:20:35+00:00",
+      "sha256": "b4afaf231d4a0a79a5958e7761116915afdc94cfeef8aa7c09ae07542d48fce8",
+      "bytes": 196903,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 295094
+          }
+        }
+      ]
+    },
+    {
       "path": "documents/committee-meeting-documents/295123.pdf",
       "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/295123",
       "retrieved_at": "2026-10-30T06:19:13+00:00",
@@ -1209,6 +1353,22 @@
       ]
     },
     {
+      "path": "documents/committee-meeting-documents/297661.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/297661",
+      "retrieved_at": "2026-11-05T08:20:37+00:00",
+      "sha256": "a6d4e13aa5761fb89532a8237a57abebb90cc287e43fbaa20cc1d34e2678439f",
+      "bytes": 111202,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 297661
+          }
+        }
+      ]
+    },
+    {
       "path": "documents/committee-meeting-documents/298717.pdf",
       "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/298717",
       "retrieved_at": "2026-10-30T06:19:27+00:00",
@@ -1289,6 +1449,22 @@
       ]
     },
     {
+      "path": "documents/committee-meeting-documents/301370.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/301370",
+      "retrieved_at": "2026-11-05T08:20:39+00:00",
+      "sha256": "5aac766f370bd8895df34a25d86a2f84984d021bf7a89adf460e6895e944c6b3",
+      "bytes": 114260,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 301370
+          }
+        }
+      ]
+    },
+    {
       "path": "documents/committee-meeting-documents/301399.pdf",
       "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/301399",
       "retrieved_at": "2026-10-30T06:19:44+00:00",
@@ -1337,6 +1513,22 @@
       ]
     },
     {
+      "path": "documents/committee-meeting-documents/301678.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/301678",
+      "retrieved_at": "2026-11-05T08:20:42+00:00",
+      "sha256": "e8f24ea613f5df948084cfea656aac2449fa8eed8444f0c5f260e3a3705138a9",
+      "bytes": 238434,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 301678
+          }
+        }
+      ]
+    },
+    {
       "path": "documents/committee-meeting-documents/301696.pdf",
       "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/301696",
       "retrieved_at": "2026-10-30T06:19:49+00:00",
@@ -1364,6 +1556,22 @@
           "entity_set": "CommitteeMeetingDocuments",
           "row_key": {
             "CommitteeMeetingDocumentId": 302238
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/302332.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/302332",
+      "retrieved_at": "2026-11-05T08:20:47+00:00",
+      "sha256": "76196e980bbbc2b0d3a6da608f3293a7ff67e7e8a81f5809480b5681fdb40e11",
+      "bytes": 128280,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 302332
           }
         }
       ]
@@ -1508,6 +1716,22 @@
           "entity_set": "CommitteeMeetingDocuments",
           "row_key": {
             "CommitteeMeetingDocumentId": 303137
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/303298.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/303298",
+      "retrieved_at": "2026-11-05T08:20:50+00:00",
+      "sha256": "065eaada4c48c3a737d4e7f9c6190304425c30ada567fed409fc6590f4fc47df",
+      "bytes": 211633,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 303298
           }
         }
       ]
@@ -1673,6 +1897,22 @@
       ]
     },
     {
+      "path": "documents/committee-meeting-documents/304494.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/304494",
+      "retrieved_at": "2026-11-05T08:20:55+00:00",
+      "sha256": "ab744a1faac7b67bfa0f8f5314b61e9cc47771f55e361c28969913037e8a9381",
+      "bytes": 142876,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 304494
+          }
+        }
+      ]
+    },
+    {
       "path": "documents/committee-meeting-documents/304555.pdf",
       "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/304555",
       "retrieved_at": "2026-10-30T06:20:41+00:00",
@@ -1716,6 +1956,54 @@
           "entity_set": "CommitteeMeetingDocuments",
           "row_key": {
             "CommitteeMeetingDocumentId": 304557
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/304573.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/304573",
+      "retrieved_at": "2026-11-05T08:21:01+00:00",
+      "sha256": "7840f0e98f72f562efee42a583fbdc6561260320ea45030d71a0443b42cbac8e",
+      "bytes": 107875,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 304573
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/304574.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/304574",
+      "retrieved_at": "2026-11-05T08:21:05+00:00",
+      "sha256": "694d4ce256c6e304a69fc4996c0c0a741e3cdf65569321241da050cdec719743",
+      "bytes": 136717,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 304574
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/305183.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/305183",
+      "retrieved_at": "2026-11-05T08:21:08+00:00",
+      "sha256": "3b1a0ef68d859689cef77e64b02b106e55467bcf7437fea15978a1a83de90236",
+      "bytes": 177770,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 305183
           }
         }
       ]
@@ -1785,6 +2073,22 @@
       ]
     },
     {
+      "path": "documents/committee-meeting-documents/305535.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/305535",
+      "retrieved_at": "2026-11-05T08:21:10+00:00",
+      "sha256": "6271a14435e09a0a1a7cbe8891a6b3139140c3d6e78da44b1593d2a1314eb7f3",
+      "bytes": 163965,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 305535
+          }
+        }
+      ]
+    },
+    {
       "path": "documents/committee-meeting-documents/305754.pdf",
       "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/305754",
       "retrieved_at": "2026-10-30T06:21:01+00:00",
@@ -1844,6 +2148,22 @@
           "entity_set": "CommitteeMeetingDocuments",
           "row_key": {
             "CommitteeMeetingDocumentId": 305865
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/305938.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/305938",
+      "retrieved_at": "2026-11-05T08:21:12+00:00",
+      "sha256": "30bc9fff59e0e1b12e639c6ccad3ef322479ca593a27ea8d8b9f8795f3640eab",
+      "bytes": 174504,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 305938
           }
         }
       ]
@@ -1929,6 +2249,118 @@
       ]
     },
     {
+      "path": "documents/committee-meeting-documents/306568.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/306568",
+      "retrieved_at": "2026-11-05T08:21:16+00:00",
+      "sha256": "ed96f47487946df76f51120752bec9c7bbd9119f65c686ec62e121f35933150a",
+      "bytes": 192862,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 306568
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/307515.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/307515",
+      "retrieved_at": "2026-11-05T08:21:19+00:00",
+      "sha256": "1aedd09be10bc6db112aa5420f37d5b0e9a8884f7996eea029729fb533cfe91d",
+      "bytes": 143263,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 307515
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/307521.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/307521",
+      "retrieved_at": "2026-11-05T08:21:20+00:00",
+      "sha256": "555712d316b6a10bbc8d45a8a638639ab04fbb6b0fb695f359199979fc1e40ec",
+      "bytes": 45117,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 307521
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/307637.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/307637",
+      "retrieved_at": "2026-11-05T08:21:23+00:00",
+      "sha256": "84c9ff51ee612be662fc7fcfb1c3387d21f565e32c644d53421bf5cde0e3815c",
+      "bytes": 165736,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 307637
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/307638.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/307638",
+      "retrieved_at": "2026-11-05T08:21:25+00:00",
+      "sha256": "c0dded96f14b0f6d8d1986f93bf796687899b8c6bcb2b5a1296f70608868648e",
+      "bytes": 161556,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 307638
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/307641.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/307641",
+      "retrieved_at": "2026-11-05T08:21:27+00:00",
+      "sha256": "5faab98de2c1a58c723d1e1e12fafec5b6041eb1df3d1f8a397e590dc33e060b",
+      "bytes": 196141,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 307641
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/307642.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/307642",
+      "retrieved_at": "2026-11-05T08:21:31+00:00",
+      "sha256": "f104e44f0185aed8095cc8a21612ccc304be5d9b1678951f3f0a7ae448fea03c",
+      "bytes": 193662,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 307642
+          }
+        }
+      ]
+    },
+    {
       "path": "documents/committee-meeting-documents/307741.pdf",
       "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/307741",
       "retrieved_at": "2026-10-30T06:21:26+00:00",
@@ -1940,6 +2372,22 @@
           "entity_set": "CommitteeMeetingDocuments",
           "row_key": {
             "CommitteeMeetingDocumentId": 307741
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/307750.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/307750",
+      "retrieved_at": "2026-11-05T08:21:32+00:00",
+      "sha256": "3dba843d7c1d527546c710f8d1010104065097f373b487b454c615d35e370665",
+      "bytes": 50716,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 307750
           }
         }
       ]
@@ -1972,6 +2420,86 @@
           "entity_set": "CommitteeMeetingDocuments",
           "row_key": {
             "CommitteeMeetingDocumentId": 308004
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/308815.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/308815",
+      "retrieved_at": "2026-11-05T08:21:35+00:00",
+      "sha256": "167df8719bd49920045e9f4a27599fabf977f1a76c56af287704136097392702",
+      "bytes": 181278,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 308815
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/309239.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/309239",
+      "retrieved_at": "2026-11-05T08:21:37+00:00",
+      "sha256": "c137c5162e7a18e0766e4f63e1cb5dc7f294958f9288d1b5dfd449cc7d787cf0",
+      "bytes": 167581,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 309239
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/309415.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/309415",
+      "retrieved_at": "2026-11-05T08:21:40+00:00",
+      "sha256": "05cbcadbb509bad32167320054e816a8bc0a13ae25d3cdaf9b59c278683e1e4d",
+      "bytes": 154485,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 309415
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/310489.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/310489",
+      "retrieved_at": "2026-11-05T08:21:42+00:00",
+      "sha256": "c7d36bb9115e75c6d046e04430ccded100cb94be7f949c2ce249505c514779b4",
+      "bytes": 112830,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 310489
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/310522.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/310522",
+      "retrieved_at": "2026-11-05T08:21:44+00:00",
+      "sha256": "c91ed58fac36fe157fb8ce672b689f9b25b6e195b63fa068f620a7925ad995d9",
+      "bytes": 178798,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 310522
           }
         }
       ]
@@ -2020,6 +2548,22 @@
           "entity_set": "CommitteeMeetingDocuments",
           "row_key": {
             "CommitteeMeetingDocumentId": 317216
+          }
+        }
+      ]
+    },
+    {
+      "path": "documents/committee-meeting-documents/317265.pdf",
+      "source_url": "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/317265",
+      "retrieved_at": "2026-11-05T08:21:47+00:00",
+      "sha256": "14b1e255c880fcc49315bcfaa16c8dee751586123206011bbe18f2de809fe79f",
+      "bytes": 208804,
+      "content_type": "application/pdf",
+      "linked_by": [
+        {
+          "entity_set": "CommitteeMeetingDocuments",
+          "row_key": {
+            "CommitteeMeetingDocumentId": 317265
           }
         }
       ]

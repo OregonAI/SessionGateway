@@ -72,7 +72,7 @@ function copyChangedBy(change: (snapshot: FixtureSnapshot) => void): FixtureCopy
 // Every case begins with the pull of the committed snapshot, so they copy one database of it; the pull the case then
 // runs, after `changeIt()`, is the subject and is a real one (test/CLAUDE.md, "Database").
 const template = systemTemplate({
-  clockAt: "2026-08-01T17:00:00Z",
+  clockAt: "2026-08-05T17:00:00Z",
   documents: true,
   serverEnv: { MCP_RATE_LIMIT: "1000" },
 });

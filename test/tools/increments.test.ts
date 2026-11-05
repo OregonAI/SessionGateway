@@ -2,7 +2,7 @@
 // worker pulls the Session in full, the clock moves, rows appear in the fake OLIS, and an increment reads what
 // OLIS created or modified since. Each case builds its own system, because the clock and the rows are the thing
 // under test, except the cases of "Testimony's Agency": their increment is the subject and not the first pull, so
-// each copies the template of the fixture's pull at 2026-08-01 10:00 Pacific (test/CLAUDE.md, Templates). The embedder
+// each copies the template of the fixture's pull at 2026-08-05 10:00 Pacific (test/CLAUDE.md, Templates). The embedder
 // is the fake: nothing here is about how well a meaning ranks.
 //
 // The real rows are HB 3131's Testimony: 117165 (Oregon Climate and Agriculture Network, created 2025-01-17
@@ -281,12 +281,12 @@ describe("an increment and the OregonAI snapshot (ADR-0035, ADR-0039)", () => {
   });
 
   // Testimony's Agency (ADR-0047). The first pull of these cases is a copy of the template for the fixture at
-  // 2026-08-01 10:00 Pacific, when every row of the fixture exists; the increment at 12:00 is the subject. The made-up row
+  // 2026-08-05 10:00 Pacific, when every row of the fixture exists; the increment at 12:00 is the subject. The made-up row
   // a case adds and the row it amends are read by the increment (it asks for rows created or modified after 08:00, two
   // hours before the pull).
   describe("Testimony's Agency", () => {
-    const template = systemTemplate({ clockAt: "2026-08-01T17:00:00Z", documents: true });
-    const atTheIncrement = "2026-08-01T19:00:00Z";
+    const template = systemTemplate({ clockAt: "2026-08-05T17:00:00Z", documents: true });
+    const atTheIncrement = "2026-08-05T19:00:00Z";
     const boli = "bureau-of-labor-and-industries";
     const dhs = "department-of-human-services";
     // MADE UP: an Organization that no registry of the committed snapshot names, and the alias with which the changed
@@ -329,7 +329,7 @@ describe("an increment and the OregonAI snapshot (ADR-0035, ADR-0039)", () => {
     function addNewRow(system: System, organization: string): void {
       system.olis.addStrayDocuments({ [download(newRow)]: "testimony/117166.pdf" });
       system.olis.addRows("CommitteePublicTestimonies", [
-        { ...row(newRow, { CreatedDate: "2026-08-01T10:30:00", ModifiedDate: null }), Organization: organization },
+        { ...row(newRow, { CreatedDate: "2026-08-05T10:30:00", ModifiedDate: null }), Organization: organization },
       ]);
     }
 
@@ -411,7 +411,7 @@ describe("an increment and the OregonAI snapshot (ADR-0035, ADR-0039)", () => {
       // registry gives to the Bureau of Labor and Industries, so a match would give the row the Bureau and not the
       // Department (ADR-0047: a row whose Organization an increment changed keeps the Agency its earlier text matched).
       system.olis.amendRows("CommitteePublicTestimonies", (candidate) => candidate["CommTestId"] === heldRow, {
-        ModifiedDate: "2026-08-01T10:30:00",
+        ModifiedDate: "2026-08-05T10:30:00",
         Organization: madeUpOrganization,
       });
       copy.changeIt();
@@ -448,7 +448,7 @@ describe("an increment and the OregonAI snapshot (ADR-0035, ADR-0039)", () => {
       const before = await snapshotCommit(system, first);
       addNewRow(system, madeUpOrganization);
       system.olis.amendRows("CommitteePublicTestimonies", (candidate) => candidate["CommTestId"] === heldRow, {
-        ModifiedDate: "2026-08-01T10:30:00",
+        ModifiedDate: "2026-08-05T10:30:00",
       });
       copy.changeIt();
       system.clock.set(atTheIncrement);

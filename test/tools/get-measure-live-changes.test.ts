@@ -6,7 +6,7 @@
 // Every describe here changes what the fake OLIS says, so the read-only case (OLIS answering exactly as
 // the Index) is in get-measure-live.test.ts and a moved location is in get-measure-live-feed.test.ts.
 //
-// The pull and the read are at one clock (2026-08-01, after every row of the fixture exists), so with
+// The pull and the read are at one clock (2026-08-05, after every row of the fixture exists), so with
 // the fake OLIS as the pull left it, OLIS gives exactly what the Index holds. A case then changes what
 // the fake says, with rows MADE UP for the case. Each case has a system of its own, and is read with both
 // kinds of client. The pull is not the subject, so each case copies the run's template for this clock (test/CLAUDE.md,
@@ -17,9 +17,9 @@ import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.
 import { startCopiedSystem, type System } from "../support/system.ts";
 import { floorVoteRow, tuplesOf } from "../support/votes.ts";
 
-const clockAt = "2026-08-01T17:00:00Z";
-// 2026-08-01 10:00 in Oregon.
-const asOf = "2026-08-01T10:00:00-07:00";
+const clockAt = "2026-08-05T17:00:00Z";
+// 2026-08-05 10:00 in Oregon.
+const asOf = "2026-08-05T10:00:00-07:00";
 
 const unchanged = { status: "unchanged" } as const;
 

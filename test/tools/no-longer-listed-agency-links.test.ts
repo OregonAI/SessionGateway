@@ -2,7 +2,7 @@
 // find_measures, search's Agency filter and get_measure's same_links_as. A row two complete pulls in a row have not listed
 // leaves search, whatever the filters, and stays in every list, flagged.
 //
-// One system, as the feed stood on 2026-08-01 with its documents, is changed once: the feed stops listing SB 69's Enrolled
+// One system, as the feed stood on 2026-08-05 with its documents, is changed once: the feed stops listing SB 69's Enrolled
 // Version (its MeasureDocuments row, created 2025-05-05) and two complete pulls go by, a day apart. What both kinds of
 // client read before the change is kept and compared with what they read after it. The Bureau of Labor and Industries has
 // an Agency Link to SB 69's Enrolled Version through the chapters its changes reach (657B, 659A and 653) and through its
@@ -18,7 +18,7 @@ import type { StatuteLinks } from "../support/statute-links.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";
 import { stopListing } from "../support/unlisted-rows.ts";
 
-// The system serves the documents, which pulls the fixture's 280 files: seconds, more beside the other files' workers.
+// The system serves the documents, which pulls the fixture's 314 files: seconds, more beside the other files' workers.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 120_000 });
 
 const boli = "bureau-of-labor-and-industries";
@@ -64,7 +64,7 @@ async function readAll(client: ConnectedClient): Promise<Read> {
 
 beforeAll(async () => {
   system = await startCopiedSystem({
-    clockAt: "2026-08-01T17:00:00Z",
+    clockAt: "2026-08-05T17:00:00Z",
     documents: true,
     serverEnv: { MCP_RATE_LIMIT: "100000" },
   });
@@ -75,9 +75,9 @@ beforeAll(async () => {
     "MeasureDocuments",
     (row) => row["MeasurePrefix"] === "SB" && row["MeasureNumber"] === 69 && row["VersionDescription"] === "Enrolled",
   );
-  system.clock.set("2026-08-02T17:00:00Z");
+  system.clock.set("2026-08-06T17:00:00Z");
   await system.pullAgain();
-  system.clock.set("2026-08-03T17:00:00Z");
+  system.clock.set("2026-08-07T17:00:00Z");
   await system.pullAgain();
   for (const client of clients) after.set(client, await readAll(client));
 });

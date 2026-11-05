@@ -145,9 +145,9 @@ describe("the live status with OLIS answering", () => {
 //            211740  SHS    2025-05-20T08:00:00  Public Hearing and Work Session   created 2025-05-15
 // (The property that names the committee is spelled `CommitteCode` in the feed.) The fake OLIS serves only
 // the rows created by its clock's time.
-// 2026-08-01 10:00 in Oregon, after every row of the fixture exists: the pull and the read are at one clock,
+// 2026-08-05 10:00 in Oregon, after every row of the fixture exists: the pull and the read are at one clock,
 // so OLIS gives exactly what the Index holds (ticket #48, ADR-0038). Nothing is ahead on that day.
-const sameClock = "2026-08-01T17:00:00Z";
+const sameClock = "2026-08-05T17:00:00Z";
 
 describe("the live status with OLIS answering exactly as the Index", () => {
   let system: System;
@@ -186,7 +186,7 @@ describe("the live status with OLIS answering exactly as the Index", () => {
         expect(liveStatusOf(outcome)).toMatchObject({
           source: "olis",
           lookup_failed: false,
-          as_of: "2026-08-01T10:00:00-07:00",
+          as_of: "2026-08-05T10:00:00-07:00",
           location: { status: "unchanged" },
           history: { status: "unchanged" },
           floor_votes: { status: "unchanged" },

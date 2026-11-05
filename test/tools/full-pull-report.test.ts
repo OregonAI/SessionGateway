@@ -21,8 +21,8 @@ afterEach(async () => {
   for (const system of started.splice(0)) await system.stop();
 });
 
-// 2026-08-01 10:00 in Oregon: every row of the fixture exists by then (a history action is created in 2026).
-const clockAt = "2026-08-01T17:00:00Z";
+// 2026-08-05 10:00 in Oregon: every row of the fixture exists by then (a history action is created in 2026, and the newest Recording Log on 2026-08-04).
+const clockAt = "2026-08-05T17:00:00Z";
 
 async function start(): Promise<System> {
   const system = await startSystem({ clockAt });
@@ -70,7 +70,7 @@ const fixtureRows = {
   CommitteeAgendaItems: 36,
   MeasureDocuments: 25,
   MeasureAnalysisDocuments: 34,
-  CommitteeMeetingDocuments: 86,
+  CommitteeMeetingDocuments: 120,
   CommitteeProposedAmendments: 15,
   CommitteePublicTestimonies: 84,
   CommitteeMembers: 99,
@@ -91,7 +91,7 @@ describe("a full pull that is short of the feed's counts", () => {
     await expect(system.pullAgain()).rejects.toThrow(/counted 10.*read 9/);
 
     const report = system.buildReport();
-    expect(report).toMatchObject({ session: "2025R1", attempted_at: "2026-08-01T10:00:00-07:00" });
+    expect(report).toMatchObject({ session: "2025R1", attempted_at: "2026-08-05T10:00:00-07:00" });
     expect(report["pull"]).toMatchObject({ complete: false });
     const sets = setsOf(report);
     expect(Object.keys(sets).toSorted()).toEqual(Object.keys(fixtureRows).toSorted());
@@ -115,7 +115,7 @@ describe("a full pull that is short in one set other than the first", () => {
       const system = await start();
       const before = await asOfSeenByAgents(system);
       system.olis.withholdLastRows(1, shortSet);
-      system.clock.set("2026-08-02T17:00:00Z");
+      system.clock.set("2026-08-06T17:00:00Z");
 
       await expect(system.pullAgain()).rejects.toThrow(
         new RegExp(
@@ -144,7 +144,7 @@ describe("a full pull that matches the feed's counts", () => {
 
     const report = system.buildReport();
 
-    expect(report).toMatchObject({ session: "2025R1", as_of: "2026-08-01T10:00:00-07:00" });
+    expect(report).toMatchObject({ session: "2025R1", as_of: "2026-08-05T10:00:00-07:00" });
     expect(report["pull"]).toMatchObject({ complete: true });
     const sets = setsOf(report);
     expect(Object.keys(sets).toSorted()).toEqual(Object.keys(fixtureRows).toSorted());
@@ -219,7 +219,7 @@ describe("the sets the schedule reads (ticket #67)", () => {
       const system = await startWithMadeUpFeed();
       const counted = madeUpFeed[shortSet].length;
       system.olis.withholdLastRows(1, shortSet);
-      system.clock.set("2026-08-02T17:00:00Z");
+      system.clock.set("2026-08-06T17:00:00Z");
 
       await expect(system.pullAgain()).rejects.toThrow(
         new RegExp(`Short read of ${shortSet}: OLIS counted ${counted}.*read ${counted - 1}`),
@@ -236,16 +236,16 @@ describe("the sets the schedule reads (ticket #67)", () => {
     // `stopListing` moves a row of the fake's feed, which `strayRows` are not part of, so the rows are added after the first pull.
     const system = await start();
     system.olis.addRows("ConveneTimes", madeUpFeed.ConveneTimes);
-    system.clock.set("2026-08-02T17:00:00Z");
+    system.clock.set("2026-08-06T17:00:00Z");
     await system.pullAgain();
     expect(setsOf(system.buildReport())["ConveneTimes"]).toMatchObject({ counted: 2, listed: 2, no_longer_listed: 0 });
 
     stopListing(system.olis, "ConveneTimes", (row) => row["Chamber"] === "S");
-    system.clock.set("2026-08-03T17:00:00Z");
+    system.clock.set("2026-08-07T17:00:00Z");
     await system.pullAgain();
     expect(setsOf(system.buildReport())["ConveneTimes"]).toMatchObject({ counted: 1, listed: 2, no_longer_listed: 0 });
 
-    system.clock.set("2026-08-04T17:00:00Z");
+    system.clock.set("2026-08-08T17:00:00Z");
     await system.pullAgain();
     expect(setsOf(system.buildReport())["ConveneTimes"]).toMatchObject({ counted: 1, listed: 1, no_longer_listed: 1 });
   });
@@ -299,7 +299,7 @@ describe("FloorLetters (ticket #64)", () => {
   it("refuses a pull that is short in FloorLetters alone, and names it", async () => {
     const system = await startWithLetters();
     system.olis.withholdLastRows(1, "FloorLetters");
-    system.clock.set("2026-08-02T17:00:00Z");
+    system.clock.set("2026-08-06T17:00:00Z");
 
     await expect(system.pullAgain()).rejects.toThrow(/Short read of FloorLetters: OLIS counted 2.*read 1/);
 

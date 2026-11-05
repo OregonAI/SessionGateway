@@ -20,9 +20,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient, type ToolOutcome } from "../support/mcp-clients.ts";
 import { startCopiedSystemWith, type System } from "../support/system.ts";
 
-const clockAt = "2026-08-01T17:00:00Z";
+const clockAt = "2026-08-05T17:00:00Z";
 
-// A case that builds its own system and serves the documents pulls the fixture's 280 files, about four
+// A case that builds its own system and serves the documents pulls the fixture's 314 files, about four
 // seconds on its own and more with the other files' workers running beside it (the default is five).
 vi.setConfig({ testTimeout: 60_000 });
 const root = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads";

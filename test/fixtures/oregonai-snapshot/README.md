@@ -17,16 +17,20 @@ ERF PR #455, which re-validated the agency registry against statute):
 - 42 ORS chapters, of 531 with a section: every chapter that a document or a Measure of the 2025R1
   fixture cites in one of the forms listed under "How the list was taken". Each keeps all its sections
   (4,693 of 39,002), so a range can be expanded inside it.
-- 129 Agencies, of 231 registry rows: the 36 whose name or alias the fixture's texts contain, every
+- 131 Agencies, of 231 registry rows: the 41 whose name or alias the fixture's texts contain, every
   Agency a rule of which implements a section of a kept chapter, and the parent of each Agency kept
   (ADR-0029), so that no `parent` names a row the file lacks. The second kind is most of them: chapter
-  192 (public records) alone has 63, because many agencies' rules implement it. Of the 129, 65 have a
+  192 (public records) alone has 63, because many agencies' rules implement it. Of the 131, 65 have a
   parent (27 `part_of`, 36 `administered_by` and 2 `undetermined` relations). The parents of 62 of them
   were already kept by the first two rules; the other three (the Environmental Quality Commission, the
   State Board of Forestry and the Water Resources Commission, the statutory bodies of three Departments
   the fixture keeps) are kept by the third rule alone. (The State Fish and Wildlife Commission, the fourth
   body of this kind until ticket #54, is now named in the text of HB 3124.) One chain is
   two levels deep: Early Learning Division → Oregon Department of Education → State Board of Education.
+  Ticket #124's Recording Logs name five Agencies more (the Department of Corrections, the Department of
+  Environmental Quality, the Higher Education Coordinating Commission's Office of Student Access and
+  Completion, the Office of the Governor and Southern Oregon University); the first three were already kept
+  by the chapter rule, so the re-trim adds two rows, neither with a parent.
   The whole registry has 94 rows with a parent and 110 relations (73 `administered_by`, 33 `part_of`, 4
   `undetermined`), 10 chains two levels deep, and 8 rows under two bodies, which get no parent (the build
   names them on stderr; the fixture keeps none of them).

@@ -381,7 +381,7 @@ describe.for(eras)("find_measures lists the newest evidence, for a %s client", (
 //   derived, the Department of Human Services: the same 60 amendments, each reaching chapter 659A through its sub-unit
 //     (department-of-human-services-aging-and-people-with-disabilities-and-developmental-disabilities, 94 characters), so
 //     that the link says `through` it.
-// The clock is 2026-08-01.
+// The clock is 2026-08-05.
 describe.for(eras)("find_measures stays inside a page's size, for a %s client", (era) => {
   const longest = "Higher Education Coordinating Commission, Office of Community Colleges and Workforce Development";
   const longestSlug = "higher-education-coordinating-commission-office-of-community-colleges-and-workforce-development";
@@ -410,7 +410,7 @@ describe.for(eras)("find_measures stays inside a page's size, for a %s client", 
   }));
 
   const template = systemTemplate({
-    clockAt: "2026-08-01T17:00:00Z",
+    clockAt: "2026-08-05T17:00:00Z",
     documents: true,
     serverEnv: { MCP_RATE_LIMIT: "1000" },
     olis: {
@@ -497,7 +497,7 @@ describe.for(eras)("find_measures stays inside a page's size, for a %s client", 
     const snapshot = madeUpDepartmentSnapshot();
     try {
       const system = await startCopiedSystem({
-        clockAt: "2026-08-01T17:00:00Z",
+        clockAt: "2026-08-05T17:00:00Z",
         documents: true,
         snapshot: snapshot.path,
         serverEnv: { MCP_RATE_LIMIT: "1000" },
@@ -556,7 +556,7 @@ describe.for(eras)("find_measures counts a page across the groups, for a %s clie
   }));
 
   const template = systemTemplate({
-    clockAt: "2026-08-01T17:00:00Z",
+    clockAt: "2026-08-05T17:00:00Z",
     documents: true,
     serverEnv: { MCP_RATE_LIMIT: "1000" },
     olis: {

@@ -18,8 +18,8 @@ afterEach(async () => {
   for (const system of started.splice(0)) await system.stop();
 });
 
-// 2026-08-01 10:00 in Oregon: the committee members were all created before it.
-const clockAt = "2026-08-01T17:00:00Z";
+// 2026-08-05 10:00 in Oregon: the committee members were all created before it.
+const clockAt = "2026-08-05T17:00:00Z";
 
 // MADE UP: a member of a task force who is no Legislator, as the cache's JOCSS has (olis-odata.md gotcha 5). Added after the first pull with `addRows`.
 const taskForceMember = {

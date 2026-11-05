@@ -36,6 +36,14 @@ point at, and every document they link.
   on 2026-10-31), because the cache's 32 such members sit in JTFBHA (22) and JOCSS (10), two task
   forces that are not among the 12 committees. A Measure added later whose committee has one brings
   the member in with it.
+- **Recording Logs** (ticket #124). A Recording Log names no Measure, so no row about a Measure leads
+  to it. The build takes it from its Meeting, as a rule of its own: every `CommitteeMeetingDocuments`
+  row of `DocumentType` "Recording Log" whose Session, Committee and MeetingDate are those of a
+  Meeting the slice holds, 34 rows for the 36 meetings (HHED 2025-02-13 and SHS 2025-05-22 have none
+  in the full cache; no Meeting has two). The rows are in `feed/CommitteeMeetingDocuments.json` and
+  the files in `documents/committee-meeting-documents/`, each the exact bytes OLIS served, so the
+  PDF's link annotations (the Invintus event ID and each turn's `startStreamAt`) survive. Adding a
+  Measure whose Meetings are new brings those Meetings' logs in with it.
 - **Not in the slice.** `CommitteeStaffMembers`, `ConveneTimes` and `LegislativeSessions`: no row
   about a Measure points at them. `verify.ts` still knows what refers to what in the first two.
 - **Documents.** Versions and Printed Amendments, analysis documents (Fiscal and Revenue Impact
@@ -81,7 +89,10 @@ one run on 2026-10-29 (Pacific) between 23:15 and 23:31: one request at a time, 
 apart, none retried, none failed, 65,141,256 bytes. A second run, for ticket #54 (HB 3723 and HB 3124, approved by the
 owner under the Acceptable Use Agreement, ADR-0005), downloaded the two Introduced Versions that the first run's
 278 did not include, on 2026-11-01 (Pacific) between 21:01:31 and 21:01:35 (05:01:31 to 05:01:35 UTC on 11-02): 2
-documents, 78,323 bytes (29,097 and 49,226), none retried, none failed; 278 were reused from the download cache. Each download is kept in
+documents, 78,323 bytes (29,097 and 49,226), none retried, none failed; 278 were reused from the download cache. A third run, for ticket #124
+(the Recording Logs of the 36 meetings; approved by the owner under the Acceptable Use Agreement, ADR-0005, ADR-0039),
+downloaded 34 Recording Logs on 2026-11-05 (Pacific) between 00:20:10 and 00:21:47 (08:20:10 to 08:21:47 UTC): 34 documents,
+5,478,376 bytes, none retried, none failed; 280 were reused from the download cache. Each download is kept in
 `.cache/olis-2025R1/downloads/` with its `source_url` and retrieval time beside it and is never
 fetched again. Sample files in `documents-sample-1/` and `-2/` were used only to choose Measures.
 

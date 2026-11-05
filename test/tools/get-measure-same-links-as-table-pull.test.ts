@@ -27,7 +27,7 @@ import {
 } from "../support/statutes-affected-table.ts";
 import { startSystem, type System } from "../support/system.ts";
 
-// The system serves the documents, which pulls the fixture's 280 files: seconds, more beside the other files' workers.
+// The system serves the documents, which pulls the fixture's 314 files: seconds, more beside the other files' workers.
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 type VersionEntry = {
@@ -48,7 +48,7 @@ const clients: ConnectedClient[] = [];
 
 beforeAll(async () => {
   system = await startSystem({
-    clockAt: "2026-08-01T17:00:00Z",
+    clockAt: "2026-08-05T17:00:00Z",
     documents: true,
     serverEnv: { MCP_RATE_LIMIT: "1000" },
     statutesAffectedTableUrl: tableUrlOn,
@@ -96,7 +96,7 @@ describe("same_links_as beside a made-up Statutes Affected Table", () => {
   it("still says same_links_as once the A-Engrossed Version has a table block and the Enrolled Version has none: their links are the same (a made-up table)", async () => {
     // MADE UP: two rows of SB 69 at level A ("653.616 A §8 SB 69 A": ORS 653.616 amended in SECTION 8).
     system.olis.serveDocument(tablePath, madeUpTable(["653.616 A §8 SB 69 A", "659A.159 A §4 SB 69 A"]));
-    system.clock.set("2026-08-02T17:00:00Z");
+    system.clock.set("2026-08-06T17:00:00Z");
     await system.pullAgain();
     expect(system.buildReport()["statutes_affected_table"]).toMatchObject({ outcome: "loaded", held: true });
 
@@ -153,7 +153,7 @@ describe("same_links_as beside a table block of the Version's own", () => {
 
   beforeAll(async () => {
     own = await startSystem({
-      clockAt: "2026-08-01T17:00:00Z",
+      clockAt: "2026-08-05T17:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "1000" },
       statutesAffectedTableUrl: tableUrlOn,
@@ -167,7 +167,7 @@ describe("same_links_as beside a table block of the Version's own", () => {
     });
     for (const era of eras) ownClients.push(await connectClient(era, own.handler));
     own.olis.serveDocument(tablePath, madeUpTable(["653.616 A §8 SB 69 B"]));
-    own.clock.set("2026-08-02T17:00:00Z");
+    own.clock.set("2026-08-06T17:00:00Z");
     await own.pullAgain();
   });
 

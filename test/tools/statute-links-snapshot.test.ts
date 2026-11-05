@@ -60,7 +60,7 @@ function snapshotCopy(): FixtureCopy {
 const templateAt = (clockAt: string): SystemTemplate =>
   systemTemplate({ clockAt, documents: true, serverEnv: { MCP_RATE_LIMIT: "1000" } });
 
-async function startAt(snapshot: string, clockAt = "2026-08-01T17:00:00Z"): Promise<System> {
+async function startAt(snapshot: string, clockAt = "2026-08-05T17:00:00Z"): Promise<System> {
   const system = await templateAt(clockAt).start({ snapshot });
   cleanups.push(() => system.stop());
   return system;

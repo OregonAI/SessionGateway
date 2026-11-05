@@ -47,12 +47,12 @@ const introduced = "version-2025r1-hb3027-introduced";
 const madeUpRows = ["345.010 to)", "345.340 ) A §2 HB 3027"];
 
 /** The second pull, which loads the made-up table, and the days after it. */
-const secondPull = "2026-08-02T17:00:00Z";
-const secondPullPacific = "2026-08-02T10:00:00-07:00";
-const thirdPull = "2026-08-03T17:00:00Z";
-const fourthPull = "2026-08-04T17:00:00Z";
-const fifthPull = "2026-08-05T17:00:00Z";
-const sixthPull = "2026-08-06T17:00:00Z";
+const secondPull = "2026-08-06T17:00:00Z";
+const secondPullPacific = "2026-08-06T10:00:00-07:00";
+const thirdPull = "2026-08-07T17:00:00Z";
+const fourthPull = "2026-08-08T17:00:00Z";
+const fifthPull = "2026-08-09T17:00:00Z";
+const sixthPull = "2026-08-10T17:00:00Z";
 
 /** Bytes that are no table (no PDF at all), which the worker refuses and remembers by their hash. */
 const placeholder = new TextEncoder().encode("this is a placeholder, not a table");
@@ -78,7 +78,7 @@ async function openRig(): Promise<Rig> {
   });
   cleanups.push(snapshot.remove);
   const system = await startSystem({
-    clockAt: "2026-08-01T17:00:00Z",
+    clockAt: "2026-08-05T17:00:00Z",
     documents: true,
     snapshot: snapshot.path,
     statutesAffectedTableUrl: tableUrlOn,

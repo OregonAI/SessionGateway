@@ -31,9 +31,9 @@ vi.setConfig({ testTimeout: 60_000 });
 let system: System;
 
 beforeAll(async () => {
-  // 2026-08-01 10:00 in Oregon: every row of the fixture exists by then, so the pull fetches all 280 documents and the table.
+  // 2026-08-05 10:00 in Oregon: every row of the fixture exists by then, so the pull fetches all 314 documents and the table.
   system = await startSystem({
-    clockAt: "2026-08-01T17:00:00Z",
+    clockAt: "2026-08-05T17:00:00Z",
     documents: true,
     statutesAffectedTableUrl: tableUrlOn,
     serverEnv: { MCP_RATE_LIMIT: "1000" },
@@ -166,8 +166,8 @@ describe.for(eras)("get_measure's Statutes Affected Table for a %s client", (era
 
       expect(table?.source_url).toBe(tableUrlOn(system.olis.origin));
       expect(table?.source_url.endsWith(tablePath)).toBe(true);
-      // The pull began at 2026-08-01 10:00 Pacific, and retrieved the table then.
-      expect(table?.retrieved_at).toBe("2026-08-01T10:00:00-07:00");
+      // The pull began at 2026-08-05 10:00 Pacific, and retrieved the table then.
+      expect(table?.retrieved_at).toBe("2026-08-05T10:00:00-07:00");
       expect(table?.lists_measure).toBe(true);
       expect(table?.other_entries).toEqual([]);
     });
