@@ -797,6 +797,14 @@
       "parent": null
     },
     {
+      "slug": "office-of-the-governor",
+      "name": "Office of the Governor",
+      "aliases": [],
+      "oarChapter": null,
+      "dasAgencyNumber": "121",
+      "parent": null
+    },
+    {
       "slug": "office-of-training-investigations-and-safety",
       "name": "Office of Training, Investigations and Safety",
       "aliases": [
@@ -1182,6 +1190,16 @@
       "oarChapter": "165",
       "dasAgencyNumber": null,
       "parent": "secretary-of-state"
+    },
+    {
+      "slug": "southern-oregon-university",
+      "name": "Southern Oregon University",
+      "aliases": [
+        "SOU"
+      ],
+      "oarChapter": "573",
+      "dasAgencyNumber": null,
+      "parent": null
     },
     {
       "slug": "state-board-of-education",
