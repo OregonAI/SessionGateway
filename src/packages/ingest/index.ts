@@ -62,7 +62,8 @@ import {
 import { loadSnapshot } from "#/packages/oregonai-snapshot/index.ts";
 import { extractPdfText, type ExtractedPdf } from "#/packages/pdf-text/index.ts";
 import { searchEntryOf } from "#/packages/search/documents.ts";
-import { splitPassages } from "#/packages/search/passages.ts";
+import { speakerTurnSpans } from "#/packages/recording-log/index.ts";
+import { splitAroundTurns, splitPassages } from "#/packages/search/passages.ts";
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, pacificTimestampOf, type Timestamp } from "#/packages/time/pacific.ts";
@@ -398,6 +399,12 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
     }
     stored.add(link.id);
     documentsFetched += 1;
+  }
+  // A Recording Log whose turns are stored and none of whose passages is a turn's is cut again around its turns, from the
+  // text and the turns the store holds (ticket #127, ADR-0052): a log just read, one stored before the passages were linked,
+  // one whose index was stored again. Nothing is fetched, and every line of the text stays in one passage.
+  for (const log of writer.recordingLogsWithoutTurnPassages(config.session)) {
+    writer.replacePassages(log.id, splitAroundTurns(log.text, speakerTurnSpans(log.text, log.turns), deps.embedder));
   }
   return documentsFetched;
 }

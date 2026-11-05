@@ -11,6 +11,7 @@ import {
 import { findCitations, type Citation } from "#/packages/domain/citations.ts";
 import { documentKinds, type AmendmentId, type DocumentId } from "#/packages/domain/documents.ts";
 import { measureIdOf, type SessionKey } from "#/packages/domain/index.ts";
+import type { SearchedSpeakerTurn } from "#/packages/domain/speaker-turns.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
 import { reciprocalRankFusion } from "#/packages/search/ranking.ts";
 import {
@@ -102,6 +103,43 @@ export const searchInput = z.object({
     .describe(`How many hits to return, at most. ${DEFAULT_LIMIT} by default, ${MAX_LIMIT} at most.`),
 });
 
+/** A hit that is a speaker turn of a Recording Log (ticket #127): who spoke, at which Meeting, under which Agenda item, when. */
+const turnOutput = z
+  .object({
+    speaker: z.string().describe("The speaker as the Recording Log writes it: a name and title."),
+    legislator_code: z
+      .string()
+      .nullable()
+      .describe(
+        "The Legislator Code of the Legislator the line names, as the feed writes it, or null for anyone else (a witness, staff): the speaker text is then all there is.",
+      ),
+    legislator: z
+      .object({
+        id: z.string().describe("The Legislator's id, the same for every Legislator Code that names them."),
+        name: z.string().describe("The Legislator's first and last name."),
+      })
+      .nullable()
+      .describe("The Legislator that code names, or null."),
+    meeting: z.string().nullable().describe("The id of the Meeting the Recording Log belongs to."),
+    agenda_item: z
+      .string()
+      .nullable()
+      .describe("The log's most recent Agenda item line before this turn, as logged, or null before the first."),
+    measure_id: z
+      .string()
+      .nullable()
+      .describe("The Measure that Agenda item names, when the index holds it; otherwise null."),
+    timecode: z.string().describe('The timecode as logged, such as "00:02:49".'),
+    offset_seconds: z.number().describe("The turn's second on the recording's clock."),
+    player_link: z
+      .string()
+      .describe("The Legislature's own player at this turn's second, built from the log's own player link."),
+  })
+  .nullable()
+  .describe(
+    "Present (not null) when the hit is one speaker turn of a Recording Log: the id is the log's, and the turn says who spoke, to which Meeting, under which Agenda item, and where to hear it. Null for every other hit. A log's turns are hits of their own, one for each turn that matched, and the log's other lines are a hit with no turn.",
+  );
+
 const hit = z.object({
   id: z
     .string()
@@ -123,6 +161,7 @@ const hit = z.object({
       "The date it is filed under, in Pacific time with its UTC offset: the start of the meeting it was posted to or for, else when OLIS created its row.",
     ),
   snippet: z.string().describe("About 300 characters of the passage that matched."),
+  turn: turnOutput,
   source_url: z.string().describe("Where the Legislature publishes the document."),
   found_by: z
     .array(z.enum(["citation", "keyword", "embedding"]))
@@ -164,10 +203,22 @@ const foundByOrder: readonly FoundBy[] = ["citation", "keyword", "embedding"];
 /** The id a hit carries: a document's, or for a posting its Proposed Amendment's. */
 type HitId = DocumentId | AmendmentId;
 
+/**
+ * What a hit is ranked as: the document's id, or for a speaker turn of a Recording Log the log's id and the turn's position
+ * (ticket #127), so each turn that matches is a hit of its own and the log's other lines are one more.
+ */
+type HitKey = string;
+
+function keyOf(nodeId: HitId, turnPosition: number | null): HitKey {
+  return turnPosition === null ? nodeId : `${nodeId}#turn-${String(turnPosition)}`;
+}
+
 /** A document a hit is made from, the passage its snippet is cut from, and how it was found. */
 type Candidate = {
   documentId: DocumentId;
   passageId: number | null;
+  /** The position of the speaker turn the passage is the lines of (ticket #127), or null: a turn is a hit of its own, so the same document may have several. */
+  turnPosition: number | null;
   /** Where the citation that named the document starts in its text, when a citation did. */
   citedAt?: number;
   foundBy: Set<FoundBy>;
@@ -222,14 +273,15 @@ function citedCandidates(
   index: SearchIndexReader,
   citations: readonly Citation[],
   filter: SearchFilter,
-): Map<HitId, Candidate> {
-  const cited = new Map<HitId, Candidate>();
+): Map<HitKey, Candidate> {
+  const cited = new Map<HitKey, Candidate>();
   for (const citation of citations) {
     for (const found of documentsCitedBy(index, citation, filter)) {
       if (cited.has(found.nodeId)) continue;
       cited.set(found.nodeId, {
         documentId: found.documentId,
         passageId: found.passageId,
+        turnPosition: null,
         ...(found.citedAt === undefined ? {} : { citedAt: found.citedAt }),
         foundBy: new Set(["citation"]),
       });
@@ -244,14 +296,16 @@ function keywordCandidates(
   match: string | undefined,
   filter: SearchFilter,
   keywordOnly: boolean,
-): Map<HitId, Candidate> {
-  const found = new Map<HitId, Candidate>();
+): Map<HitKey, Candidate> {
+  const found = new Map<HitKey, Candidate>();
   if (match === undefined) return found;
   for (const passage of index.keyword(match, filter, CANDIDATE_PASSAGES, keywordOnly)) {
-    if (found.has(passage.nodeId)) continue;
-    found.set(passage.nodeId, {
+    const key = keyOf(passage.nodeId, passage.turnPosition);
+    if (found.has(key)) continue;
+    found.set(key, {
       documentId: passage.documentId,
       passageId: passage.passageId,
+      turnPosition: passage.turnPosition,
       foundBy: new Set(["keyword"]),
     });
   }
@@ -271,7 +325,7 @@ function keywordRankings(
   terms: readonly string[],
   phrases: readonly string[],
   filter: SearchFilter,
-): { everyWord: Map<HitId, Candidate>; someWords: Map<HitId, Candidate> } {
+): { everyWord: Map<HitKey, Candidate>; someWords: Map<HitKey, Candidate> } {
   const everyWord = keywordCandidates(index, matchExpressionOf(terms, phrases), filter, false);
   const someWords = keywordCandidates(index, looseMatchExpressionOf(terms), filter, true);
   for (const id of everyWord.keys()) someWords.delete(id);
@@ -289,8 +343,8 @@ async function embeddingCandidates(
   query: string,
   terms: readonly string[],
   filter: SearchFilter,
-): Promise<Map<HitId, Candidate>> {
-  const found = new Map<HitId, Candidate>();
+): Promise<Map<HitKey, Candidate>> {
+  const found = new Map<HitKey, Candidate>();
   if (terms.length === 0) return found;
   const vectors = deps.vectors.current(asOf);
   if (vectors.index.size === 0) return found;
@@ -306,6 +360,7 @@ async function embeddingCandidates(
     found.set(nodeId, {
       documentId: vectors.documents.documentIds[passage.documentIndex] as DocumentId,
       passageId: passage.passageId,
+      turnPosition: null,
       foundBy: new Set(["embedding"]),
     });
   }
@@ -321,12 +376,12 @@ async function embeddingCandidates(
  * way it was found.
  */
 function orderedCandidates(
-  cited: ReadonlyMap<HitId, Candidate>,
-  byEveryWord: ReadonlyMap<HitId, Candidate>,
-  byEmbedding: ReadonlyMap<HitId, Candidate>,
-  bySomeWords: ReadonlyMap<HitId, Candidate>,
+  cited: ReadonlyMap<HitKey, Candidate>,
+  byEveryWord: ReadonlyMap<HitKey, Candidate>,
+  byEmbedding: ReadonlyMap<HitKey, Candidate>,
+  bySomeWords: ReadonlyMap<HitKey, Candidate>,
 ): Candidate[] {
-  const ranked = new Map<HitId, Candidate>(cited);
+  const ranked = new Map<HitKey, Candidate>(cited);
   for (const id of reciprocalRankFusion([[...byEveryWord.keys()], [...byEmbedding.keys()], [...bySomeWords.keys()]])) {
     const sides = [byEveryWord.get(id), byEmbedding.get(id), bySomeWords.get(id)].filter(
       (candidate): candidate is Candidate => candidate !== undefined,
@@ -341,10 +396,25 @@ function orderedCandidates(
     ranked.set(id, {
       documentId: first.documentId,
       passageId: first.passageId,
+      turnPosition: first.turnPosition,
       foundBy: new Set(sides.flatMap((side) => [...side.foundBy])),
     });
   }
   return [...ranked.values()];
+}
+
+function turnShown(turn: SearchedSpeakerTurn): NonNullable<SearchOutput["results"][number]["turn"]> {
+  return {
+    speaker: turn.speaker,
+    legislator_code: turn.legislatorCode,
+    legislator: turn.legislator,
+    meeting: turn.meeting,
+    agenda_item: turn.agendaItem,
+    measure_id: turn.measureId,
+    timecode: turn.timecode,
+    offset_seconds: turn.offsetSeconds,
+    player_link: turn.playerLink,
+  };
 }
 
 /** `asOf` is the index's As of that the envelope read for the call: it says which state of the index the vectors are of. */
@@ -385,6 +455,7 @@ export async function search(
         date: details.date,
         // A hit that a citation named is shown round the citation; any other round the words that matched.
         snippet: snippetOf(details.passageText, candidate.foundBy.has("citation") ? citationTerms : terms),
+        turn: details.turn === null ? null : turnShown(details.turn),
         source_url: details.sourceUrl,
         found_by: foundByOrder.filter((how) => candidate.foundBy.has(how)),
       };

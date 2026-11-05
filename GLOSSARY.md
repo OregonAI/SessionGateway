@@ -74,10 +74,11 @@ _Avoid_: status, unqualified; live data
 
 **Passage**:
 One slice of a Document's text that search indexes and embeds: whole lines, at most 510 tokens by the embedding model's own count, with no overlap with the next. A Passage is a slice of the Document's text, so what a hit shows is exactly what the Document says (ADR-0025).
+A Recording Log with a Speaker-turn index is cut around its turns (ADR-0053): each Speaker turn's lines are a Passage of their own, linked to the turn by its position, and the text between the turns is cut as any text is, so every line is in exactly one Passage.
 _Avoid_: chunk, Part (a Part is what `get_document` serves)
 
 **Hit**:
-One result of `search`: a Document, or for a Proposed Amendment the amendment, with its id, kind, title, Measure, date, a snippet of the Passage that matched, its `source_url`, and how it was found (`found_by`).
+One result of `search`: a Document, or for a Proposed Amendment the amendment, with its id, kind, title, Measure, date, a snippet of the Passage that matched, its `source_url`, and how it was found (`found_by`). A Speaker turn of a Recording Log that matched is a Hit of its own (ADR-0053): the log's id, and a `turn` with the speaker, Meeting, Agenda item, Measure, timecode and Player link.
 _Avoid_: result, match
 
 **Exact citation**:

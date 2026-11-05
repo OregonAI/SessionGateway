@@ -21,7 +21,10 @@
 //   as "McDonald"). The log's motion line
 //   "MOTION: VICE-CHAIR FINGER MCDONALD MOVES ADOPTION OF COMMITTEE RULES" (00:00:52) is not a turn: its words are in the log's
 //   other text;
-// - HB 3131 is heard at both meetings. In 288741 its Agenda item is "01:15:48 HB 3131 - Public Hearing" and the first turn
+// - HB 3131 is taken up at three HALNRW meetings, the two hearings and a work session (feed/CommitteeMeetings.json lists the
+//   committee's three: 2025-01-22, 2025-01-27 and 2025-02-12, and the third's log, 292588, has "00:08:43 HB 3131 - Work
+//   Session" and "00:08:44 Co-Chair Helm", 524 s, event 2025021177 from the raw PDF's /URI: `startStreamAt=524` with
+//   `/Rect[ 69.75 637.21 122.29 651.01]`; no other log of the 34 names HB 3131 on an Agenda item line). In 288741 its Agenda item is "01:15:48 HB 3131 - Public Hearing" and the first turn
 //   after it is "01:15:49 Co-Chair Helm" (4549 s, Rep. Ken Helm, "Rep Helm"). In 289259 the item is "00:00:27 HB 3131 - Public
 //   Hearing" and the first turn is "00:00:28 Co-Chair Owens" (28 s, Rep. Mark Owens, "Rep Owens");
 // - HB 3124 and HB 3723 are in the index (feed/Measures.json) and no log of the fixture names either.
@@ -185,6 +188,22 @@ describe.for(eras)("speaker turns in search and get_measure for a %s client", (e
           legislator_code: "Rep Owens",
           legislator: { id: expect.stringMatching(/^legislator-2025r1-/) as unknown, name: "Mark Owens" },
           player_link: player("2025011111", 28),
+        },
+      },
+      {
+        meeting_id: "meeting-2025r1-halnrw-2025-02-12-0800",
+        committee_code: "HALNRW",
+        meeting_date: "2025-02-12T08:00:00-08:00",
+        recording_log_id: "recording-log-2025r1-292588",
+        event_id: "2025021177",
+        agenda_item: "HB 3131 - Work Session",
+        first_turn: {
+          timecode: "00:08:44",
+          offset_seconds: 524,
+          speaker: "Co-Chair Helm",
+          legislator_code: "Rep Helm",
+          legislator: { id: expect.stringMatching(/^legislator-2025r1-/) as unknown, name: "Ken Helm" },
+          player_link: player("2025021177", 524),
         },
       },
     ]);

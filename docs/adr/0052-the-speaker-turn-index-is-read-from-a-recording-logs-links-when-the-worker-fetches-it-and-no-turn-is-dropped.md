@@ -42,7 +42,7 @@ Spec #123, stage 1, asks for every speaker turn of a committee hearing to be fin
 
 ## Turns and Passages
 
-Turns are stored in their own table (`speaker_turn`) for structure: a turn has a second, a speaker, a Legislator, an Agenda item, a Measure and a player link, which a Passage has no place for, and `get_document` and `meetings` read them back whole and in media-clock order. They are not Passages in this ticket. Ticket #127 makes each turn a Keyword-only Passage of its Recording Log, linked to its turn, so that `search` finds a turn by its words through the existing keyword path and needs no second path for turns. The turn table stays the structure and the Passage is the way in; nothing here builds it.
+Turns are stored in their own table (`speaker_turn`) for structure: a turn has a second, a speaker, a Legislator, an Agenda item, a Measure and a player link, which a Passage has no place for, and `get_document` and `meetings` read them back whole and in media-clock order. They are not Passages in this ticket. Ticket #127 makes each turn a Keyword-only Passage of its Recording Log, linked to its turn, so that `search` finds a turn by its words through the existing keyword path and needs no second path for turns. The turn table stays the structure and the Passage is the way in; nothing here builds it. Ticket #127 did, in ADR-0053.
 
 ## Consequences
 

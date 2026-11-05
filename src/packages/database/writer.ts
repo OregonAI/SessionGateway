@@ -25,7 +25,7 @@ import type {
 } from "#/packages/domain/statute-links.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceToJson } from "./lib/agency-evidence.ts";
-import { storeSpeakerTurnIndex } from "./lib/speaker-turns.ts";
+import { readLogsWithoutTurnPassages, replacePassagesOf, storeSpeakerTurnIndex } from "./lib/speaker-turns.ts";
 import { openWriteConnection } from "./lib/connection.ts";
 import {
   readAsOf,
@@ -356,6 +356,19 @@ export type IndexWriter = {
   storeSpeakerTurnIndex(record: SpeakerTurnIndexRecord): void;
   /** The stored Recording Logs of the Session that have no speaker-turn index yet (a gap counts as one): the ones to fetch again to read their links. */
   recordingLogsWithoutIndex(session: SessionKey): Set<DocumentId>;
+  /**
+   * The stored Recording Logs of the Session that have an index with turns and no passage that is a turn's (ticket #127, ADR-0052):
+   * a log stored before schema step 3, one whose links were just read, one whose index was stored again. Each comes with its
+   * text and its turns' timecodes and speakers in the order of the log: what the worker cuts the text around, with no fetch.
+   */
+  recordingLogsWithoutTurnPassages(
+    session: SessionKey,
+  ): { id: DocumentId; text: string; turns: { timecode: string; speaker: string }[] }[];
+  /**
+   * Replaces a stored document's passages with these, in one transaction (the text stays): a passage with a `turn` is the
+   * turn's lines, linked to it by its position. Only a Keyword-only document has its passages replaced this way, so no vector moves.
+   */
+  replacePassages(document: DocumentId, passages: readonly Passage[]): void;
   /**
    * What the stored readings of the Session's Recording Logs say for the build report: the logs left with no index (no event
    * ID, or conflicting ones) and the logs some of whose pages were read by timecode, each with its source URL.
@@ -900,7 +913,7 @@ export function openIndexWriter(path: string): IndexWriter {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     const insertPassage = database.prepare(
-      "INSERT INTO passage (document_id, ordinal, start_offset, end_offset, text_hash) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO passage (document_id, ordinal, start_offset, end_offset, text_hash, turn_position) VALUES (?, ?, ?, ?, ?, ?)",
     );
     const insertPassageText = database.prepare("INSERT INTO passage_fts (rowid, text) VALUES (?, ?)");
     const insertCitation = database.prepare(
@@ -960,7 +973,14 @@ export function openIndexWriter(path: string): IndexWriter {
         search.entry.keywordOnly ? 1 : 0,
       );
       search.passages.forEach((passage, ordinal) => {
-        const inserted = insertPassage.run(document.id, ordinal, passage.start, passage.end, passage.hash);
+        const inserted = insertPassage.run(
+          document.id,
+          ordinal,
+          passage.start,
+          passage.end,
+          passage.hash,
+          passage.turn ?? null,
+        );
         insertPassageText.run(inserted.lastInsertRowid, passage.text);
       });
       for (const citation of search.citations) insertCitation.run(citation.id, document.id, citation.index);
@@ -1055,6 +1075,12 @@ export function openIndexWriter(path: string): IndexWriter {
     },
     storeSpeakerTurnIndex(record) {
       storeSpeakerTurnIndex(database, record.documentId, record.outcome);
+    },
+    recordingLogsWithoutTurnPassages(session) {
+      return readLogsWithoutTurnPassages(database, session);
+    },
+    replacePassages(document, passages) {
+      replacePassagesOf(database, document, passages);
     },
     recordingLogsWithoutIndex(session) {
       const rows = database

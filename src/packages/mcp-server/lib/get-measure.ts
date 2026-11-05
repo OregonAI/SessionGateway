@@ -59,6 +59,31 @@ const committeeVoteOutput = z.object({
     .describe("Each member's vote, in the order of the ids the feed gives the entries."),
 });
 
+/** One hearing at which the Measure was taken up (ticket #127): a Recording Log's Agenda item for it, and the first turn under the item. */
+const hearingOutput = z.object({
+  meeting_id: z.string().describe("The id of the Meeting the Recording Log belongs to, as meetings gives it."),
+  committee_code: z.string().describe("The code of the committee that met, such as HALNRW."),
+  meeting_date: z.string().describe("When the Meeting started, in Pacific time with its UTC offset."),
+  recording_log_id: z.string().describe("The Recording Log, which get_document takes: it holds every speaker turn."),
+  event_id: z.string().describe("The Invintus event ID of the Meeting's recording, from the log's own player links."),
+  agenda_item: z.string().describe('The Agenda item\'s line as the log has it, such as "HB 3131 - Public Hearing".'),
+  first_turn: z
+    .object({
+      timecode: z.string().describe('The timecode as logged, such as "01:15:49".'),
+      offset_seconds: z.number().describe("The turn's second on the recording's clock."),
+      speaker: z.string().describe("The speaker as the log writes it: a name and title."),
+      legislator_code: z
+        .string()
+        .nullable()
+        .describe("The Legislator Code of the Legislator the line names, or null for anyone else."),
+      legislator: legislatorOutput,
+      player_link: z
+        .string()
+        .describe("The Legislature's own player at this turn's second, built from the log's own player link."),
+    })
+    .describe("The first turn spoken under the Agenda item, by the recording's clock."),
+});
+
 const UNCHANGED_DESCRIPTION =
   '"unchanged" means read the top-level field of the same name: nothing is repeated here. When source is "olis", OLIS gives exactly the top-level value. When source is "cache", nothing was read from OLIS, and the top-level value is the cache\'s, which is all there is.';
 
@@ -234,6 +259,11 @@ export const getMeasureOutput = z.object({
     .describe(
       "The Measure's committee votes as of the last full pull (see as_of), in the order the committees met. A roll that OLIS gives under two reports, as it does for a joint committee, is listed once; two different rolls of one committee at one meeting are two entries. OLIS creates these rows before the meeting is held, so a vote whose meeting_date is later than as_of can already list answers; the feed does not say whether that vote has been taken.",
     ),
+  hearings: z
+    .array(hearingOutput)
+    .describe(
+      "The hearings at which the Measure was taken up, earliest Meeting first: each Recording Log with a speaker-turn index that has an Agenda item for the Measure, with the first turn under that item and a link into the official player at it. Empty when no log the index holds names the Measure.",
+    ),
   live_status: liveStatusOutput,
 });
 
@@ -393,6 +423,22 @@ export async function getMeasure(
       history: history.map(historyShown),
       floor_votes: floorVotes.map(floorVoteShown),
       committee_votes: committeeVotes.map(committeeVoteShown),
+      hearings: reader.turnHearingsOf(measureIdOf(measure)).map((hearing) => ({
+        meeting_id: hearing.meeting,
+        committee_code: hearing.committeeCode,
+        meeting_date: hearing.at,
+        recording_log_id: hearing.recordingLog,
+        event_id: hearing.eventId,
+        agenda_item: hearing.agendaItem,
+        first_turn: {
+          timecode: hearing.firstTurn.timecode,
+          offset_seconds: hearing.firstTurn.offsetSeconds,
+          speaker: hearing.firstTurn.speaker,
+          legislator_code: hearing.firstTurn.legislatorCode,
+          legislator: hearing.firstTurn.legislator,
+          player_link: hearing.firstTurn.playerLink,
+        },
+      })),
       live_status: liveStatusOf(live, { location: measure.location, history, floorVotes, committeeVotes, asOf }),
     },
   };

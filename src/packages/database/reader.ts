@@ -77,8 +77,8 @@ import {
 } from "#/packages/domain/votes.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceFromJson, storedEvidenceKinds } from "./lib/agency-evidence.ts";
-import { readSpeakerTurnIndex, readSpeakerTurnSummary } from "./lib/speaker-turns.ts";
-import type { SpeakerTurnIndexOutcome } from "#/packages/domain/speaker-turns.ts";
+import { readSpeakerTurnIndex, readSpeakerTurnSummary, readTurnHearingsOf } from "./lib/speaker-turns.ts";
+import type { SpeakerTurnIndexOutcome, TurnHearing } from "#/packages/domain/speaker-turns.ts";
 import { openReadConnection } from "./lib/connection.ts";
 import { agencyLinkListings, openListingReader, type ListingRead } from "./lib/listing.ts";
 import {
@@ -223,6 +223,11 @@ export type IndexReader = {
    * fetched before the index existed).
    */
   speakerTurnIndexOf(document: DocumentId): SpeakerTurnIndexOutcome | undefined;
+  /**
+   * The hearings at which a Measure was taken up (ticket #127): each Recording Log's Agenda item that names it, with the
+   * Meeting and the first turn under the item, earliest Meeting first. Empty when no log the index holds names the Measure.
+   */
+  turnHearingsOf(measure: MeasureId): TurnHearing[];
   /**
    * Every Testimony row the feed lists for a Measure, in the order of the feed's `CommTestId`, whether or not
    * its file is fetched.
@@ -1262,6 +1267,9 @@ export function openIndexReader(path: string): IndexReader {
             };
           });
       });
+    },
+    turnHearingsOf(measure) {
+      return inOneSnapshot(() => readTurnHearingsOf(database, measure));
     },
     speakerTurnIndexOf(document) {
       return inOneSnapshot(() => readSpeakerTurnIndex(database, document));

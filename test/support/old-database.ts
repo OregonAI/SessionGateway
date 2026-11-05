@@ -55,6 +55,13 @@ export function forgetSpeakerTurns(databasePath: string): void {
  */
 export function leaveTurnsUnlinkedFromPassages(databasePath: string): void {
   const database = new DatabaseSync(databasePath, { timeout: 5000 });
+  // Deleting from the contentless FTS5 table leaves the connection's last rowid beyond what a JavaScript number holds, which
+  // `run` refuses to convert for the next statement: every statement here reads its result as BigInt.
+  const run = (sql: string, ...values: (string | number | bigint)[]): bigint | number => {
+    const statement = database.prepare(sql);
+    statement.setReadBigInts(true);
+    return statement.run(...values).lastInsertRowid;
+  };
   try {
     database.exec("BEGIN IMMEDIATE");
     const logs = database.prepare("SELECT id, text FROM document WHERE kind = 'recording_log'").all() as {
@@ -62,22 +69,20 @@ export function leaveTurnsUnlinkedFromPassages(databasePath: string): void {
       text: string;
     }[];
     for (const log of logs) {
-      database
-        .prepare("DELETE FROM passage_fts WHERE rowid IN (SELECT id FROM passage WHERE document_id = ?)")
-        .setReadBigInts(true)
-        .run(log.id);
-      database.prepare("DELETE FROM passage WHERE document_id = ?").run(log.id);
+      run("DELETE FROM passage_fts WHERE rowid IN (SELECT id FROM passage WHERE document_id = ?)", log.id);
+      run("DELETE FROM passage WHERE document_id = ?", log.id);
     }
     database.exec("DROP INDEX IF EXISTS passage_turn");
     database.exec("ALTER TABLE passage DROP COLUMN turn_position");
     for (const log of logs) {
       const hash = createHash("sha256").update(log.text, "utf8").digest("hex");
-      const inserted = database
-        .prepare(
-          "INSERT INTO passage (document_id, ordinal, start_offset, end_offset, text_hash) VALUES (?, 0, 0, ?, ?)",
-        )
-        .run(log.id, log.text.length, hash);
-      database.prepare("INSERT INTO passage_fts (rowid, text) VALUES (?, ?)").run(inserted.lastInsertRowid, log.text);
+      const id = run(
+        "INSERT INTO passage (document_id, ordinal, start_offset, end_offset, text_hash) VALUES (?, 0, 0, ?, ?)",
+        log.id,
+        log.text.length,
+        hash,
+      );
+      run("INSERT INTO passage_fts (rowid, text) VALUES (?, ?)", id, log.text);
     }
     database.exec("PRAGMA user_version = 2");
     database.exec("COMMIT");

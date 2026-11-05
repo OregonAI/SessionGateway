@@ -40,6 +40,35 @@ export function parseRecordingLog(input: ParseRecordingLogInput): RecordingLogPa
 
 export type { CommitteeMemberName };
 
+/** Where a stretch of a log's text is: `text.slice(start, end)`, in UTF-16 code units. */
+export type TextSpan = { start: number; end: number };
+
+/**
+ * Where each stored speaker turn's lines are in the log's text (ticket #127): the timecode line and the lines that wrap
+ * from it, each with its line break, up to a line of the page's own (its compliance sentence, committee code, date and page
+ * number). The turns are given as the index stores them, a timecode and the speaker as logged, in the order of the log; a
+ * turn is the next block of the text with that timecode whose lines read as that speaker, so a line with the same timecode
+ * before it (an Agenda item) is passed over. A turn the text does not hold has no span. Pure.
+ */
+export function speakerTurnSpans(
+  text: string,
+  turns: readonly { timecode: string; speaker: string }[],
+): (TextSpan | null)[] {
+  const blocks = readBlocks(text);
+  let next = 0;
+  return turns.map((turn) => {
+    for (let index = next; index < blocks.length; index += 1) {
+      const block = blocks[index];
+      if (block === undefined || block.timecode !== turn.timecode || block.lines.join(" ").trim() !== turn.speaker) {
+        continue;
+      }
+      next = index + 1;
+      return { start: block.start, end: block.end };
+    }
+    return null;
+  });
+}
+
 /**
  * The Legislator Code of the Legislator a speaker line names ("Co-Chair Helm", "Rep. B. Levy"), or null: among the
  * committee's `members` first, and when none fits among all the Session's `legislators` (owner decision B of ticket #126).

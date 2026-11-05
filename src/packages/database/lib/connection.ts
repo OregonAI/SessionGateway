@@ -516,6 +516,15 @@ const speakerTurnSchema = `
 `;
 
 /**
+ * Step 3's text (ticket #127, ADR-0052's "Turns and Passages"). A Passage of a Recording Log may be a speaker turn's: its
+ * `turn_position` is the turn's position in `speaker_turn` (the log's `document_id` and that position name the turn), and it
+ * is null for every other passage. The turn's lines are the passage's text, so the log's passages still cover its text once.
+ */
+const turnPassageSchema = `
+  CREATE INDEX IF NOT EXISTS passage_turn ON passage (document_id, turn_position) WHERE turn_position IS NOT NULL;
+`;
+
+/**
  * The numbered upgrade steps (ADR-0048): step N takes a file from version N - 1 to version N, and the file's version
  * is the number of steps there are. The worker applies the ones a file lacks, in order, in one transaction when it opens
  * the file, so a file is never left half upgraded. Step 1 is today's schema: its pass of `CREATE ... IF NOT EXISTS`
@@ -535,6 +544,17 @@ const upgradeSteps: readonly ((database: DatabaseSync) => void)[] = [
   // Step 2 (ticket #126, ADR-0052): the speaker-turn index of a Recording Log, and the end of the view nothing reads.
   (database) => {
     database.exec(speakerTurnSchema);
+  },
+  // Step 3 (ticket #127, ADR-0052): a Passage may be a speaker turn's. A log stored before it has none, and the worker cuts
+  // such a log's text around its stored turns on its next pull, without fetching it.
+  (database) => {
+    // `ALTER TABLE ... ADD COLUMN` has no IF NOT EXISTS: a file with no version that already has the column (a file the tests
+    // arrange from a current one, as `leaveAsBeforeVersions` does) must not fail on it.
+    const columns = database.prepare("PRAGMA table_info(passage)").all();
+    if (!columns.some((column) => column["name"] === "turn_position")) {
+      database.exec("ALTER TABLE passage ADD COLUMN turn_position INTEGER");
+    }
+    database.exec(turnPassageSchema);
   },
 ];
 

@@ -1,6 +1,8 @@
 // The speaker-turn index of a Recording Log (ticket #126, ADR-0052): what the worker keeps of the log's turns and what the
 // reader hands out. The parser's own types are the recording-log package's; these are the stored form, with the
 // Legislator and the Measure resolved and the player link built.
+import type { Timestamp } from "#/packages/time/pacific.ts";
+import type { DocumentId, MeetingId } from "./documents.ts";
 import type { MeasureId } from "./index.ts";
 import type { Legislator } from "./legislators.ts";
 
@@ -41,3 +43,20 @@ export type SpeakerTurnIndexOutcome =
 
 /** What the index says of a Recording Log in the listing of its Meeting. */
 export type SpeakerTurnIndexSummary = { eventId: string; turnCount: number };
+
+/** A speaker turn as search shows it: the turn, and the Meeting its Recording Log belongs to (null when the store holds none). */
+export type SearchedSpeakerTurn = SpeakerTurn & { meeting: MeetingId | null };
+
+/** A hearing at which a Measure was taken up (ticket #127): a Recording Log's Agenda item for the Measure, and the first turn under it. */
+export type TurnHearing = {
+  meeting: MeetingId;
+  committeeCode: string;
+  /** When the Meeting starts, in Pacific time with its UTC offset. */
+  at: Timestamp;
+  recordingLog: DocumentId;
+  eventId: string;
+  /** The Agenda item's text as the log has it. */
+  agendaItem: string;
+  /** The first turn spoken under the item, by the recording's clock. */
+  firstTurn: SpeakerTurn;
+};

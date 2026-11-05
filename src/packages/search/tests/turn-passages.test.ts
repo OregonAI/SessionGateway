@@ -76,7 +76,7 @@ describe("a text cut around its turns", () => {
     expect(
       around
         .map((passage) => passage.text)
-        .join("")
+        .join(" ")
         .replaceAll(/\s+/g, " ")
         .trim(),
     ).toBe(long.trim());
