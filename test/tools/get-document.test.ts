@@ -1,5 +1,5 @@
 // Seam 1 (test/CLAUDE.md): get_document as an agent sees it, with the whole system behind it. A fake
-// OLIS serves the committed fixture and its 280 documents as the feed stood in August 2026, the ingest
+// OLIS serves the committed fixture and its 314 documents as the feed stood in August 2026, the ingest
 // worker pulls them into a database, and an MCP client calls the tool in-process. One database serves
 // every case in this file because none of them changes it; cases that build their own are in
 // get-document-pull.test.ts.
@@ -13,9 +13,10 @@ import { startCopiedSystem, type System } from "../support/system.ts";
 let system: System;
 
 beforeAll(async () => {
-  // 2026-08-01 10:00 in Oregon: every row of the fixture exists by then (the newest Exhibit row was
-  // created on 2026-07-27), so the pull fetches all 280 documents.
-  system = await startCopiedSystem({ clockAt: "2026-08-01T17:00:00Z", documents: true });
+  // 2026-08-05 10:00 in Oregon: every row of the fixture exists by then (the newest Exhibit row was
+  // created on 2026-07-27, and the newest Recording Log, SRULES's 317265, on 2026-08-04), so the pull fetches all 314
+  // documents.
+  system = await startCopiedSystem({ clockAt: "2026-08-05T17:00:00Z", documents: true });
 }, 60_000);
 
 afterAll(async () => {
@@ -45,7 +46,7 @@ describe.for(eras)("get_document for a %s client", (era) => {
       id: "version-2025r1-sb69-introduced",
       kind: "version",
       source_url: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureDocument/SB69/Introduced",
-      retrieved_at: "2026-08-01T10:00:00-07:00",
+      retrieved_at: "2026-08-05T10:00:00-07:00",
       content_hash: "a306d6c6bf7d1a16814d60bc731f7ef6d1be4dfd3198edcfab27feca14f34f99",
       has_text_layer: true,
       part: 1,
@@ -60,7 +61,7 @@ describe.for(eras)("get_document for a %s client", (era) => {
         "SECTION 2. Section 1 of this 2025 Act is repealed on January 2, 2027.",
     );
     expect.soft(outcome.structured?.["notice"]).toMatch(/not the official record/i);
-    expect.soft(outcome.structured?.["as_of"]).toBe("2026-08-01T10:00:00-07:00");
+    expect.soft(outcome.structured?.["as_of"]).toBe("2026-08-05T10:00:00-07:00");
     expect(outcome.structured?.["related"]).toContainEqual(
       expect.objectContaining({ id: "measure-2025r1-sb69", relation: "measure" }),
     );
@@ -450,25 +451,26 @@ describe.for(eras)("get_document for a %s client", (era) => {
   });
 
   describe("session_overview", () => {
-    // Counts are literals from the fixture: its README says it holds 10 Measures and 280 documents, and
+    // Counts are literals from the fixture: its README says it holds 10 Measures and 314 documents, and
     // feed/ has 12 Committees, 36 CommitteeMeetings, 25 MeasureDocuments (5 of them Printed Amendments:
     // "Senate Amendments to Introduced" for SB 69, SB 921 and SB 983, "House Amendments to Introduced"
     // and "Senate Amendments to A-Engrossed" for HB 3795), 34 MeasureAnalysisDocuments, 15
-    // CommitteeProposedAmendments (postings of 7 amendments), 86 CommitteeMeetingDocuments and 84
-    // CommitteePublicTestimonies. 33 of the 34 Recording Logs exist at this clock (ticket #124): SRULES's of 2025-04-23 was created 2026-08-04, so the Session holds 313 of the fixture's 314 documents.
+    // CommitteeProposedAmendments (postings of 7 amendments), 120 CommitteeMeetingDocuments
+    // (86 Exhibits and 34 Recording Logs, ticket #124) and 84 CommitteePublicTestimonies. All 34 Recording Logs exist
+    // at this clock (the newest, SRULES's of 2025-04-23, was created 2026-08-04): 314 documents in all.
     it("returns the Session, what the index holds, and when it was last refreshed", async () => {
       const outcome = await callTool(connected, "session_overview", {});
 
       expect(outcome.isError).toBe(false);
       expect(outcome.structured).toMatchObject({
         session: "2025R1",
-        as_of: "2026-08-01T10:00:00-07:00",
+        as_of: "2026-08-05T10:00:00-07:00",
         counts: {
           measures: 10,
           committees: 12,
           meetings: 36,
           proposed_amendments: 7,
-          documents: 313,
+          documents: 314,
           documents_without_text_layer: 3,
           documents_by_kind: {
             version: 20,
@@ -476,7 +478,7 @@ describe.for(eras)("get_document for a %s client", (era) => {
             proposed_amendment: 15,
             analysis: 34,
             exhibit: 86,
-            recording_log: 33,
+            recording_log: 34,
             testimony: 84,
             agenda: 36,
             // The fixture holds no FloorLetters file (ticket #64).

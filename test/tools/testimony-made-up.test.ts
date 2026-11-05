@@ -17,7 +17,7 @@ afterEach(async () => {
   for (const system of started.splice(0)) await system.stop();
 });
 
-// 2025-07-15 10:00 in Oregon: after every row of the fixture was created.
+// 2025-07-15 10:00 in Oregon: after every row of the fixture was created but eight (two history actions, three Witness Registration lists and three Recording Logs).
 const clockAt = "2025-07-15T17:00:00Z";
 
 // A case copies the database of its inputs, which the two clients share, and pulls for itself only where the pull is its

@@ -9,7 +9,7 @@ import { floorLetterSourceUrl, withFloorLetters, type MadeUpFloorLetter } from "
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { systemTemplate } from "../support/system.ts";
 
-// 2025-07-15 10:00 in Oregon: after every row of the fixture was created, so SB 69 is in the index.
+// 2025-07-15 10:00 in Oregon: after every row of the fixture was created but eight (two history actions, three Witness Registration lists and three Recording Logs), so SB 69 is in the index.
 const clockAt = "2025-07-15T17:00:00Z";
 
 // MADE UP: a letter to the Senate on SB 69.

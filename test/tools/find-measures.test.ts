@@ -15,9 +15,9 @@ import { startCopiedSystem, type System } from "../support/system.ts";
 let system: System;
 
 beforeAll(async () => {
-  // 2026-08-01 10:00 in Oregon: every row of the fixture exists by then, so the pull fetches all 280 documents.
+  // 2026-08-05 10:00 in Oregon: every row of the fixture exists by then, so the pull fetches all 314 documents.
   system = await startCopiedSystem({
-    clockAt: "2026-08-01T17:00:00Z",
+    clockAt: "2026-08-05T17:00:00Z",
     documents: true,
     serverEnv: { MCP_RATE_LIMIT: "1000" },
   });
@@ -574,8 +574,8 @@ describe.for(eras)("find_measures for a %s client", (era) => {
     it("carries the index's as-of time, the non-official notice and the size of a page", async () => {
       const found = await find({ ors_section: "ORS 653.616" });
 
-      // The clock was 2026-08-01 17:00 UTC when the pull ran: 10:00 in Oregon, in daylight time.
-      expect(found.as_of).toBe("2026-08-01T10:00:00-07:00");
+      // The clock was 2026-08-05 17:00 UTC when the pull ran: 10:00 in Oregon, in daylight time.
+      expect(found.as_of).toBe("2026-08-05T10:00:00-07:00");
       expect(found.notice).toContain("Not the official record");
       expect([found.page, found.last_page, found.page_size]).toEqual([1, 1, 12]);
     });

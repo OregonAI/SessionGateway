@@ -1,4 +1,4 @@
-// Seam 1 (test/CLAUDE.md): `search` over the whole committed fixture, as the feed stood on 2026-08-01, when
+// Seam 1 (test/CLAUDE.md): `search` over the whole committed fixture, as the feed stood on 2026-08-05, when
 // every row of it exists. Citations, the size of an answer and the hits' ids need the Measures and
 // Proposed Amendments that come late in the Session, and the whole fixture holds SB 64's Testimony 117281
 // (395,000 characters), which the real model would take half a minute to embed. None of these cases is about
@@ -21,7 +21,7 @@ let system: System;
 
 beforeAll(async () => {
   system = await startCopiedSystem({
-    clockAt: "2026-08-01T17:00:00Z",
+    clockAt: "2026-08-05T17:00:00Z",
     documents: true,
     // About a hundred and twenty calls are made on the one simulated clock (the cases run for two MCP clients): the
     // default ceiling is 120 a minute.
@@ -249,7 +249,7 @@ describe.for(eras)("search over the whole fixture for a %s client", (era) => {
 
       const hits = hitsOf(outcome);
       expect(hits.length).toBeGreaterThan(20);
-      expect(outcome.structured?.["as_of"]).toBe("2026-08-01T10:00:00-07:00");
+      expect(outcome.structured?.["as_of"]).toBe("2026-08-05T10:00:00-07:00");
       expect(outcome.structured?.["notice"]).toMatch(/not the official record/i);
       // Every kind of document belongs to a Measure but an agenda, and every document has a date. A Recording Log
       // and an Exhibit may belong to none.

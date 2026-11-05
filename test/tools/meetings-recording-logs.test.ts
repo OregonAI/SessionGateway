@@ -1,8 +1,11 @@
 // Seam 1 (test/CLAUDE.md): `meetings` shows the Recording Log of each Meeting the 2025R1 fixture holds
 // (ticket #124). A Recording Log names no Measure, so the fixture build takes it from its Meeting, as a
-// rule of its own (test/fixtures/olis-2025R1/README.md). The clock is after every row's CreatedDate (the
-// latest, SRULES's log 317265, was created 2026-08-04), so the pull lists them all. No file is served: the
-// cases read the listing, and the worker lists each document as not fetched.
+// rule of its own (test/fixtures/olis-2025R1/README.md).
+//
+// Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
+// Database, Templates). The clock is the one of the whole fixture, 2026-08-05 10:00 in Oregon: the newest Recording
+// Log, SRULES's 317265, was created on 2026-08-04, so only a clock from then on lists all 34. No file is served
+// (`documents: false`): the cases read the listing, and the worker lists each document as not fetched.
 //
 // Expected values are literals from outside the fixture: the full feed cache's CommitteeMeetingDocuments
 // rows of DocumentType "Recording Log", counted against the fixture's 36 meetings on 2026-11-05 (34 have
@@ -15,7 +18,7 @@ import { startCopiedSystem, type System } from "../support/system.ts";
 let system: System;
 
 beforeAll(async () => {
-  system = await startCopiedSystem({ clockAt: "2026-09-01T19:00:00Z", documents: false });
+  system = await startCopiedSystem({ clockAt: "2026-08-05T17:00:00Z", documents: false });
 }, 60_000);
 
 afterAll(async () => {
@@ -24,6 +27,24 @@ afterAll(async () => {
 
 type Listed = { id: string; label: string; source_url: string };
 type MeetingOutput = { id: string; at: string; recording_logs: Listed[] };
+
+/** Every meeting of 2025: a call returns whole days up to a size limit, so ask again from the day after the last one. */
+async function allMeetingsOf2025(connected: ConnectedClient): Promise<MeetingOutput[]> {
+  const meetings: MeetingOutput[] = [];
+  let from: string | undefined = "2025-01-01";
+  while (from !== undefined) {
+    const outcome = await callTool(connected, "meetings", { from, to: "2025-12-31" });
+    expect(outcome.isError).toBe(false);
+    const page = outcome.structured?.["meetings"] as MeetingOutput[];
+    meetings.push(...page);
+    const lastDay = Date.parse(`${page.at(-1)?.at.slice(0, 10)}T00:00:00Z`);
+    from =
+      outcome.structured?.["truncated"] === true
+        ? new Date(lastDay + 86_400_000).toISOString().slice(0, 10)
+        : undefined;
+  }
+  return meetings;
+}
 
 describe.for(eras)("meetings and the fixture's Recording Logs, for a %s client", (era) => {
   let connected: ConnectedClient;
@@ -37,19 +58,7 @@ describe.for(eras)("meetings and the fixture's Recording Logs, for a %s client",
   });
 
   it("lists one Recording Log for 34 of the fixture's 36 meetings, and none for HHED 02-13 and SHS 05-22", async () => {
-    // A call returns whole days up to a size limit, so ask again from the day after the last one returned.
-    const meetings: MeetingOutput[] = [];
-    for (let from = "2025-01-01"; from !== "";) {
-      const outcome = await callTool(connected, "meetings", { from, to: "2025-12-31" });
-      expect(outcome.isError).toBe(false);
-      const page = outcome.structured?.["meetings"] as MeetingOutput[];
-      meetings.push(...page);
-      const last = page.at(-1)?.at ?? "";
-      from =
-        outcome.structured?.["truncated"] === true
-          ? new Date(Date.parse(`${last.slice(0, 10)}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
-          : "";
-    }
+    const meetings = await allMeetingsOf2025(connected);
     expect(meetings).toHaveLength(36);
     expect(meetings.filter((meeting) => meeting.recording_logs.length === 1)).toHaveLength(34);
     expect(meetings.filter((meeting) => meeting.recording_logs.length === 0).map((meeting) => meeting.id)).toEqual([

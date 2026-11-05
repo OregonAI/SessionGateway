@@ -5,7 +5,7 @@
 // withdrawn and then changed; a Version whose text could not be read; and made-up tables in shapes the real one never
 // shows (the last describe: a line the parser cannot read, a footer date in November, overturned vetoes, an E alone for a
 // Measure with an E-Engrossed Version in the feed, which the real table never shows: HB 3723 and HB 3124 have an E alone and
-// no E-Engrossed Version, and the case that has one is MADE UP). A system pulls the fixture's 280 documents, about four
+// no E-Engrossed Version, and the case that has one is MADE UP). A system pulls the fixture's 314 documents, about four
 // seconds, so a system serves several cases, which run in the order written and each take the table on from the one
 // before. They are read from the top: a case that comes later relies on what the earlier ones did.
 //
@@ -42,7 +42,7 @@ import {
 } from "../support/statutes-affected-table.ts";
 import { startSystem, type System, type SystemOptions } from "../support/system.ts";
 
-// A system serves the documents, which pulls the fixture's 280 files: about four seconds on its own and more beside the
+// A system serves the documents, which pulls the fixture's 314 files: about four seconds on its own and more beside the
 // other files' workers (the default timeout is five seconds).
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -51,16 +51,16 @@ type VersionEntry = { label: string; statute_links: StatuteLinks; statutes_affec
 type LinksBySource = { versions: VersionEntry[]; statutes_affected_table?: TableOfMeasure };
 
 const baseOptions = {
-  clockAt: "2026-08-01T17:00:00Z",
+  clockAt: "2026-08-05T17:00:00Z",
   documents: true,
   serverEnv: { MCP_RATE_LIMIT: "1000" },
 } satisfies SystemOptions;
 
-/** The pull of the system's start: 2026-08-01 10:00 Pacific. The days after it, for the pulls that follow. */
-const firstPull = "2026-08-01T10:00:00-07:00";
-const nextDay = "2026-08-02T17:00:00Z";
-const nextDayPacific = "2026-08-02T10:00:00-07:00";
-const dayAfterThat = "2026-08-03T17:00:00Z";
+/** The pull of the system's start: 2026-08-05 10:00 Pacific. The days after it, for the pulls that follow. */
+const firstPull = "2026-08-05T10:00:00-07:00";
+const nextDay = "2026-08-06T17:00:00Z";
+const nextDayPacific = "2026-08-06T10:00:00-07:00";
+const dayAfterThat = "2026-08-07T17:00:00Z";
 
 const fixture = (path: string): Uint8Array =>
   readFileSync(new URL(`../fixtures/olis-2025R1/documents/${path}`, import.meta.url));
@@ -364,7 +364,7 @@ describe("a table that was loaded", () => {
     expect(before.statutes_affected_table?.parsed_changes?.amends.sections).toHaveLength(8);
 
     rig.system.olis.serveDocument(tablePath, madeUpTable(madeUpRows));
-    rig.system.clock.set("2026-08-04T17:00:00Z");
+    rig.system.clock.set("2026-08-08T17:00:00Z");
     await rig.system.pullAgain();
 
     const links = linksOf(await rig.ask("SB 69"));
@@ -417,7 +417,7 @@ describe("a table that was loaded", () => {
     expect(after.statute_links.amends.sections).toEqual(sb69Amends);
 
     // The bytes changed, so the new table was read and its retrieval time is the pull that found it.
-    expect(links.statutes_affected_table?.retrieved_at).toBe("2026-08-04T10:00:00-07:00");
+    expect(links.statutes_affected_table?.retrieved_at).toBe("2026-08-08T10:00:00-07:00");
     expect(links.statutes_affected_table?.lists_measure).toBe(true);
     expect(links.statutes_affected_table?.other_entries).toEqual([
       {
@@ -472,7 +472,7 @@ describe("a table that was loaded", () => {
         "100.025 A §2 SB 69 A",
       ]),
     );
-    rig.system.clock.set("2026-08-06T17:00:00Z");
+    rig.system.clock.set("2026-08-10T17:00:00Z");
     await rig.system.pullAgain();
 
     const shown = aEngrossed(linksOf(await rig.ask("SB 69"))).statutes_affected_table;

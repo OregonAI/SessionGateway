@@ -49,7 +49,7 @@ beforeAll(async () => {
       MODEL_PATH: modelPath(),
     }),
     {
-      clock: createSimulatedClock("2026-08-01T17:00:00Z"),
+      clock: createSimulatedClock("2026-08-05T17:00:00Z"),
       // Nothing is asked of OLIS: a lookup that did would fail on this address.
       fetch,
       signal: shutdown.signal,

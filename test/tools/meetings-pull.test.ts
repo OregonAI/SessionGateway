@@ -16,7 +16,7 @@ import {
 
 const started: { system: System; connected: ConnectedClient }[] = [];
 
-// A case that serves the documents pulls the fixture's 280 files, about four seconds on its own and more
+// A case that serves the documents pulls the fixture's 314 files, about four seconds on its own and more
 // with the other files' workers running beside it (as get-measure-analysis-pull.test.ts says).
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -77,12 +77,12 @@ async function meetingsOnSb69(connected: ConnectedClient): Promise<MeetingOutput
 
 describe.for(eras)("meetings with a database of its own, for a %s client", (era) => {
   describe("a Recording Log", () => {
-    // MADE UP FOR THIS TEST. The committed fixture has no Recording Log row: of the 86
-    // CommitteeMeetingDocuments rows, none has the type "Recording Log" (#5 found it, and ADR-0011 says how
-    // the row is read when there is one). The full 2025R1 feed has 1,492 of them, one for most meetings, and
-    // adding one Measure's to the fixture is a download run the owner has to approve. So this case adds a row
-    // of that shape, with the made-up id 900101, to SLB's meeting of 2025-01-30, and serves a fixture file
-    // (Exhibit 288650's) as its document. It shows the wiring from the row to the tool, not a real log.
+    // MADE UP FOR THIS TEST. It predates the fixture's Recording Logs: the fixture now holds 34 real ones
+    // (ticket #124, read in meetings-recording-logs.test.ts), none of them created by this case's clock
+    // (2025-01-29, noon Pacific), and replacing this case with a real log is follow-up #137 (ADR-0011 says how the
+    // row is read). Until then it adds a row of that shape, with the made-up id 900101, to SLB's meeting of
+    // 2025-01-30, and serves a fixture file (Exhibit 288650's) as its document. It shows the wiring from the row to
+    // the tool, not a real log.
     const recordingLogUrl = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/900101";
 
     it("is listed with the meeting it belongs to, apart from the Exhibits (made-up row)", async () => {

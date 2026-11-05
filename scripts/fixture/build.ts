@@ -292,8 +292,8 @@ function select(feed: Map<string, Row[]>, chosen: Chosen[]): Selection {
   // the closure cannot reach it. The Meetings are known by now, so the build takes every
   // CommitteeMeetingDocuments row of DocumentType "Recording Log" whose Session, Committee and MeetingDate
   // are those of a kept Meeting. Its document is fetched and kept like any other, as the exact bytes
-  // OLIS served, so the PDF's link annotations survive. A Meeting with no such row (HHED 2025-02-13 and
-  // SHS 2025-05-22 in the cache) gets none. The rows go through drain() like any other, so their Meeting
+  // OLIS served, so the PDF's link annotations survive. A Meeting with no such row gets none (the
+  // fixture's README says which, and what the cache held when it was counted). The rows go through drain() like any other, so their Meeting
   // and Committee references are followed, and a log that named a Measure outside measures.txt would stop
   // the build.
   const keptMeetings = new Set(

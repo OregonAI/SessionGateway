@@ -4,9 +4,12 @@
 // report is; what an agent reads is unchanged, through the tools: a mismatch is reported and never replaces the
 // stored document (ADR-0002). When the sample runs is a table in src/packages/ingest/tests/schedule.test.ts.
 //
-// The system is a copy of the template for the whole fixture at 2026-08-01 10:00 Pacific (a Saturday; PDT, UTC-7), so
-// the full pull is not in the test. `runSchedule` then runs the worker's loop through that Saturday evening and night:
-// the sample falls at 5 pm, and the night that ends on Sunday 2026-08-02 is not a full-pull night under `weekly`.
+// The system is a copy of the template for the whole fixture at 2026-08-05 10:00 Pacific (a Wednesday; PDT, UTC-7), so
+// the full pull is not in the test. `runSchedule` then runs the worker's loop through that Wednesday evening and night:
+// the sample falls at 5 pm, and the night that ends on Thursday 2026-08-06 is not a full-pull night under `weekly`.
+// The cases of "the night that holds the full pull" and "the night window" start on Friday 2026-08-07 and keep that
+// date, because the weekday decides what they test (the weekly full pull is the night that ends on Saturday); their
+// clocks are also after the whole fixture exists.
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras } from "../support/mcp-clients.ts";
@@ -20,9 +23,9 @@ afterEach(async () => {
   for (const system of started.splice(0)) await system.stop();
 });
 
-const clockAt = "2026-08-01T17:00:00Z";
-// 1 am Sunday: the evening's sample (5 pm Saturday) is long over.
-const afterTheSample = "2026-08-02T08:00:00Z";
+const clockAt = "2026-08-05T17:00:00Z";
+// 1 am Thursday: the evening's sample (5 pm Wednesday) is long over.
+const afterTheSample = "2026-08-06T08:00:00Z";
 
 async function start(options: Partial<SystemOptions> = {}): Promise<System> {
   const system = await startCopiedSystem({ clockAt, documents: true, ...options });
@@ -58,17 +61,16 @@ describe("a file replaced behind the same URL", () => {
         source_url: sb69Introduced.sourceUrl,
         stored_hash: sb69Introduced.sha256,
         new_hash: hb3131Introduced.sha256,
-        checked_at: "2026-08-01T17:00:00-07:00",
+        checked_at: "2026-08-05T17:00:00-07:00",
       },
     ]);
   });
 });
 
-// The fixture holds 314 documents (280 and the 34 Recording Logs of ticket #124), 313 of them by the clock these cases use (SRULES's log 317265 was created 2026-08-04); the manifest lists 315 files, one of them the Statutes
-// Affected Table, which is not a feed document). A sample of 1000 therefore draws all of them.
-const documentsInFixture = 313;
-// From 2026-08-04 on, when SRULES's Recording Log 317265 was created, the sample draws all 314.
-const documentsInFixtureLater = 314;
+// The fixture holds 314 documents (280 and the 34 Recording Logs of ticket #124), all of them at the clocks of this
+// file (the newest, SRULES's Recording Log 317265, was created 2026-08-04). The manifest lists 315 files, one of them
+// the Statutes Affected Table, which is not a feed document. A sample of 1000 therefore draws all of them.
+const documentsAll = 314;
 
 describe("a file that was not replaced", () => {
   it("reports no mismatch, and the sample ran once through the night, fetching each document once", async () => {
@@ -78,15 +80,15 @@ describe("a file that was not replaced", () => {
 
     expect(system.hashSampleReport()).toMatchObject({
       session: "2025R1",
-      as_of: "2026-08-01T17:00:00-07:00",
+      as_of: "2026-08-05T17:00:00-07:00",
       sample_size: 1000,
-      sampled: documentsInFixture,
-      checked: documentsInFixture,
+      sampled: documentsAll,
+      checked: documentsAll,
       mismatches: [],
       not_checked: [],
     });
     // The loop woke every quarter hour from 5 pm to 1 am; the night's sample ran in the first of them.
-    expect(system.olis.documentRequests()).toHaveLength(documentsInFixture);
+    expect(system.olis.documentRequests()).toHaveLength(documentsAll);
   });
 });
 
@@ -103,7 +105,7 @@ describe("a file replaced behind the same URL: what an agent reads", () => {
       expect(outcome.isError).toBe(false);
       expect(outcome.structured).toMatchObject({
         content_hash: sb69Introduced.sha256,
-        retrieved_at: "2026-08-01T10:00:00-07:00",
+        retrieved_at: "2026-08-05T10:00:00-07:00",
       });
       expect(String(outcome.structured?.["text"])).toContain("The Employment Department shall study issues");
     } finally {
@@ -159,7 +161,7 @@ describe("a document OLIS will not give during the sample", () => {
     await system.runSchedule(afterTheSample);
 
     const report = system.hashSampleReport();
-    expect(report).toMatchObject({ sampled: documentsInFixture, checked: documentsInFixture - 1, mismatches: [] });
+    expect(report).toMatchObject({ sampled: documentsAll, checked: documentsAll - 1, mismatches: [] });
     expect(report["not_checked"]).toEqual([
       {
         id: sb69Introduced.id,
@@ -174,15 +176,15 @@ describe("every night", () => {
   it("samples again on the next night, and a restarted worker does not sample the same night twice", async () => {
     const system = await start({ ingest: { hashSampleSize: "1000", increments: "off" } });
 
-    // Saturday evening to Sunday 1 am; then the worker restarts and runs on to 3 am: still the same night.
+    // Wednesday evening to Thursday 1 am; then the worker restarts and runs on to 3 am: still the same night.
     await system.runSchedule(afterTheSample);
-    await system.runSchedule("2026-08-02T10:00:00Z");
-    expect(system.olis.documentRequests()).toHaveLength(documentsInFixture);
+    await system.runSchedule("2026-08-06T10:00:00Z");
+    expect(system.olis.documentRequests()).toHaveLength(documentsAll);
 
-    // Sunday evening: the night that ends on Monday.
-    await system.runSchedule("2026-08-03T08:00:00Z");
-    expect(system.olis.documentRequests()).toHaveLength(2 * documentsInFixture);
-    expect(system.hashSampleReport()["as_of"]).toBe("2026-08-02T17:00:00-07:00");
+    // Thursday evening: the night that ends on Friday.
+    await system.runSchedule("2026-08-07T08:00:00Z");
+    expect(system.olis.documentRequests()).toHaveLength(2 * documentsAll);
+    expect(system.hashSampleReport()["as_of"]).toBe("2026-08-06T17:00:00-07:00");
   });
 });
 
@@ -196,7 +198,7 @@ describe("the night that holds the full pull", () => {
     expect(system.hashSampleReport()["as_of"]).toBe("2026-08-07T17:00:00-07:00");
     // The sample fetched each document once, and so did nothing in the small hours; the full pull ran after it. A
     // full pull is one count of Measures without a `gt datetime` filter (ingest-schedule.test.ts).
-    expect(system.olis.documentRequests()).toHaveLength(documentsInFixtureLater);
+    expect(system.olis.documentRequests()).toHaveLength(documentsAll);
     const counts = system.olis.requests().filter((request) => request.entitySet === "Measures" && request.isCount);
     expect(counts.filter((request) => request.filter?.includes(" gt datetime") !== true)).toHaveLength(1);
   });
@@ -218,9 +220,9 @@ describe("the night window", () => {
     // One minute for each document: the 15 fetched from 11:45 to 11:59 pm.
     expect(system.olis.documentRequests()).toHaveLength(15);
     const report = system.hashSampleReport();
-    expect(report).toMatchObject({ sampled: documentsInFixtureLater, checked: 15, mismatches: [] });
+    expect(report).toMatchObject({ sampled: documentsAll, checked: 15, mismatches: [] });
     const notChecked = report["not_checked"] as { reason: string }[];
-    expect(notChecked).toHaveLength(documentsInFixtureLater - 15);
+    expect(notChecked).toHaveLength(documentsAll - 15);
     expect(notChecked.every((entry) => entry.reason.includes("night window closed"))).toBe(true);
   });
 
@@ -239,22 +241,22 @@ describe("the night window", () => {
     expect(Date.now() - began).toBeLessThan(10_000);
     expect(system.olis.documentRequests()).toHaveLength(1);
     const report = system.hashSampleReport();
-    expect(report).toMatchObject({ sampled: documentsInFixtureLater, checked: 0, mismatches: [] });
+    expect(report).toMatchObject({ sampled: documentsAll, checked: 0, mismatches: [] });
     const notChecked = report["not_checked"] as { reason: string }[];
-    expect(notChecked).toHaveLength(documentsInFixtureLater);
+    expect(notChecked).toHaveLength(documentsAll);
     expect(notChecked.every((entry) => entry.reason.includes("night window closed"))).toBe(true);
   });
 
   it("is judged by the clock after the increment, not before it", async () => {
-    // Monday 2026-08-03 at 5:45 am: the night's daily increment is due, and OLIS takes 5 minutes to answer each of its
+    // Thursday 2026-08-06 at 5:45 am (any weekday would do; the clock is after the whole fixture exists): the night's daily increment is due, and OLIS takes 5 minutes to answer each of its
     // requests, so it ends after 6 am. The night is over by then, and no sample begins.
     const system = await start({
-      clockAt: "2026-08-03T12:45:00Z",
+      clockAt: "2026-08-06T12:45:00Z",
       ingest: { hashSampleSize: "1000", increments: "daily" },
     });
     system.everyRequestTakes(5 * 60_000);
 
-    await system.runSchedule("2026-08-03T14:00:00Z");
+    await system.runSchedule("2026-08-06T14:00:00Z");
 
     expect(system.olis.documentRequests()).toEqual([]);
     expect(() => system.hashSampleReport()).toThrow();
@@ -270,10 +272,10 @@ describe("a mismatch found on an earlier night", () => {
     source_url: sb69Introduced.sourceUrl,
     stored_hash: sb69Introduced.sha256,
     new_hash: hb3131Introduced.sha256,
-    checked_at: "2026-08-01T17:00:00-07:00",
+    checked_at: "2026-08-05T17:00:00-07:00",
   };
-  // The first night is Saturday's, to 1 am; the second is Sunday's, to 1 am Monday.
-  const secondNight = "2026-08-03T08:00:00Z";
+  // The first night is Wednesday's, to 1 am Thursday; the second is Thursday's, to 1 am Friday.
+  const secondNight = "2026-08-07T08:00:00Z";
 
   async function afterTheFirstNight(): Promise<System> {
     const system = await start({ ingest: { hashSampleSize: "1000", increments: "off" } });
@@ -290,7 +292,7 @@ describe("a mismatch found on an earlier night", () => {
     await system.runSchedule(secondNight);
 
     const report = system.hashSampleReport();
-    expect(report).toMatchObject({ as_of: "2026-08-02T17:00:00-07:00", checked: documentsInFixture - 1 });
+    expect(report).toMatchObject({ as_of: "2026-08-06T17:00:00-07:00", checked: documentsAll - 1 });
     expect(report["mismatches"]).toEqual([foundOnTheFirstNight]);
   });
 
@@ -309,7 +311,7 @@ describe("a mismatch found on an earlier night", () => {
     await system.runSchedule(secondNight);
 
     expect(system.hashSampleReport()["mismatches"]).toEqual([
-      { ...foundOnTheFirstNight, checked_at: "2026-08-02T17:00:00-07:00" },
+      { ...foundOnTheFirstNight, checked_at: "2026-08-06T17:00:00-07:00" },
     ]);
   });
 });

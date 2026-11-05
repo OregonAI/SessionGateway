@@ -26,7 +26,7 @@ import {
 } from "../support/statute-links.ts";
 import { startCopiedSystem, startSystem, type System } from "../support/system.ts";
 
-// A case that builds its own system and serves the documents pulls up to the fixture's 280 files, about four
+// A case that builds its own system and serves the documents pulls up to the fixture's 314 files, about four
 // seconds on its own and more with the other files' workers running beside it (the default is five).
 vi.setConfig({ testTimeout: 60_000 });
 const root = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads";
@@ -187,8 +187,8 @@ describe.for(eras)("when the next Version comes in with a later pull, for a %s c
     const before = await blockOf(connected, "SB 69");
     expect(before.proposed_amendments.map((amendment) => amendment.number)).toEqual(["-1", "-2"]);
 
-    // 2026-08-01: A-Engrossed (created 2025-02-03) and Enrolled (2025-05-05) now exist in the feed.
-    system.clock.set("2026-08-01T17:00:00Z");
+    // 2026-08-05: A-Engrossed (created 2025-02-03) and Enrolled (2025-05-05) now exist in the feed.
+    system.clock.set("2026-08-05T17:00:00Z");
     await system.pullAgain();
 
     // The second pull reads the Versions it newly holds from the text it stores, and fetches nothing it already held
@@ -241,7 +241,7 @@ describe("rows the fixture lacks", () => {
 
   beforeAll(async () => {
     system = await startCopiedSystem({
-      clockAt: "2026-08-01T17:00:00Z",
+      clockAt: "2026-08-05T17:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "1000" },
       olis: {
@@ -388,7 +388,7 @@ describe.for(eras)("an amendment whose earliest posting writes its number with n
 
   beforeAll(async () => {
     system = await startCopiedSystem({
-      clockAt: "2026-08-01T17:00:00Z",
+      clockAt: "2026-08-05T17:00:00Z",
       documents: true,
       serverEnv: { MCP_RATE_LIMIT: "1000" },
       olis: {

@@ -12,12 +12,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { startCopiedSystem, startSystem, type System, type SystemOptions } from "../support/system.ts";
 
-// 2026-08-01 10:00 in Oregon: every row of the fixture exists by then.
-const clockAt = "2026-08-01T17:00:00Z";
+// 2026-08-05 10:00 in Oregon: every row of the fixture exists by then.
+const clockAt = "2026-08-05T17:00:00Z";
 const root = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads";
 const started: System[] = [];
 
-// A case that serves the documents pulls the fixture's 280 files, about four seconds on its own and more
+// A case that serves the documents pulls the fixture's 314 files, about four seconds on its own and more
 // with the other files' workers running beside it.
 vi.setConfig({ testTimeout: 60_000 });
 

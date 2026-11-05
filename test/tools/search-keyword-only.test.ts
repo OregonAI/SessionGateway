@@ -4,8 +4,9 @@
 // seconds. The clock is 2025-01-15 14:00 Pacific, when the feed had created SLB's agenda for 2025-01-21 and the
 // Introduced Versions of HB 3027, HB 3131, SB 64, SB 69 and SB 121, and nothing else.
 //
-// The fixture has no Recording Log, and its witness-registration lists are all created after 2025-01-22, when
-// SB 64's Testimony 117281 (395,000 characters) comes in. So four rows are made up here, as the feed's
+// At that clock the feed has created no Recording Log (the fixture's earliest, HALNRW's, was created 2025-01-29),
+// and the fixture's witness-registration lists are all created after 2025-01-22, when SB 64's Testimony 117281
+// (395,000 characters) comes in. So four rows are made up here, as the feed's
 // CommitteeMeetingDocuments rows (fake OLIS `strayRows`), each served with a fixture file (`strayDocuments`):
 //   - 900001: DocumentType "Witness Registration", the files of HB 3131's real list (row 288487);
 //   - 900002: DocumentType "Meeting Material" titled "HB 3131 (witness registration)": the feed files 44 such

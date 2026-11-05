@@ -14,12 +14,12 @@
 // second Session (2025S1) into its copy. The no-Session case copies nothing: it makes an empty database with
 // `openIndexWriter`. The 2025R1 templates are the ones find-measures.test.ts and find-measures-since.test.ts already
 // build for the same clocks and options, so a run that holds those files builds nothing more:
-//   - 2026-08-01 10:00 Pacific, documents on: every row of the fixture exists, as in a database built after both
+//   - 2026-08-05 10:00 Pacific, documents on: every row of the fixture exists, as in a database built after both
 //     postings. The passing case (with no flags) and the exit-status cases.
 //   - 2025-01-24 12:00 Pacific and 2025-01-31 12:00 Pacific: the days after SB 69's amendments were posted, and after
 //     its Fiscal Impact Statement was. They show that a question fails when the database was built too early to hold
 //     its posting. Each question names the moment it is asked at, so "since yesterday" does not come from these.
-//   - 2026-08-01 10:00 Pacific, documents off, Session 2025S1: a copy of its own template, built once for the file. The
+//   - 2026-08-05 10:00 Pacific, documents off, Session 2025S1: a copy of its own template, built once for the file. The
 //     fake feed holds no rows for that Session, so the pull is complete and the database is empty, which is all the
 //     cases for a Session that is not 2025R1 need (ticket #82). They are the one with a MADE UP question set, the one
 //     with no question set, and the command case for a missing set.
@@ -53,8 +53,8 @@ afterEach(async () => {
 /** The options find-measures*.test.ts use for the same clocks, so the templates are shared. */
 const optionsAt = (clockAt: string) => ({ clockAt, documents: true, serverEnv: { MCP_RATE_LIMIT: "1000" } });
 
-/** Every row of the fixture exists by then, so the pull fetches all 280 documents. */
-const augustOptions = optionsAt("2026-08-01T17:00:00Z");
+/** Every row of the fixture exists by then, so the pull fetches all 314 documents. */
+const augustOptions = optionsAt("2026-08-05T17:00:00Z");
 
 async function start(clockAt: string): Promise<System> {
   const system = await startCopiedSystem(optionsAt(clockAt));
@@ -102,11 +102,11 @@ const resultOf = (report: EvaluationReport, id: string): EvaluationReport["resul
 const questionIds = ["a-statutes", "a-fiscal", "b-amendment", "c-meeting", "d-testimony", "e-analysis", "f-status"];
 
 describe("the report of the 2025R1 question set", () => {
-  // The database of 2026-08-01 was built after both postings (SB 69's amendments on 2025-01-23, its Fiscal Impact
+  // The database of 2026-08-05 was built after both postings (SB 69's amendments on 2025-01-23, its Fiscal Impact
   // Statement on 2025-01-30) and holds the whole fixture. Each question carries its own moment, so "since yesterday" does
   // not depend on the day the database was pulled and no flag is needed (ticket #23, review P1).
   it("passes every question with no flags on a database built after both postings", async () => {
-    const system = await start("2026-08-01T17:00:00Z");
+    const system = await start("2026-08-05T17:00:00Z");
 
     const report = await evaluate(system);
 
@@ -122,7 +122,7 @@ describe("the report of the 2025R1 question set", () => {
   // (a) is asked on the day after each posting (spec #1 stories 1 and 2): the amendments of 2025-01-23 on 2025-01-24, the
   // Fiscal Impact Statement of 2025-01-30 (analysis 85414) on 2025-01-31.
   it("asks (a) on the day after each posting, so 'since yesterday' is the day before that moment", async () => {
-    const system = await start("2026-08-01T17:00:00Z");
+    const system = await start("2026-08-05T17:00:00Z");
 
     const report = await evaluate(system);
 
@@ -154,7 +154,7 @@ describe("the report of the 2025R1 question set", () => {
   });
 
   it("uses the time it is given instead of yesterday, for every question that asks for it", async () => {
-    const system = await start("2026-08-01T17:00:00Z");
+    const system = await start("2026-08-05T17:00:00Z");
 
     const report = await evaluate(system, { since: "2025-01-24" });
 
@@ -169,7 +169,7 @@ describe("the report of the 2025R1 question set", () => {
   });
 
   it("refuses a time it cannot read", async () => {
-    const system = await start("2026-08-01T17:00:00Z");
+    const system = await start("2026-08-05T17:00:00Z");
 
     await expect(evaluate(system, { since: "yesterday" })).rejects.toThrow(/"yesterday" is not a time/);
   });
@@ -179,7 +179,7 @@ describe("a question's own moment", () => {
   // MADE UP sets. The clock "2025-01-24T02:00:00Z" is 18:00 on 2025-01-23 in Pacific time, so the day before it, in
   // Pacific time, is 2025-01-22 (and not 2025-01-23, the day before its UTC date).
   it("makes 'since yesterday' the Pacific day before the question's moment", async () => {
-    const system = await start("2026-08-01T17:00:00Z");
+    const system = await start("2026-08-05T17:00:00Z");
     const questions = writeSet(`
 session: 2025R1
 questions:
@@ -203,7 +203,7 @@ questions:
   });
 
   it("refuses a question that says $since and names no moment", async () => {
-    const system = await start("2026-08-01T17:00:00Z");
+    const system = await start("2026-08-05T17:00:00Z");
     const questions = writeSet(`
 session: 2025R1
 questions:
@@ -346,7 +346,7 @@ questions:
 `;
 
   async function startSpecial(): Promise<System> {
-    const system = await startCopiedSystem({ clockAt: "2026-08-01T17:00:00Z", sessionKey: "2025S1" });
+    const system = await startCopiedSystem({ clockAt: "2026-08-05T17:00:00Z", sessionKey: "2025S1" });
     started.push(system);
     return system;
   }
@@ -452,7 +452,7 @@ describe("the command", () => {
 
   // Ticket #82: the default is the database's Session, not 2025R1. A 2025S1 database has no committed question set.
   it("exits 2 and names the missing question set when the database's Session has none", async () => {
-    const system = await startCopiedSystem({ clockAt: "2026-08-01T17:00:00Z", sessionKey: "2025S1" });
+    const system = await startCopiedSystem({ clockAt: "2026-08-05T17:00:00Z", sessionKey: "2025S1" });
     started.push(system);
 
     const outcome = run(["--database", system.database.path]);

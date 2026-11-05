@@ -9,7 +9,7 @@ import { startSystem, type System, type SystemOptions } from "../support/system.
 
 const started: System[] = [];
 
-// A case that serves the documents pulls the fixture's 280 files, about four seconds on its own and more
+// A case that serves the documents pulls the fixture's 314 files, about four seconds on its own and more
 // with the other files' workers running beside it (as get-measure-analysis-pull.test.ts says).
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -99,7 +99,7 @@ describe("a transient failure", () => {
 
 describe("a row OLIS changes after its file was fetched", () => {
   // The file is unchanging (ADR-0005); its feed row is not: 12 of the fixture's 15 CommitteeProposedAmendments
-  // rows and 71 of its 86 CommitteeMeetingDocuments rows carry a ModifiedDate, and SB 69-2's row 26288 was
+  // rows and 80 of its 120 CommitteeMeetingDocuments rows carry a ModifiedDate, and SB 69-2's row 26288 was
   // created Proposed and is Adopted now. The fixture holds each row's final state, so the rows here are
   // added to the fake and changed between two pulls: the fake reads `strayRows` at every request.
   const clockAt = "2025-01-29T17:00:00Z";
@@ -205,9 +205,9 @@ describe("a fake OLIS that serves no document files", () => {
   // the rows with a CreatedDate up to the clock's time): at 2025-07-15 10:00 in Oregon the fixture holds
   // 12 Committees and 36 CommitteeMeetings, and the rows that link a document add up to 277 (25
   // MeasureDocuments, 34 MeasureAnalysisDocuments, 15 CommitteeProposedAmendments, 83 of the 86
-  // CommitteeMeetingDocuments, 84 CommitteePublicTestimonies, and 36 agendas) and 31 of the 34 Recording Logs,
-  // the ones created by then (ticket #124): 308. The files are not there,
-  // so each of those is left out and reported.
+  // CommitteeMeetingDocuments that are not Recording Logs, 84 CommitteePublicTestimonies, and 36 agendas) and 31 of
+  // the 34 Recording Logs, the ones created by then (ticket #124): 308. The files are not there, so each of those is
+  // left out and reported.
   it("still serves the committees and meetings, and reports each linked document as not fetched", async () => {
     const system = await start({ clockAt: "2025-07-15T17:00:00Z", documents: false });
 
@@ -276,9 +276,10 @@ describe("a document that cannot be had", () => {
 });
 
 describe("rows the fixture does not have", () => {
-  // The fixture has no Recording Log, no file that is not a PDF, and no Proposed Amendment whose text
-  // changed between postings. A row for each is added to the fake feed, and the file it links is a
-  // fixture file served under a path of its own. The expected values are the manifest's.
+  // The fixture has no file that is not a PDF and no Proposed Amendment whose text changed between postings, and
+  // its Recording Logs (ticket #124) are created from 2025-01-29 13:13 Pacific on, so none exists at this clock
+  // (2025-01-29 09:00). A row for each is added to the fake feed, and the file it links is a fixture file served
+  // under a path of its own. The expected values are the manifest's.
   const olisRoot = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads";
   const recordingLogUrl = `${olisRoot}/CommitteeMeetingDocument/900001`;
   const corruptUrl = `${olisRoot}/MeasureDocument/SB69/Corrupt`;
