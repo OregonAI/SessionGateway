@@ -85,9 +85,10 @@ export function classify(
     const offset = offsets[index];
     if (offset === undefined) throw new Error(`recording-log: block at ${block.timecode} has no offset`);
     const text = lineOf(block);
-    const entry: RecordingLogEntry | null = feedMatches[index]
-      ? { kind: "agenda-item", timecode: block.timecode, ...offset, text, foundBy: "feed" }
-      : entryOf(block, text, offset, !byFeed);
+    const entry: RecordingLogEntry | null =
+      feedMatches[index] === true
+        ? { kind: "agenda-item", timecode: block.timecode, ...offset, text, foundBy: "feed" }
+        : entryOf(block, text, offset, !byFeed);
     if (entry === null) {
       speakerTurns.push({ timecode: block.timecode, ...offset, speaker: text, agendaItem });
       return;
