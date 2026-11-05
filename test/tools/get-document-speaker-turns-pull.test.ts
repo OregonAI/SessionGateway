@@ -281,7 +281,7 @@ describe("a database a worker left before the index existed", () => {
         expect(outcome.structured?.["speaker_turns"]).toMatchObject({
           indexed: true,
           event_id: "2025011038",
-          turn_count: expect.any(Number) as unknown,
+          turn_count: 38,
         });
       } finally {
         await connected.close();
