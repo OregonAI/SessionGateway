@@ -49,8 +49,9 @@ type GreetingFault = { kind: "stranger"; name: string };
 type Greeter = Tool<typeof greetingInput, typeof greetingOutput, GreetingFault>;
 
 /** A tool that greets anyone but Mallory, and writes down the As of it was given. */
-function greeter(seen: Timestamp[] = []): Greeter {
+function greeter(seen: Timestamp[] = [], carriesSourceUrl = true): Greeter {
   return {
+    carriesSourceUrl,
     name: "greet",
     title: "Greet",
     description: "Greets a name.",
@@ -142,6 +143,21 @@ describe("an answer", () => {
         "Not the official record of the Oregon Legislature. This is an unofficial copy of public information from the Legislature's Open Data Service; use source_url for the Legislature's own page.",
     };
     expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toEqual(answer);
+    expect(result.content).toEqual([{ type: "text", text: JSON.stringify(answer) }]);
+  });
+
+  it("of a tool that carries no source_url leaves out the clause that tells the reader to use one (ticket #120)", async () => {
+    const { envelope } = arrange({ pulledAt: "2026-08-01T17:00:00Z" });
+
+    const result = await envelope.answer(greeter([], false), { name: "Ada" });
+
+    const answer = {
+      greeting: "Hello, Ada",
+      as_of: "2026-08-01T10:00:00-07:00",
+      notice:
+        "Not the official record of the Oregon Legislature. This is an unofficial copy of public information from the Legislature's Open Data Service.",
+    };
     expect(result.structuredContent).toEqual(answer);
     expect(result.content).toEqual([{ type: "text", text: JSON.stringify(answer) }]);
   });
