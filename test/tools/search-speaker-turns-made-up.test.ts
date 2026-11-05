@@ -92,7 +92,7 @@ const informationalLog = [
 const longSpeaker = Array.from({ length: 700 }, (_, index) => `W${String(index).padStart(3, "0")}`).reduce<string[]>(
   (lines, word, index) => {
     if (index % 15 === 0) lines.push(index === 0 ? `00:00:07 ${word}` : word);
-    else lines[lines.length - 1] += ` ${word}`;
+    else lines.push(`${lines.pop() ?? ""} ${word}`);
     return lines;
   },
   [],
