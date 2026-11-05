@@ -27,12 +27,12 @@ The clock, `fetch`, the OLIS base URL, file paths and randomness are parameters.
 
 ## What every tool result carries
 
-- a `source_url` for each document;
+- a `source_url` for each document (a result with no document, such as `session_overview` or an empty search, has none);
 - the index's "as of" time;
-- the notice that this is not the official record;
+- the notice that this is not the official record, which tells the reader to use `source_url` exactly when the result holds at least one (decided for each result, not for each tool: ticket #120);
 - ids in OregonAI form.
 
-The as-of time and the notice, with the rate limit, the Staleness warning and the MCP result (the content pair, `isError`), belong to the tool result envelope, `mcp-server/envelope.ts`, and to no tool: a tool supplies its name, its schemas (without `as_of` and `notice`, which the envelope folds into the `outputSchema`), a function that returns its answer or a fault, and a message for each fault. The envelope reads the As of once for each call and passes it to the tool; an Index with none answers every tool with one error.
+The as-of time and the notice, with the rate limit, the Staleness warning and the MCP result (the content pair, `isError`), belong to the tool result envelope, `mcp-server/envelope.ts`, and to no tool: a tool supplies its name, its schemas (without `as_of` and `notice`, which the envelope folds into the `outputSchema`), a function that returns its answer or a fault, a message for each fault, and `carriesSourceUrl(answer)`, whether that answer holds a `source_url`, which the envelope words the notice by (the tool says it from its own answer, a count of its hits, meetings or rows; the envelope never scans the payload). The envelope reads the As of once for each call and passes it to the tool; an Index with none answers every tool with one error.
 
 Results are facts only: no predictions, advice or opinions on a Measure's merits.
 

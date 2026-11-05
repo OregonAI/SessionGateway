@@ -34,9 +34,17 @@ function withEnvelopeFields(output: z.ZodObject): StandardSchemaWithJSON {
   return folded;
 }
 
-/** The notice every result carries (ADR-0002, spec #1 "What every result must carry"). */
-const NON_OFFICIAL_NOTICE =
-  "Not the official record of the Oregon Legislature. This is an unofficial copy of public information from the Legislature's Open Data Service; use source_url for the Legislature's own page.";
+/**
+ * The stem of the notice: its text up to, and not including, the full stop or the clause that follows it. It is not a
+ * notice by itself; `noticeOf` finishes it.
+ */
+const NOTICE_STEM =
+  "Not the official record of the Oregon Legislature. This is an unofficial copy of public information from the Legislature's Open Data Service";
+
+/** The notice for a result (ADR-0002, spec #1): the full text when the result holds a source_url, else without the clause (ticket #120). */
+function noticeOf(holdsSourceUrl: boolean): string {
+  return holdsSourceUrl ? `${NOTICE_STEM}; use source_url for the Legislature's own page.` : `${NOTICE_STEM}.`;
+}
 
 /** The MCP annotations a tool is registered with. */
 type Annotations = { readOnlyHint: true; openWorldHint: boolean };
@@ -50,6 +58,13 @@ export type Tool<Input extends z.ZodObject, Output extends z.ZodObject, Fault> =
   title: string;
   description: string;
   annotations: Annotations;
+  /**
+   * Whether this answer holds at least one `source_url` (ticket #120, owner decision of 2026-11-05: the clause is
+   * decided for each result, not for each tool). The tool knows it from its own typed answer (a count of its hits, its
+   * meetings or its rows), so the envelope does not scan a payload. A result with none, such as session_overview's or
+   * an empty search's, gets a notice without the clause that tells the reader to use a source_url.
+   */
+  carriesSourceUrl(answer: z.infer<Output>): boolean;
   input: Input;
   output: Output;
   /** Answers a call, given the As of the envelope read for it. */
@@ -120,7 +135,7 @@ export function createEnvelope(deps: EnvelopeDeps): Envelope {
     const outcome = await tool.run(input, asOf);
     switch (outcome.kind) {
       case "answer": {
-        const stamped = { ...outcome.answer, as_of: asOf, notice: NON_OFFICIAL_NOTICE };
+        const stamped = { ...outcome.answer, as_of: asOf, notice: noticeOf(tool.carriesSourceUrl(outcome.answer)) };
         return { content: [{ type: "text", text: JSON.stringify(stamped) }], structuredContent: stamped };
       }
       case "fault":
