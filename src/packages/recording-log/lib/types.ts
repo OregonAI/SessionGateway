@@ -39,7 +39,8 @@ export type SpeakerTurn = Timed & {
 };
 
 export type TimedEntry = Timed & {
-  kind: "call-to-order" | "agenda-item" | "motion" | "motion-result" | "recess" | "reconvene" | "adjournment";
+  kind:
+    "call-to-order" | "roll-call" | "agenda-item" | "motion" | "motion-result" | "recess" | "reconvene" | "adjournment";
   /** The line as logged, without its timecode, a wrapped line joined by one space. */
   text: string;
 };
