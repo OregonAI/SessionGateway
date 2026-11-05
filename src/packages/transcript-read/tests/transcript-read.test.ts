@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { readTranscript } from "../index.ts";
 
-// Seam 4: the transcript read (ticket #130, spec #123 stage 2, ADR-0053). A transcript file's text and a Meeting's
+// Seam 4: the transcript read (ticket #130, spec #123 stage 2, ADR-0054). A transcript file's text and a Meeting's
 // speaker turns go in; passages with the turn each belongs to, or "speaker not given", and the drift between turns and
 // words come out.
 //

@@ -1,4 +1,4 @@
-// Attaches a transcript's words to the speaker turns they fall in, and measures the drift between them (ADR-0053).
+// Attaches a transcript's words to the speaker turns they fall in, and measures the drift between them (ADR-0054).
 import type { transcriptFileSchema } from "./format.ts";
 import type { z } from "zod";
 

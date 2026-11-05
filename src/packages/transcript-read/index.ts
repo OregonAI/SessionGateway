@@ -1,4 +1,4 @@
-// The transcript read (ticket #130, ADR-0053): a transcript file in, passages with the speaker turn each falls in out.
+// The transcript read (ticket #130, ADR-0054): a transcript file in, passages with the speaker turn each falls in out.
 // It stores nothing (storing transcripts is ticket #134) and is pure.
 import { driftOf, passagesOf, type Drift, type Passage, type TurnAt, type TranscriptWord } from "./lib/attach.ts";
 import { knownFormatVersions, orderProblems, transcriptFileSchema, transcriptFormatVersion } from "./lib/format.ts";

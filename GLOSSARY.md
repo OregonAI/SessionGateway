@@ -195,7 +195,7 @@ The Legislature's own media player at a Speaker turn's second: the log's own pla
 _Avoid_: video link, deep link
 
 **Transcript**:
-The machine transcript of one Meeting's recording, as the transcription tool writes it: the Event ID, the audio's SHA-256 and length, the model and its settings, when it was made, and Transcript segments. One file is one Meeting, and its format has a version that only increases (ADR-0053). It is not an official record.
+The machine transcript of one Meeting's recording, as the transcription tool writes it: the Event ID, the audio's SHA-256 and length, the model and its settings, when it was made, and Transcript segments. One file is one Meeting, and its format has a version that only increases (ADR-0054). It is not an official record.
 _Avoid_: minutes, speaker-turn index (the index holds no words that were spoken)
 
 **Transcript segment**:
@@ -203,7 +203,7 @@ One stretch of speech the model wrote as a unit: its start and end seconds, its 
 _Avoid_: utterance, caption
 
 **Drift** (of a Speaker turn):
-The distance in seconds from a Speaker turn's second to the nearest word boundary (start or end of a word) of the Meeting's Transcript. More than 10 seconds is flagged (ADR-0053).
+The distance in seconds from a Speaker turn's second to the nearest word boundary (start or end of a word) of the Meeting's Transcript. More than 10 seconds is flagged (ADR-0054).
 
 **Event ID**:
 The Invintus identifier of one recorded Meeting (such as `2025011038`), the `eventID` of the Legislature's player links in a Recording Log. A log with no player link has none, and a log whose links carry two different ones has two: the parser reports either and picks neither.

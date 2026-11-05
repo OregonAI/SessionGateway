@@ -1,4 +1,4 @@
-// The transcript file format, version 1 (ADR-0053). docs/schemas/transcript-v1.schema.json is this schema as JSON Schema,
+// The transcript file format, version 1 (ADR-0054). docs/schemas/transcript-v1.schema.json is this schema as JSON Schema,
 // and a test holds the two together. A change to the format is a new version, a new schema file and a new module here,
 // never an edit of this one; the version only increases.
 import { z } from "zod";
@@ -70,7 +70,7 @@ export const transcriptFileSchema = z
   })
   .describe("One Meeting's machine transcript: the contract between the transcription tool and SessionGateway.");
 
-/** The rules JSON Schema cannot state; the read applies them and ADR-0053 lists them. */
+/** The rules JSON Schema cannot state; the read applies them and ADR-0054 lists them. */
 export function orderProblems(file: z.infer<typeof transcriptFileSchema>): { path: string; message: string }[] {
   const problems: { path: string; message: string }[] = [];
   file.segments.forEach((s, i) => {

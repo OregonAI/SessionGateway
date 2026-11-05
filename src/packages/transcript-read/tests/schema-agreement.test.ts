@@ -3,10 +3,10 @@ import { z } from "zod";
 import { describe, expect, test } from "vitest";
 import { transcriptFileSchema, transcriptFormatVersion } from "../index.ts";
 
-// Seam 4: the JSON Schema committed for the transcription tool (docs/schemas/transcript-v1.schema.json, ADR-0053) and
+// Seam 4: the JSON Schema committed for the transcription tool (docs/schemas/transcript-v1.schema.json, ADR-0054) and
 // the zod schema the read validates with say the same thing. The zod schema is turned into a JSON Schema and compared
 // with the committed file, apart from the prose (title, description) and the draft marker. The rules JSON Schema cannot
-// state (a word ends no earlier than it starts) are in the read alone, and ADR-0053 lists them.
+// state (a word ends no earlier than it starts) are in the read alone, and ADR-0054 lists them.
 
 const committed = JSON.parse(
   readFileSync(new URL("../../../../docs/schemas/transcript-v1.schema.json", import.meta.url), "utf8"),
