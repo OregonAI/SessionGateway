@@ -291,4 +291,53 @@ describe("playerLinkOf", () => {
     expect(playerLinkOf(links, "2025011099", 4)).toBeNull();
     expect(playerLinkOf(links.slice(0, 1), "2025011038", 4)).toBeNull();
   });
+  test("is the player page's rule of event-id.ts and no looser: a path that only contains 'mediaplayer' is not a player link", () => {
+    // MADE UP: the same query on other paths. event-id.ts's `playerUrl` is /^\/liz\/mediaplayer\/?$/.
+    const query = "?clientID=4879615486&eventID=2025011038&startStreamAt=3";
+    const other = (path: string): RecordingLogLink[] => [
+      { page: 1, url: `https://olis.oregonlegislature.gov${path}${query}`, rect: [69.75, 250.74, 122.29, 264.54] },
+    ];
+
+    expect(playerLinkOf(other("/liz/2025R1/Committees/mediaplayer"), "2025011038", 4)).toBeNull();
+    expect(playerLinkOf(other("/liz/mediaplayerhelp"), "2025011038", 4)).toBeNull();
+    expect(playerLinkOf(other("/liz/mediaplayer/extra"), "2025011038", 4)).toBeNull();
+    expect(playerLinkOf(other("/liz/mediaplayer"), "2025011038", 4)).toBe(
+      "https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID=2025011038&startStreamAt=4",
+    );
+    expect(playerLinkOf(other("/liz/mediaplayer/"), "2025011038", 4)).toBe(
+      "https://olis.oregonlegislature.gov/liz/mediaplayer/?clientID=4879615486&eventID=2025011038&startStreamAt=4",
+    );
+  });
+
+  test("rewrites only startStreamAt in the query string and keeps every other byte of the link", () => {
+    // MADE UP queries (the real logs' are all clientID, eventID, startStreamAt): the encodings, the order and the
+    // fragment are the log's, and the parameters that URLSearchParams would write differently stay as they were.
+    const link = (query: string): RecordingLogLink[] => [
+      {
+        page: 1,
+        url: `https://olis.oregonlegislature.gov/liz/mediaplayer${query}`,
+        rect: [69.75, 250.74, 122.29, 264.54],
+      },
+    ];
+
+    expect(
+      playerLinkOf(link("?startStreamAt=3&label=a%20b+c%2f&eventID=2025011038&clientID=4879615486"), "2025011038", 61),
+    ).toBe(
+      "https://olis.oregonlegislature.gov/liz/mediaplayer?startStreamAt=61&label=a%20b+c%2f&eventID=2025011038&clientID=4879615486",
+    );
+    expect(playerLinkOf(link("?eventID=2025011038&startStreamAt=3#t=1"), "2025011038", 61)).toBe(
+      "https://olis.oregonlegislature.gov/liz/mediaplayer?eventID=2025011038&startStreamAt=61#t=1",
+    );
+    expect(playerLinkOf(link("?eventID=2025011038&x=%E2%82%AC&startStreamAt=3&y"), "2025011038", 0)).toBe(
+      "https://olis.oregonlegislature.gov/liz/mediaplayer?eventID=2025011038&x=%E2%82%AC&startStreamAt=0&y",
+    );
+    // A link with no startStreamAt gets one at the end of its query.
+    expect(playerLinkOf(link("?eventID=2025011038&clientID=4879615486"), "2025011038", 61)).toBe(
+      "https://olis.oregonlegislature.gov/liz/mediaplayer?eventID=2025011038&clientID=4879615486&startStreamAt=61",
+    );
+    // The parameter whose name only ends in startStreamAt is not it.
+    expect(playerLinkOf(link("?eventID=2025011038&notstartStreamAt=9&startStreamAt=3"), "2025011038", 61)).toBe(
+      "https://olis.oregonlegislature.gov/liz/mediaplayer?eventID=2025011038&notstartStreamAt=9&startStreamAt=61",
+    );
+  });
 });
