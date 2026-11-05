@@ -42,8 +42,8 @@ const linkedPaths = manifest.documents
   .map((document) => new URL(document.source_url).pathname)
   .toSorted();
 
-// 2026-08-01 10:00 in Oregon: every row of the fixture exists by then.
-const everything = "2026-08-01T17:00:00Z";
+// 2026-08-05 10:00 in Oregon: every row of the fixture exists by then (the latest, SRULES's Recording Log 317265, was created 2026-08-04).
+const everything = "2026-08-05T17:00:00Z";
 
 describe("fetching each document once", () => {
   // One system for both cases: the second pull adds no document, so neither changes what the other reads.
@@ -58,7 +58,7 @@ describe("fetching each document once", () => {
   });
 
   it("fetches every document the feed links, once each", () => {
-    expect(linkedPaths).toHaveLength(280);
+    expect(linkedPaths).toHaveLength(314);
     expect(system.olis.documentRequests().toSorted()).toEqual(linkedPaths);
   });
 
@@ -205,7 +205,8 @@ describe("a fake OLIS that serves no document files", () => {
   // the rows with a CreatedDate up to the clock's time): at 2025-07-15 10:00 in Oregon the fixture holds
   // 12 Committees and 36 CommitteeMeetings, and the rows that link a document add up to 277 (25
   // MeasureDocuments, 34 MeasureAnalysisDocuments, 15 CommitteeProposedAmendments, 83 of the 86
-  // CommitteeMeetingDocuments, 84 CommitteePublicTestimonies, and 36 agendas). The files are not there,
+  // CommitteeMeetingDocuments, 84 CommitteePublicTestimonies, and 36 agendas) and 31 of the 34 Recording Logs,
+  // the ones created by then (ticket #124): 308. The files are not there,
   // so each of those is left out and reported.
   it("still serves the committees and meetings, and reports each linked document as not fetched", async () => {
     const system = await start({ clockAt: "2025-07-15T17:00:00Z", documents: false });
@@ -216,7 +217,7 @@ describe("a fake OLIS that serves no document files", () => {
 
     expect(overview.structured).toMatchObject({ counts: { committees: 12, meetings: 36, documents: 0 } });
     const notFetched = system.buildReport()["documents_not_fetched"] as { reason: string }[];
-    expect(notFetched).toHaveLength(277);
+    expect(notFetched).toHaveLength(308);
     expect(notFetched[0]?.reason).toContain("404");
   });
 });

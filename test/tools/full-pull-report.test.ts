@@ -70,7 +70,7 @@ const fixtureRows = {
   CommitteeAgendaItems: 36,
   MeasureDocuments: 25,
   MeasureAnalysisDocuments: 34,
-  CommitteeMeetingDocuments: 86,
+  CommitteeMeetingDocuments: 119,
   CommitteeProposedAmendments: 15,
   CommitteePublicTestimonies: 84,
   CommitteeMembers: 99,

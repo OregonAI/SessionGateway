@@ -64,9 +64,11 @@ describe("a file replaced behind the same URL", () => {
   });
 });
 
-// The fixture holds 280 documents (test/CLAUDE.md, "Documents"; the manifest lists 281 files, one of them the Statutes
+// The fixture holds 314 documents (280 and the 34 Recording Logs of ticket #124), 313 of them by the clock these cases use (SRULES's log 317265 was created 2026-08-04); the manifest lists 315 files, one of them the Statutes
 // Affected Table, which is not a feed document). A sample of 1000 therefore draws all of them.
-const documentsInFixture = 280;
+const documentsInFixture = 313;
+// From 2026-08-04 on, when SRULES's Recording Log 317265 was created, the sample draws all 314.
+const documentsInFixtureLater = 314;
 
 describe("a file that was not replaced", () => {
   it("reports no mismatch, and the sample ran once through the night, fetching each document once", async () => {
@@ -194,7 +196,7 @@ describe("the night that holds the full pull", () => {
     expect(system.hashSampleReport()["as_of"]).toBe("2026-08-07T17:00:00-07:00");
     // The sample fetched each document once, and so did nothing in the small hours; the full pull ran after it. A
     // full pull is one count of Measures without a `gt datetime` filter (ingest-schedule.test.ts).
-    expect(system.olis.documentRequests()).toHaveLength(documentsInFixture);
+    expect(system.olis.documentRequests()).toHaveLength(documentsInFixtureLater);
     const counts = system.olis.requests().filter((request) => request.entitySet === "Measures" && request.isCount);
     expect(counts.filter((request) => request.filter?.includes(" gt datetime") !== true)).toHaveLength(1);
   });
@@ -216,9 +218,9 @@ describe("the night window", () => {
     // One minute for each document: the 15 fetched from 11:45 to 11:59 pm.
     expect(system.olis.documentRequests()).toHaveLength(15);
     const report = system.hashSampleReport();
-    expect(report).toMatchObject({ sampled: documentsInFixture, checked: 15, mismatches: [] });
+    expect(report).toMatchObject({ sampled: documentsInFixtureLater, checked: 15, mismatches: [] });
     const notChecked = report["not_checked"] as { reason: string }[];
-    expect(notChecked).toHaveLength(documentsInFixture - 15);
+    expect(notChecked).toHaveLength(documentsInFixtureLater - 15);
     expect(notChecked.every((entry) => entry.reason.includes("night window closed"))).toBe(true);
   });
 
@@ -237,9 +239,9 @@ describe("the night window", () => {
     expect(Date.now() - began).toBeLessThan(10_000);
     expect(system.olis.documentRequests()).toHaveLength(1);
     const report = system.hashSampleReport();
-    expect(report).toMatchObject({ sampled: documentsInFixture, checked: 0, mismatches: [] });
+    expect(report).toMatchObject({ sampled: documentsInFixtureLater, checked: 0, mismatches: [] });
     const notChecked = report["not_checked"] as { reason: string }[];
-    expect(notChecked).toHaveLength(documentsInFixture);
+    expect(notChecked).toHaveLength(documentsInFixtureLater);
     expect(notChecked.every((entry) => entry.reason.includes("night window closed"))).toBe(true);
   });
 

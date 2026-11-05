@@ -455,7 +455,7 @@ describe.for(eras)("get_document for a %s client", (era) => {
     // "Senate Amendments to Introduced" for SB 69, SB 921 and SB 983, "House Amendments to Introduced"
     // and "Senate Amendments to A-Engrossed" for HB 3795), 34 MeasureAnalysisDocuments, 15
     // CommitteeProposedAmendments (postings of 7 amendments), 86 CommitteeMeetingDocuments and 84
-    // CommitteePublicTestimonies. No row is a Recording Log.
+    // CommitteePublicTestimonies. 33 of the 34 Recording Logs exist at this clock (ticket #124): SRULES's of 2025-04-23 was created 2026-08-04, so the Session holds 313 of the fixture's 314 documents.
     it("returns the Session, what the index holds, and when it was last refreshed", async () => {
       const outcome = await callTool(connected, "session_overview", {});
 
@@ -468,7 +468,7 @@ describe.for(eras)("get_document for a %s client", (era) => {
           committees: 12,
           meetings: 36,
           proposed_amendments: 7,
-          documents: 280,
+          documents: 313,
           documents_without_text_layer: 3,
           documents_by_kind: {
             version: 20,
@@ -476,7 +476,7 @@ describe.for(eras)("get_document for a %s client", (era) => {
             proposed_amendment: 15,
             analysis: 34,
             exhibit: 86,
-            recording_log: 0,
+            recording_log: 33,
             testimony: 84,
             agenda: 36,
             // The fixture holds no FloorLetters file (ticket #64).
