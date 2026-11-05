@@ -485,6 +485,37 @@ const versionOneSchema = `
 `;
 
 /**
+ * Step 2's text (ticket #126, ADR-0052). The index of a Recording Log's speaker turns: one row for the log with what
+ * reading it came to (a log with no event ID, or with two, is a row with no turns), and one row for each turn. A
+ * turn's position is its place in the log; the reader orders by the media clock and then by it.
+ */
+const speakerTurnSchema = `
+  DROP VIEW IF EXISTS feed_row_state;
+  CREATE TABLE IF NOT EXISTS speaker_turn_index (
+    document_id TEXT NOT NULL PRIMARY KEY,
+    outcome TEXT NOT NULL,
+    event_id TEXT,
+    event_ids TEXT,
+    pages_read_by_timecode TEXT NOT NULL,
+    turn_count INTEGER NOT NULL
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS speaker_turn (
+    document_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    timecode TEXT NOT NULL,
+    offset_seconds INTEGER NOT NULL,
+    offset_source TEXT NOT NULL,
+    speaker TEXT NOT NULL,
+    legislator_code TEXT,
+    legislator_id TEXT,
+    agenda_item TEXT,
+    measure_id TEXT,
+    player_link TEXT NOT NULL,
+    PRIMARY KEY (document_id, position)
+  ) STRICT;
+`;
+
+/**
  * The numbered upgrade steps (ADR-0048): step N takes a file from version N - 1 to version N, and the file's version
  * is the number of steps there are. The worker applies the ones a file lacks, in order, in one transaction when it opens
  * the file, so a file is never left half upgraded. Step 1 is today's schema: its pass of `CREATE ... IF NOT EXISTS`
@@ -492,14 +523,18 @@ const versionOneSchema = `
  * A change to a table after version 1 is a step appended here with its own test, and a step is never edited once a
  * release has run it: a new file runs every step, so `versionOneSchema` above stays version 1's text.
  *
- * To do with the first step another ticket adds: version 1 creates the view `feed_row_state`, which nothing has read since
- * ADR-0049 (the Listing module in `lib/listing.ts` derives the rule in TypeScript). That step should also run
+ * Version 1 creates the view `feed_row_state`, which nothing has read since ADR-0049 (the Listing module in
+ * `lib/listing.ts` derives the rule in TypeScript). Step 2, the first step another ticket added, runs
  * `DROP VIEW IF EXISTS feed_row_state`, so that no file keeps a view nothing reads. Version 1's text is not edited to
  * remove it.
  */
 const upgradeSteps: readonly ((database: DatabaseSync) => void)[] = [
   (database) => {
     database.exec(versionOneSchema);
+  },
+  // Step 2 (ticket #126, ADR-0052): the speaker-turn index of a Recording Log, and the end of the view nothing reads.
+  (database) => {
+    database.exec(speakerTurnSchema);
   },
 ];
 

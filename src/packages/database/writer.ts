@@ -7,6 +7,7 @@ import {
   type DocumentId,
   type DocumentKind,
   type DocumentLink,
+  type MeetingId,
   type SessionSpan,
   type StoredDocument,
 } from "#/packages/domain/documents.ts";
@@ -15,6 +16,7 @@ import type { AgencyId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
 import type { AgencyLink } from "#/packages/domain/agency-links.ts";
 import type { Citation } from "#/packages/domain/citations.ts";
 import type { Passage, SearchEntry } from "#/packages/domain/search.ts";
+import type { SpeakerTurnIndexOutcome } from "#/packages/domain/speaker-turns.ts";
 import type {
   RelatingClauseEdit,
   StatuteLink,
@@ -23,6 +25,7 @@ import type {
 } from "#/packages/domain/statute-links.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceToJson } from "./lib/agency-evidence.ts";
+import { storeSpeakerTurnIndex } from "./lib/speaker-turns.ts";
 import { openWriteConnection } from "./lib/connection.ts";
 import {
   readAsOf,
@@ -166,6 +169,17 @@ function testimonyAgencyValues(
       return agency satisfies never;
   }
 }
+
+/** What the store keeps of a Recording Log's speaker turns: the log, and what reading it came to. */
+export type SpeakerTurnIndexRecord = { documentId: DocumentId; outcome: SpeakerTurnIndexOutcome };
+
+const agendaItemFields = z.object({
+  measure_prefix: z.string().nullable(),
+  measure_number: z.number().nullable(),
+  meeting_type: z.string().nullable(),
+  action: z.string().nullable(),
+  comments: z.string().nullable(),
+});
 
 /** What search keeps of one document, stored in the same transaction as the document. */
 export type SearchRecord = {
@@ -312,6 +326,21 @@ export type IndexWriter = {
    * was recorded has none.
    */
   storedAgendaRevisions(session: SessionKey): Map<DocumentId, number>;
+  /**
+   * Keeps what reading a Recording Log's links and text came to (ticket #126, ADR-0052): its event ID and speaker turns, or
+   * the gap that left it with none. It replaces whatever the log had, in one transaction.
+   */
+  storeSpeakerTurnIndex(record: SpeakerTurnIndexRecord): void;
+  /** The stored Recording Logs of the Session that have no speaker-turn index yet (a gap counts as one): the ones to fetch again to read their links. */
+  recordingLogsWithoutIndex(session: SessionKey): Set<DocumentId>;
+  /** The Agenda items the store holds for a Meeting, as the feed gave them, for the parser to match a log's lines against. */
+  agendaItemsOfMeeting(meeting: MeetingId): {
+    measurePrefix: string | null;
+    measureNumber: number | null;
+    meetingType: string | null;
+    action: string | null;
+    comments: string | null;
+  }[];
   /**
    * The files of the Session's stored Versions and postings of Proposed Amendments that have not been read
    * for Statute Links with this snapshot, each once however many documents share it: a file never read, and every
@@ -991,6 +1020,37 @@ export function openIndexWriter(path: string): IndexWriter {
         const stored = memberRow.parse(row);
         return { committeeCode: stored.committee_code, legislatorCode: stored.legislator_code };
       });
+    },
+    storeSpeakerTurnIndex(record) {
+      storeSpeakerTurnIndex(database, record.documentId, record.outcome);
+    },
+    recordingLogsWithoutIndex(session) {
+      const rows = database
+        .prepare(
+          `SELECT d.id FROM document d
+           WHERE d.session_key = ? AND d.kind = 'recording_log'
+             AND NOT EXISTS (SELECT 1 FROM speaker_turn_index i WHERE i.document_id = d.id)`,
+        )
+        .all(session);
+      return new Set(rows.map((row) => idRow.parse(row).id as DocumentId));
+    },
+    agendaItemsOfMeeting(meeting) {
+      return database
+        .prepare(
+          `SELECT measure_prefix, measure_number, meeting_type, action, comments FROM agenda_item
+           WHERE meeting_id = ? ORDER BY id`,
+        )
+        .all(meeting)
+        .map((row) => {
+          const item = agendaItemFields.parse(row);
+          return {
+            measurePrefix: item.measure_prefix,
+            measureNumber: item.measure_number,
+            meetingType: item.meeting_type,
+            action: item.action,
+            comments: item.comments,
+          };
+        });
     },
     storedDocumentIds(session) {
       const rows = database.prepare("SELECT id FROM document WHERE session_key = ?").all(session);

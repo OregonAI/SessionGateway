@@ -54,7 +54,7 @@ export function buildFrozenVersionOne(path: string): void {
 export function leaveAsBeforeVersions(path: string): void {
   withSql(
     path,
-    `DROP VIEW feed_row_state; DROP TABLE feed_row; DROP TABLE feed_pull; DROP TABLE committee_member;
+    `DROP VIEW IF EXISTS feed_row_state; DROP TABLE feed_row; DROP TABLE feed_pull; DROP TABLE committee_member;
      PRAGMA user_version = 0`,
   );
 }

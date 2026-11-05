@@ -4,6 +4,7 @@
 
 import type { Chamber, Measure, MeasureId, MeasureKey, SessionKey } from "./index.ts";
 import type { AgencyId } from "./oregonai.ts";
+import type { SpeakerTurnIndexSummary } from "./speaker-turns.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 
 /** What a document is, in the glossary's words. */
@@ -714,8 +715,11 @@ export type MeetingContents = {
   agendaItems: ListedAgendaItem[];
   amendments: PostedAmendment[];
   exhibits: MeetingDocument[];
-  recordingLogs: MeetingDocument[];
+  recordingLogs: RecordingLogDocument[];
 };
+
+/** A Recording Log the feed lists for a meeting, with whether the store holds its speaker-turn index (ticket #126). */
+export type RecordingLogDocument = MeetingDocument & { speakerTurnIndex: SpeakerTurnIndexSummary | null };
 
 /**
  * One line of a meeting's agenda: a Measure heard, or something else the committee did (an

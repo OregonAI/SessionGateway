@@ -24,9 +24,6 @@ import {
 } from "./made-up-index.ts";
 
 let index: MadeUpIndex;
-afterEach(() => {
-  index.close();
-});
 
 const log = recordingLogLink();
 const logId = log.id as DocumentId;
@@ -61,6 +58,10 @@ function pulledWithLog(): void {
 }
 
 describe("the speaker-turn index of a stored Recording Log", () => {
+  afterEach(() => {
+    index.close();
+  });
+
   test("is read back whole, every field, in media-clock order whatever order it was stored in", () => {
     pulledWithLog();
     const first = turn(10, {

@@ -2,7 +2,7 @@
 // in a temp directory of the test's own, no fake OLIS and no MCP client. A file at another version is arranged with
 // SQL (`arranged-files.ts`, as `test/support/old-database.ts` arranges the harness's old files), and every assertion
 // goes through the entry points: the version is seen as a reader that opens the file or refuses it, never as a read of
-// the file's header. Only step 1 exists (today's schema); the first ticket that changes a table adds step 2 and its test.
+// the file's header. Steps 1 (the schema as of version 1) and 2 exist; step 2 (ticket #126) adds the speaker-turn index and drops the view nothing reads; the next ticket that changes a table adds step 3 and its test.
 import { afterEach, describe, expect, test } from "vitest";
 import { openIndexReader } from "../reader.ts";
 import { openSearchReader } from "../search.ts";
@@ -59,7 +59,7 @@ const readers = [
 ] as const;
 
 describe.for(readers)("%s", ([, openReader]) => {
-  test("opens a new file: the writer creates it at version 1, the one version the reader knows", () => {
+  test("opens a new file: the writer creates it at version 2, the one version the reader knows", () => {
     const file = createdFile();
 
     expect(() => {
@@ -67,11 +67,11 @@ describe.for(readers)("%s", ([, openReader]) => {
     }).not.toThrow();
   });
 
-  test.for([2, 7])("refuses a file at version %i, naming that version and the version 1 it knows", (found) => {
+  test.for([3, 7])("refuses a file at version %i, naming that version and the version 2 it knows", (found) => {
     const file = createdFile();
     stampSchemaVersion(file.path, found);
 
-    expect(() => openReader(file.path)).toThrow(new RegExp(`version ${String(found)}\\b.*version 1\\b`));
+    expect(() => openReader(file.path)).toThrow(new RegExp(`version ${String(found)}\\b.*version 2\\b`));
   });
 
   test("refuses a file with no recorded version, saying the worker has not opened it yet and to start the worker first", () => {
@@ -92,7 +92,7 @@ describe.for(readers)("%s", ([, openReader]) => {
 });
 
 describe("the writer", () => {
-  test("gives a file with no version today's tables and stamps it 1, and the file keeps its rows", () => {
+  test("gives a file with no version today's tables and stamps it 2, and the file keeps its rows", () => {
     const file = newFile();
     const first = writerOn(file.path);
     first.recordFullPull(session, pulledAt, nothingPulled);
@@ -109,7 +109,7 @@ describe("the writer", () => {
     expect(upgraded.listingCounts(session)).toEqual([]);
     expect(upgraded.committeeMembers(session)).toEqual([]);
     closed(upgraded);
-    // It is at version 1 now, so the reader opens it, and the row it held is there.
+    // It is at version 2 now, so the reader opens it, and the row it held is there.
     const reader = openIndexReader(file.path);
     connections.push(reader);
     expect(reader.lastFullPull(session)).toBe(pulledAtText);
@@ -117,12 +117,12 @@ describe("the writer", () => {
 
   test("refuses a file at a newer version than it knows, naming both, and leaves it at that version", () => {
     const file = createdFile();
-    stampSchemaVersion(file.path, 2);
+    stampSchemaVersion(file.path, 3);
 
-    expect(() => openIndexWriter(file.path)).toThrow(/version 2\b.*version 1\b/);
+    expect(() => openIndexWriter(file.path)).toThrow(/version 3\b.*version 2\b/);
 
-    // It was not downgraded or stamped over: the server still sees version 2.
-    expect(() => openIndexReader(file.path)).toThrow(/version 2\b.*version 1\b/);
+    // It was not downgraded or stamped over: the server still sees version 3.
+    expect(() => openIndexReader(file.path)).toThrow(/version 3\b.*version 2\b/);
   });
 });
 
@@ -131,7 +131,7 @@ describe("the writer", () => {
 // without what the new code needs. `version-one-schema.sql` is a frozen copy of the text as it was. The writer and both
 // readers prepare their statements when they open, so a statement that needs a table or column the frozen file lacks
 // throws at open, and this test goes red. A test of a step that adds a column or table builds its file from the same
-// frozen text with the step not yet run (ticket #95 adds no step; the first ticket that does adds the test).
+// frozen text with the step not yet run (ticket #126's test of step 2 is in speaker-turn-index.test.ts).
 describe("a file built from the frozen text of version 1", () => {
   test("is opened by the writer, the index reader and the search reader as it stands, and a pull's worth of reads works", () => {
     const file = newFile();
