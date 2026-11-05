@@ -17,22 +17,40 @@ function literal(line: string): string {
   return written;
 }
 
-/** The bytes of a PDF with these pages, each a list of lines from the top of the page down. */
-export function madeUpPdf(pages: readonly (readonly string[])[]): Uint8Array {
+/** A link annotation to write: the page (from 1), the address and the rectangle in PDF points. */
+export type MadeUpLink = { page: number; url: string; rect: readonly [number, number, number, number] };
+
+/**
+ * The bytes of a PDF with these pages, each a list of lines from the top of the page down, and the link annotations
+ * `options.links` gives, each on its page (ticket #126: a made-up Recording Log has player links). A link's address is
+ * written as a URI action, as OLIS's logs do; it covers its rectangle and the page's lines are left as they are.
+ */
+export function madeUpPdf(
+  pages: readonly (readonly string[])[],
+  options: { links?: readonly MadeUpLink[] } = {},
+): Uint8Array {
   const objects: string[] = [];
   const add = (body: string): number => objects.push(body);
   const catalog = add("<< /Type /Catalog /Pages 2 0 R >>");
   add("");
   const font = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
   const pageIds: number[] = [];
-  for (const lines of pages) {
+  for (const [pageIndex, lines] of pages.entries()) {
+    const annotationIds = (options.links ?? [])
+      .filter((link) => link.page === pageIndex + 1)
+      .map((link) =>
+        add(
+          `<< /Type /Annot /Subtype /Link /Rect [${link.rect.join(" ")}] /Border [0 0 0] /A << /S /URI /URI (${literal(link.url)}) >> >>`,
+        ),
+      );
+    const annots = annotationIds.length === 0 ? "" : ` /Annots [${annotationIds.map((id) => `${id} 0 R`).join(" ")}]`;
     const stream = lines
       .map((line, index) => `BT /F1 9 Tf 40 ${760 - index * 12} Td (${literal(line)}) Tj ET`)
       .join("\n");
     const content = add(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
     pageIds.push(
       add(
-        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${font} 0 R >> >> /Contents ${content} 0 R >>`,
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${font} 0 R >> >> /Contents ${content} 0 R${annots} >>`,
       ),
     );
   }
