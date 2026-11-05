@@ -314,6 +314,51 @@ equals its `counted`, and `documents_not_fetched` lists only files that failed. 
 
 The model is in the image. The database is never committed.
 
+## Deploying it
+
+The deploy box runs the MCP server from the `Dockerfile` at the repository root (ADR-0007). The image holds the code, the production
+dependencies and the pinned embedding model, and nothing else: no database, no snapshot, no PDFs and no OLIS cache. The model is fetched
+and checked against its lock during the build (`scripts/model/fetch.ts` and `verify.ts`, into `MODEL_PATH=/app/model`), so a build needs
+the network (huggingface.co and the npm registry) and no other input. `npm ci --omit=dev` runs under the repository's `.npmrc`, so
+`onnxruntime-node`'s install script stays denied (ADR-0026), and the macOS, Windows and ARM runtimes are removed from the image. The one
+image runs both entry scripts from `/app`: `node src/bin/server.ts` (the default) and `node src/bin/ingest.ts`.
+
+```
+docker build -t oregonai/session-gateway:current .
+docker run --user 1000:1000 -v <data>:/data -p 127.0.0.1:8000:8000 \
+  -e SESSION_KEY=2026R1 -e DATABASE_PATH=/data/index.db -e MODEL_PATH=/app/model \
+  -e OLIS_BASE_URL=https://api.oregonlegislature.gov/odata/odataservice.svc \
+  -e MCP_HOST=0.0.0.0 -e MCP_PORT=8000 -e MCP_PATH=/session-gateway/mcp -e MCP_ALLOWED_HOSTS=localhost,127.0.0.1 \
+  oregonai/session-gateway:current
+```
+
+`<data>` holds `index.db` and `snapshot.json`; the container user must be able to write there (SQLite's WAL needs the `-shm` file
+even for a reader). The server exits at start-up when `index.db` is missing, was never opened by the worker, or is at another schema
+version than the image's (ADR-0048).
+
+platform-deploy runs it: its `docker-compose.yml` defines the two services (`session-gateway`, `session-gateway-ingest`), `deploy.sh`
+builds `main` and tags `oregonai/session-gateway:current`, the reconcile loop redeploys on a merge, and `deployed.txt` records the
+serving commit. Its README, "SessionGateway", is the authority for the box (the data volume, the go-live steps, the profiles,
+rolling back); this section does not repeat it.
+
+**The ingest worker is off** (the owner's decision of 2026-11-04). The box serves the 2026R1 database as copied from the backfill
+(as of 2026-11-03) and sends OLIS nothing on a schedule; only `get_measure` reads OLIS, once per call. The server's staleness rule
+still reads `INGEST_INCREMENTS` and `INGEST_FULL_PULL` from the environment, and it cannot know the worker is off. With the
+deployment's `daily` and `weekly`, answers carry "this index may be out of date" from 06:00 Pacific on the morning after the first
+night window that passes without an update (2026-11-05 for the copied 2026R1 database), not after a week. platform-deploy's README,
+"Turning the worker back on", says how the worker returns.
+
+**Switching to a new Session** (say 2027R1; ADR-0003 allows one Session per deployment, and `SESSION_KEY` is never edited on a live volume):
+
+1. Build the new Session's database on the GPU desktop: "Rebuilding a Session: the backfill" above, with `SESSION_KEY` set to the
+   new key and the snapshot built for it. Its "Copy to the deploy box" steps leave `index.db` and `snapshot.json` ready to copy.
+2. Drop the old deployment as platform-deploy's "Changing the Session" says: stop the server (and the worker, if it has been turned
+   back on), move the old data directory aside, and set the new `SESSION_KEY` (and the Session's `STATUTES_AFFECTED_TABLE_URL`)
+   in `docker-compose.yml`.
+3. Merge that change, copy the new database and snapshot into a fresh data directory, and run `./scripts/deploy.sh SessionGateway`.
+4. Decide whether the worker comes back for the new Session (platform-deploy's "Turning the worker back on"). It is the worker that
+   keeps a Session that is running current, and the staleness settings are then true again.
+
 ## How the code is written
 
 Test-first, at the two seams spec #1 agreed. The rules agents and people

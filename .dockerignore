@@ -1,0 +1,10 @@
+# The build context is the repository's code and nothing else (ticket #25, ADR-0007): no
+# database, no OLIS cache, no fixture, no model, no tests, no history.
+*
+!package.json
+!package-lock.json
+!.npmrc
+!src/
+!scripts/model/
+**/tests
+**/*.test.ts
