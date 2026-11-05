@@ -6,5 +6,6 @@
 - **Untrusted input.** Workflows trigger on `pull_request` and `push`. Untrusted input reaches a `run:` step through an `env:` variable, never inline in `${{ }}`.
 - **No secrets.** Tests are hermetic, so CI needs none.
 - **Supply-chain jobs.** Separate jobs run `npm audit signatures`, `npm audit --omit=dev --audit-level=high`, and the license check (`npm run license:check`, `scripts/license-check.ts`) over `npm sbom --omit=dev`. npm 11.20.0's `sbom --omit=dev` leaves out a production package that a dev dependency also needs (it dropped zod and `@modelcontextprotocol/core`), so the script also walks `package-lock.json` and checks what the SBOM missed.
-- **Dependabot** updates npm and GitHub Actions weekly, with minor and patch updates grouped, and adds Docker with the Dockerfile (#25). Its cooldown is 14 days, matching `.npmrc`; security updates skip the cooldown.
+- **Image build.** The `image` job builds the Dockerfile with `DOCKER_BUILDKIT=0` (the deploy box's legacy builder), pushes nothing and logs in nowhere, then smoke-tests the image offline. It is separate from the `check` gate, like the supply-chain jobs, and needs the network (npm registry, huggingface.co, Docker Hub). `timeout-minutes: 20`.
+- **Dependabot** updates npm, GitHub Actions and the Dockerfile's pinned node image (Docker) weekly, with minor and patch updates of the first two grouped. Its cooldown is 14 days, matching `.npmrc`; security updates skip the cooldown.
 - **Triggers.** `.github/workflows/ci.yml` runs on every `pull_request` and on `push` to `main`.
