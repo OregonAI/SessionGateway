@@ -76,6 +76,7 @@ describe("the event ID and the offsets of a log", () => {
         e("call-to-order", "00:00:05", 5, "Meeting Called to Order"),
         e("adjournment", "00:00:55", 55, "Meeting Adjourned"),
       ],
+      pagesReadByTimecode: [],
     });
   });
 
@@ -93,6 +94,7 @@ describe("the event ID and the offsets of a log", () => {
         e("call-to-order", "00:00:05", 5, "Meeting Called to Order", "timecode"),
         e("adjournment", "00:00:55", 55, "Meeting Adjourned", "timecode"),
       ],
+      pagesReadByTimecode: [1],
     });
   });
 });

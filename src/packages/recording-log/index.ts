@@ -5,6 +5,8 @@ import { offsetsOf } from "./lib/offsets.ts";
 import type { ParseRecordingLogInput, RecordingLogParse } from "./lib/types.ts";
 
 export type {
+  AgendaItemEntry,
+  FeedAgendaItem,
   OffsetSource,
   ParseRecordingLogInput,
   RecordingLogEntry,
@@ -22,6 +24,10 @@ export function parseRecordingLog(input: ParseRecordingLogInput): RecordingLogPa
   if (eventId === undefined) return { kind: "no-event-id" };
   if (eventIds.length > 1) return { kind: "conflicting-event-ids", eventIds };
   const blocks = readBlocks(input.text);
-  const { speakerTurns, entries } = classify(blocks, offsetsOf(blocks, input.links));
-  return { kind: "parsed", eventId, speakerTurns, entries };
+  const offsets = offsetsOf(blocks, input.links);
+  const { speakerTurns, entries } = classify(blocks, offsets, input.agendaItems ?? []);
+  const pagesReadByTimecode = [
+    ...new Set(blocks.filter((_, index) => offsets[index]?.offsetSource === "timecode").map((block) => block.page)),
+  ].toSorted((a, b) => a - b);
+  return { kind: "parsed", eventId, speakerTurns, entries, pagesReadByTimecode };
 }

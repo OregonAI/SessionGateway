@@ -9,11 +9,31 @@ export type RecordingLogLink = {
   rect: readonly [number, number, number, number];
 };
 
+/**
+ * One Agenda item of the Meeting as the OLIS feed gives it (a CommitteeAgendaItems row), with the fields the parser
+ * reads. The caller passes the items of the Meeting the log belongs to.
+ */
+export type FeedAgendaItem = {
+  measurePrefix: string | null;
+  measureNumber: number | null;
+  /** The feed's MeetingType: "Public Hearing", "Work Session", "Informational Meeting". */
+  meetingType: string | null;
+  /** The feed's Action: "Heard", "Work Session" and the like. */
+  action: string | null;
+  /** The feed's Comments: the item's title or description, possibly several lines. */
+  comments: string | null;
+};
+
 export type ParseRecordingLogInput = {
   /** The log's extracted text, as the pdf-text package extracts it: a form feed (U+000C) between pages. */
   text: string;
   /** Every link annotation of the PDF, whatever it points at. */
   links: readonly RecordingLogLink[];
+  /**
+   * The Meeting's Agenda items from the feed. A log line is an Agenda item when it matches one: the measure id and its
+   * action, or the item's text. The text heuristic is the fallback when none are passed or none matches a line.
+   */
+  agendaItems?: readonly FeedAgendaItem[];
 };
 
 /** Where a line's offset in seconds came from. */
@@ -39,12 +59,23 @@ export type SpeakerTurn = Timed & {
 };
 
 export type TimedEntry = Timed & {
-  kind:
-    "call-to-order" | "roll-call" | "agenda-item" | "motion" | "motion-result" | "recess" | "reconvene" | "adjournment";
+  kind: "call-to-order" | "roll-call" | "motion" | "motion-result" | "recess" | "reconvene" | "adjournment";
   /** The line as logged, without its timecode, a wrapped line joined by one space. */
   text: string;
 };
 
+/** An Agenda item line of the log, with how it was found. */
+export type AgendaItemEntry = Timed & {
+  kind: "agenda-item";
+  text: string;
+  /** "feed": it matched one of the Meeting's Agenda items from the feed. "text": the text heuristic found it. */
+  foundBy: "feed" | "text";
+};
+
+/**
+ * Stage 1 drops the names under a vote line (the ayes, nays and excused): a vote keeps its first line and its tally,
+ * and the names are not stored (owner decision Q7, 2026-11-05).
+ */
 export type VoteEntry = Timed & {
   kind: "vote";
   text: string;
@@ -53,7 +84,7 @@ export type VoteEntry = Timed & {
 };
 
 /** A line of the log that is not a speaker: an agenda item, a motion, a vote, a recess, the call to order. */
-export type RecordingLogEntry = TimedEntry | VoteEntry;
+export type RecordingLogEntry = TimedEntry | AgendaItemEntry | VoteEntry;
 
 export type RecordingLogParse =
   | {
@@ -62,6 +93,11 @@ export type RecordingLogParse =
       eventId: string;
       speakerTurns: SpeakerTurn[];
       entries: RecordingLogEntry[];
+      /**
+       * The pages (1-based, ascending) whose links did not line up with their timecode lines, so their offsets are
+       * the timecodes (`offsetSource: "timecode"`). The build report lists them.
+       */
+      pagesReadByTimecode: number[];
     }
   /** No player link with an `eventID`. */
   | { kind: "no-event-id" }

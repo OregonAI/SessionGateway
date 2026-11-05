@@ -1,4 +1,11 @@
-import type { RecordingLogEntry, RecordingLogLink, SpeakerTurn } from "../index.ts";
+import type {
+  AgendaItemEntry,
+  OffsetSource,
+  RecordingLogEntry,
+  RecordingLogLink,
+  SpeakerTurn,
+  TimedEntry,
+} from "../index.ts";
 
 // Helpers for the seam-2 rows (#125). The rows quote the research cache (.cache/olis-2025R1/video-research/dl/logs/,
 // not committed: the Acceptable Use Agreement grants no redistribution license; it is not in CI, so each quote is
@@ -21,7 +28,7 @@ export function playerLinks(eventId: string, quoted: readonly QuotedLink[]): Rec
 }
 
 /** [timecode, offsetSeconds, offsetSource, speaker, agendaItem] */
-export type ExpectedTurn = readonly [string, number, "link" | "timecode", string, string | null];
+export type ExpectedTurn = readonly [string, number, OffsetSource, string, string | null];
 
 export function turnsOf(expected: readonly ExpectedTurn[]): SpeakerTurn[] {
   return expected.map(([timecode, offsetSeconds, offsetSource, speaker, agendaItem]) => ({
@@ -35,14 +42,24 @@ export function turnsOf(expected: readonly ExpectedTurn[]): SpeakerTurn[] {
 
 /** An entry that is not a vote, read from a link. */
 export function e(
-  kind:
-    "call-to-order" | "roll-call" | "agenda-item" | "motion" | "motion-result" | "recess" | "reconvene" | "adjournment",
+  kind: Exclude<TimedEntry["kind"], "agenda-item">,
   timecode: string,
   offsetSeconds: number,
   text: string,
-  offsetSource: "link" | "timecode" = "link",
+  offsetSource: OffsetSource = "link",
 ): RecordingLogEntry {
   return { kind, timecode, offsetSeconds, offsetSource, text };
+}
+
+/** An Agenda item line, and how the parser found it: in the feed's Agenda items, or by the text heuristic. */
+export function agendaItem(
+  timecode: string,
+  offsetSeconds: number,
+  text: string,
+  foundBy: AgendaItemEntry["foundBy"] = "text",
+  offsetSource: OffsetSource = "link",
+): RecordingLogEntry {
+  return { kind: "agenda-item", timecode, offsetSeconds, offsetSource, text, foundBy };
 }
 
 export function vote(

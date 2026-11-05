@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { parseRecordingLog } from "../index.ts";
-import { e, playerLinks, turnsOf, vote, type ExpectedTurn, type QuotedLink } from "./real-logs.ts";
+import { agendaItem, e, playerLinks, turnsOf, vote, type ExpectedTurn, type QuotedLink } from "./real-logs.ts";
 
 // Seam 2: a Recording Log's text and link annotations in; the event ID, the speaker turns and the other entries out
 // (#125, spec #123 stage 1). One row for each wording variant, each quoting a real log and naming it: the document and
@@ -49,7 +49,7 @@ const rows: Row[] = [
       [1, [141.75, 195.54, 225.6, 209.34], 49],
     ],
     turns: [["00:00:49", 49, "link", "Co-Chair Helm", "Adoption of Committee Rules - Organizational Meeting"]],
-    entries: [e("agenda-item", "00:00:48", 48, "Adoption of Committee Rules - Organizational Meeting")],
+    entries: [agendaItem("00:00:48", 48, "Adoption of Committee Rules - Organizational Meeting")],
   },
   {
     name: "a motion that wraps onto a second line",
@@ -117,7 +117,7 @@ This recording log is in compliance with Senate and House Rules. For complete co
       ["00:01:38", 98, "link", "Co-Chair Helm", "HB 2167 - Public Hearing"],
       ["00:01:47", 107, "link", "Anna Glueder, LPRO Analyst", "HB 2167 - Public Hearing"],
     ],
-    entries: [e("agenda-item", "00:01:37", 97, "HB 2167 - Public Hearing")],
+    entries: [agendaItem("00:01:37", 97, "HB 2167 - Public Hearing")],
   },
   {
     name: "titles that wrap onto a second line are joined, beside turns that are a legislator's name alone",
@@ -190,7 +190,7 @@ equine veterinarian, co-owner, Bend Equine Medical Center
       ["00:22:38", 1358, "link", "Co-Chair Helm", "HB 2168 - Public Hearing"],
       ["00:23:06", 1386, "link", "Anna Glueder, LPRO Analyst", "HB 2168 - Public Hearing"],
     ],
-    entries: [e("agenda-item", "00:22:39", 1359, "HB 2168 - Public Hearing")],
+    entries: [agendaItem("00:22:39", 1359, "HB 2168 - Public Hearing")],
   },
   {
     name: "a meeting with two Agenda items: each turn falls under the most recent one",
@@ -236,8 +236,8 @@ equine veterinarian, co-owner, Bend Equine Medical Center
       ["00:15:04", 904, "link", "Jonathan Hart", "HB 2084 Public Hearing"],
     ],
     entries: [
-      e("agenda-item", "00:00:31", 31, "HB 2073 Public Hearing"),
-      e("agenda-item", "00:14:00", 840, "HB 2084 Public Hearing"),
+      agendaItem("00:00:31", 31, "HB 2073 Public Hearing"),
+      agendaItem("00:14:00", 840, "HB 2084 Public Hearing"),
     ],
   },
   {
@@ -331,7 +331,7 @@ pass recommendation`,
       ["00:23:10", 1390, "link", "Rep. Levy", "HB 2725 Work Session"],
     ],
     entries: [
-      e("agenda-item", "00:21:30", 1290, "HB 2725 Work Session"),
+      agendaItem("00:21:30", 1290, "HB 2725 Work Session"),
       e(
         "motion",
         "00:22:50",
@@ -412,10 +412,10 @@ MOTION CARRIES
     turns: [["00:00:08", 8, "link", "Representative Sanchez, Presiding Co-Chair", null]],
     entries: [
       e("call-to-order", "00:00:07", 7, "Meeting Called to Order"),
-      e("agenda-item", "00:00:29", 29, "Department of Energy - Energy Audits"),
+      agendaItem("00:00:29", 29, "Department of Energy - Energy Audits"),
       e("motion", "00:00:36", 36, "MOTION: Rep. Owens reads the Subcommittee Recommendation"),
       vote("00:01:58", 118, "VOTE: 18-0-5", [18, 0, 5]),
-      e("agenda-item", "00:02:05", 125, "Department of Fish and Wildlife - Keno Fish Passage"),
+      agendaItem("00:02:05", 125, "Department of Fish and Wildlife - Keno Fish Passage"),
     ],
   },
   {
@@ -480,10 +480,10 @@ This recording log is in compliance with Senate and House Rules. For complete co
     entries: [
       e("call-to-order", "00:00:03", 3, "Meeting Called to Order"),
       e("roll-call", "00:00:18", 18, "ROLL CALL"),
-      e("agenda-item", "00:00:40", 40, "Adoption of Committee Rules - Organizational Meeting"),
+      agendaItem("00:00:40", 40, "Adoption of Committee Rules - Organizational Meeting"),
       e("motion", "00:00:49", 49, "MOTION: CO-CHAIR WAGNER MOVES ADOPTION OF COMMITTEE RULES"),
       vote("00:01:03", 63, "VOTE: 7-0-3", [7, 0, 3]),
-      e("agenda-item", "00:01:51", 111, "Confirmation of Capitol Foundation Board Members - Work Session"),
+      agendaItem("00:01:51", 111, "Confirmation of Capitol Foundation Board Members - Work Session"),
     ],
   },
 ];
@@ -492,6 +492,12 @@ describe("a Recording Log's lines", () => {
   test.for(rows)("$name ($source)", ({ text, links, eventId, turns, entries }) => {
     const parse = parseRecordingLog({ text, links: playerLinks(eventId, links) });
 
-    expect(parse).toEqual({ kind: "parsed", eventId, speakerTurns: turnsOf(turns), entries });
+    expect(parse).toEqual({
+      kind: "parsed",
+      eventId,
+      speakerTurns: turnsOf(turns),
+      entries,
+      pagesReadByTimecode: [],
+    });
   });
 });
