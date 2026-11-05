@@ -39,7 +39,7 @@ describe.for(eras)("meetings and the fixture's Recording Logs, for a %s client",
   it("lists one Recording Log for 34 of the fixture's 36 meetings, and none for HHED 02-13 and SHS 05-22", async () => {
     // A call returns whole days up to a size limit, so ask again from the day after the last one returned.
     const meetings: MeetingOutput[] = [];
-    for (let from = "2025-01-01"; from !== ""; ) {
+    for (let from = "2025-01-01"; from !== "";) {
       const outcome = await callTool(connected, "meetings", { from, to: "2025-12-31" });
       expect(outcome.isError).toBe(false);
       const page = outcome.structured?.["meetings"] as MeetingOutput[];
@@ -59,7 +59,11 @@ describe.for(eras)("meetings and the fixture's Recording Logs, for a %s client",
   });
 
   it("names HALNRW's Recording Log of 2025-01-22 with the address OLIS gives", async () => {
-    const outcome = await callTool(connected, "meetings", { committee: "HALNRW", from: "2025-01-22", to: "2025-01-22" });
+    const outcome = await callTool(connected, "meetings", {
+      committee: "HALNRW",
+      from: "2025-01-22",
+      to: "2025-01-22",
+    });
 
     const meetings = outcome.structured?.["meetings"] as MeetingOutput[];
     expect(meetings.map((meeting) => meeting.id)).toEqual(["meeting-2025r1-halnrw-2025-01-22-0800"]);
