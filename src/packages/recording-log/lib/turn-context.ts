@@ -60,7 +60,11 @@ export function measureOfAgendaItem(text: string | null): { prefix: string; numb
  * replaced. Its address, clientID and eventID are the log's, never made up; null when the log has no player link for the
  * event.
  */
-export function playerLinkOf(links: readonly RecordingLogLink[], eventId: string, offsetSeconds: number): string | null {
+export function playerLinkOf(
+  links: readonly RecordingLogLink[],
+  eventId: string,
+  offsetSeconds: number,
+): string | null {
   for (const link of links) {
     if (!URL.canParse(link.url)) continue;
     const url = new URL(link.url);

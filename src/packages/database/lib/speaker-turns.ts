@@ -12,7 +12,11 @@ import type { SpeakerTurn, SpeakerTurnIndexOutcome } from "#/packages/domain/spe
 const outcomes = ["indexed", "no_event_id", "conflicting_event_ids"] as const;
 
 /** Replaces the log's index with this outcome, in one transaction: the turns of an earlier reading are never mixed with these. */
-export function storeSpeakerTurnIndex(database: DatabaseSync, documentId: DocumentId, outcome: SpeakerTurnIndexOutcome): void {
+export function storeSpeakerTurnIndex(
+  database: DatabaseSync,
+  documentId: DocumentId,
+  outcome: SpeakerTurnIndexOutcome,
+): void {
   database.exec("BEGIN IMMEDIATE");
   try {
     database.prepare("DELETE FROM speaker_turn WHERE document_id = ?").run(documentId);
@@ -83,7 +87,10 @@ const numbers = z.array(z.number());
 const texts = z.array(z.string());
 
 /** The index a log has, its turns in media-clock order (then in the order of the log), or undefined when none is stored. */
-export function readSpeakerTurnIndex(database: DatabaseSync, documentId: DocumentId): SpeakerTurnIndexOutcome | undefined {
+export function readSpeakerTurnIndex(
+  database: DatabaseSync,
+  documentId: DocumentId,
+): SpeakerTurnIndexOutcome | undefined {
   const found = database
     .prepare(
       "SELECT outcome, event_id, event_ids, pages_read_by_timecode FROM speaker_turn_index WHERE document_id = ?",

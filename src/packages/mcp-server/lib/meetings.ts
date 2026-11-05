@@ -129,8 +129,12 @@ const meetingOutput = z.object({
         fetched: z.boolean().describe(fetchedDescription),
         speaker_turn_index: z
           .object({
-            event_id: z.string().describe("The Invintus event ID of the meeting's recording, from the log's own player links."),
-            turn_count: z.number().describe("How many speaker turns the log has. Give the log's id to get_document for them."),
+            event_id: z
+              .string()
+              .describe("The Invintus event ID of the meeting's recording, from the log's own player links."),
+            turn_count: z
+              .number()
+              .describe("How many speaker turns the log has. Give the log's id to get_document for them."),
           })
           .nullable()
           .describe(

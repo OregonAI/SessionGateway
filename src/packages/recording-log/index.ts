@@ -51,6 +51,10 @@ export function measureOfAgendaItem(text: string | null): { prefix: string; numb
 }
 
 /** The official player at a second of the recording, built from the log's own player link for the event, or null. Pure. */
-export function playerLinkOf(links: readonly RecordingLogLink[], eventId: string, offsetSeconds: number): string | null {
+export function playerLinkOf(
+  links: readonly RecordingLogLink[],
+  eventId: string,
+  offsetSeconds: number,
+): string | null {
   return playerLink(links, eventId, offsetSeconds);
 }

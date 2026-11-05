@@ -186,6 +186,14 @@ _Avoid_: minutes
 One timecoded line of a Recording Log that names who spoke: the speaker as logged (a name and title, a title that wraps onto a second line joined), the timecode, the offset in seconds the player link on that line gives, and the Agenda item the log has most recently named. The log's other timecoded lines (the call to order, an Agenda item, a motion, a vote, a recess, the adjournment) are entries, not turns. The parser reads the offset from the link, and from the timecode only for a page whose links it cannot match to the page's timecode lines.
 _Avoid_: speech, statement
 
+**Speaker-turn index**:
+What the index holds of a Recording Log: its Event ID and each Speaker turn, with the speaker as logged, the Legislator Code and Legislator where the speaker resolved, the Agenda item and its Measure, the second on the recording's clock and the Player link. The worker reads it from the log's link annotations when it fetches the file. A log with no Event ID, or with two, has no index. A turn whose speaker does not resolve is kept with its text.
+_Avoid_: transcript (the index holds no words that were spoken)
+
+**Player link**:
+The Legislature's own media player at a Speaker turn's second: the log's own player link (its address, `clientID` and Event ID) with the turn's `startStreamAt`. The service builds it from the log's link and never invents any part of it.
+_Avoid_: video link, deep link
+
 **Event ID**:
 The Invintus identifier of one recorded Meeting (such as `2025011038`), the `eventID` of the Legislature's player links in a Recording Log. A log with no player link has none, and a log whose links carry two different ones has two: the parser reports either and picks neither.
 _Avoid_: video ID, recording ID

@@ -95,6 +95,14 @@ The worker resolves the Legislator Code of every vote entry through the resolver
 - An Agenda item is a log line that matches one of the feed's items (the measure id and its action, or the item's text), reported with `foundBy: "feed"`. The text heuristic is the fallback when no items are passed or none matches, reported with `foundBy: "text"` (owner decision Q5, 2026-11-05).
 - A page whose links cannot be matched to its timecode lines is read from its timecodes, and the result lists such pages (`pagesReadByTimecode`) for the build report (Q6). Vote names are dropped in stage 1 (Q7).
 
+**Extended by ticket #126, the speaker-turn index (ADR-0052).** No package is added.
+- `pdf-text` gains `extractPdfLinks` on its entry point: the link annotations of a PDF as `{page, url, rect}`.
+- `recording-log` gains `legislatorOfSpeaker`, `measureOfAgendaItem` and `playerLinkOf`, pure like `parseRecordingLog`.
+- `domain` gains an entry point, `speaker-turns.ts`: the stored form of a turn and of what reading a log came to, and `RecordingLogDocument` in `documents.ts` (a Recording Log of a meeting, with its index summary).
+- `database` gains schema step 2 (the two tables, and the drop of `feed_row_state`), and on `writer.ts` `storeSpeakerTurnIndex`, `recordingLogsWithoutIndex`, `recordingLogReadingNotes` and `agendaItemsOfMeeting`; on `reader.ts` `speakerTurnIndexOf`, and `meetingContents` gives each Recording Log its index summary.
+- `ingest` reads a Recording Log's links when it fetches the file (`lib/speaker-turns.ts`) and writes `recording_log_gaps` and `recording_log_pages_read_by_timecode` in the build report.
+- `mcp-server` adds `speaker_turns` to `get_document` and `speaker_turn_index` and `has_speaker_turn_index` to `meetings`; `lib/speaker-turns.ts` is the one place that shows a turn.
+
 **Extended by ticket #13, `compare_amendment` and the Statute Links of `get_measure` (ADR-0015).** No package is added.
 - `statute-links` gains one function on its existing entry point, `readAmendedVersionHeader`: the Version and the Measure a Proposed Amendment's header names. It is pure, like `parseStatuteLinks`, and has a seam-2 table of its own.
 - `domain` gains no entry point. `documents.ts` mints the reference to an amendment (`parseAmendmentReference`, from a citation or an id), parses an amendment number and mints its id from that parse (`parseAmendmentNumber`, `amendmentIdOf`, with a seam-2 table in `domain/tests/`), names a Version from a letter (`versionDescriptionOfLetter`) and places the amendment on a Version (`placeAmendment`, `versionRankOf`); `statute-links.ts` holds the four link kinds (`statuteLinkKinds`), the relating clause edit (moved there from the parser, which re-exports it, so the database and the server can name it without importing the parser) and the shapes of what was read of a file.

@@ -6,11 +6,15 @@ export const speakerTurnsOutput = z
   .object({
     indexed: z
       .boolean()
-      .describe("True when the log has a speaker-turn index. False when the log has no player link with an event ID, or its links name more than one: see gap."),
+      .describe(
+        "True when the log has a speaker-turn index. False when the log has no player link with an event ID, or its links name more than one: see gap.",
+      ),
     event_id: z
       .string()
       .nullable()
-      .describe("The Invintus event ID of the meeting's recording, from the log's own player links. Null when the log is not indexed."),
+      .describe(
+        "The Invintus event ID of the meeting's recording, from the log's own player links. Null when the log is not indexed.",
+      ),
     gap: z
       .enum(["no_event_id", "conflicting_event_ids"])
       .nullable()
