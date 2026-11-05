@@ -27,8 +27,8 @@ Working files (`fetched/`, `gh/`, `fetchlog.txt`) were local to the research job
    - 43 of 43 cached 2025R1 logs carry it, each with exactly one eventID. Both 2026R1 logs fetched tonight carry it: JWM 2026-02-02 → `2026021004`; HRULES 2026-03-06 14:00 → `2026031032`.
    - The prior note's HALNRW eventID `2025011038` matches its log's annotations.
    - **verified** (`/URI` annotations parsed from the PDFs; §d1)
-2. **All 279 scheduled 2026R1 committee meetings have a feed-linked Recording Log** (279 `recording_log` rows for 279 meetings, over 25 distinct days, 2026-02-02 to 2026-03-06). So route (d) covers the whole backfill. **verified** (`~/wt/backfill-2026R1/data/index.db`, read-only)
-3. **The stored text drops the links.** The ingest keeps only extracted text: none of the 279 logs' text contains "mediaplayer" or "eventID". The eventIDs need either a change to extraction (read link annotations) or one more fetch of 279 feed-linked PDFs, which ADR-0005 and the existing feed-linked-document rule already cover. **verified** (DB text search) / **inferred** (remedy)
+2. **All 279 scheduled 2026R1 committee meetings have a feed-linked Recording Log** (279 `recording_log` rows for 279 meetings, over 25 distinct days, 2026-02-02 to 2026-03-06). So route (d) covers the whole backfill. **measured locally** (a read-only query of the 2026R1 backfill's index database on the researcher's machine; the file was not committed, so a reader cannot re-run it)
+3. **The stored text drops the links.** The ingest keeps only extracted text: none of the 279 logs' text contains "mediaplayer" or "eventID". The eventIDs need either a change to extraction (read link annotations) or one more fetch of 279 feed-linked PDFs, which ADR-0005 and the existing feed-linked-document rule already cover. **measured locally** (a text search of that same uncommitted database) / **inferred** (remedy)
 4. **The `startStreamAt` values give a seconds-on-the-media-clock offset for each speaker turn and agenda item.** That is a better alignment key than the printed `hh:mm:ss`. **verified** (annotations) / **inferred** (use)
 5. **The eventID still doesn't give the MP3/MP4 URL.** Download files sit at `m-download.invintus.com/{clientID}/{assetID}_audio.mp3`, where `assetID` is a hash. The player gets that hash, or `downloadLinks.audioDownloadURI`, only from the Invintus API response (`/Event/getDetailed`). Discovery is solved; **resolving eventID → media** is the step that still needs Invintus's API, run either by the player in a browser or directly. **verified** (`player.invintus.com/app.js` text)
 6. **Invintus publishes a documented Public API.** It is a Postman collection, "Public API 3", published 2025-02-16. Its Acceptable Use section says: "Do not provide content to third parties, including downloadable datasets of Content or an API that returns Content, you will only distribute or allow download of Media assets or meta-data under client owners and Invintus Media LLC.'s explicit permission or under the client's contractual terms with Invintus Media LLC." Server access uses a per-client API key from the client's Control Center ("If you do not have an API key, you can contact support@invintus.com"). **verified**
@@ -349,7 +349,7 @@ Subject: Public records request: 2026R1 committee recording download links
 
 ## Every URL fetched (Pacific time, 2026-11-04)
 
-Direct fetches (`curl`, logged in `fetchlog.txt`):
+Direct fetches (`curl`; the researcher's local `fetchlog.txt` logged them, and that file was not committed):
 
 | Time (PST) | URL | Result |
 |---|---|---|
@@ -418,6 +418,6 @@ Web searches (2026-11-04, about 21:04–21:11):
 
 Local sources read (no network):
 - The prior session's cached pages and logs under the research cache's `video-research/` folder (not committed) (fetched 2026-10-28).
-- `~/wt/backfill-2026R1/data/index.db` (read-only).
+- The 2026R1 backfill's index database on the researcher's machine, read-only (a local file that was not committed; the figures taken from it are labelled "measured locally").
 - OregonAI corpus documents `ors-164.377` and `ors-192.324` (non-authoritative mirrors).
 - `SessionGateway/docs/research/hearing-video.md`, `olis-odata.md` §1, and `docs/adr/0005-read-olis-within-its-terms.md`.
