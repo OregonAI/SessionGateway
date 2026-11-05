@@ -1,6 +1,7 @@
 // Seam 1 (test/CLAUDE.md): the non-official notice an agent reads in a tool's result (ticket #120). A result with no
-// document carries no source_url, so its notice does not tell the reader to use one; a result with documents keeps the
-// full text. One tool of each kind is called: session_overview (no document) and get_measure (a document tool).
+// source_url carries no clause telling the reader to use one; a result that holds at least one source_url keeps the
+// full text (owner decision of 2026-11-05: per result, not per tool). So session_overview never has the clause, a
+// search, a Measure's testimony or a range of meetings has it only when it holds a document, and get_measure has it.
 //
 // Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md,
 // Database, Templates). Expected values are the notice's wording as ADR-0002 and spec #1 give it.
@@ -16,7 +17,7 @@ const withSourceUrl =
 let system: System;
 
 beforeAll(async () => {
-  system = await startCopiedSystem({ clockAt: "2025-01-29T17:00:00Z" });
+  system = await startCopiedSystem({ clockAt: "2025-01-18T02:00:00Z", documents: true });
 });
 
 afterAll(async () => {
@@ -45,6 +46,46 @@ describe.for(eras)("the notice for a %s client", (era) => {
     const outcome = await callTool(connected, "get_measure", { measure: "SB 69" });
 
     expect(outcome.isError).toBe(false);
+    expect(outcome.structured?.["notice"]).toBe(withSourceUrl);
+  });
+
+  it("of a search with hits keeps the full text", async () => {
+    const outcome = await callTool(connected, "search", { query: "waive supplemental nutrition assistance" });
+
+    expect(outcome.isError).toBe(false);
+    expect((outcome.structured?.["results"] as unknown[]).length).toBeGreaterThan(0);
+    expect(outcome.structured?.["notice"]).toBe(withSourceUrl);
+  });
+
+  it("of a search with no hit has no source_url clause", async () => {
+    const outcome = await callTool(connected, "search", { query: "waive supplemental nutrition", kind: "floor_letter" });
+
+    expect(outcome.isError).toBe(false);
+    expect(outcome.structured?.["results"]).toEqual([]);
+    expect(outcome.structured?.["notice"]).toBe(withoutSourceUrl);
+  });
+
+  it("of testimony on a Measure with no rows has no source_url clause", async () => {
+    const outcome = await callTool(connected, "testimony", { measure: "SB 69" });
+
+    expect(outcome.isError).toBe(false);
+    expect(outcome.structured?.["total"]).toBe(0);
+    expect(outcome.structured?.["notice"]).toBe(withoutSourceUrl);
+  });
+
+  it("of meetings over a range with none has no source_url clause", async () => {
+    const outcome = await callTool(connected, "meetings", { from: "2024-01-01", to: "2024-01-02" });
+
+    expect(outcome.isError).toBe(false);
+    expect(outcome.structured?.["meetings"]).toEqual([]);
+    expect(outcome.structured?.["notice"]).toBe(withoutSourceUrl);
+  });
+
+  it("of meetings over a range with a meeting keeps the full text", async () => {
+    const outcome = await callTool(connected, "meetings", { from: "2025-01-21", to: "2025-01-28" });
+
+    expect(outcome.isError).toBe(false);
+    expect((outcome.structured?.["meetings"] as unknown[]).length).toBeGreaterThan(0);
     expect(outcome.structured?.["notice"]).toBe(withSourceUrl);
   });
 });
