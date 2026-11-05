@@ -171,6 +171,86 @@ describe("legislatorOfSpeaker, within the committee's members", () => {
   });
 });
 
+describe("legislatorOfSpeaker, a line that narrates an action names no one (ticket #141)", () => {
+  // The Joint Subcommittee on Ways and Means, General Government (JWMGG). MADE UP: its membership (the log's own roster
+  // is not in the extracted text): the two Co-Chairs, Sen. Gorsek and Rep. Smith, with the codes the fixture's feed uses.
+  const jwmgg = [
+    { code: "Sen Gorsek", name: "Chris Gorsek" },
+    { code: "Rep Smith G", name: "Gregory Smith" },
+    { code: "Rep Gomberg", name: "David Gomberg" },
+  ];
+
+  test.for<[string, string, string | null]>([
+    // The line the ticket was found on: before the fix the text before the first comma (there is none) ended in 'Smith'.
+    [
+      "Co-Chair Gorsek passes the gavel to Co-Chair Smith",
+      "log 309926 (JWMGG 2025-02-20, research cache), 00:05:55",
+      null,
+    ],
+    [
+      "Co-Chair Smith passes the gavel to Co-Chair Gorsek",
+      "log 309926 (JWMGG 2025-02-20, research cache), 00:53:25",
+      null,
+    ],
+    [
+      "Co-Chair Gorsek passes the gavel to Co-Chair Smith",
+      "log 309926 (JWMGG 2025-02-20, research cache), 00:54:56",
+      null,
+    ],
+    // The same log's plain lines still resolve: the rule is about the narration, not the log.
+    ["Co-Chair Gorsek", "log 309926 (JWMGG 2025-02-20, research cache), 00:02:04", "Sen Gorsek"],
+    ["Co-Chair Gorsek", "log 309926 (JWMGG 2025-02-20, research cache), 00:53:26", "Sen Gorsek"],
+    ["Rep. Gomberg", "log 309926 (JWMGG 2025-02-20, research cache), 00:05:57", "Rep Gomberg"],
+    // Narrating lines of the 2026R1 database and of other logs of the research cache, named. Each of these named a
+    // Legislator by no rule before, because the text before the first comma ended in a word that is no one's surname.
+    [
+      "Rep. Smith declares a potential conflict of interest",
+      "log 305330 (JWM 2025-05-09, research cache), 00:11:38",
+      null,
+    ],
+    ["Rep. Smith declares a potential conflict of interest", "log 315761 (2026R1 database), 00:25:09", null],
+    ["Sen. Starr declares a potential conflict of interest", "log 315743 (2026R1 database), 01:05:55", null],
+    ["Sen. Wagner declares a potential conflict of interest", "log 316073 (2026R1 database), 01:27:39", null],
+    ["REP. SCHARF DECLARES POTENTIAL CONFLICT OF INTEREST", "log 314523 (2026R1 database), 00:21:11", null],
+    ["VICE-CHAIR WEBER RESCINDS THE MOTION", "log 314671 (2026R1 database), 00:30:30", null],
+    ["VICE-CHAIR THATCHER SERVES NOTICE OF POTENTIAL MINORITY REPORT", "log 316533 (2026R1 database), 01:32:28", null],
+    [
+      "Vice-Chair Reschke -Serves notice of potential Minority Report on this measure.",
+      "log 314824 (2026R1 database), 00:07:48",
+      null,
+    ],
+    ["VICE-CHAIR PHAM MOVES HB 4161 DO PASS", "log 315528 (2026R1 database), 01:00:58", null],
+    // One row for each verb of the rule where it is observable: a narration that ends in a member's surname.
+    [
+      "Co-Chair Gorsek assumes the chair from Co-Chair Smith",
+      "MADE UP: 'assumes the chair', the ticket's wording",
+      null,
+    ],
+    [
+      "Co-Chair Gorsek declares a conflict with Rep. Gomberg",
+      "MADE UP: 'declares a conflict', the ticket's wording",
+      null,
+    ],
+    ["Co-Chair Gorsek rescinds the motion of Rep. Gomberg", "MADE UP: after the real 'rescinds the motion'", null],
+    [
+      "Co-Chair Gorsek serves notice of a minority report by Rep. Gomberg",
+      "MADE UP: after the real 'serves notice'",
+      null,
+    ],
+    ["Co-Chair Gorsek moves the amendment of Rep. Gomberg", "MADE UP: after the real 'moves'", null],
+  ])("%s resolves to %s (%s)", ([speaker, , expected]) => {
+    expect(legislatorOfSpeaker(speaker, jwmgg, SESSION)).toBe(expected);
+  });
+
+  test("a surname that merely contains a verb's letters, and a plain line under a title, still resolve", () => {
+    // MADE UP: a member whose surname begins like a verb on the rule's list ("serves"); the rule reads whole words only.
+    const members = [{ code: "Rep Servis", name: "Pat Servis" }];
+
+    expect(legislatorOfSpeaker("Rep. Servis", members)).toBe("Rep Servis");
+    expect(legislatorOfSpeaker("Rep. Pat Servis, House District 9", members)).toBe("Rep Servis");
+  });
+});
+
 describe("legislatorOfSpeaker, when no committee member matches: all of the Session's Legislators", () => {
   test.for<[string, string, string, readonly string[], string | null]>([
     [
