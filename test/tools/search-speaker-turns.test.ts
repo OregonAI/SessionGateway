@@ -54,6 +54,7 @@ type Turn = {
   measure_id: string | null;
   timecode: string;
   offset_seconds: number;
+  offset_source: string;
   player_link: string;
 };
 type Hit = { id: string; document_id: string; kind: string; snippet: string; turn: Turn | null };
@@ -93,6 +94,7 @@ describe.for(eras)("speaker turns in search and get_measure for a %s client", (e
         measure_id: null,
         timecode: "00:02:49",
         offset_seconds: 169,
+        offset_source: "link",
         player_link: player("2025011038", 169),
       },
     });
@@ -149,6 +151,8 @@ describe.for(eras)("speaker turns in search and get_measure for a %s client", (e
     recording_log_id: string;
     event_id: string;
     agenda_item: string;
+    kind: string;
+    measure_ids: string[];
     first_turn: Omit<Turn, "meeting" | "agenda_item" | "measure_id">;
   };
 
@@ -165,12 +169,15 @@ describe.for(eras)("speaker turns in search and get_measure for a %s client", (e
         recording_log_id: "recording-log-2025r1-288741",
         event_id: "2025011038",
         agenda_item: "HB 3131 - Public Hearing",
+        kind: "Public Hearing",
+        measure_ids: ["measure-2025r1-hb3131"],
         first_turn: {
           timecode: "01:15:49",
           offset_seconds: 4549,
           speaker: "Co-Chair Helm",
           legislator_code: "Rep Helm",
           legislator: { id: expect.stringMatching(/^legislator-2025r1-/) as unknown, name: "Ken Helm" },
+          offset_source: "link",
           player_link: player("2025011038", 4549),
         },
       },
@@ -181,12 +188,15 @@ describe.for(eras)("speaker turns in search and get_measure for a %s client", (e
         recording_log_id: "recording-log-2025r1-289259",
         event_id: "2025011111",
         agenda_item: "HB 3131 - Public Hearing",
+        kind: "Public Hearing",
+        measure_ids: ["measure-2025r1-hb3131"],
         first_turn: {
           timecode: "00:00:28",
           offset_seconds: 28,
           speaker: "Co-Chair Owens",
           legislator_code: "Rep Owens",
           legislator: { id: expect.stringMatching(/^legislator-2025r1-/) as unknown, name: "Mark Owens" },
+          offset_source: "link",
           player_link: player("2025011111", 28),
         },
       },
@@ -197,12 +207,15 @@ describe.for(eras)("speaker turns in search and get_measure for a %s client", (e
         recording_log_id: "recording-log-2025r1-292588",
         event_id: "2025021177",
         agenda_item: "HB 3131 - Work Session",
+        kind: "Work Session",
+        measure_ids: ["measure-2025r1-hb3131"],
         first_turn: {
           timecode: "00:08:44",
           offset_seconds: 524,
           speaker: "Co-Chair Helm",
           legislator_code: "Rep Helm",
           legislator: { id: expect.stringMatching(/^legislator-2025r1-/) as unknown, name: "Ken Helm" },
+          offset_source: "link",
           player_link: player("2025021177", 524),
         },
       },

@@ -67,4 +67,19 @@ describe("a database with a speaker-turn index and no turn Passages", () => {
     expect(await turnHitsFor("Kurt Williams")).toEqual(before);
     expect(system.olis.documentRequests()).toHaveLength(requests);
   });
+
+  it("lists HB 3131's three hearings after the next pull, from the Agenda items the turns hold, and fetches no log to do it", async () => {
+    const outcome = await callTool(connected, "get_measure", { measure: "HB 3131" });
+
+    const hearings = outcome.structured?.["hearings"] as {
+      recording_log_id: string;
+      kind: string;
+      measure_ids: string[];
+    }[];
+    expect(hearings.map((hearing) => [hearing.recording_log_id, hearing.kind, hearing.measure_ids])).toEqual([
+      ["recording-log-2025r1-288741", "Public Hearing", ["measure-2025r1-hb3131"]],
+      ["recording-log-2025r1-289259", "Public Hearing", ["measure-2025r1-hb3131"]],
+      ["recording-log-2025r1-292588", "Work Session", ["measure-2025r1-hb3131"]],
+    ]);
+  });
 });
