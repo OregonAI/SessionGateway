@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 import type { DocumentId, MeetingId } from "#/packages/domain/documents.ts";
 import type { MeasureId } from "#/packages/domain/index.ts";
+import type { LegislatorId } from "#/packages/domain/legislators.ts";
 import type { SpeakerTurn } from "#/packages/domain/speaker-turns.ts";
 import { openIndexReader } from "../reader.ts";
 import { openIndexWriter } from "../writer.ts";
@@ -35,7 +36,7 @@ const turn = (offsetSeconds: number, parts: Partial<SpeakerTurn> = {}): SpeakerT
   offsetSource: "link",
   speaker: `MADE UP speaker ${offsetSeconds}`,
   legislatorCode: null,
-  legislatorId: null,
+  legislator: null,
   agendaItem: null,
   measureId: null,
   playerLink: `https://made-up.example/mediaplayer?clientID=1&eventID=2099010001&startStreamAt=${offsetSeconds}`,
@@ -52,6 +53,7 @@ function pulledWithLog(): void {
       CommitteeMeetings: [meeting],
       CommitteeMeetingDocuments: [log, exhibitLink()],
       CommitteeAgendaItems: [agendaItem],
+      legislators: [{ id: "legislator-2099r1-upp" as LegislatorId, name: "Maude Upp" }],
     }),
   );
   storeMadeUpDocument(index, log, "MADE UP recording log text");
@@ -66,7 +68,7 @@ describe("the speaker-turn index of a stored Recording Log", () => {
     pulledWithLog();
     const first = turn(10, {
       legislatorCode: "Rep Upp",
-      legislatorId: "legislator-2099r1-upp" as SpeakerTurn["legislatorId"],
+      legislator: { id: "legislator-2099r1-upp" as LegislatorId, name: "Maude Upp" },
       agendaItem: "SB 9001 - Public Hearing",
       measureId: "measure-2099r1-sb9001" as MeasureId,
       offsetSource: "timecode",
@@ -150,6 +152,36 @@ describe("the speaker-turn index of a stored Recording Log", () => {
     expect(before.map((entry) => entry.speakerTurnIndex)).toEqual([null]);
     expect(indexed.map((entry) => entry.speakerTurnIndex)).toEqual([{ eventId: "2099010001", turnCount: 3 }]);
     expect(gap.map((entry) => entry.speakerTurnIndex)).toEqual([null]);
+  });
+
+  test("the writer reports for the build report the logs with a gap and the pages read by timecode, each with its source URL", () => {
+    pulledWithLog();
+    expect(index.writer.recordingLogReadingNotes(session)).toEqual({ gaps: [], readByTimecode: [] });
+
+    index.writer.storeSpeakerTurnIndex({
+      documentId: logId,
+      outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [2, 3], turns: [turn(1)] },
+    });
+    expect(index.writer.recordingLogReadingNotes(session)).toEqual({
+      gaps: [],
+      readByTimecode: [{ id: logId, sourceUrl: log.sourceUrl, pages: [2, 3] }],
+    });
+
+    index.writer.storeSpeakerTurnIndex({
+      documentId: logId,
+      outcome: { kind: "conflicting_event_ids", eventIds: ["2099010001", "2099010002"] },
+    });
+    expect(index.writer.recordingLogReadingNotes(session)).toEqual({
+      gaps: [
+        { id: logId, sourceUrl: log.sourceUrl, kind: "conflicting_event_ids", eventIds: ["2099010001", "2099010002"] },
+      ],
+      readByTimecode: [],
+    });
+
+    index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" } });
+    expect(index.writer.recordingLogReadingNotes(session).gaps).toEqual([
+      { id: logId, sourceUrl: log.sourceUrl, kind: "no_event_id", eventIds: [] },
+    ]);
   });
 
   test("the writer hands over the meeting's Agenda items as the feed gave them", () => {

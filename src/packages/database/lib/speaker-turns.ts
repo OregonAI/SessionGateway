@@ -47,7 +47,7 @@ export function storeSpeakerTurnIndex(database: DatabaseSync, documentId: Docume
           turn.offsetSource,
           turn.speaker,
           turn.legislatorCode,
-          turn.legislatorId,
+          turn.legislator?.id ?? null,
           turn.agendaItem,
           turn.measureId,
           turn.playerLink,
@@ -74,6 +74,7 @@ const turnRow = z.object({
   speaker: z.string(),
   legislator_code: z.string().nullable(),
   legislator_id: z.string().nullable(),
+  legislator_name: z.string().nullable(),
   agenda_item: z.string().nullable(),
   measure_id: z.string().nullable(),
   player_link: z.string(),
@@ -99,9 +100,11 @@ export function readSpeakerTurnIndex(database: DatabaseSync, documentId: Documen
       if (row.event_id === null) throw new Error(`The speaker-turn index of ${documentId} is stored with no event ID`);
       const turns = database
         .prepare(
-          `SELECT timecode, offset_seconds, offset_source, speaker, legislator_code, legislator_id, agenda_item,
-                  measure_id, player_link
-           FROM speaker_turn WHERE document_id = ? ORDER BY offset_seconds, position`,
+          `SELECT t.timecode, t.offset_seconds, t.offset_source, t.speaker, t.legislator_code, t.legislator_id,
+                  l.name AS legislator_name, t.agenda_item, t.measure_id, t.player_link
+           FROM speaker_turn t
+             LEFT JOIN legislator l ON l.id = t.legislator_id
+           WHERE t.document_id = ? ORDER BY t.offset_seconds, t.position`,
         )
         .all(documentId)
         .map((stored): SpeakerTurn => {
@@ -112,7 +115,10 @@ export function readSpeakerTurnIndex(database: DatabaseSync, documentId: Documen
             offsetSource: turn.offset_source,
             speaker: turn.speaker,
             legislatorCode: turn.legislator_code,
-            legislatorId: turn.legislator_id as LegislatorId | null,
+            legislator:
+              turn.legislator_id === null || turn.legislator_name === null
+                ? null
+                : { id: turn.legislator_id as LegislatorId, name: turn.legislator_name },
             agendaItem: turn.agenda_item,
             measureId: turn.measure_id as MeasureId | null,
             playerLink: turn.player_link,

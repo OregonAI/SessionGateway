@@ -2,7 +2,7 @@
 // reader hands out. The parser's own types are the recording-log package's; these are the stored form, with the
 // Legislator and the Measure resolved and the player link built.
 import type { MeasureId } from "./index.ts";
-import type { LegislatorId } from "./legislators.ts";
+import type { Legislator } from "./legislators.ts";
 
 /** One speaker turn of a Recording Log as stored. A turn whose speaker is not resolved keeps its text. */
 export type SpeakerTurn = {
@@ -15,7 +15,8 @@ export type SpeakerTurn = {
   speaker: string;
   /** The Legislator Code of the committee member the speaker line names, or null when it names none that resolves. */
   legislatorCode: string | null;
-  legislatorId: LegislatorId | null;
+  /** The Legislator that code names. The store keeps the id and the reader joins the name from the Legislators it holds. */
+  legislator: Legislator | null;
   /** The text of the most recent Agenda item line before the turn in the log, or null before the first. */
   agendaItem: string | null;
   /** The Measure that Agenda item line begins with, or null. */
