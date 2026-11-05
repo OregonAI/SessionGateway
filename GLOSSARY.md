@@ -182,6 +182,14 @@ What the feed's `MeetingStatus` says of a Meeting: Scheduled, Cancelled or No Me
 A committee's timecoded index of one meeting's recording: agenda items, motions, votes and each speaker.
 _Avoid_: minutes
 
+**Speaker turn**:
+One timecoded line of a Recording Log that names who spoke: the speaker as logged (a name and title, a title that wraps onto a second line joined), the timecode, the offset in seconds the player link on that line gives, and the Agenda item the log has most recently named. The log's other timecoded lines (the call to order, an Agenda item, a motion, a vote, a recess, the adjournment) are entries, not turns. The parser reads the offset from the link, and from the timecode only for a page whose links it cannot match to the page's timecode lines.
+_Avoid_: speech, statement
+
+**Event ID**:
+The Invintus identifier of one recorded Meeting (such as `2025011038`), the `eventID` of the Legislature's player links in a Recording Log. A log with no player link has none, and a log whose links carry two different ones has two: the parser reports either and picks neither.
+_Avoid_: video ID, recording ID
+
 **Fiscal Impact Statement**:
 The Legislative Fiscal Office's statement of what a Version would cost government, naming the Agencies affected under "Government Unit(s) Affected".
 _Avoid_: fiscal note
