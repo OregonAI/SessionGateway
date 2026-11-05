@@ -173,6 +173,20 @@ function testimonyAgencyValues(
 /** What the store keeps of a Recording Log's speaker turns: the log, and what reading it came to. */
 export type SpeakerTurnIndexRecord = { documentId: DocumentId; outcome: SpeakerTurnIndexOutcome };
 
+/** What the build report says of how the Recording Logs were read. */
+export type RecordingLogReadingNotes = {
+  gaps: { id: DocumentId; sourceUrl: string; kind: "no_event_id" | "conflicting_event_ids"; eventIds: string[] }[];
+  readByTimecode: { id: DocumentId; sourceUrl: string; pages: number[] }[];
+};
+
+const readingNoteRow = z.object({
+  id: z.string(),
+  source_url: z.string(),
+  outcome: z.enum(["indexed", "no_event_id", "conflicting_event_ids"]),
+  event_ids: z.string().nullable(),
+  pages_read_by_timecode: z.string(),
+});
+
 const agendaItemFields = z.object({
   measure_prefix: z.string().nullable(),
   measure_number: z.number().nullable(),
@@ -333,6 +347,11 @@ export type IndexWriter = {
   storeSpeakerTurnIndex(record: SpeakerTurnIndexRecord): void;
   /** The stored Recording Logs of the Session that have no speaker-turn index yet (a gap counts as one): the ones to fetch again to read their links. */
   recordingLogsWithoutIndex(session: SessionKey): Set<DocumentId>;
+  /**
+   * What the stored readings of the Session's Recording Logs say for the build report: the logs left with no index (no event
+   * ID, or conflicting ones) and the logs some of whose pages were read by timecode, each with its source URL.
+   */
+  recordingLogReadingNotes(session: SessionKey): RecordingLogReadingNotes;
   /** The Agenda items the store holds for a Meeting, as the feed gave them, for the parser to match a log's lines against. */
   agendaItemsOfMeeting(meeting: MeetingId): {
     measurePrefix: string | null;
@@ -1033,6 +1052,29 @@ export function openIndexWriter(path: string): IndexWriter {
         )
         .all(session);
       return new Set(rows.map((row) => idRow.parse(row).id as DocumentId));
+    },
+    recordingLogReadingNotes(session) {
+      const rows = database
+        .prepare(
+          `SELECT d.id, d.source_url, i.outcome, i.event_ids, i.pages_read_by_timecode
+           FROM speaker_turn_index i JOIN document d ON d.id = i.document_id
+           WHERE d.session_key = ? ORDER BY d.id`,
+        )
+        .all(session)
+        .map((row) => readingNoteRow.parse(row))
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      const notes: RecordingLogReadingNotes = { gaps: [], readByTimecode: [] };
+      for (const row of rows) {
+        const id = row.id as DocumentId;
+        if (row.outcome !== "indexed") {
+          const eventIds = z.array(z.string()).parse(JSON.parse(row.event_ids ?? "[]"));
+          notes.gaps.push({ id, sourceUrl: row.source_url, kind: row.outcome, eventIds });
+          continue;
+        }
+        const pages = z.array(z.number()).parse(JSON.parse(row.pages_read_by_timecode));
+        if (pages.length > 0) notes.readByTimecode.push({ id, sourceUrl: row.source_url, pages });
+      }
+      return notes;
     },
     agendaItemsOfMeeting(meeting) {
       return database
