@@ -43,10 +43,11 @@ function startsFirstName(logged: string, legislator: CommitteeMemberName): boole
 /**
  * The verbs a log line uses to narrate what a member does instead of naming who is speaking ("Co-Chair Gorsek passes the
  * gavel to Co-Chair Smith", "Rep. Smith declares a potential conflict of interest", "VICE-CHAIR THATCHER SERVES NOTICE OF
- * POTENTIAL MINORITY REPORT"; ticket #141). A closed list of the verbs the logs use: a verb not on it is not recognised and
- * the line is read as before. A leading hyphen is allowed ("Vice-Chair Reschke -Serves notice ...").
+ * POTENTIAL MINORITY REPORT"; ticket #141). A closed list of the verbs the logs use, each found in a log (passes: log 309926 of
+ * the research cache; declares, serves, rescinds, moves: the 2026R1 logs; "assumes" was in the ticket's wording and in no log,
+ * so it is not here): a verb not on it is not recognised and the line is read as before. A leading hyphen is allowed ("Vice-Chair Reschke -Serves notice ...").
  */
-const NARRATING_VERB = /^-*(?:passes|assumes|declares|serves|rescinds|moves)$/;
+const NARRATING_VERB = /^-*(?:passes|declares|serves|rescinds|moves)$/;
 
 /** What a speaker line says of a Legislator: the title's chamber (none for an office), and the name that follows it. */
 type NamedSpeaker = { chamber: Chamber | undefined; conflict: boolean; name: string[] };

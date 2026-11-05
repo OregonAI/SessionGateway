@@ -17,6 +17,16 @@ import {
 // as the Legislators row names them (test/fixtures/olis-2025R1/feed/Legislators.json: code, first name, last name), and a
 // committee's members as the CommitteeMembers rows list them. Rows that are MADE UP say so.
 //
+// Measured for ticket #141 (the rule that a narrating line names no one, owner decision of 2026-11-05), the old resolver
+// (the file before #141) against the new, each log's speaker lines resolved among its committee's members and then among the
+// Session's Legislators, as the worker does (the turns read without the feed's Agenda items, as the text finds them):
+//   2026R1 database: 279 Recording Logs, 9,789 turns, 0 changed. 26 turns are narrating lines; all 26 are rows below.
+//   2025R1 research cache (video-research/dl/logs/sample/, 40 logs, 1,552 turns): 3 changed, all in log 309926 (JWMGG):
+//     00:05:55 'Co-Chair Gorsek passes the gavel to Co-Chair Smith': Rep Smith G -> no one
+//     00:53:25 'Co-Chair Smith passes the gavel to Co-Chair Gorsek': Sen Gorsek -> no one
+//     00:54:56 'Co-Chair Gorsek passes the gavel to Co-Chair Smith': Rep Smith G -> no one
+//   (the cache's other narrating line, log 305330 00:11:38, resolved to no one before and still does.) "assumes" is in no log.
+//
 // The rule (ADR-0052, owner decision B of 2026-11-05): a speaker line resolves only when it begins with a title, the title's
 // chamber agrees with the Legislator's code ("Rep." and "Representative" a House member, "Sen." and "Senator" a Senate member;
 // Chair, Co-Chair and Vice-Chair are any chamber), the surname matches, and the logged first name or initial agrees when
@@ -201,31 +211,54 @@ describe("legislatorOfSpeaker, a line that narrates an action names no one (tick
     ["Co-Chair Gorsek", "log 309926 (JWMGG 2025-02-20, research cache), 00:02:04", "Sen Gorsek"],
     ["Co-Chair Gorsek", "log 309926 (JWMGG 2025-02-20, research cache), 00:53:26", "Sen Gorsek"],
     ["Rep. Gomberg", "log 309926 (JWMGG 2025-02-20, research cache), 00:05:57", "Rep Gomberg"],
-    // Narrating lines of the 2026R1 database and of other logs of the research cache, named. Each of these named a
-    // Legislator by no rule before, because the text before the first comma ended in a word that is no one's surname.
+    // Every narrating line of the 2026R1 database (279 Recording Logs, 26 lines), each with its log and timecode, and the
+    // one of another log of the research cache. These lines never ended in a surname, so before the fix they named no one
+    // either (no Legislator of the roster ends a line that finishes in a word of the sentence): they pin that the rule leaves
+    // them as they were. The rows above are the ones the rule changed.
     [
       "Rep. Smith declares a potential conflict of interest",
       "log 305330 (JWM 2025-05-09, research cache), 00:11:38",
       null,
     ],
-    ["Rep. Smith declares a potential conflict of interest", "log 315761 (2026R1 database), 00:25:09", null],
-    ["Sen. Starr declares a potential conflict of interest", "log 315743 (2026R1 database), 01:05:55", null],
-    ["Sen. Wagner declares a potential conflict of interest", "log 316073 (2026R1 database), 01:27:39", null],
+    ["REP. PATTERSON DECLARES POTENTIAL CONFLICT OF INTEREST", "log 313510 (2026R1 database), 00:18:14", null],
     ["REP. SCHARF DECLARES POTENTIAL CONFLICT OF INTEREST", "log 314523 (2026R1 database), 00:21:11", null],
     ["VICE-CHAIR WEBER RESCINDS THE MOTION", "log 314671 (2026R1 database), 00:30:30", null],
-    ["VICE-CHAIR THATCHER SERVES NOTICE OF POTENTIAL MINORITY REPORT", "log 316533 (2026R1 database), 01:32:28", null],
+    ["VICE-CHAIR OSBORNE SERVES NOTICE OF POTENTIAL MINORITY REPORT", "log 314722 (2026R1 database), 00:18:09", null],
     [
       "Vice-Chair Reschke -Serves notice of potential Minority Report on this measure.",
       "log 314824 (2026R1 database), 00:07:48",
       null,
     ],
-    ["VICE-CHAIR PHAM MOVES HB 4161 DO PASS", "log 315528 (2026R1 database), 01:00:58", null],
-    // One row for each verb of the rule where it is observable: a narration that ends in a member's surname.
+    ["REP. MANNIX SERVES NOTICE OF POTENTIAL MINORITY REPORT", "log 314831 (2026R1 database), 02:25:11", null],
+    ["SEN. HAYDEN SERVES NOTICE OF POTENTIAL MINORITY REPORT", "log 315097 (2026R1 database), 00:43:11", null],
     [
-      "Co-Chair Gorsek assumes the chair from Co-Chair Smith",
-      "MADE UP: 'assumes the chair', the ticket's wording",
+      "SEN. HAYDEN SERVES NOTICE OF POTENTIAL MINORITY REPORT ON SB 1528",
+      "log 315097 (2026R1 database), 00:44:15",
       null,
     ],
+    ["VICE-CHAIR PHAM MOVES HB 4161 DO PASS", "log 315528 (2026R1 database), 01:00:58", null],
+    ["Sen. Starr declares a potential conflict of interest", "log 315743 (2026R1 database), 01:05:55", null],
+    ["Rep. Smith declares a potential conflict of interest", "log 315761 (2026R1 database), 00:25:09", null],
+    ["Sen. Wagner declares a potential conflict of interest", "log 316073 (2026R1 database), 01:27:39", null],
+    ["SEN. GIROD DECLARES POTENTIAL CONFLICT OF INTEREST", "log 316096 (2026R1 database), 00:04:13", null],
+    ["Sen. Starr declares a potential conflict of interest", "log 316214 (2026R1 database), 00:12:24", null],
+    [
+      "VICE-CHAIR STARR SERVES NOTICE OF A POTENTIAL CONFLICT OF INTEREST",
+      "log 316275 (2026R1 database), 00:33:29",
+      null,
+    ],
+    ["SEN. THATCHER SERVES NOTICE OF A POTENTIAL CONFLICT OF INTEREST", "log 316275 (2026R1 database), 00:33:45", null],
+    ["VICE-CHAIR STARR SERVES NOTICE OF POTENTIAL MINORITY REPORT", "log 316277 (2026R1 database), 00:21:38", null],
+    ["VICE-CHAIR HAYDEN SERVES NOTICE OF POTENTIAL MINORITY REPORT", "log 316494 (2026R1 database), 01:13:54", null],
+    ["VICE-CHAIR THATCHER SERVES NOTICE OF POTENTIAL MINORITY REPORT", "log 316533 (2026R1 database), 01:32:28", null],
+    ["VICE-CHAIR THATCHER DECLARES POTENTIAL CONFLICT OF INTEREST", "log 316533 (2026R1 database), 01:34:40", null],
+    ["VICE-CHAIR THATCHER SERVES NOTICE OF POTENTIAL MINORITY REPORT", "log 316533 (2026R1 database), 02:42:38", null],
+    ["VICE-CHAIR THATCHER SERVES NOTICE OF POTENTIAL MINORITY REPORT", "log 316539 (2026R1 database), 00:32:08", null],
+    ["VICE-CHAIR THATCHER SERVES NOTICE OF POTENTIAL MINORITY REPORT", "log 316539 (2026R1 database), 00:45:06", null],
+    ["VICE-CHAIR THATCHER SERVES NOTICE OF POTENTIAL MINORITY REPORT", "log 316539 (2026R1 database), 00:53:25", null],
+    ["VICE-CHAIR THATCHER SERVES NOTICE OF POTENTIAL MINORITY REPORT", "log 316539 (2026R1 database), 01:19:35", null],
+    ["VICE-CHAIR ANDERSON RESCINDS THE MOTION", "log 316567 (2026R1 database), 00:31:22", null],
+    // One row for each verb of the rule where it is observable: a narration that ends in a member's surname.
     [
       "Co-Chair Gorsek declares a conflict with Rep. Gomberg",
       "MADE UP: 'declares a conflict', the ticket's wording",
