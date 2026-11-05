@@ -129,8 +129,9 @@ describe("a known-version file attaches to turns", () => {
 
   test("a word's probability is kept when the file gives it", () => {
     const text = file([{ start: 108, end: 109, text: " Hello.", words: [[" Hello.", 108, 109]] }]);
-    const parsed = JSON.parse(text);
-    parsed.segments[0].words[0].probability = 0.875;
+    const parsed = JSON.parse(text) as { segments: { words: { probability?: number }[] }[] };
+    const firstWord = parsed.segments[0]?.words[0];
+    if (firstWord) firstWord.probability = 0.875;
     const read = attached(JSON.stringify(parsed), TURNS_OF_288741);
     expect(read.passages[0]?.words[0]).toEqual({ text: " Hello.", start: 108, end: 109, probability: 0.875 });
   });
@@ -284,7 +285,7 @@ describe("a file that is refused", () => {
   });
 
   test("a version-1 file that breaks the format is refused with the file, and says where", () => {
-    const parsed = JSON.parse(file([A]));
+    const parsed = JSON.parse(file([A])) as { audio: { sha256?: string } };
     delete parsed.audio.sha256;
     const read = readTranscript({ file: "w.json", text: JSON.stringify(parsed), turns: null });
     expect(read).toMatchObject({ kind: "refused", reason: "not_valid", file: "w.json" });

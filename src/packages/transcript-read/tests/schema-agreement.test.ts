@@ -10,7 +10,9 @@ import { transcriptFileSchema, transcriptFormatVersion } from "../index.ts";
 
 const committed = JSON.parse(
   readFileSync(new URL("../../../../docs/schemas/transcript-v1.schema.json", import.meta.url), "utf8"),
-);
+) as CommittedSchema;
+
+type CommittedSchema = { $schema: string; $id: string; properties: { format_version: { const: number } } };
 
 function withoutProse(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(withoutProse);
