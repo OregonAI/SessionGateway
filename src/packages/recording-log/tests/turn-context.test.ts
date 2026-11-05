@@ -5,10 +5,16 @@ import { legislatorOfSpeaker, measureOfAgendaItem, playerLinkOf, type RecordingL
 // an Agenda item, and the player link of a turn.
 //
 // Speakers are quoted from the Recording Logs of the fixture (documents/committee-meeting-documents/, as the pdf-text
-// package extracts them and the parser reports them as `speaker`): 288741 (HALNRW 2025-01-22), the Senate and House
-// logs named per row. A committee's members are given as the Legislators row names them (test/fixtures/olis-2025R1/
-// feed/Legislators.json: code, first name, last name) and the CommitteeMembers rows list them. Rows that are MADE UP
-// say so.
+// package extracts them and the parser reports them as `speaker`), each row naming its log, or from a log of the research
+// cache (video-research/dl/logs/sample/, not committed) or of the 2026R1 database, which a row says. A Legislator is given
+// as the Legislators row names them (test/fixtures/olis-2025R1/feed/Legislators.json: code, first name, last name), and a
+// committee's members as the CommitteeMembers rows list them. Rows that are MADE UP say so.
+//
+// The rule (ADR-0052, owner decision B of 2026-11-05): a speaker line resolves only when it begins with a title, the title's
+// chamber agrees with the Legislator's code ("Rep." and "Representative" a House member, "Sen." and "Senator" a Senate member;
+// Chair, Co-Chair and Vice-Chair are any chamber), the surname matches, and the logged first name or initial agrees when
+// the line gives one. Among the committee's members first; when none matches, among all of the Session's Legislators, where
+// a first name or initial must be given, since a surname alone never resolves there. Only a unique match resolves.
 
 const HALNRW = [
   { code: "Rep Helm", name: "Ken Helm" },
@@ -23,27 +29,127 @@ const HALNRW = [
   { code: "Rep McDonald", name: "Sarah McDonald" },
 ];
 
-describe("legislatorOfSpeaker", () => {
+/** The Legislators of the 2025R1 fixture that the rows below name, with the names their rows give. Every row's Session. */
+const SESSION = [
+  ...HALNRW,
+  { code: "Rep Levy E", name: "Emerson Levy" },
+  { code: "Rep Nguyen D", name: "Daniel Nguyen" },
+  { code: "Rep Nguyen H", name: "Hoa Nguyen" },
+  { code: "Rep Pham H", name: "Hai Pham" },
+  { code: "Sen Pham", name: "Khanh Pham" },
+  { code: "Rep Smith G", name: "Gregory Smith" },
+  { code: "Sen Smith DB", name: "David Brock Smith" },
+  { code: "Rep Reschke", name: "E. Werner Reschke" },
+  { code: "Rep Nathanson", name: "Nancy Nathanson" },
+  { code: "Rep Walters", name: "Jules Walters" },
+  { code: "Rep Hudson", name: "Zach Hudson" },
+  { code: "Rep Ruiz", name: "Ricki Ruiz" },
+  { code: "Rep Sosa", name: "Nathan Sosa" },
+  { code: "Sen Meek", name: "Mark Meek" },
+  { code: "Sen Nash", name: "Todd Nash" },
+  { code: "Sen Weber", name: "Suzanne Weber" },
+  { code: "Sen Hayden", name: "Cedric Hayden" },
+  { code: "Sen Taylor", name: "Kathleen Taylor" },
+  { code: "Sen Bonham", name: "Daniel Bonham" },
+  { code: "Sen Patterson", name: "Deb Patterson" },
+  { code: "Sen Gelser Blouin", name: "Sara Gelser Blouin" },
+  { code: "Sen Prozanski", name: "Floyd Prozanski" },
+  { code: "Sen Reynolds", name: "Lisa Reynolds" },
+  { code: "Sen Linthicum", name: "Diane Linthicum" },
+];
+
+/** The members of SLB (the CommitteeMembers rows of the fixture), SHS and HREV (the roster of log 309305). */
+const SLB = ["Sen Taylor", "Sen Hayden", "Sen Pham", "Sen Bonham", "Sen Patterson"];
+const SHS = ["Sen Gelser Blouin", "Sen Prozanski", "Sen Nash", "Sen Reynolds", "Sen Linthicum"];
+const HREV = ["Rep Nathanson", "Rep Reschke", "Rep Walters", "Rep Hudson", "Rep Levy B", "Rep Marsh", "Rep Smith G"];
+
+function membersOf(codes: readonly string[]): { code: string; name: string }[] {
+  return codes.map((code) => {
+    const found = SESSION.find((legislator) => legislator.code === code);
+    if (found === undefined) throw new Error(`${code} is not in the test's Legislators`);
+    return found;
+  });
+}
+
+describe("legislatorOfSpeaker, within the committee's members", () => {
   test.for<[string, string, string | null]>([
     ["Co-Chair Helm", "log 288741, 00:00:04", "Rep Helm"],
-    ["Rep. McLain", "log 288741", "Rep McLain"],
-    ["Rep. B. Levy", "log 288741: an initial for the first name", "Rep Levy B"],
-    ["Vice-Chair Finger McDonald", "log 288741: a compound surname the feed holds as McDonald", "Rep McDonald"],
-    ["Rep. Susan McLain, House District 29", "a member who testifies by full name and district", "Rep McLain"],
-    ["Rep. Ricki Ruiz, House District 50", "a Legislator who is not a member of this committee", null],
-    ["Anna Glueder, LPRO Analyst", "log 288741: staff, no title", null],
-    ["REP. SCHARF DECLARES POTENTIAL CONFLICT OF INTEREST", "log 288741: a line that is not a speaker's name", null],
-    ["Kurt Williams, Director, Oregon Veterinary Diagnostics Lab, Oregon State University (OSU)", "a witness", null],
+    ["Rep. McLain", "log 288741, 00:12:05", "Rep McLain"],
+    ["Rep. B. Levy", "log 288741, 00:11:29: an initial for the first name", "Rep Levy B"],
+    [
+      "Vice-Chair Finger McDonald",
+      "log 288741, 00:21:43: a compound surname the feed holds as McDonald",
+      "Rep McDonald",
+    ],
+    [
+      "Rep. Susan McLain, House District 29",
+      "log 292588, 01:16:23: a member who testifies by full name and district",
+      "Rep McLain",
+    ],
+    ["Anna Glueder, LPRO Analyst", "log 288741, 00:01:47: staff, no title", null],
+    [
+      "REP. SCHARF DECLARES POTENTIAL CONFLICT OF INTEREST",
+      "log 289259, 00:47:33: a line that is not a speaker's name",
+      null,
+    ],
+    [
+      "Kurt Williams, Director, Oregon Veterinary Diagnostics Lab, Oregon State University (OSU)",
+      "log 288741, 00:02:49 (the wrapped title joined): a witness",
+      null,
+    ],
   ])("%s resolves to %s (%s)", ([speaker, , expected]) => {
     expect(legislatorOfSpeaker(speaker, HALNRW)).toBe(expected);
   });
 
   test("a witness who shares a member's last name is not that member: a Legislator is named with a title", () => {
-    // Quoted: "Mike Weber, volunteer, Marion Polk Food Share" is a witness at a Senate committee that has Sen. Suzanne Weber.
+    // Quoted: log 289010 (SHS 2025-01-23), 01:02:39 "Mike Weber, volunteer, Marion Polk Food Share" and 00:19:54 "Sen.
+    // Suzanne Weber, Senate District 16". MADE UP: that Sen. Weber is a member of the committee (the real SHS has no Weber).
     const members = [{ code: "Sen Weber", name: "Suzanne Weber" }];
 
     expect(legislatorOfSpeaker("Mike Weber, volunteer, Marion Polk Food Share", members)).toBeNull();
     expect(legislatorOfSpeaker("Sen. Suzanne Weber, Senate District 16", members)).toBe("Sen Weber");
+  });
+
+  test("a member of the other chamber with the member's surname is not that member: log 309305 (HREV 2025-06-11), 00:01:33", () => {
+    // Sen. David Brock Smith, SD01, testifies to the House Committee on Revenue, whose member is Rep. Gregory Smith. The
+    // title's chamber does not agree with the member's code, so the surname alone resolves nothing.
+    expect(legislatorOfSpeaker("Sen. David Brock Smith, SD01", membersOf(HREV))).toBeNull();
+    // The member himself, as the log's lines give him: "Rep. Smith" (00:11:58).
+    expect(legislatorOfSpeaker("Rep. Smith", membersOf(HREV))).toBe("Rep Smith G");
+  });
+
+  test("the review's real case: log 315399 (SCGG 2026-02-23, 2026R1 database), 00:01:04 'Rep. Hai Pham, House District 36' is not the Senate committee's Sen. Khanh Pham", () => {
+    // The Senate Committee on Commerce and General Government has Sen. Khanh Pham (the log's own roster has "Sen. Khanh
+    // Pham", line 31 of its text). Before this rule the one Pham among the members resolved, whatever its chamber or first name.
+    const scgg = [
+      { code: "Sen Pham", name: "Khanh Pham" },
+      { code: "Sen Meek", name: "Mark Meek" },
+    ];
+
+    expect(legislatorOfSpeaker("Rep. Hai Pham, House District 36", scgg)).toBeNull();
+    expect(legislatorOfSpeaker("Sen. Khanh Pham", scgg)).toBe("Sen Pham");
+  });
+
+  test("MADE UP: a first name that is not the member's does not resolve to the member, in either chamber", () => {
+    // The Session's Legislators tell a first name ("Daniel", "Hai") from the start of a compound surname ("Finger").
+    // Hoa Nguyen and Khanh Pham are the committee; Daniel Nguyen and Hai Pham are in the Session, not on it.
+    const committee = [
+      { code: "Rep Nguyen H", name: "Hoa Nguyen" },
+      { code: "Sen Pham", name: "Khanh Pham" },
+    ];
+    const resolve = (speaker: string): string | null => legislatorOfSpeaker(speaker, committee, SESSION);
+
+    expect(resolve("Rep. Hoa Nguyen")).toBe("Rep Nguyen H");
+    expect(resolve("Rep. H. Nguyen")).toBe("Rep Nguyen H");
+    expect(resolve("Rep. Nguyen")).toBe("Rep Nguyen H");
+    expect(resolve("Rep. Daniel Nguyen, House District 51")).toBe("Rep Nguyen D");
+    expect(resolve("Rep. D. Nguyen")).toBe("Rep Nguyen D");
+    expect(resolve("Chair Pham")).toBe("Sen Pham");
+    expect(resolve("Senator Khanh Pham")).toBe("Sen Pham");
+    expect(resolve("Chair Hai Pham")).toBe("Rep Pham H");
+    expect(resolve("Representative Pham")).toBeNull();
+    // No Legislator of that chamber and name anywhere: the committee's Pham is of the other chamber.
+    expect(resolve("Sen. Hai Pham")).toBeNull();
   });
 
   test("MADE UP: two members with one last name resolve only when the first name or its initial says which", () => {
@@ -55,6 +161,92 @@ describe("legislatorOfSpeaker", () => {
     expect(legislatorOfSpeaker("Rep. Levy", members)).toBeNull();
     expect(legislatorOfSpeaker("Rep. B. Levy", members)).toBe("Rep Levy B");
     expect(legislatorOfSpeaker("Rep. Ann Levy, House District 7", members)).toBe("Rep Levy A");
+  });
+});
+
+describe("legislatorOfSpeaker, when no committee member matches: all of the Session's Legislators", () => {
+  test.for<[string, string, string, readonly string[], string | null]>([
+    [
+      "Sen. Mark Meek, Senate District 20",
+      "log 302332 (SLB 2025-01-30), 01:08:58: the owner's example",
+      "SLB",
+      SLB,
+      "Sen Meek",
+    ],
+    [
+      "Rep. Nathan Sosa, House District 30",
+      "log 302332 (SLB 2025-01-30), 00:13:13: a Representative at a Senate committee",
+      "SLB",
+      SLB,
+      "Rep Sosa",
+    ],
+    [
+      "Sen. Todd Nash, Senate District 29",
+      "log 289259 (HALNRW 2025-01-27), 00:27:19: a Senator at a House committee",
+      "HALNRW",
+      HALNRW.map((m) => m.code),
+      "Sen Nash",
+    ],
+    ["Rep. Ricki Ruiz, House District 50", "log 290006 (SHS 2025-02-04), 00:15:08", "SHS", SHS, "Rep Ruiz"],
+    [
+      "Sen. David Brock Smith, SD01",
+      "log 309305 (HREV 2025-06-11), 00:01:33: the real analogue of the 2026R1 case, a Senator at a House committee with a Smith",
+      "HREV",
+      HREV,
+      "Sen Smith DB",
+    ],
+    [
+      "Rep. Hai Pham, House District 36",
+      "log 315399 (SCGG 2026-02-23, 2026R1 database), 00:01:04, with Sen. Khanh Pham among the members",
+      "SCGG",
+      ["Sen Pham", "Sen Meek"],
+      "Rep Pham H",
+    ],
+    ["Sen. Meek", "MADE UP: a surname alone never resolves among all the Legislators", "SHS", SHS, null],
+    ["Sen. M. Meek", "MADE UP: an initial resolves", "SHS", SHS, "Sen Meek"],
+    ["Chair Mark Meek", "MADE UP: an office title is any chamber, and the full name resolves", "SHS", SHS, "Sen Meek"],
+    ["Rep. Mark Meek", "MADE UP: the title's chamber must agree", "SHS", SHS, null],
+    ["Sen. Daniel Meek", "MADE UP: a first name that is not the Legislator's", "SHS", SHS, null],
+    ["Rep. Levy", "MADE UP: a surname with two Legislators, and none named", "SHS", SHS, null],
+    ["Rep. Bobby Levy", "MADE UP: a full name picks one of two Levys", "SHS", SHS, "Rep Levy B"],
+    ["Rep. E. Levy", "MADE UP: an initial picks the other", "SHS", SHS, "Rep Levy E"],
+    [
+      "Rep. Finger McDonald",
+      "MADE UP: a compound surname is not a first name, and a surname alone never resolves among all",
+      "SHS",
+      SHS,
+      null,
+    ],
+    [
+      "Mike Meek, volunteer, Marion Polk Food Share",
+      "MADE UP: no title, a witness who shares a Legislator's surname",
+      "SHS",
+      SHS,
+      null,
+    ],
+    [
+      "Kurt Williams, Director, Oregon Veterinary Diagnostics Lab, Oregon State University (OSU)",
+      "log 288741, 00:02:49: a witness",
+      "HALNRW",
+      HALNRW.map((m) => m.code),
+      null,
+    ],
+  ])("%s resolves to %s (%s)", ([speaker, , , committee, expected]) => {
+    expect(legislatorOfSpeaker(speaker, membersOf(committee), SESSION)).toBe(expected);
+  });
+
+  test("with no list of the Session's Legislators the committee's members are all that is searched", () => {
+    // Log 290006 (SHS 2025-02-04), 00:15:08.
+    expect(legislatorOfSpeaker("Rep. Ricki Ruiz, House District 50", membersOf(SHS))).toBeNull();
+    expect(legislatorOfSpeaker("Rep. Ricki Ruiz, House District 50", membersOf(SHS), SESSION)).toBe("Rep Ruiz");
+  });
+
+  test("a Legislator who is a member of the committee still resolves among the members, and two members of one name do not fall back to all", () => {
+    const levys = membersOf(["Rep Levy B", "Rep Levy E"]);
+
+    expect(legislatorOfSpeaker("Rep. Levy", levys, SESSION)).toBeNull();
+    expect(legislatorOfSpeaker("Rep. Bobby Levy", levys, SESSION)).toBe("Rep Levy B");
+    expect(legislatorOfSpeaker("Co-Chair Helm", membersOf(HALNRW.map((m) => m.code)), SESSION)).toBe("Rep Helm");
   });
 });
 
