@@ -12,6 +12,9 @@
 // nothing. --fixture overrides the output directory (default test/fixtures/olis-2025R1); it also
 // holds measures.txt.
 //
+// Besides the rows about the chosen Measures, the build takes the Recording Log of each Meeting it
+// holds, a rule of its own (see select(), ticket #124).
+//
 // Dependency-free: node: built-ins and relative .ts files only.
 
 import { createHash } from "node:crypto";
@@ -44,6 +47,7 @@ import type { LinkedBy, ManifestEntry, Row, Unresolved } from "./schema.ts";
 
 const SESSION = "2025R1";
 const committeeMembersSet = "CommitteeMembers";
+const recordingLogType = "Recording Log";
 const OLIS_ORIGIN = "https://olis.oregonlegislature.gov/";
 const defaultFixture = join(import.meta.dirname, "..", "..", "test", "fixtures", "olis-2025R1");
 
@@ -280,6 +284,30 @@ function select(feed: Map<string, Row[]>, chosen: Chosen[]): Selection {
   memberRows.forEach((row, index) => {
     if (row["SessionKey"] === SESSION && keptCommittees.has(String(row["CommitteeCode"])))
       add(committeeMembersSet, index);
+  });
+  drain();
+
+  // The Recording Log of each Meeting the slice holds (ticket #124), a rule of its own. A Recording Log
+  // names no Measure (MeasurePrefix and MeasureNumber are null), so no row about a Measure leads to it and
+  // the closure cannot reach it. The Meetings are known by now, so the build takes every
+  // CommitteeMeetingDocuments row of DocumentType "Recording Log" whose Session, Committee and MeetingDate
+  // are those of a kept Meeting. Its document is fetched and kept like any other, as the exact bytes
+  // OLIS served, so the PDF's link annotations survive. A Meeting with no such row (HHED 2025-02-13 and
+  // SHS 2025-05-22 in the cache) gets none. The rows go through drain() like any other, so their Meeting
+  // and Committee references are followed, and a log that named a Measure outside measures.txt would stop
+  // the build.
+  const keptMeetings = new Set(
+    [...(included.get("CommitteeMeetings") ?? [])].map((i) => {
+      const meeting = (feed.get("CommitteeMeetings") as Row[])[i] as Row;
+      return keyString([meeting["SessionKey"], meeting["CommitteeCode"], meeting["MeetingDate"]]);
+    }),
+  );
+  (feed.get("CommitteeMeetingDocuments") ?? []).forEach((row, index) => {
+    if (
+      row["DocumentType"] === recordingLogType &&
+      keptMeetings.has(keyString([row["SessionKey"], row["CommitteeCode"], row["MeetingDate"]]))
+    )
+      add("CommitteeMeetingDocuments", index);
   });
   drain();
 
