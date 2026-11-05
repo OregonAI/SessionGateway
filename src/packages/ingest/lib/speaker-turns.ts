@@ -1,6 +1,7 @@
 // The speaker-turn index of a Recording Log (ticket #126, ADR-0052): the worker reads the file's link annotations, hands
 // the text, the links and the Meeting's Agenda items to the Recording Log parser, and resolves each turn's speaker
-// through the Meeting's committee members. A turn is never dropped: a speaker nobody resolves keeps its text.
+// among the Meeting's committee members and then among all the Session's Legislators. A turn is never dropped: a speaker
+// nobody resolves keeps its text, and a turn's Measure is kept only when the index holds it.
 import type { IndexWriter } from "#/packages/database/writer.ts";
 import { committeeIdOf, type DocumentLink, type MeetingId } from "#/packages/domain/documents.ts";
 import { measureIdOf, type SessionKey } from "#/packages/domain/index.ts";
@@ -36,13 +37,17 @@ export async function readSpeakerTurnIndex(
   const extraction = await extractPdfLinks(bytes);
   if (extraction.kind === "unreadable") {
     // The text came from the same bytes, so this is a bug and not a file.
-    throw new Error(`The links of ${link.id} (${link.sourceUrl}) could not be read: ${extraction.reason}`);
+    throw new Error(`The links of ${link.id} (${link.sourceUrl}) could not be read: ${extraction.reason}`, {
+      cause: extraction,
+    });
   }
   const { links } = extraction;
   const meeting = link.relations.find((relation) => relation.relation === "meeting")?.to;
   const committee = link.relations.find((relation) => relation.relation === "committee")?.to;
   const agendaItems = meeting === undefined ? [] : context.writer.agendaItemsOfMeeting(meeting as MeetingId);
   const legislatorOfCode = new Map(context.resolver.codes.map(({ code, legislator }) => [code, legislator]));
+  const sessionLegislators = context.resolver.codes.map(({ code, legislator }) => ({ code, name: legislator.name }));
+  const heldMeasures = context.writer.heldMeasureIds(context.session);
   const members = context.writer
     .committeeMembers(context.session)
     .filter((member) => committeeIdOf(context.session, member.committeeCode) === committee)
@@ -59,10 +64,15 @@ export async function readSpeakerTurnIndex(
       return { kind: "conflicting_event_ids", eventIds: parsed.eventIds };
     case "parsed": {
       const turns = parsed.speakerTurns.map((turn): SpeakerTurn => {
-        const code = legislatorOfSpeaker(turn.speaker, members);
-        const measure = measureOfAgendaItem(turn.agendaItem);
+        const code = legislatorOfSpeaker(turn.speaker, members, sessionLegislators);
+        const named = measureOfAgendaItem(turn.agendaItem);
+        const measureId = named === null ? null : measureIdOf({ session: context.session, ...named });
         const playerLink = playerLinkOf(links, parsed.eventId, turn.offsetSeconds);
-        if (playerLink === null) throw new Error(`${link.id} has an event ID and no player link for it`);
+        if (playerLink === null) {
+          throw new Error(`${link.id} has an event ID and no player link for it`, {
+            cause: { eventId: parsed.eventId, linkCount: links.length },
+          });
+        }
         return {
           timecode: turn.timecode,
           offsetSeconds: turn.offsetSeconds,
@@ -71,7 +81,8 @@ export async function readSpeakerTurnIndex(
           legislatorCode: code,
           legislator: code === null ? null : (legislatorOfCode.get(code) ?? null),
           agendaItem: turn.agendaItem,
-          measureId: measure === null ? null : measureIdOf({ session: context.session, ...measure }),
+          // The Agenda item's text is kept either way; its Measure only when the index holds that Measure.
+          measureId: measureId !== null && heldMeasures.has(measureId) ? measureId : null,
           playerLink,
         };
       });

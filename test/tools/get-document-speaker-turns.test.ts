@@ -9,23 +9,37 @@
 //
 // Expected values are literals from the fixture, never from a tool's output:
 // - the turns are lines of the logs' text (documents/committee-meeting-documents/<id>.pdf) as the pdf-text package
-//   extracts it; a turn's second is the `startStreamAt` of the player link that PDF.js reads on its line, which equals the
-//   line's timecode in hours, minutes and seconds in every row below (00:01:47 = 107);
-// - the event IDs are the `eventID` of those links;
+//   extracts it. A turn's second is the `startStreamAt` of the player link on its line, which is the /URI in the raw PDF
+//   (read from the file's own bytes: `/Rect[ 69.75 250.74 122.29 264.54] ... /URI(...&startStreamAt=3)` of 288741.pdf is
+//   the timecode "00:00:03", and its /Rect[ 424.04 405.98 451.77 418.63] the "here" of the exhibits line) and not from
+//   what PDF.js reports of it. It equals the line's timecode in hours, minutes and seconds in every row below
+//   (00:01:47 = 107);
+// - the event IDs are the `eventID` in those /URI strings;
 // - a Legislator Code is the CommitteeMembers row (feed/CommitteeMembers.json) of the meeting's committee whose Legislators row
-//   (feed/Legislators.json) has the name the line gives: "Co-Chair Helm" is "Rep Helm", Ken Helm;
-// - the turn count of SLB 2025-01-30 (302332) is its timecoded lines minus the ones that are not speaker lines: 50 lines, of
-//   which 16 are the call to order, six Agenda items (SB 69 hearing, SB 69 work session, SB 858, SB 605, SB 651, SB 588),
-//   four motions, four votes and the adjournment, so 34 are turns;
+//   (feed/Legislators.json) has the name the line gives: "Co-Chair Helm" is "Rep Helm", Ken Helm. A speaker who is not on the
+//   committee resolves when the Session's Legislators (feed/Legislators.json) hold exactly one person of that chamber with
+//   that name and first name or initial: "Sen. Mark Meek, Senate District 20" testifying to SLB is "Sen Meek" (owner
+//   decision B, 2026-11-05);
+// - the turn counts are hand counts of each log's timecoded lines, less the lines that are not speaker lines (the call to
+//   order, Agenda items, motions, votes and the adjournment):
+//   - 288741 (HALNRW 2025-01-22): 48 lines, of which 1 is the call to order, 6 are Agenda items (the committee rules, HB 2167,
+//     HB 2168, HB 2166, HB 3131, HB 2164), 1 a motion, 1 a vote and 1 the adjournment, so 38 are turns;
+//   - 289259 (HALNRW 2025-01-27): 54 lines, of which 1 is the call to order, 6 are Agenda items (HB 3131, 2805, 3141, 2806,
+//     2809, 3010) and 1 the adjournment, so 46 are turns;
+//   - 295094 (SFR 2025-03-17): 46 lines, of which 1 is the call to order, 2 are Agenda items (SB 93, SB 121) and 1 the
+//     adjournment, so 42 are turns;
+//   - 302332 (SLB 2025-01-30): 50 lines, of which 1 is the call to order, six Agenda items (SB 69 hearing, SB 69 work session,
+//     SB 858, SB 605, SB 651, SB 588), four motions, four votes and the adjournment, so 34 are turns;
+// - a turn's Measure is the Measure its Agenda item begins with, kept only when the index holds that Measure (the fixture
+//   holds HB 3027, 3124, 3131, 3723, 3795, SB 64, 69, 121, 921 and 983: feed/Measures.json). HB 2167 and SB 605 are not
+//   among them, so their turns have no Measure and keep the Agenda item text;
 // - the player link is the address those logs use, with the log's own clientID (4879615486).
 //
 // One caution about the fixture: it is a slice, and for a meeting it holds only the CommitteeAgendaItems rows of its chosen
-// Measures. The parser reads a log's Agenda items from the feed's, and from its own text only when none of the feed's
-// matches a line (owner decision Q5 of ticket #125). So where the slice has some of a meeting's items and not all, the
-// other items' lines are read as turns and the turns after them keep the last item the feed matched: that is HALNRW
-// 2025-01-22 (288741, the feed has HB 3131 of its five items) and HALNRW 2025-01-27 (289259). The rows below that name an Agenda item are
-// the ones of SLB 2025-01-30, whose feed items are all in the slice (SB 69, 858, 605, 651, 588). The rows of the other logs
-// assert no Agenda item. The made-up counterpart is in ADR-0052.
+// Measures. Each log line is an Agenda item when it matches one of the feed's items, and otherwise when the text says so
+// (owner decision A, 2026-11-05), so the five items of HALNRW 2025-01-22 (288741, the feed has HB 3131), the six of
+// 2025-01-27 (289259, HB 3131) and SB 93 of SFR 2025-03-17 (295094, the log names SB 93 and the feed only SB 121) are all
+// Agenda items, and the turns under each carry the right one.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";
@@ -87,8 +101,8 @@ describe.for(eras)("the speaker-turn index in get_document for a %s client", (er
   it("gives HALNRW 2025-01-22's log (288741) its event ID and its turns, with the envelope's as-of time and notice", async () => {
     const { speakerTurns, structured } = await turnsOf("recording-log-2025r1-288741");
 
-    expect(speakerTurns).toMatchObject({ indexed: true, event_id: "2025011038", gap: null });
-    expect(speakerTurns.turn_count).toBe(speakerTurns.turns.length);
+    expect(speakerTurns).toMatchObject({ indexed: true, event_id: "2025011038", gap: null, turn_count: 38 });
+    expect(speakerTurns.turns).toHaveLength(38);
     expect(speakerTurns.pages_read_by_timecode).toEqual([]);
     expect(structured["kind"]).toBe("recording_log");
     expect.soft(structured["as_of"]).toBe("2026-08-05T10:00:00-07:00");
@@ -178,58 +192,136 @@ describe.for(eras)("the speaker-turn index in get_document for a %s client", (er
       measure_id: "measure-2025r1-sb69",
       player_link: playerLink("2025011109", 65),
     });
-    // 00:07:03 and 00:16:12, members, under SB 605.
+    // 00:07:03 and 00:16:12, members, under SB 605: the index does not hold SB 605 (the fixture's Measures are the ten the
+    // header names), so the turn has no Measure and keeps the Agenda item's text.
     expect(at("00:07:03")).toMatchObject({
       offset_seconds: 423,
       speaker: "Vice-Chair Bonham",
       legislator_code: "Sen Bonham",
       legislator: { name: "Daniel Bonham" },
       agenda_item: "SB 605 - Public Hearing",
-      measure_id: "measure-2025r1-sb605",
+      measure_id: null,
     });
     expect(at("00:16:12")).toMatchObject({
       offset_seconds: 972,
       speaker: "Sen. Hayden",
       legislator_code: "Sen Hayden",
       agenda_item: "SB 605 - Public Hearing",
-      measure_id: "measure-2025r1-sb605",
+      measure_id: null,
     });
   });
 
-  it("keeps a turn whose speaker it cannot resolve, with its text: a Legislator who is not on the committee, a line in capitals", async () => {
-    // SLB 2025-01-30 at 00:13:13 (793 s): "Rep. Nathan Sosa, House District 30", a Representative testifying to a Senate
-    // committee, and at 01:08:58 (4138 s) "Sen. Mark Meek, Senate District 20", who is not on SLB.
+  it("resolves a Legislator who is not on the committee against all the Session's Legislators, by chamber and full name", async () => {
+    // SLB 2025-01-30 (302332) at 00:13:13 (793 s) "Rep. Nathan Sosa, House District 30", a Representative testifying to a
+    // Senate committee, and at 01:08:58 (4138 s) "Sen. Mark Meek, Senate District 20", who is not on SLB: Meek is the one
+    // Senator of that name in the Session's Legislators (Mark Meek, "Sen Meek"), Sosa the one Representative (Nathan Sosa).
     const slb = (await turnsOf("recording-log-2025r1-302332")).speakerTurns;
     expect(slb.turns.find((turn) => turn.timecode === "00:13:13")).toMatchObject({
       offset_seconds: 793,
       speaker: "Rep. Nathan Sosa, House District 30",
-      legislator_code: null,
-      legislator: null,
+      legislator_code: "Rep Sosa",
+      legislator: { name: "Nathan Sosa" },
       agenda_item: "SB 605 - Public Hearing",
     });
     expect(slb.turns.find((turn) => turn.timecode === "01:08:58")).toMatchObject({
       offset_seconds: 4138,
       speaker: "Sen. Mark Meek, Senate District 20",
-      legislator_code: null,
-      legislator: null,
+      legislator_code: "Sen Meek",
+      legislator: { name: "Mark Meek" },
       agenda_item: "SB 588 - Public Hearing",
+      measure_id: null,
     });
-    // HALNRW 2025-01-27 (289259, event 2025011111): at 00:47:33 (2853 s) the line "REP. SCHARF DECLARES POTENTIAL CONFLICT
-    // OF INTEREST" is a turn like any other, and "Sen. Todd Nash, Senate District 29" at 00:27:19 (1639 s) is not a member.
+    // HALNRW 2025-01-27 (289259, event 2025011111): "Sen. Todd Nash, Senate District 29" at 00:27:19 (1639 s), a Senator
+    // before a House committee, is Todd Nash, "Sen Nash".
     const halnrw = (await turnsOf("recording-log-2025r1-289259")).speakerTurns;
     expect(halnrw.event_id).toBe("2025011111");
+    expect(halnrw.turns.find((turn) => turn.timecode === "00:27:19")).toMatchObject({
+      offset_seconds: 1639,
+      speaker: "Sen. Todd Nash, Senate District 29",
+      legislator_code: "Sen Nash",
+      legislator: { name: "Todd Nash" },
+    });
+  });
+
+  it("keeps a turn whose speaker it cannot resolve, with its text: a line in capitals, a witness, staff", async () => {
+    // HALNRW 2025-01-27 (289259) at 00:47:33 (2853 s): the line "REP. SCHARF DECLARES POTENTIAL CONFLICT OF INTEREST" is a
+    // turn like any other, and at 00:08:06 a witness is a turn with no Legislator.
+    const halnrw = (await turnsOf("recording-log-2025r1-289259")).speakerTurns;
     expect(halnrw.turns.find((turn) => turn.timecode === "00:47:33")).toMatchObject({
       offset_seconds: 2853,
       speaker: "REP. SCHARF DECLARES POTENTIAL CONFLICT OF INTEREST",
       legislator_code: null,
       legislator: null,
+      agenda_item: "HB 2806 - Public Hearing",
       player_link: playerLink("2025011111", 2853),
     });
-    expect(halnrw.turns.find((turn) => turn.timecode === "00:27:19")).toMatchObject({
-      offset_seconds: 1639,
-      speaker: "Sen. Todd Nash, Senate District 29",
+    expect(halnrw.turns.find((turn) => turn.timecode === "00:08:06")).toMatchObject({
+      speaker: "Lisa Charpilloz Hanson, Director, Oregon Department of Agriculture (ODA)",
       legislator_code: null,
       legislator: null,
+    });
+    // Every turn of 289259 is in the result, resolved or not: the count is the hand count.
+    expect(halnrw.turns).toHaveLength(46);
+  });
+
+  it("gives each turn of HALNRW 2025-01-22 (288741) the Agenda item it was spoken under, the feed's item and the others by the text", async () => {
+    const { speakerTurns } = await turnsOf("recording-log-2025r1-288741");
+    const at = (timecode: string): Turn | undefined => speakerTurns.turns.find((turn) => turn.timecode === timecode);
+
+    // Before HB 2167 (00:01:37) the committee rules (00:00:48) are the item, with no Measure.
+    expect(at("00:00:49")).toMatchObject({
+      speaker: "Co-Chair Helm",
+      agenda_item: "Adoption of Committee Rules - Organizational Meeting",
+      measure_id: null,
+    });
+    // HB 2167 and HB 2168 are not in the feed's slice nor in the index: the item's text is kept, the Measure is null.
+    expect(at("00:01:47")).toMatchObject({ agenda_item: "HB 2167 - Public Hearing", measure_id: null });
+    expect(at("00:23:06")).toMatchObject({ agenda_item: "HB 2168 - Public Hearing", measure_id: null });
+    // HB 3131 (01:15:48) is the feed's item and the index holds it: both the item and the Measure.
+    expect(at("01:15:49")).toMatchObject({
+      speaker: "Co-Chair Helm",
+      agenda_item: "HB 3131 - Public Hearing",
+      measure_id: "measure-2025r1-hb3131",
+    });
+    expect(at("01:16:09")).toMatchObject({
+      agenda_item: "HB 3131 - Public Hearing",
+      measure_id: "measure-2025r1-hb3131",
+    });
+    expect(at("01:20:56")).toMatchObject({ agenda_item: "HB 2164 - Public Hearing", measure_id: null });
+  });
+
+  it("gives HALNRW 2025-01-27 (289259) 46 turns, each under the item its log says, and SFR 2025-03-17 (295094) 42", async () => {
+    const halnrw = (await turnsOf("recording-log-2025r1-289259")).speakerTurns;
+    const sfr = (await turnsOf("recording-log-2025r1-295094")).speakerTurns;
+    const hal = (timecode: string): Turn | undefined => halnrw.turns.find((turn) => turn.timecode === timecode);
+    const at = (timecode: string): Turn | undefined => sfr.turns.find((turn) => turn.timecode === timecode);
+
+    expect(halnrw).toMatchObject({ turn_count: 46 });
+    expect(hal("00:00:52")).toMatchObject({
+      agenda_item: "HB 3131 - Public Hearing",
+      measure_id: "measure-2025r1-hb3131",
+    });
+    // HB 2805 (00:07:42) is not the feed's: the turns after it are under it, and not left under HB 3131.
+    expect(hal("00:08:06")).toMatchObject({ agenda_item: "HB 2805 - Public Hearing", measure_id: null });
+    expect(hal("00:22:35")).toMatchObject({ speaker: "Co-Chair Owens", agenda_item: "HB 3141 - Public Hearing" });
+    expect(hal("01:31:16")).toMatchObject({ agenda_item: "HB 3010 - Public Hearing", measure_id: null });
+
+    expect(sfr).toMatchObject({ turn_count: 42 });
+    // SB 93 (00:00:43) is the log's and not the feed's: SB 93 is not in the index; SB 121 (00:28:31) is both.
+    expect(at("00:00:49")).toMatchObject({
+      speaker: "Jonathan Hart, Economist",
+      agenda_item: "SB 93 Public Hearing",
+      measure_id: null,
+    });
+    expect(at("00:03:44")).toMatchObject({
+      speaker: "Scott Bruun",
+      agenda_item: "SB 93 Public Hearing",
+      measure_id: null,
+    });
+    expect(at("00:28:48")).toMatchObject({
+      speaker: "Kyle Easton, Senior Economist",
+      agenda_item: "SB 121 Public Hearing",
+      measure_id: "measure-2025r1-sb121",
     });
   });
 
@@ -315,7 +407,7 @@ describe.for(eras)("the speaker-turn index in meetings for a %s client", (era) =
       recording_logs: [
         {
           id: "recording-log-2025r1-288741",
-          speaker_turn_index: { event_id: "2025011038", turn_count: expect.any(Number) as unknown },
+          speaker_turn_index: { event_id: "2025011038", turn_count: 38 },
         },
       ],
     });

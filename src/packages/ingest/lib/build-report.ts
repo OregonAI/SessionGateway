@@ -57,10 +57,31 @@ export type BuildReport = {
   recording_log_gaps: {
     id: DocumentId;
     source_url: string;
-    kind: "no_event_id" | "conflicting_event_ids";
+    /**
+     * `no_event_id` and `conflicting_event_ids`: the log's links say so. `not_read`: the log is stored and its links have not
+     * been read, because the file could not be fetched again or came back changed (see `recording_log_refetches`).
+     */
+    kind: "no_event_id" | "conflicting_event_ids" | "not_read";
     /** The event IDs the links name: empty for a log with none. */
     event_ids: string[];
   }[];
+  /**
+   * The stored Recording Logs this pull fetched again to read their links, which the store does not keep (ADR-0052): how many,
+   * those whose fetch failed, and those whose file is no longer the stored one. A log in either list has no index (it is a
+   * `not_read` gap) and is tried again by the next pull. The pull stores no turns from a file that is not the stored one.
+   */
+  recording_log_refetches: {
+    attempted: number;
+    failed: { id: DocumentId; source_url: string; reason: string }[];
+    bytes_changed: {
+      id: DocumentId;
+      source_url: string;
+      /** The hash of the file the stored text was made from. */
+      stored_content_hash: string;
+      /** The hash of the file fetched now. */
+      fetched_content_hash: string;
+    }[];
+  };
   /** The Recording Logs some of whose pages have no links that match their timecode lines, so those turns' seconds are the timecodes. */
   recording_log_pages_read_by_timecode: { id: DocumentId; source_url: string; pages: number[] }[];
   /** What this pull made of the passages of the documents it stored, or refiled as embeddable (ADR-0025). */

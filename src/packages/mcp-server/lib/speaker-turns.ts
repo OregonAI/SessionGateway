@@ -41,7 +41,7 @@ export const speakerTurnsOutput = z
             .string()
             .nullable()
             .describe(
-              "The Legislator Code of the committee member the line names, as the feed writes it. Null for anyone else, a Legislator who is not a member of the committee included: the speaker text is then all there is.",
+              "The Legislator Code of the Legislator the line names, as the feed writes it: a member of the meeting's committee, or else the one Legislator of the Session whose chamber, surname and first name or initial the line gives. Null for anyone else (a witness, staff, a line with no title or no unique match): the speaker text is then all there is.",
             ),
           legislator: z
             .object({
@@ -57,7 +57,9 @@ export const speakerTurnsOutput = z
           measure_id: z
             .string()
             .nullable()
-            .describe("The Measure that Agenda item line begins with, when it names one."),
+            .describe(
+              "The Measure that Agenda item line begins with, when it names one and the index holds that Measure; otherwise null, and agenda_item still says what the log says.",
+            ),
           player_link: z
             .string()
             .describe("The Legislature's own player at this turn's second, built from the log's own player link."),
@@ -67,7 +69,7 @@ export const speakerTurnsOutput = z
   })
   .optional()
   .describe(
-    "Present only when the document is a Recording Log the index has read: its speaker-turn index. The log's text is above, as published.",
+    "Present only when the document is a Recording Log the index has read: its speaker-turn index. The log's text is above, as published. A stored log whose links have not been read yet (its file could not be fetched again, or came back changed) has none.",
   );
 
 export function speakerTurnsShown(outcome: SpeakerTurnIndexOutcome): z.infer<typeof speakerTurnsOutput> {

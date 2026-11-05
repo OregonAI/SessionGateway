@@ -298,6 +298,8 @@ type DocumentsStep = {
   passageCounts: PassageCounts;
   /** Gets an entry for each document this run could not get or read. */
   notFetched: BuildReport["documents_not_fetched"];
+  /** Gets the stored Recording Logs this run fetched again to read their links, and what became of each (ADR-0052). */
+  refetches: BuildReport["recording_log_refetches"];
 };
 
 /**
@@ -306,7 +308,7 @@ type DocumentsStep = {
  * documents it fetched. Reading what is stored for links is the Snapshot read's (`snapshot-read.ts`).
  */
 async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
-  const { config, deps, writer, olis, links, resolver, committeeNames, passageCounts, notFetched } = step;
+  const { config, deps, writer, olis, links, resolver, committeeNames, passageCounts, notFetched, refetches } = step;
   let documentsFetched = 0;
   const stored = writer.storedDocumentIds(config.session);
   // A fetched file is unchanging (ADR-0005) but its feed row is not: OLIS changes a posting's Meaning,
@@ -339,14 +341,30 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
   const speakerTurns = { session: config.session, writer, resolver };
   for (const link of links) {
     if (stored.has(link.id) && unindexed.has(link.id) && link.kind === "recording_log" && !revised.has(link.id)) {
+      refetches.attempted += 1;
       const again = await fetchAndRead(olis, link, deps.signal);
-      // A log that does not come is tried again by the next pull, which still finds it without an index.
-      if (again.kind === "fetched") {
-        writer.storeSpeakerTurnIndex({
-          documentId: link.id,
-          outcome: await readSpeakerTurnIndex(speakerTurns, link, again.bytes, again.pdf.text),
-        });
+      if (again.kind === "left_out") {
+        // The log has no index and the next pull tries it again: this pull says it did not read it.
+        refetches.failed.push({ id: link.id, source_url: link.sourceUrl, reason: again.reason });
+        continue;
       }
+      const fetchedHash = createHash("sha256").update(again.bytes).digest("hex");
+      const storedHash = writer.storedContentHash(link.id);
+      if (fetchedHash !== storedHash) {
+        // Not the file the stored text was made from: its turns would not belong to that text. Nothing is stored from
+        // it, as the nightly hash sample stores nothing from a replaced file (ADR-0040), and the report says so.
+        refetches.bytes_changed.push({
+          id: link.id,
+          source_url: link.sourceUrl,
+          stored_content_hash: storedHash ?? "",
+          fetched_content_hash: fetchedHash,
+        });
+        continue;
+      }
+      writer.storeSpeakerTurnIndex({
+        documentId: link.id,
+        outcome: await readSpeakerTurnIndex(speakerTurns, link, again.bytes, again.pdf.text),
+      });
       continue;
     }
     if (stored.has(link.id) && !revised.has(link.id)) continue;
@@ -578,6 +596,7 @@ async function pullEverything(config: IngestConfig, deps: IngestDeps): Promise<F
   const writer = openIndexWriter(config.databasePath);
   const passageCounts: PassageCounts = { passages: 0, keywordOnly: 0, embedded: 0, reused: 0 };
   const notFetched: BuildReport["documents_not_fetched"] = [];
+  const refetches: BuildReport["recording_log_refetches"] = { attempted: 0, failed: [], bytes_changed: [] };
   try {
     const snapshotRead = beginFullPullSnapshotRead({ writer, session: config.session, snapshot });
     const { record, resolver, committeeNames } = feedRecordOf(config, deps, feed, snapshotRead);
@@ -595,6 +614,7 @@ async function pullEverything(config: IngestConfig, deps: IngestDeps): Promise<F
       committeeNames,
       passageCounts,
       notFetched,
+      refetches,
     });
     // Legislative Counsel's Statutes Affected Table, when the deployment names it: a second source for the Statute Links,
     // fetched in each pull. The Snapshot read reads it, and says what became of it (ADR-0034, ADR-0044).
@@ -635,6 +655,7 @@ async function pullEverything(config: IngestConfig, deps: IngestDeps): Promise<F
       })),
       documents_not_fetched: notFetched,
       ...recordingLogNotesOf(writer.recordingLogReadingNotes(config.session)),
+      recording_log_refetches: refetches,
       search_index: {
         model: deps.embedder.modelId,
         passages: passageCounts.passages,
@@ -691,6 +712,7 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
     writer.recordIncrement(config.session, asOf, record);
     const passageCounts: PassageCounts = { passages: 0, keywordOnly: 0, embedded: 0, reused: 0 };
     const notFetched: BuildReport["documents_not_fetched"] = [];
+    const refetches: BuildReport["recording_log_refetches"] = { attempted: 0, failed: [], bytes_changed: [] };
     const documentsFetched = await storeLinkedDocuments({
       config,
       deps,
@@ -701,6 +723,7 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
       committeeNames,
       passageCounts,
       notFetched,
+      refetches,
     });
     // Whether the Increment read or left it to the next Full pull, it has nothing more to do or to report.
     await snapshotRead.finish();
