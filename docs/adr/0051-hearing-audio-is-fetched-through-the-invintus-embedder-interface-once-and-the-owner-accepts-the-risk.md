@@ -37,18 +37,20 @@ Some limits are enforced by the downloader's code and tested against a local fak
 - **The User-Agent.** Every request carries `SessionGateway-transcripts/1 (+https://github.com/OregonAI/SessionGateway)`.
 - **Halt on refusal or an unexpected reply.** See the stop rules.
 - **No proxies and no redirects.** Proxy settings in the environment are ignored, and a redirect is an unexpected reply.
+- **The halt marker.** Any halt (a refusal, an unexpected reply, an http error, a damaged record) writes a marker file in the working folder naming the event ID, the request, the reason and the time. While it exists every run refuses to start, with its own exit code, and makes no request. Clearing it is the owner's explicit act (`--clear-halt`, which prints the marker and removes it).
+- **The approval flag.** Every downloading run needs `--approved-run`. Without it the tool refuses, with its own exit code, and makes no request. The code can check the flag, not who typed it.
 - **Tests never contact Invintus.** A session-wide guard in the test suite makes any connect or name lookup other than to loopback raise, and CI clears the proxy variables.
 
 **The operator's to keep (not enforced by code):**
 
 - **One-time backfill.** It is not a recurring job. A later Session, or a live Session, needs a new decision.
 - **2026R1 committee recordings only.** No floor sessions, no other sessions. The downloader fetches whatever event IDs it is given.
-- **Run from the GPU desktop only**, in runs the owner approves one by one.
+- **Run from the GPU desktop only**, in runs the owner approves one by one (the `--approved-run` flag carries that approval into the command).
 - **The embedder key** is read from the environment and is never committed.
 
 ### Stop rules
 
-The downloader halts the whole run at the first 401, 403 or 429, or any unexpected response (another status, a body that does not have the documented shape, an MP3 reply that is not a whole MP3, or a connection or protocol error), prints what happened, and waits for the owner. It does not retry around a refusal, and nothing resumes until the owner decides. A refusal is Invintus saying no, and the project takes it as an answer.
+The downloader halts the whole run at the first 401, 403 or 429, or any unexpected response (another status, a body that does not have the documented shape, an MP3 reply that is not a whole MP3, or a connection or protocol error), prints what happened, writes the halt marker, and waits for the owner. It does not retry around a refusal, and nothing resumes until the owner decides. A refusal is Invintus saying no, and the project takes it as an answer.
 
 ### No evasion
 
