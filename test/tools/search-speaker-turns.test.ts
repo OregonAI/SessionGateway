@@ -1,5 +1,4 @@
-// Seam 1 (test/CLAUDE.md): speaker turns in `search` and in `get_measure`, as an agent sees them (ticket #127, ADR-0052's
-// "Turns and Passages"). A fake OLIS serves the committed fixture and its documents (the 34 real Recording Logs among
+// Seam 1 (test/CLAUDE.md): speaker turns in `search` and in `get_measure`, as an agent sees them (ticket #127, ADR-0053). A fake OLIS serves the committed fixture and its documents (the 34 real Recording Logs among
 // them), the worker reads each log, and an MCP client calls the tools in-process. Nothing here is made up.
 //
 // Its database is shared by every case and is a copy of the run's template for its options (test/CLAUDE.md, Database,

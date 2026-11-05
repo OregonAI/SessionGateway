@@ -48,7 +48,7 @@ export function forgetSpeakerTurns(databasePath: string): void {
 
 /**
  * Makes a database look as one a worker left after ticket #126 and before ticket #127: schema version 2, where the speaker-turn
- * index is stored and no Recording Log's passages are linked to its turns. Each stored Recording Log keeps its text and its
+ * index is stored, no Recording Log's passages are linked to its turns and no Agenda item's Measures are read. Each stored Recording Log keeps its text and its
  * index and has one passage that holds the whole text (the cut the worker made is not what the arrangement needs: no passage
  * is a turn's, and the text is all there). It only arranges, like `forgetListing`: the next worker to open the file runs
  * step 3 and links the turns.
@@ -73,7 +73,11 @@ export function leaveTurnsUnlinkedFromPassages(databasePath: string): void {
       run("DELETE FROM passage WHERE document_id = ?", log.id);
     }
     database.exec("DROP INDEX IF EXISTS passage_turn");
+    database.exec("DROP INDEX IF EXISTS speaker_turn_item_measure_measure");
+    database.exec("DROP TABLE IF EXISTS speaker_turn_item_measure");
     database.exec("ALTER TABLE passage DROP COLUMN turn_position");
+    database.exec("ALTER TABLE speaker_turn_index DROP COLUMN turns_without_passage");
+    database.exec("ALTER TABLE speaker_turn_index DROP COLUMN item_measures_read");
     for (const log of logs) {
       const hash = createHash("sha256").update(log.text, "utf8").digest("hex");
       const id = run(

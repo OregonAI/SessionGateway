@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { splitAroundTurns, type TokenMeter } from "../passages.ts";
 
-// Seam 4: a document's text and the spans of its turns in; the passages out (ticket #127, ADR-0052's "Turns and Passages").
+// Seam 4: a document's text and the spans of its turns in; the passages out (ticket #127, ADR-0053's "Turns and Passages").
 // The text is MADE UP in the shape of a Recording Log: a header, timecoded lines, and the lines that are not turns. The
 // meter counts a whitespace-separated word as a token and a passage holds at most 12, so a short text is cut in several.
 // Expected values are the text's own lines.

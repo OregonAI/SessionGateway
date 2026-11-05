@@ -108,6 +108,10 @@ describe("the hearings of a Measure", () => {
         turns: [turn(100, "SB 9001 - Work Session", sb9001Id), turn(200, "SB 9001 - Public Hearing", sb9001Id)],
       },
     });
+    index.writer.storeItemMeasures(logId, [
+      { agendaItem: "SB 9001 - Work Session", measures: [sb9001Id] },
+      { agendaItem: "SB 9001 - Public Hearing", measures: [sb9001Id] },
+    ]);
 
     expect(
       index.reader.turnHearingsOf(sb9001Id).map((hearing) => [hearing.agendaItem, hearing.firstTurn.offsetSeconds]),

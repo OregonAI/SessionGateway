@@ -131,6 +131,9 @@ const turnOutput = z
       .describe("The Measure that Agenda item names, when the index holds it; otherwise null."),
     timecode: z.string().describe('The timecode as logged, such as "00:02:49".'),
     offset_seconds: z.number().describe("The turn's second on the recording's clock."),
+    offset_source: z
+      .enum(["link", "timecode"])
+      .describe("Where the second came from: the log's player link on that line, or the timecode itself."),
     player_link: z
       .string()
       .describe("The Legislature's own player at this turn's second, built from the log's own player link."),
@@ -205,12 +208,14 @@ type HitId = DocumentId | AmendmentId;
 
 /**
  * What a hit is ranked as: the document's id, or for a speaker turn of a Recording Log the log's id and the turn's position
- * (ticket #127), so each turn that matches is a hit of its own and the log's other lines are one more.
+ * (ticket #127), so each turn that matches is a hit of its own and the log's other lines are one more. Every way of finding
+ * a hit (a citation, the words, the meaning) keys it with `keyOf`, so one turn found two ways is one hit. The key is a string
+ * for the maps and the fusion, and a type of its own so that no other string is taken for one.
  */
-type HitKey = string;
+type HitKey = string & { readonly hitKey: unique symbol };
 
 function keyOf(nodeId: HitId, turnPosition: number | null): HitKey {
-  return turnPosition === null ? nodeId : `${nodeId}#turn-${String(turnPosition)}`;
+  return (turnPosition === null ? nodeId : `${nodeId}#turn-${String(turnPosition)}`) as HitKey;
 }
 
 /** A document a hit is made from, the passage its snippet is cut from, and how it was found. */
@@ -277,11 +282,12 @@ function citedCandidates(
   const cited = new Map<HitKey, Candidate>();
   for (const citation of citations) {
     for (const found of documentsCitedBy(index, citation, filter)) {
-      if (cited.has(found.nodeId)) continue;
-      cited.set(found.nodeId, {
+      const key = keyOf(found.nodeId, found.turnPosition);
+      if (cited.has(key)) continue;
+      cited.set(key, {
         documentId: found.documentId,
         passageId: found.passageId,
-        turnPosition: null,
+        turnPosition: found.turnPosition,
         ...(found.citedAt === undefined ? {} : { citedAt: found.citedAt }),
         foundBy: new Set(["citation"]),
       });
@@ -356,8 +362,9 @@ async function embeddingCandidates(
   );
   for (const passage of near) {
     const nodeId = vectors.documents.nodeIds[passage.documentIndex] as HitId;
-    if (found.has(nodeId)) continue;
-    found.set(nodeId, {
+    const key = keyOf(nodeId, null);
+    if (found.has(key)) continue;
+    found.set(key, {
       documentId: vectors.documents.documentIds[passage.documentIndex] as DocumentId,
       passageId: passage.passageId,
       turnPosition: null,
@@ -413,6 +420,7 @@ function turnShown(turn: SearchedSpeakerTurn): NonNullable<SearchOutput["results
     measure_id: turn.measureId,
     timecode: turn.timecode,
     offset_seconds: turn.offsetSeconds,
+    offset_source: turn.offsetSource,
     player_link: turn.playerLink,
   };
 }

@@ -88,16 +88,22 @@ const informationalLog = [
   "00:00:21 John Q. Witness, MADE UP Association",
   "00:02:00 Meeting Adjourned",
 ];
-/** A speaker line of 700 words, more than a Passage may hold (510 tokens). */
-const longSpeaker = `00:00:07 ${Array.from({ length: 700 }, (_, index) => `Word${String(index)}`).join(" ")}`;
+/** A speaker line of 700 words, wrapped onto lines of 15 as the real logs wrap a long title: more than a Passage may hold (510 tokens). */
+const longSpeaker = Array.from({ length: 700 }, (_, index) => `W${String(index).padStart(3, "0")}`).reduce<string[]>(
+  (lines, word, index) => {
+    if (index % 15 === 0) lines.push(index === 0 ? `00:00:07 ${word}` : word);
+    else lines[lines.length - 1] += ` ${word}`;
+    return lines;
+  },
+  [],
+);
 const longLog = [
   "MADE UP RECORDING LOG",
   "00:00:05 Meeting Called to Order",
   "00:00:06 Co-Chair Helm",
-  longSpeaker,
+  ...longSpeaker,
   "00:02:00 Meeting Adjourned",
 ];
-
 const citingLog = [
   "MADE UP RECORDING LOG",
   "00:00:05 Meeting Called to Order",

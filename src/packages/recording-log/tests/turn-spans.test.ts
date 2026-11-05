@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { speakerTurnSpans } from "../index.ts";
 
 // Seam 2: a Recording Log's text and the turns stored for it in; where each turn's lines are in the text out (ticket #127,
-// ADR-0052's "Turns and Passages"). The rows quote a real log (HALNRW 2025-01-22, feed document 288741, the lines of its
+// ADR-0053). The rows quote a real log (HALNRW 2025-01-22, feed document 288741, the lines of its
 // pdf-text extraction, test/fixtures/olis-2025R1/documents/committee-meeting-documents/288741.pdf) and name the lines. A
 // turn is a timecode line and the lines that continue it; the span of a turn is those lines, each with its line break.
 // The turns are given as the index stores them: the timecode and the speaker as logged, in the order of the log.

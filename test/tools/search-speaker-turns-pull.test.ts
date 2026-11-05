@@ -1,5 +1,5 @@
 // Seam 1 (test/CLAUDE.md): a database that already holds the speaker-turn index (built under schema step 2, ticket #126) gets
-// the turns' Passages from the turns it stores, without fetching a log again (ticket #127, ADR-0052's "Turns and Passages").
+// the turns' Passages from the turns it stores, without fetching a log again (ticket #127, ADR-0053's "Turns and Passages").
 //
 // Each case copies the run's template for its options (documents served, the fixture's clock 2026-08-05 10:00), makes the
 // database look as one a worker left at version 2 with `leaveTurnsUnlinkedFromPassages` (test/support/old-database.ts, SQL

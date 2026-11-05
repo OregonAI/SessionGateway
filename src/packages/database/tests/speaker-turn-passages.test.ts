@@ -1,5 +1,5 @@
 // Seam 4 (test/CLAUDE.md): the Passages of a Recording Log's speaker turns, through the writer's and search's entry points
-// (ticket #127, ADR-0052's "Turns and Passages", schema step 3). A WAL database in a temp directory of the test's own; a case
+// (ticket #127, ADR-0053, schema step 3). A WAL database in a temp directory of the test's own; a case
 // arranges state through the writer and asserts what the writer lists and what search reads back. Every value is MADE UP
 // (made-up-index.ts): the log, its text, its turns. The real logs' turns are seam 1's.
 import { afterEach, beforeEach, describe, expect, test } from "vitest";

@@ -10,6 +10,7 @@ import {
 } from "#/packages/domain/index.ts";
 import type { AgendaItem } from "#/packages/domain/schedule.ts";
 import type { CommitteeVote, FloorVote, LegislatorVote } from "#/packages/domain/votes.ts";
+import { hearingKindOf } from "#/packages/recording-log/index.ts";
 import { statuteLinksOfMeasure } from "#/packages/statute-links/measure.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import type { Outcome } from "./outcome.ts";
@@ -59,18 +60,35 @@ const committeeVoteOutput = z.object({
     .describe("Each member's vote, in the order of the ids the feed gives the entries."),
 });
 
-/** One hearing at which the Measure was taken up (ticket #127): a Recording Log's Agenda item for it, and the first turn under the item. */
+/** One hearing at which the Measure was taken up (ticket #127): a Recording Log's Agenda item that names it, and the first turn under the item. */
 const hearingOutput = z.object({
   meeting_id: z.string().describe("The id of the Meeting the Recording Log belongs to, as meetings gives it."),
   committee_code: z.string().describe("The code of the committee that met, such as HALNRW."),
   meeting_date: z.string().describe("When the Meeting started, in Pacific time with its UTC offset."),
   recording_log_id: z.string().describe("The Recording Log, which get_document takes: it holds every speaker turn."),
   event_id: z.string().describe("The Invintus event ID of the Meeting's recording, from the log's own player links."),
-  agenda_item: z.string().describe('The Agenda item\'s line as the log has it, such as "HB 3131 - Public Hearing".'),
+  agenda_item: z
+    .string()
+    .describe(
+      'The Agenda item\'s line as the log has it, such as "HB 3131 - Public Hearing" or "SB 1542 and SB 1543 - Public Hearing": a line that names several Measures is a hearing of each.',
+    ),
+  kind: z
+    .string()
+    .describe(
+      'What the item is: "Public Hearing", "Work Session", or the line\'s own wording after its Measures ("Informational Meeting").',
+    ),
+  measure_ids: z
+    .array(z.string())
+    .describe(
+      "Every Measure the Agenda item names that this index holds, in the order the line names them, this Measure among them. The first turn's Measure is the first the line names.",
+    ),
   first_turn: z
     .object({
       timecode: z.string().describe('The timecode as logged, such as "01:15:49".'),
       offset_seconds: z.number().describe("The turn's second on the recording's clock."),
+      offset_source: z
+        .enum(["link", "timecode"])
+        .describe("Where the second came from: the log's player link on that line, or the timecode itself."),
       speaker: z.string().describe("The speaker as the log writes it: a name and title."),
       legislator_code: z
         .string()
@@ -262,7 +280,7 @@ export const getMeasureOutput = z.object({
   hearings: z
     .array(hearingOutput)
     .describe(
-      "The hearings at which the Measure was taken up, earliest Meeting first: each Recording Log with a speaker-turn index that has an Agenda item for the Measure, with the first turn under that item and a link into the official player at it. Empty when no log the index holds names the Measure.",
+      "The hearings at which the Measure was taken up, earliest Meeting first: every Agenda item of a Recording Log with a speaker-turn index that names the Measure (public hearings and work sessions alike, each labelled by kind; a line that names several Measures counts for each), with the first turn under that item and a link into the official player at it. A log's items come in the order of the recording. Empty when no log the index holds names the Measure.",
     ),
   live_status: liveStatusOutput,
 });
@@ -430,9 +448,12 @@ export async function getMeasure(
         recording_log_id: hearing.recordingLog,
         event_id: hearing.eventId,
         agenda_item: hearing.agendaItem,
+        kind: hearingKindOf(hearing.agendaItem),
+        measure_ids: hearing.measureIds,
         first_turn: {
           timecode: hearing.firstTurn.timecode,
           offset_seconds: hearing.firstTurn.offsetSeconds,
+          offset_source: hearing.firstTurn.offsetSource,
           speaker: hearing.firstTurn.speaker,
           legislator_code: hearing.firstTurn.legislatorCode,
           legislator: hearing.firstTurn.legislator,

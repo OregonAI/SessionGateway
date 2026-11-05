@@ -4,7 +4,9 @@ import { eventIdsOf } from "./lib/event-id.ts";
 import { offsetsOf } from "./lib/offsets.ts";
 import {
   legislatorOfSpeaker as legislatorOf,
+  hearingKindOf as hearingKind,
   measureOfAgendaItem as measureOf,
+  measuresOfAgendaItem as measuresOf,
   playerLinkOf as playerLink,
   type CommitteeMemberName,
 } from "./lib/turn-context.ts";
@@ -85,6 +87,16 @@ export function legislatorOfSpeaker(
 /** The Measure an Agenda item line of the log begins with ("HB 2167 - Public Hearing"), or null. Pure. */
 export function measureOfAgendaItem(text: string | null): { prefix: string; number: number } | null {
   return measureOf(text);
+}
+
+/** The Measures an Agenda item line of the log begins with ("SB 1542 and SB 1543 - Public Hearing"), in order. Pure. */
+export function measuresOfAgendaItem(text: string | null): { prefix: string; number: number }[] {
+  return measuresOf(text);
+}
+
+/** "Public Hearing", "Work Session" or the line's own wording after its Measures: what kind of hearing an Agenda item is. Pure. */
+export function hearingKindOf(text: string): string {
+  return hearingKind(text);
 }
 
 /** The official player at a second of the recording, built from the log's own player link for the event, or null. Pure. */

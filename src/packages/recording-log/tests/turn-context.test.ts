@@ -349,7 +349,7 @@ describe("hearingKindOf", () => {
     // No wording after the Measures: the line itself.
     ["HB 4102", "HB 4102"],
   ])("%s is a %s", ([text, kind]) => {
-    // Rows 1, 2 and 4 are lines of the logs 288741 (HB 3131), 316088 and 312105; the last two are MADE UP wordings.
+    // The first four rows are real lines (288741, 292588, 315410 and 312105); the last two are MADE UP.
     expect(hearingKindOf(text)).toBe(kind);
   });
 });

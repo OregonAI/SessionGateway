@@ -47,7 +47,7 @@ export type SpeakerTurnIndexSummary = { eventId: string; turnCount: number };
 /** A speaker turn as search shows it: the turn, and the Meeting its Recording Log belongs to (null when the store holds none). */
 export type SearchedSpeakerTurn = SpeakerTurn & { meeting: MeetingId | null };
 
-/** A hearing at which a Measure was taken up (ticket #127): a Recording Log's Agenda item for the Measure, and the first turn under it. */
+/** A hearing at which a Measure was taken up (ticket #127): a Recording Log's Agenda item that names the Measure, and the first turn under it. */
 export type TurnHearing = {
   meeting: MeetingId;
   committeeCode: string;
@@ -57,6 +57,8 @@ export type TurnHearing = {
   eventId: string;
   /** The Agenda item's text as the log has it. */
   agendaItem: string;
+  /** Every Measure the Agenda item names that the index holds, in the order the line names them. */
+  measureIds: MeasureId[];
   /** The first turn spoken under the item, by the recording's clock. */
   firstTurn: SpeakerTurn;
 };

@@ -149,7 +149,7 @@ export function splitPassages(text: string, meter: TokenMeter): Passage[] {
 export type TurnSpan = { start: number; end: number };
 
 /**
- * Cuts a Recording Log's text around its speaker turns (ticket #127, ADR-0052): each turn's lines are a passage of their own,
+ * Cuts a Recording Log's text around its speaker turns (ticket #127, ADR-0053): each turn's lines are a passage of their own,
  * tagged with the turn's position in `turns`, and the text between the turns is cut as `splitPassages` cuts any text. Every
  * line of the text is in one passage, so nothing is lost and nothing is held twice, and the passages come in the order of
  * the text. A turn with no span, or whose lines are longer than a passage may be, is not a passage of its own: its lines are

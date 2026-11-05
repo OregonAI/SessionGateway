@@ -117,12 +117,61 @@ export function legislatorOfSpeaker(
 }
 
 /** The prefixes of the Measures OLIS lists (domain/citations.ts). */
-const MEASURE_AT_START = /^(HB|SB|HJR|SJR|HCR|SCR|HJM|SJM|HR|SR)\s?(\d{1,4})\b/;
+const MEASURE_PREFIX = "HB|SB|HJR|SJR|HCR|SCR|HJM|SJM|HR|SR";
+/** A Measure as an Agenda line names it, with the letter of an amendment after it ("HB 4076 A"): its prefix and number. */
+const MEASURE_AT_START = new RegExp(String.raw`^(${MEASURE_PREFIX})\s?(\d{1,4})\b(?:\s+[A-Z](?![\p{L}\d]))?`, "u");
+/** What a line puts between the Measures it names: "SB 1542 and SB 1543", "SB 1538, SB 1581, and SB 1596". */
+const MEASURE_SEPARATOR = /^(?:\s*,\s*(?:and\s+)?|\s+and\s+|\s*&\s*)/;
+
+/** The Measures a line begins with, each once in the order named, and the rest of the line after them. */
+function leadingMeasures(text: string | null): { measures: { prefix: string; number: number }[]; rest: string } {
+  const measures: { prefix: string; number: number }[] = [];
+  let rest = text?.trim() ?? "";
+  for (;;) {
+    const found = MEASURE_AT_START.exec(rest);
+    if (found === null) break;
+    const measure = { prefix: found[1] ?? "", number: Number(found[2]) };
+    if (!measures.some((seen) => seen.prefix === measure.prefix && seen.number === measure.number)) {
+      measures.push(measure);
+    }
+    rest = rest.slice(found[0].length);
+    const separator = MEASURE_SEPARATOR.exec(rest);
+    if (separator === null) break;
+    rest = rest.slice(separator[0].length);
+  }
+  return { measures, rest };
+}
+
+/**
+ * The Measures an Agenda item line names, in the order it names them: the list the line begins with ("SB 1542 and SB 1543 -
+ * Public Hearing", "HB 4079 A and HB 4160 A - Public Hearing", "SB 1538, SB 1581, and SB 1596 - Public Hearing"), each
+ * once. A Measure named further into the line ("Nuclear Energy Study (HB 4046, 2026) - Informational Meeting") is not in the
+ * list: that line is a topic, not that Measure's hearing. Empty for an item that begins with none (owner decision of
+ * 2026-11-05, ticket #127).
+ */
+export function measuresOfAgendaItem(text: string | null): { prefix: string; number: number }[] {
+  return leadingMeasures(text).measures;
+}
 
 /** The Measure an Agenda item line begins with ("HB 2167 - Public Hearing"), or null for an item that names none. */
 export function measureOfAgendaItem(text: string | null): { prefix: string; number: number } | null {
-  const found = text === null ? null : MEASURE_AT_START.exec(text.trim());
-  return found === null ? null : { prefix: found[1] ?? "", number: Number(found[2]) };
+  return measuresOfAgendaItem(text)[0] ?? null;
+}
+
+/**
+ * What kind of hearing an Agenda item line is: "Public Hearing" or "Work Session" when the line says so, otherwise the
+ * line's own wording after the Measures it names and the hyphen ("Informational Meeting"), and the whole line when it has no
+ * wording after them.
+ */
+export function hearingKindOf(text: string): string {
+  const line = text.trim();
+  if (/\bpublic hearing\b/i.test(line)) return "Public Hearing";
+  if (/\bwork session\b/i.test(line)) return "Work Session";
+  const wording = leadingMeasures(line)
+    .rest.replace(/^\s*-\s*/, "")
+    .replace(/\.$/, "")
+    .trim();
+  return wording === "" ? line : wording;
 }
 
 /** The `startStreamAt` parameter of a query string: at its start or after an `&`, up to the next `&`. */

@@ -86,6 +86,8 @@ export type CitedDocument = {
   passageId: number | null;
   documentId: DocumentId;
   nodeId: DocumentId | AmendmentId;
+  /** The position of the speaker turn the passage is the lines of (ticket #127), or null: a hit is ranked as its turn. */
+  turnPosition: number | null;
   citedAt?: number;
 };
 
@@ -175,6 +177,7 @@ const citedRow = z.object({
   node_id: z.string(),
   passage_id: z.number().nullable(),
   cited_at: z.number().nullable().optional(),
+  turn_position: z.number().nullable().optional(),
 });
 const countRow = z.object({ n: z.number() });
 const candidateRow = z.object({ document_id: z.string(), node_id: z.string() });
@@ -285,6 +288,7 @@ export function openSearchReader(path: string): SearchIndexReader {
       passageId: stored.passage_id,
       documentId: stored.document_id as DocumentId,
       nodeId: stored.node_id as DocumentId | AmendmentId,
+      turnPosition: stored.turn_position ?? null,
       ...(stored.cited_at === null || stored.cited_at === undefined ? {} : { citedAt: stored.cited_at }),
     };
   };
@@ -371,18 +375,23 @@ export function openSearchReader(path: string): SearchIndexReader {
       const terms = filterTerms(filter, unlistedThrough(filter.session));
       return database
         .prepare(
-          `SELECT sd.document_id, sd.node_id,
-                  COALESCE(
-                    (SELECT p.id FROM passage p
-                     WHERE p.document_id = sd.document_id AND p.start_offset <= dc.first_offset
-                       AND dc.first_offset < p.end_offset
-                     ORDER BY p.ordinal LIMIT 1),
-                    ${firstPassage}) AS passage_id,
-                  dc.first_offset AS cited_at
-           FROM document_citation dc
-             JOIN search_document sd ON sd.document_id = dc.document_id
-           WHERE dc.citation_id = ? AND ${terms.sql}
-           ORDER BY sd.dated_at IS NULL, sd.dated_at, sd.document_id
+          `SELECT cited.document_id, cited.node_id, cited.passage_id, cited.cited_at,
+                  (SELECT p.turn_position FROM passage p WHERE p.id = cited.passage_id) AS turn_position
+           FROM (
+             SELECT sd.document_id, sd.node_id,
+                    COALESCE(
+                      (SELECT p.id FROM passage p
+                       WHERE p.document_id = sd.document_id AND p.start_offset <= dc.first_offset
+                         AND dc.first_offset < p.end_offset
+                       ORDER BY p.ordinal LIMIT 1),
+                      ${firstPassage}) AS passage_id,
+                    dc.first_offset AS cited_at,
+                    sd.dated_at
+             FROM document_citation dc
+               JOIN search_document sd ON sd.document_id = dc.document_id
+             WHERE dc.citation_id = ? AND ${terms.sql}
+           ) cited
+           ORDER BY cited.dated_at IS NULL, cited.dated_at, cited.document_id
            LIMIT ?`,
         )
         .all(citationId, ...terms.values, limit)
