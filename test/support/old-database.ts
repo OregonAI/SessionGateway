@@ -6,6 +6,7 @@
 // SQL in `src/packages/database/tests/arranged-files.ts`), and it only arranges: every assertion about the file goes
 // through the MCP tools (test/CLAUDE.md, "Seam 1"). The harness cannot run the base commit's worker instead: that
 // code is not in the tree, and a committed database built by it would be a fixture of its own.
+import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 
 /** Removes everything the two-pull rule keeps, so that every row the file holds has never been listed by a pull. */
@@ -40,6 +41,46 @@ export function forgetSpeakerTurns(databasePath: string): void {
   const database = new DatabaseSync(databasePath, { timeout: 5000 });
   try {
     database.exec("DELETE FROM speaker_turn; DELETE FROM speaker_turn_index");
+  } finally {
+    database.close();
+  }
+}
+
+/**
+ * Makes a database look as one a worker left after ticket #126 and before ticket #127: schema version 2, where the speaker-turn
+ * index is stored and no Recording Log's passages are linked to its turns. Each stored Recording Log keeps its text and its
+ * index and has one passage that holds the whole text (the cut the worker made is not what the arrangement needs: no passage
+ * is a turn's, and the text is all there). It only arranges, like `forgetListing`: the next worker to open the file runs
+ * step 3 and links the turns.
+ */
+export function leaveTurnsUnlinkedFromPassages(databasePath: string): void {
+  const database = new DatabaseSync(databasePath, { timeout: 5000 });
+  try {
+    database.exec("BEGIN IMMEDIATE");
+    const logs = database.prepare("SELECT id, text FROM document WHERE kind = 'recording_log'").all() as {
+      id: string;
+      text: string;
+    }[];
+    for (const log of logs) {
+      database
+        .prepare("DELETE FROM passage_fts WHERE rowid IN (SELECT id FROM passage WHERE document_id = ?)")
+        .setReadBigInts(true)
+        .run(log.id);
+      database.prepare("DELETE FROM passage WHERE document_id = ?").run(log.id);
+    }
+    database.exec("DROP INDEX IF EXISTS passage_turn");
+    database.exec("ALTER TABLE passage DROP COLUMN turn_position");
+    for (const log of logs) {
+      const hash = createHash("sha256").update(log.text, "utf8").digest("hex");
+      const inserted = database
+        .prepare(
+          "INSERT INTO passage (document_id, ordinal, start_offset, end_offset, text_hash) VALUES (?, 0, 0, ?, ?)",
+        )
+        .run(log.id, log.text.length, hash);
+      database.prepare("INSERT INTO passage_fts (rowid, text) VALUES (?, ?)").run(inserted.lastInsertRowid, log.text);
+    }
+    database.exec("PRAGMA user_version = 2");
+    database.exec("COMMIT");
   } finally {
     database.close();
   }
