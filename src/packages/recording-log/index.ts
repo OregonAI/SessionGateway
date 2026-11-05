@@ -40,9 +40,17 @@ export function parseRecordingLog(input: ParseRecordingLogInput): RecordingLogPa
 
 export type { CommitteeMemberName };
 
-/** The Legislator Code of the committee member a speaker line names ("Co-Chair Helm", "Rep. B. Levy"), or null. Pure. */
-export function legislatorOfSpeaker(speaker: string, members: readonly CommitteeMemberName[]): string | null {
-  return legislatorOf(speaker, members);
+/**
+ * The Legislator Code of the Legislator a speaker line names ("Co-Chair Helm", "Rep. B. Levy"), or null: among the
+ * committee's `members` first, and when none fits among all the Session's `legislators` (owner decision B of ticket #126).
+ * A title's chamber must agree with the code's, and the logged first name or initial must agree when given. Pure.
+ */
+export function legislatorOfSpeaker(
+  speaker: string,
+  members: readonly CommitteeMemberName[],
+  legislators: readonly CommitteeMemberName[] = [],
+): string | null {
+  return legislatorOf(speaker, members, legislators);
 }
 
 /** The Measure an Agenda item line of the log begins with ("HB 2167 - Public Hearing"), or null. Pure. */

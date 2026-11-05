@@ -1,10 +1,27 @@
 import type { RecordingLogLink } from "./types.ts";
 
-/** A member of the Meeting's committee: the Legislator Code the feed gives and the Legislator's name, "First Last". */
+/** A Legislator the resolver can name: the Legislator Code the feed gives and the Legislator's name, "First Last". */
 export type CommitteeMemberName = { code: string; name: string };
 
 /** The titles a log puts before a Legislator's name: a committee office and the chamber's form of address. */
-const TITLES = /^(?:(?:co-chair|vice-chair|chair|representative|senator|rep\.?|sen\.?)\s+)+/i;
+const TITLE = /^(chair|co-chair|vice-chair|representative|senator|rep\.?|sen\.?)\s+/i;
+
+type Chamber = "House" | "Senate";
+
+/** The chamber a title names, or undefined for a committee office, which is any chamber's. */
+function chamberOfTitle(title: string): Chamber | undefined {
+  const word = title.toLowerCase();
+  if (word.startsWith("rep")) return "House";
+  if (word.startsWith("sen")) return "Senate";
+  return undefined;
+}
+
+/** The chamber of a Legislator Code: the feed's codes begin with "Rep" or "Sen". Undefined for a code that begins with neither. */
+function chamberOfCode(code: string): Chamber | undefined {
+  const word = code.split(/\s+/)[0]?.toLowerCase();
+  if (word === "rep") return "House";
+  return word === "sen" ? "Senate" : undefined;
+}
 
 /** Lower case, accents folded, periods dropped: "B." and "b" are one token, "Muñoz" and "Munoz" are one. */
 function tokensOf(text: string): string[] {
@@ -17,33 +34,83 @@ function tokensOf(text: string): string[] {
     .filter((token) => token !== "");
 }
 
-/** Whether a logged token stands for a first name: the name itself, or its initial. */
-function standsForFirstName(logged: string, firstName: string | undefined): boolean {
-  if (firstName === undefined) return false;
-  return logged === firstName || (logged.length === 1 && firstName.startsWith(logged));
+/** Whether a logged first name or initial is the start of the Legislator's first name: "b" and "bobby" are both Bobby's. */
+function startsFirstName(logged: string, legislator: CommitteeMemberName): boolean {
+  return (tokensOf(legislator.name)[0] ?? "").startsWith(logged);
+}
+
+/** What a speaker line says of a Legislator: the title's chamber (none for an office), and the name that follows it. */
+type NamedSpeaker = { chamber: Chamber | undefined; conflict: boolean; name: string[] };
+
+/**
+ * Reads a speaker line's titles and name. Only a line that begins with a title names a Legislator: a witness who shares a
+ * member's last name is not that member. The name is what follows the titles up to the first comma. Titles that name both
+ * chambers ("Rep. Sen. X") are a conflict and name no one.
+ */
+function namedSpeaker(speaker: string): NamedSpeaker | null {
+  let rest = speaker.trim();
+  const chambers = new Set<Chamber>();
+  let titled = false;
+  for (let found = TITLE.exec(rest); found !== null; found = TITLE.exec(rest)) {
+    titled = true;
+    const chamber = chamberOfTitle(found[1] ?? "");
+    if (chamber !== undefined) chambers.add(chamber);
+    rest = rest.slice(found[0].length);
+  }
+  if (!titled) return null;
+  return { chamber: [...chambers][0], conflict: chambers.size > 1, name: tokensOf(rest.split(",")[0] ?? "") };
 }
 
 /**
- * The Legislator Code of the committee member a speaker line names, or null. Only a line that begins with a title
- * ("Co-Chair Helm", "Rep. B. Levy", "Sen. Suzanne Weber, Senate District 16") names a Legislator: a witness who shares
- * a member's last name is not that member. The name is what follows the title up to the first comma; its last word is
- * the member's last word, and the words before it must match the first name or its initial only when two members share
- * the last word (the feed holds "Finger McDonald" as "McDonald"). A name that matches no member or more than one is null:
- * the resolver never guesses.
+ * The Legislator Code of the Legislator a speaker line names among `candidates`, or null. A candidate fits when:
+ * - the title's chamber agrees with the code's ("Rep." and "Representative" a House code, "Sen." and "Senator" a Senate
+ *   code; Chair, Co-Chair and Vice-Chair fit either);
+ * - the name's last word is the last word of the candidate's name (the feed holds "Finger McDonald" as "McDonald");
+ * - the first name or initial the line gives agrees with the candidate's first name. A line gives one when it has more
+ *   than one word and its first word is an initial or the first name of some Legislator in `known` (so "Hai Pham" and
+ *   "B. Levy" give one, and "Finger McDonald" does not: "Finger" is the compound surname's start);
+ * - and, when `needsFirstName`, the line does give one: a surname alone never resolves among everyone.
+ * Only a unique fit resolves.
  */
-export function legislatorOfSpeaker(speaker: string, members: readonly CommitteeMemberName[]): string | null {
-  const titled = TITLES.exec(speaker.trim());
-  if (titled === null) return null;
-  const name = tokensOf(speaker.trim().slice(titled[0].length).split(",")[0] ?? "");
-  const last = name.at(-1);
-  if (last === undefined) return null;
-  const sameLastName = members.filter((member) => tokensOf(member.name).at(-1) === last);
-  if (sameLastName.length <= 1) return sameLastName[0]?.code ?? null;
-  const logged = name.at(-2);
-  const byFirstName = sameLastName.filter(
-    (member) => logged !== undefined && standsForFirstName(logged, tokensOf(member.name)[0]),
-  );
-  return byFirstName.length === 1 ? (byFirstName[0]?.code ?? null) : null;
+function fitting(
+  named: NamedSpeaker,
+  candidates: readonly CommitteeMemberName[],
+  known: readonly CommitteeMemberName[],
+  needsFirstName: boolean,
+): CommitteeMemberName[] {
+  const last = named.name.at(-1);
+  if (last === undefined || named.conflict) return [];
+  const first = named.name.length >= 2 ? named.name[0] : undefined;
+  const firstGiven =
+    first !== undefined && (first.length === 1 || known.some((legislator) => startsFirstName(first, legislator)));
+  if (needsFirstName && !firstGiven) return [];
+  return candidates.filter((candidate) => {
+    if (tokensOf(candidate.name).at(-1) !== last) return false;
+    const chamber = chamberOfCode(candidate.code);
+    if (named.chamber !== undefined && chamber !== named.chamber) return false;
+    return !firstGiven || first === undefined || startsFirstName(first, candidate);
+  });
+}
+
+/**
+ * The Legislator Code of the Legislator a speaker line names ("Co-Chair Helm", "Rep. B. Levy", "Sen. Suzanne Weber,
+ * Senate District 16"), or null (owner decision B of ticket #126, ADR-0052). It looks among the Meeting's committee
+ * `members` first. When none of them fits it looks among `legislators`, all of the Session's, where a first name or
+ * initial must be given. A line that fits two or more members resolves to no one and is not looked up among the rest:
+ * the resolver never guesses. See `fitting` for what fits.
+ */
+export function legislatorOfSpeaker(
+  speaker: string,
+  members: readonly CommitteeMemberName[],
+  legislators: readonly CommitteeMemberName[] = [],
+): string | null {
+  const named = namedSpeaker(speaker);
+  if (named === null) return null;
+  const known = [...members, ...legislators];
+  const inCommittee = fitting(named, members, known, false);
+  if (inCommittee.length > 0) return inCommittee.length === 1 ? (inCommittee[0]?.code ?? null) : null;
+  const inSession = fitting(named, legislators, known, true);
+  return inSession.length === 1 ? (inSession[0]?.code ?? null) : null;
 }
 
 /** The prefixes of the Measures OLIS lists (domain/citations.ts). */
