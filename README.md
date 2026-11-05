@@ -308,9 +308,10 @@ equals its `counted`, and `documents_not_fetched` lists only files that failed. 
    ```
 2. Copy `index.db` alone: a checkpointed file is the whole database, so neither `-wal` nor `-shm` goes.
 3. Copy the snapshot file the worker reads (`SNAPSHOT_PATH`), which the database's stored snapshot version names.
-4. Copy `build-report.json` and `unresolved-legislator-codes.json` too. They are the backfill's own record of what was
-   pulled and what was not, and the deploy box's first full pull rewrites them, so copying keeps that record beside the
-   database it describes until then.
+4. Copy `build-report.json` and `unresolved-legislator-codes.json` only if you want the backfill's record of what was pulled
+   and what was not beside the database it describes. platform-deploy's "First deploy" copies `index.db` and `snapshot.json`
+   and nothing else, and the box needs no report: with the worker off no full pull runs there, so nothing rewrites the two
+   reports and they stay what the backfill wrote. Keep them with the backfill's note instead.
 
 The model is in the image. The database is never committed.
 
@@ -342,16 +343,17 @@ serving commit. Its README, "SessionGateway", is the authority for the box (the 
 rolling back); this section does not repeat it.
 
 **The ingest worker is off** (the owner's decision of 2026-11-04). The box serves the 2026R1 database as copied from the backfill
-(as of 2026-11-03) and sends OLIS nothing on a schedule; only `get_measure` reads OLIS, once per call. The server's staleness rule
+(as of 2026-11-03) and sends OLIS nothing on a schedule; only `get_measure` reads OLIS, one lookup per call. The server's staleness rule
 still reads `INGEST_INCREMENTS` and `INGEST_FULL_PULL` from the environment, and it cannot know the worker is off. With the
 deployment's `daily` and `weekly`, answers carry "this index may be out of date" from 06:00 Pacific on the morning after the first
-night window that passes without an update (2026-11-05 for the copied 2026R1 database), not after a week. platform-deploy's README,
+night window that passes without an update (2026-11-05 for the copied 2026R1 database), not after a week. The warning reads "a nightly update was missed", and is accepted for go-live. A "static copy" mode that switches it off is OregonAI/SessionGateway#119. platform-deploy's README,
 "Turning the worker back on", says how the worker returns.
 
 **Switching to a new Session** (say 2027R1; ADR-0003 allows one Session per deployment, and `SESSION_KEY` is never edited on a live volume):
 
 1. Build the new Session's database on the GPU desktop: "Rebuilding a Session: the backfill" above, with `SESSION_KEY` set to the
-   new key and the snapshot built for it. Its "Copy to the deploy box" steps leave `index.db` and `snapshot.json` ready to copy.
+   new key and the snapshot built for it, with the checkout at the image's version so the new database is at the image's schema
+   version (ADR-0048; the server refuses any other). Its "Copy to the deploy box" steps leave `index.db` and `snapshot.json` ready to copy.
 2. Drop the old deployment as platform-deploy's "Changing the Session" says: stop the server (and the worker, if it has been turned
    back on), move the old data directory aside, and set the new `SESSION_KEY` (and the Session's `STATUTES_AFFECTED_TABLE_URL`)
    in `docker-compose.yml`.

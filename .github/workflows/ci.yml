@@ -125,3 +125,31 @@ jobs:
           node-version-file: package.json
       - run: npm ci
       - run: npm run license:check
+
+  # A build-only check of the Dockerfile (ticket #25): no push, no registry login, no secrets. The build needs the
+  # network (the npm registry for `npm ci`, huggingface.co for the pinned model, Docker Hub for the base image).
+  # DOCKER_BUILDKIT=0 selects the legacy builder, as on the deploy box, which has no buildx.
+  image:
+    name: docker build (legacy builder)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the image
+        env:
+          DOCKER_BUILDKIT: "0"
+        run: docker build -t session-gateway:ci .
+      # Offline smoke tests of the built image: the model is in it, and with no database the server refuses to
+      # start with its own message. Nothing here reaches OLIS.
+      - name: The model is in the image
+        run: docker run --rm --entrypoint node session-gateway:ci -e "require('fs').accessSync('/app/model/config.json')"
+      - name: The server refuses to start without a database
+        run: |
+          set +e
+          output=$(docker run --rm -e SESSION_KEY=2026R1 -e OLIS_BASE_URL=https://olis.invalid/odata \
+            -e DATABASE_PATH=/nonexistent/index.db session-gateway:ci 2>&1)
+          status=$?
+          echo "$output"
+          [ "$status" -ne 0 ] && echo "$output" | grep -q "does not exist: the ingest worker creates it"

@@ -1,6 +1,7 @@
-# Weekly updates for npm and GitHub Actions, minor and patch grouped into one PR each. The cooldown
+# Weekly updates for npm, GitHub Actions and Docker, minor and patch grouped into one PR each (npm and Actions). The cooldown
 # matches .npmrc's min-release-age (14 days); security updates skip the cooldown (.github/CLAUDE.md).
-# Docker watches the Dockerfile's pinned node image (ticket #25).
+# Docker watches the Dockerfile's pinned node image (ticket #25); it skips a new major, since package.json's
+# engines say <27.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -31,3 +32,6 @@ updates:
       interval: weekly
     cooldown:
       default-days: 14
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
