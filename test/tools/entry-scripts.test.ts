@@ -9,6 +9,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -26,7 +27,7 @@ import { snapshotFixturePath } from "../support/oregonai-snapshot.ts";
 import { modelPath } from "../support/real-embedder.ts";
 import { modelLockPath, readModelLock } from "#/packages/embedder/lock.ts";
 import { openIndexWriter } from "#/packages/database/writer.ts";
-import { buildVersionOneFile, userVersionOf } from "../support/old-database.ts";
+import { buildVersionOneFile } from "../support/old-database.ts";
 
 // Two cases run two child pulls one after the other, which takes longer than one pull under load (test/CLAUDE.md, "Timeouts under load").
 vi.setConfig({ testTimeout: 120_000 });
@@ -737,18 +738,23 @@ describe("the entry scripts", () => {
       return database;
     }
 
-    /** Runs the script on a file and shows that it left the file as it found it: the same bytes, the same `user_version`. */
+    /**
+     * Runs the script on a file and shows that it left the file as it found it. The same bytes in the main file prove the
+     * schema version (`user_version` is in the file's header) and every row unchanged, so no SQL reads it back. A read-only
+     * open of a WAL file may add the shared-memory `-shm` and an empty `-wal` beside it (the server's own readers share
+     * them), and must not leave a rollback journal, which would hold a write.
+     */
     async function runLeavingFileAlone(databasePath: string): Promise<Finished> {
-      const directoryBefore = readdirSync(dirname(databasePath)).sort();
+      const directory = dirname(databasePath);
+      const directoryBefore = readdirSync(directory).sort();
       const bytesBefore = readFileSync(databasePath);
-      const versionBefore = userVersionOf(databasePath);
       const finished = await run(`${script} --database ${databasePath}`, {});
       expect(readFileSync(databasePath).equals(bytesBefore)).toBe(true);
-      expect(userVersionOf(databasePath)).toBe(versionBefore);
-      // A read-only open may add the -shm of a WAL file, and must not leave a journal that holds a write.
-      expect(readdirSync(dirname(databasePath)).filter((name) => !directoryBefore.includes(name))).not.toContain(
-        "index.db-journal",
-      );
+      const created = readdirSync(directory).filter((name) => !directoryBefore.includes(name));
+      expect(created).not.toContain("index.db-journal");
+      const sharedMemoryKind = ["index.db-shm", "index.db-wal"];
+      expect(created.filter((name) => !sharedMemoryKind.includes(name))).toEqual([]);
+      if (created.includes("index.db-wal")) expect(statSync(join(directory, "index.db-wal")).size).toBe(0);
       return finished;
     }
 
@@ -809,6 +815,30 @@ describe("the entry scripts", () => {
       expect(unknown.stderr).toContain("--upgrade");
       expect(noPath.code).not.toBe(0);
       expect(noPath.stdout).toBe("");
+    });
+
+    it("says which argument is wrong: --database given twice, an empty path, a value no flag owns", async () => {
+      const twice = await run(`${script} --database a --database b`, {});
+      const emptyEquals = await run(`${script} --database=`, {});
+      const stray = await run(`${script} --database a b`, {});
+
+      expect(twice.code).not.toBe(0);
+      expect(twice.stdout).toBe("");
+      expect(twice.stderr).toContain("--database given twice");
+      expect(emptyEquals.code).not.toBe(0);
+      expect(emptyEquals.stderr).toContain("--database needs a path");
+      expect(stray.code).not.toBe(0);
+      expect(stray.stderr).toContain("unknown argument b");
+    });
+
+    it("accepts --database=<path> as it accepts --database <path>", async () => {
+      const database = aDatabaseFile();
+      openIndexWriter(database.path).close();
+
+      const finished = await run(`${script} --database=${database.path}`, {});
+
+      expect(finished.code).toBe(0);
+      expect(finished.stdout).toBe(`{"image":${String(imageVersion)},"database":${String(imageVersion)}}\n`);
     });
   });
 });

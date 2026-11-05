@@ -153,3 +153,10 @@ jobs:
           status=$?
           echo "$output"
           [ "$status" -ne 0 ] && echo "$output" | grep -q "does not exist: the ingest worker creates it"
+      # Ticket #146, acceptance criterion 3: the schema-version entry script runs in the built image and answers with the
+      # version the image knows.
+      - name: The schema-version script runs in the image
+        run: |
+          output=$(docker run --rm --entrypoint node session-gateway:ci src/bin/schema-version.ts)
+          echo "$output"
+          echo "$output" | grep -Eq '^\{"image":[0-9]+\}$'

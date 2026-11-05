@@ -337,14 +337,16 @@ docker run --user 1000:1000 -v <data>:/data -p 127.0.0.1:8000:8000 \
 even for a reader). The server exits at start-up when `index.db` is missing, was never opened by the worker, or is at another schema
 version than the image's (ADR-0048).
 
-**The schema version of an image and of a database.** `node src/bin/schema-version.ts [--database <path>]` prints one JSON line
-and exits 0: `{"image": N}` is the schema version this image's code knows, and with `--database` it is `{"image": N, "database": M}`,
-where `M` is the version the file records (0 for a file nobody has stamped) and `null` for a path with no file. It opens the file
-read-only, never upgrades it, creates nothing and sends nothing to OLIS; it exits non-zero only on an argument it does not know or a
-file that is not a readable SQLite database. In the image, the file itself can be mounted read-only, but its directory must be
-writable: a WAL file needs its `-shm` beside it even for a reader (the same reason as the server's, above), and on a read-only
-directory the script exits 1 with SQLite's "unable to open database file" instead of guessing from the file's header, which
-does not hold what the WAL holds. It leaves `index.db` byte for byte as it was (measured against the live box's version-3 file).
+**The schema version of an image and of a database.** `node src/bin/schema-version.ts [--database <path>]` (also
+`--database=<path>`) prints one JSON line and exits 0, compact as `JSON.stringify` writes it: `{"image":N}` is the schema
+version this image's code knows, and with `--database` it is `{"image":N,"database":M}`, where `M` is the version the file
+records (0 for a file nobody has stamped) and `null` for a path with no file. It opens the file read-only, never upgrades it,
+never changes `index.db` (the same bytes before and after, measured against the live box's version-3 file) and sends nothing
+to OLIS; it exits non-zero only on an argument it does not know, `--database` given twice or without a path, or a file that is
+not a readable SQLite database. The data directory must be writable, as the server's is (above): a read-only open of a WAL
+file may leave `index.db-shm` and an empty `index.db-wal` beside it, which the server shares. On a read-only directory SQLite
+cannot create them and the script exits 1 with "attempt to write a readonly database" instead of guessing from the file's
+header, which does not hold what the WAL holds. The file itself may be mounted read-only inside a writable directory.
 
 ```
 docker run --rm --entrypoint node -v <data>:/data -v <data>/index.db:/data/index.db:ro \

@@ -96,24 +96,15 @@ export function leaveTurnsUnlinkedFromPassages(databasePath: string): void {
   }
 }
 
-/** The `user_version` the file records, read with a read-only connection: for a test to show that a script left it alone. */
-export function userVersionOf(databasePath: string): number {
-  const database = new DatabaseSync(databasePath, { readOnly: true, timeout: 5000 });
-  try {
-    const version = database.prepare("PRAGMA user_version").get()?.["user_version"];
-    if (typeof version !== "number") throw new Error(`no user_version in ${databasePath}`);
-    return version;
-  } finally {
-    database.close();
-  }
-}
-
 /**
  * Builds a file as a release that knew only schema version 1 left it: the frozen text of version 1 (the database package's
  * `tests/version-one-schema.sql`, never edited, read here as a file because a seam-1 test imports no package's tests/),
  * stamped 1, in WAL mode. The file must not exist yet. It only arranges, like `forgetListing`.
  */
 export function buildVersionOneFile(databasePath: string): void {
+  // Why a path into a package's tests/ folder: the boundary rule (test/CLAUDE.md, dependency-cruiser) is about imports, and this
+  // imports nothing; it reads the frozen text of version 1 as a file, so that the SQL is not copied into a second place that
+  // could drift from the one the package's own seam-4 tests arrange from.
   const frozen = readFileSync(
     new URL("../../src/packages/database/tests/version-one-schema.sql", import.meta.url),
     "utf8",
