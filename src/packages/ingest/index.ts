@@ -66,6 +66,7 @@ import { splitPassages } from "#/packages/search/passages.ts";
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, pacificTimestampOf, type Timestamp } from "#/packages/time/pacific.ts";
+import { readSpeakerTurnIndex } from "./lib/speaker-turns.ts";
 import { buildReportPath, writeBuildReport, type BuildReport, type SetReport } from "./lib/build-report.ts";
 import {
   hashSampleReportPath,
@@ -264,6 +265,25 @@ function committeeMembersReportOf(
   }));
 }
 
+/** What the build report says of how the Recording Logs were read: the logs left with no index, and the pages read by timecode. */
+function recordingLogNotesOf(
+  notes: ReturnType<IndexWriter["recordingLogReadingNotes"]>,
+): Pick<BuildReport, "recording_log_gaps" | "recording_log_pages_read_by_timecode"> {
+  return {
+    recording_log_gaps: notes.gaps.map((gap) => ({
+      id: gap.id,
+      source_url: gap.sourceUrl,
+      kind: gap.kind,
+      event_ids: gap.eventIds,
+    })),
+    recording_log_pages_read_by_timecode: notes.readByTimecode.map((note) => ({
+      id: note.id,
+      source_url: note.sourceUrl,
+      pages: note.pages,
+    })),
+  };
+}
+
 /** What the documents step of a pull and of an increment share. */
 type DocumentsStep = {
   config: IngestConfig;
@@ -272,6 +292,8 @@ type DocumentsStep = {
   olis: OlisClient;
   /** The links of the rows this run read. */
   links: readonly DocumentLink[];
+  /** Says who a Legislator Code is, for the speaker turns of the Recording Logs this run fetches (ticket #126). */
+  resolver: LegislatorResolver;
   committeeNames: ReadonlyMap<CommitteeId, string>;
   passageCounts: PassageCounts;
   /** Gets an entry for each document this run could not get or read. */
@@ -284,7 +306,7 @@ type DocumentsStep = {
  * documents it fetched. Reading what is stored for links is the Snapshot read's (`snapshot-read.ts`).
  */
 async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
-  const { config, deps, writer, olis, links, committeeNames, passageCounts, notFetched } = step;
+  const { config, deps, writer, olis, links, resolver, committeeNames, passageCounts, notFetched } = step;
   let documentsFetched = 0;
   const stored = writer.storedDocumentIds(config.session);
   // A fetched file is unchanging (ADR-0005) but its feed row is not: OLIS changes a posting's Meaning,
@@ -311,7 +333,22 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
       .filter((link) => link.agendaRevision !== undefined && agendaRevisions.get(link.id) !== link.agendaRevision)
       .map((link) => link.id),
   );
+  // A Recording Log stored before the speaker-turn index existed (or whose index never came) is fetched once more to read its
+  // links, which the store does not keep (ticket #126, ADR-0052). Its stored text and search entry stay as they are.
+  const unindexed = writer.recordingLogsWithoutIndex(config.session);
+  const speakerTurns = { session: config.session, writer, resolver };
   for (const link of links) {
+    if (stored.has(link.id) && unindexed.has(link.id) && link.kind === "recording_log" && !revised.has(link.id)) {
+      const again = await fetchAndRead(olis, link, deps.signal);
+      // A log that does not come is tried again by the next pull, which still finds it without an index.
+      if (again.kind === "fetched") {
+        writer.storeSpeakerTurnIndex({
+          documentId: link.id,
+          outcome: await readSpeakerTurnIndex(speakerTurns, link, again.bytes, again.pdf.text),
+        });
+      }
+      continue;
+    }
     if (stored.has(link.id) && !revised.has(link.id)) continue;
     const fetched = await fetchAndRead(olis, link, deps.signal);
     if (fetched.kind === "left_out") {
@@ -335,6 +372,12 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
     const search = { entry, passages, citations: findCitations(fetched.pdf.text, config.session), vectors };
     if (revised.has(link.id)) writer.replaceDocument(config.session, document, search);
     else writer.storeDocument(config.session, document, search);
+    if (link.kind === "recording_log") {
+      writer.storeSpeakerTurnIndex({
+        documentId: link.id,
+        outcome: await readSpeakerTurnIndex(speakerTurns, link, fetched.bytes, fetched.pdf.text),
+      });
+    }
     stored.add(link.id);
     documentsFetched += 1;
   }
@@ -548,6 +591,7 @@ async function pullEverything(config: IngestConfig, deps: IngestDeps): Promise<F
       writer,
       olis,
       links: documentLinksOf(record),
+      resolver,
       committeeNames,
       passageCounts,
       notFetched,
@@ -590,6 +634,7 @@ async function pullEverything(config: IngestConfig, deps: IngestDeps): Promise<F
         source_url: document.sourceUrl,
       })),
       documents_not_fetched: notFetched,
+      ...recordingLogNotesOf(writer.recordingLogReadingNotes(config.session)),
       search_index: {
         model: deps.embedder.modelId,
         passages: passageCounts.passages,
@@ -642,7 +687,7 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
     const olis = createWorkerClient(config, deps);
     const feed = await readFeed(olis, config, deps, { kind: "increment", since, writer, session: config.session });
     const snapshotRead = beginIncrementSnapshotRead({ writer, session: config.session, snapshot });
-    const { record, committeeNames } = feedRecordOf(config, deps, feed, snapshotRead);
+    const { record, resolver, committeeNames } = feedRecordOf(config, deps, feed, snapshotRead);
     writer.recordIncrement(config.session, asOf, record);
     const passageCounts: PassageCounts = { passages: 0, keywordOnly: 0, embedded: 0, reused: 0 };
     const notFetched: BuildReport["documents_not_fetched"] = [];
@@ -652,6 +697,7 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
       writer,
       olis,
       links: documentLinksOf(record),
+      resolver,
       committeeNames,
       passageCounts,
       notFetched,

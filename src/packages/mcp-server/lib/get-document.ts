@@ -5,6 +5,7 @@ import type { Outcome } from "./outcome.ts";
 import { floorLetterDocumentOutput, floorLetterDocumentShown } from "./floor-letters.ts";
 import { documentListingOutput, documentListingShown } from "./listing.ts";
 import { splitIntoParts } from "./parts.ts";
+import { speakerTurnsOutput, speakerTurnsShown } from "./speaker-turns.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 
@@ -51,6 +52,7 @@ export const getDocumentOutput = z.object({
   text: z.string().describe("This part of the text, exactly as published, with a form feed between pages."),
   related: z.array(related).describe("The nodes this document points at."),
   floor_letter: floorLetterDocumentOutput,
+  speaker_turns: speakerTurnsOutput,
   ...documentListingOutput,
 });
 
@@ -92,6 +94,7 @@ export function getDocument(
   const part = input.part ?? 1;
   if (part > parts.length) return { kind: "fault", fault: { kind: "no_such_part", id, part, partCount: parts.length } };
   const floorLetter = stored.kind === "floor_letter" ? reader.floorLetterDetails(stored.id) : undefined;
+  const speakerTurns = stored.kind === "recording_log" ? reader.speakerTurnIndexOf(stored.id) : undefined;
   return {
     kind: "answer",
     answer: {
@@ -114,6 +117,7 @@ export function getDocument(
         document_id: node.relation === "posted_to" ? node.documentId : null,
       })),
       ...(floorLetter === undefined ? {} : { floor_letter: floorLetterDocumentShown(floorLetter) }),
+      ...(speakerTurns === undefined ? {} : { speaker_turns: speakerTurnsShown(speakerTurns) }),
       ...documentListingShown(found.listing),
     },
   };

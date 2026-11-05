@@ -8,7 +8,7 @@ import {
   playerLinkOf as playerLink,
   type CommitteeMemberName,
 } from "./lib/turn-context.ts";
-import type { ParseRecordingLogInput, RecordingLogParse } from "./lib/types.ts";
+import type { ParseRecordingLogInput, RecordingLogLink, RecordingLogParse } from "./lib/types.ts";
 
 export type {
   AgendaItemEntry,

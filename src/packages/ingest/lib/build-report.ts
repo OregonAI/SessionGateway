@@ -50,6 +50,19 @@ export type BuildReport = {
   documents_without_text_layer: { id: DocumentId; source_url: string }[];
   /** Documents the feed links that this pull did not store: the next pull tries them again. */
   documents_not_fetched: { id: DocumentId; source_url: string; reason: string }[];
+  /**
+   * The Recording Logs the index holds with no speaker-turn index, because the log has no player link with an event ID or
+   * its links name more than one (ticket #126). The log's text is stored and searchable; its turns are not guessed.
+   */
+  recording_log_gaps: {
+    id: DocumentId;
+    source_url: string;
+    kind: "no_event_id" | "conflicting_event_ids";
+    /** The event IDs the links name: empty for a log with none. */
+    event_ids: string[];
+  }[];
+  /** The Recording Logs some of whose pages have no links that match their timecode lines, so those turns' seconds are the timecodes. */
+  recording_log_pages_read_by_timecode: { id: DocumentId; source_url: string; pages: number[] }[];
   /** What this pull made of the passages of the documents it stored, or refiled as embeddable (ADR-0025). */
   search_index: {
     /** The embedder's model id: the vectors this pull stored are under it. */

@@ -12,12 +12,20 @@
 //   extracts it; a turn's second is the `startStreamAt` of the player link that PDF.js reads on its line, which equals the
 //   line's timecode in hours, minutes and seconds in every row below (00:01:47 = 107);
 // - the event IDs are the `eventID` of those links;
-// - a Legislator Code is the CommitteeMembers row of the meeting's committee whose Legislators row (feed/Legislators.json)
-//   has the name the line gives: "Co-Chair Helm" is "Rep Helm", Ken Helm;
-// - the turn counts are the log's timecoded lines minus the ones that are not speaker lines: 288741 has 48 timecoded
-//   lines, of which 10 are the call to order, "Adoption of Committee Rules", the motion, its vote, the five hearings
-//   (HB 2167, 2168, 2166, 3131, 2164) and the adjournment, so 38 are turns;
+// - a Legislator Code is the CommitteeMembers row (feed/CommitteeMembers.json) of the meeting's committee whose Legislators row
+//   (feed/Legislators.json) has the name the line gives: "Co-Chair Helm" is "Rep Helm", Ken Helm;
+// - the turn count of SLB 2025-01-30 (302332) is its timecoded lines minus the ones that are not speaker lines: 50 lines, of
+//   which 16 are the call to order, six Agenda items (SB 69 hearing, SB 69 work session, SB 858, SB 605, SB 651, SB 588),
+//   four motions, four votes and the adjournment, so 34 are turns;
 // - the player link is the address those logs use, with the log's own clientID (4879615486).
+//
+// One caution about the fixture: it is a slice, and for a meeting it holds only the CommitteeAgendaItems rows of its chosen
+// Measures. The parser reads a log's Agenda items from the feed's, and from its own text only when none of the feed's
+// matches a line (owner decision Q5 of ticket #125). So where the slice has some of a meeting's items and not all, the
+// other items' lines are read as turns and the turns after them keep the last item the feed matched: that is HALNRW
+// 2025-01-22 (288741, the feed has HB 3131 of its five items) and HALNRW 2025-01-27 (289259). The rows below that name an Agenda item are
+// the ones of SLB 2025-01-30, whose feed items are all in the slice (SB 69, 858, 605, 651, 588). The rows of the other logs
+// assert no Agenda item. The made-up counterpart is in ADR-0052.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";
@@ -76,11 +84,11 @@ describe.for(eras)("the speaker-turn index in get_document for a %s client", (er
     return { speakerTurns: structured["speaker_turns"] as SpeakerTurns, structured };
   }
 
-  it("gives HALNRW 2025-01-22's log (288741) its event ID and 38 turns, with the envelope's as-of time and notice", async () => {
+  it("gives HALNRW 2025-01-22's log (288741) its event ID and its turns, with the envelope's as-of time and notice", async () => {
     const { speakerTurns, structured } = await turnsOf("recording-log-2025r1-288741");
 
-    expect(speakerTurns).toMatchObject({ indexed: true, event_id: "2025011038", gap: null, turn_count: 38 });
-    expect(speakerTurns.turns).toHaveLength(38);
+    expect(speakerTurns).toMatchObject({ indexed: true, event_id: "2025011038", gap: null });
+    expect(speakerTurns.turn_count).toBe(speakerTurns.turns.length);
     expect(speakerTurns.pages_read_by_timecode).toEqual([]);
     expect(structured["kind"]).toBe("recording_log");
     expect.soft(structured["as_of"]).toBe("2026-08-05T10:00:00-07:00");
@@ -89,7 +97,7 @@ describe.for(eras)("the speaker-turn index in get_document for a %s client", (er
   });
 
   it("returns the turns in media-clock order", async () => {
-    for (const id of ["recording-log-2025r1-288741", "recording-log-2025r1-289259", "recording-log-2025r1-295094"]) {
+    for (const id of ["recording-log-2025r1-288741", "recording-log-2025r1-289259", "recording-log-2025r1-302332"]) {
       const { speakerTurns } = await turnsOf(id);
       const seconds = speakerTurns.turns.map((turn) => turn.offset_seconds);
 
@@ -97,12 +105,11 @@ describe.for(eras)("the speaker-turn index in get_document for a %s client", (er
     }
   });
 
-  it("gives a Legislator turn its Legislator Code and Legislator, and the Agenda item and Measure it was spoken under", async () => {
+  it("gives a Legislator turn its Legislator Code and Legislator, and the second and player link of its line", async () => {
     const { speakerTurns } = await turnsOf("recording-log-2025r1-288741");
     const at = (timecode: string): Turn | undefined => speakerTurns.turns.find((turn) => turn.timecode === timecode);
 
-    // 00:00:04, before the log's first Agenda item.
-    expect(at("00:00:04")).toEqual({
+    expect(at("00:00:04")).toMatchObject({
       timecode: "00:00:04",
       offset_seconds: 4,
       offset_source: "link",
@@ -113,13 +120,11 @@ describe.for(eras)("the speaker-turn index in get_document for a %s client", (er
       measure_id: null,
       player_link: playerLink("2025011038", 4),
     });
-    // 00:11:29 and 00:21:43, under HB 2167: a first-name initial, and a compound surname the feed holds as "McDonald".
+    // 00:11:29 and 00:21:43: a first-name initial, and a compound surname the feed holds as "McDonald".
     expect(at("00:11:29")).toMatchObject({
       offset_seconds: 689,
       speaker: "Rep. B. Levy",
       legislator_code: "Rep Levy B",
-      agenda_item: "HB 2167 - Public Hearing",
-      measure_id: "measure-2025r1-hb2167",
       player_link: playerLink("2025011038", 689),
     });
     expect(at("00:21:43")).toMatchObject({
@@ -129,39 +134,98 @@ describe.for(eras)("the speaker-turn index in get_document for a %s client", (er
     });
   });
 
-  it("gives a turn of someone who is not a Legislator its text as logged, no Legislator, and the Agenda item and Measure", async () => {
+  it("gives a turn of someone who is not a Legislator its text as logged and no Legislator", async () => {
     const { speakerTurns } = await turnsOf("recording-log-2025r1-288741");
 
-    expect(speakerTurns.turns.find((turn) => turn.timecode === "00:01:47")).toEqual({
+    expect(speakerTurns.turns.find((turn) => turn.timecode === "00:01:47")).toMatchObject({
       timecode: "00:01:47",
       offset_seconds: 107,
       offset_source: "link",
       speaker: "Anna Glueder, LPRO Analyst",
       legislator_code: null,
       legislator: null,
-      agenda_item: "HB 2167 - Public Hearing",
-      measure_id: "measure-2025r1-hb2167",
       player_link: playerLink("2025011038", 107),
     });
   });
 
-  it("keeps a turn whose speaker it cannot resolve, with its text: a line in capitals, and a Senator who is not on the committee", async () => {
-    // HALNRW 2025-01-27 (289259, event 2025011111): "REP. SCHARF DECLARES POTENTIAL CONFLICT OF INTEREST" at 00:47:33,
-    // and "Sen. Todd Nash, Senate District 29" at 00:27:19, a Senator testifying before a House committee.
-    const { speakerTurns } = await turnsOf("recording-log-2025r1-289259");
+  it("gives SLB 2025-01-30's log (302332, event 2025011109) its 34 turns, each with the Agenda item and Measure it was spoken under", async () => {
+    const { speakerTurns } = await turnsOf("recording-log-2025r1-302332");
     const at = (timecode: string): Turn | undefined => speakerTurns.turns.find((turn) => turn.timecode === timecode);
 
-    expect(speakerTurns.event_id).toBe("2025011111");
-    expect(at("00:47:33")).toMatchObject({
+    expect(speakerTurns).toMatchObject({ indexed: true, event_id: "2025011109", turn_count: 34 });
+    expect(speakerTurns.turns).toHaveLength(34);
+    // 00:00:07, before the log's first Agenda item (SB 69 at 00:00:59).
+    expect(at("00:00:07")).toEqual({
+      timecode: "00:00:07",
+      offset_seconds: 7,
+      offset_source: "link",
+      speaker: "Chair Taylor",
+      legislator_code: "Sen Taylor",
+      legislator: { id: expect.stringMatching(/^legislator-2025r1-/), name: "Kathleen Taylor" },
+      agenda_item: null,
+      measure_id: null,
+      player_link: playerLink("2025011109", 7),
+    });
+    // 00:01:05, staff, under SB 69.
+    expect(at("00:01:05")).toEqual({
+      timecode: "00:01:05",
+      offset_seconds: 65,
+      offset_source: "link",
+      speaker: "Whitney Perez, LPRO Analyst",
+      legislator_code: null,
+      legislator: null,
+      agenda_item: "SB 69 - Public Hearing",
+      measure_id: "measure-2025r1-sb69",
+      player_link: playerLink("2025011109", 65),
+    });
+    // 00:07:03 and 00:16:12, members, under SB 605.
+    expect(at("00:07:03")).toMatchObject({
+      offset_seconds: 423,
+      speaker: "Vice-Chair Bonham",
+      legislator_code: "Sen Bonham",
+      legislator: { name: "Daniel Bonham" },
+      agenda_item: "SB 605 - Public Hearing",
+      measure_id: "measure-2025r1-sb605",
+    });
+    expect(at("00:16:12")).toMatchObject({
+      offset_seconds: 972,
+      speaker: "Sen. Hayden",
+      legislator_code: "Sen Hayden",
+      agenda_item: "SB 605 - Public Hearing",
+      measure_id: "measure-2025r1-sb605",
+    });
+  });
+
+  it("keeps a turn whose speaker it cannot resolve, with its text: a Legislator who is not on the committee, a line in capitals", async () => {
+    // SLB 2025-01-30 at 00:13:13 (793 s): "Rep. Nathan Sosa, House District 30", a Representative testifying to a Senate
+    // committee, and at 01:08:58 (4138 s) "Sen. Mark Meek, Senate District 20", who is not on SLB.
+    const slb = (await turnsOf("recording-log-2025r1-302332")).speakerTurns;
+    expect(slb.turns.find((turn) => turn.timecode === "00:13:13")).toMatchObject({
+      offset_seconds: 793,
+      speaker: "Rep. Nathan Sosa, House District 30",
+      legislator_code: null,
+      legislator: null,
+      agenda_item: "SB 605 - Public Hearing",
+    });
+    expect(slb.turns.find((turn) => turn.timecode === "01:08:58")).toMatchObject({
+      offset_seconds: 4138,
+      speaker: "Sen. Mark Meek, Senate District 20",
+      legislator_code: null,
+      legislator: null,
+      agenda_item: "SB 588 - Public Hearing",
+    });
+    // HALNRW 2025-01-27 (289259, event 2025011111): at 00:47:33 (2853 s) the line "REP. SCHARF DECLARES POTENTIAL CONFLICT
+    // OF INTEREST" is a turn like any other, and "Sen. Todd Nash, Senate District 29" at 00:27:19 (1639 s) is not a member.
+    const halnrw = (await turnsOf("recording-log-2025r1-289259")).speakerTurns;
+    expect(halnrw.event_id).toBe("2025011111");
+    expect(halnrw.turns.find((turn) => turn.timecode === "00:47:33")).toMatchObject({
       offset_seconds: 2853,
       speaker: "REP. SCHARF DECLARES POTENTIAL CONFLICT OF INTEREST",
       legislator_code: null,
       legislator: null,
-      agenda_item: "HB 2806 - Public Hearing",
-      measure_id: "measure-2025r1-hb2806",
       player_link: playerLink("2025011111", 2853),
     });
-    expect(at("00:27:19")).toMatchObject({
+    expect(halnrw.turns.find((turn) => turn.timecode === "00:27:19")).toMatchObject({
       offset_seconds: 1639,
       speaker: "Sen. Todd Nash, Senate District 29",
       legislator_code: null,
@@ -179,15 +243,12 @@ describe.for(eras)("the speaker-turn index in get_document for a %s client", (er
       speaker: "Chair Meek",
       legislator_code: "Sen Meek",
       legislator: { name: "Mark Meek" },
-      agenda_item: null,
     });
     expect(at("00:13:48")).toMatchObject({
       offset_seconds: 828,
       speaker: "Sen. Starr",
       legislator_code: "Sen Starr",
       legislator: { name: "Bruce Starr" },
-      agenda_item: "SB 93 Public Hearing",
-      measure_id: "measure-2025r1-sb93",
     });
   });
 
@@ -237,16 +298,25 @@ describe.for(eras)("the speaker-turn index in meetings for a %s client", (era) =
     return meetings;
   }
 
-  it("says HALNRW 2025-01-22's log has an index: its event ID and 38 turns", async () => {
-    const outcome = await callTool(connected, "meetings", { committee: "HALNRW", from: "2025-01-22", to: "2025-01-22" });
+  it("says SLB 2025-01-30's log has an index: its event ID and 34 turns; and HALNRW 2025-01-22's, its event ID", async () => {
+    const slb = await callTool(connected, "meetings", { committee: "SLB", from: "2025-01-30", to: "2025-01-30" });
+    const halnrw = await callTool(connected, "meetings", { committee: "HALNRW", from: "2025-01-22", to: "2025-01-22" });
 
-    const meetings = outcome.structured?.["meetings"] as MeetingOutput[];
-    expect(meetings).toHaveLength(1);
-    expect(meetings[0]).toMatchObject({
+    expect((slb.structured?.["meetings"] as MeetingOutput[])[0]).toMatchObject({
+      id: "meeting-2025r1-slb-2025-01-30-0800",
+      has_speaker_turn_index: true,
+      recording_logs: [
+        { id: "recording-log-2025r1-302332", speaker_turn_index: { event_id: "2025011109", turn_count: 34 } },
+      ],
+    });
+    expect((halnrw.structured?.["meetings"] as MeetingOutput[])[0]).toMatchObject({
       id: "meeting-2025r1-halnrw-2025-01-22-0800",
       has_speaker_turn_index: true,
       recording_logs: [
-        { id: "recording-log-2025r1-288741", speaker_turn_index: { event_id: "2025011038", turn_count: 38 } },
+        {
+          id: "recording-log-2025r1-288741",
+          speaker_turn_index: { event_id: "2025011038", turn_count: expect.any(Number) },
+        },
       ],
     });
   });
