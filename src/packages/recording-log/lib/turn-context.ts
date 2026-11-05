@@ -82,14 +82,16 @@ function fitting(
   const last = named.name.at(-1);
   if (last === undefined || named.conflict) return [];
   const first = named.name.length >= 2 ? named.name[0] : undefined;
-  const firstGiven =
-    first !== undefined && (first.length === 1 || known.some((legislator) => startsFirstName(first, legislator)));
-  if (needsFirstName && !firstGiven) return [];
+  const given =
+    first !== undefined && (first.length === 1 || known.some((legislator) => startsFirstName(first, legislator)))
+      ? first
+      : undefined;
+  if (needsFirstName && given === undefined) return [];
   return candidates.filter((candidate) => {
     if (tokensOf(candidate.name).at(-1) !== last) return false;
     const chamber = chamberOfCode(candidate.code);
     if (named.chamber !== undefined && chamber !== named.chamber) return false;
-    return !firstGiven || first === undefined || startsFirstName(first, candidate);
+    return given === undefined || startsFirstName(given, candidate);
   });
 }
 

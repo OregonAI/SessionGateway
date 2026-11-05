@@ -263,7 +263,7 @@ describe("measureOfAgendaItem", () => {
 });
 
 describe("playerLinkOf", () => {
-  // The two links of 288741 that matter, as pdf.js gives them: the meeting's materials, and the timecode "00:00:03".
+  // The two links of 288741 that matter, as the raw PDF has them (/Rect and /URI): the meeting's materials, and the timecode "00:00:03".
   const links: RecordingLogLink[] = [
     {
       page: 1,
