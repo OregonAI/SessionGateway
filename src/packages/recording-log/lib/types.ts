@@ -31,7 +31,7 @@ export type ParseRecordingLogInput = {
   links: readonly RecordingLogLink[];
   /**
    * The Meeting's Agenda items from the feed. A log line is an Agenda item when it matches one: the measure id and its
-   * action, or the item's text. The text heuristic is the fallback when none are passed or none matches a line.
+   * action, or the item's text. Each line is decided on its own: the feed wins when it matches the line, and otherwise the text heuristic decides that line, except that a line shaped like a person is never taken by the heuristic.
    */
   agendaItems?: readonly FeedAgendaItem[];
 };

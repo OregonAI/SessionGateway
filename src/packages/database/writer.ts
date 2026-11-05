@@ -7,14 +7,16 @@ import {
   type DocumentId,
   type DocumentKind,
   type DocumentLink,
+  type MeetingId,
   type SessionSpan,
   type StoredDocument,
 } from "#/packages/domain/documents.ts";
-import type { MeasureId, SessionKey } from "#/packages/domain/index.ts";
+import { measureIdOf, type MeasureId, type SessionKey } from "#/packages/domain/index.ts";
 import type { AgencyId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
 import type { AgencyLink } from "#/packages/domain/agency-links.ts";
 import type { Citation } from "#/packages/domain/citations.ts";
 import type { Passage, SearchEntry } from "#/packages/domain/search.ts";
+import type { SpeakerTurnIndexOutcome } from "#/packages/domain/speaker-turns.ts";
 import type {
   RelatingClauseEdit,
   StatuteLink,
@@ -23,6 +25,7 @@ import type {
 } from "#/packages/domain/statute-links.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceToJson } from "./lib/agency-evidence.ts";
+import { storeSpeakerTurnIndex } from "./lib/speaker-turns.ts";
 import { openWriteConnection } from "./lib/connection.ts";
 import {
   readAsOf,
@@ -166,6 +169,40 @@ function testimonyAgencyValues(
       return agency satisfies never;
   }
 }
+
+/** What the store keeps of a Recording Log's speaker turns: the log, and what reading it came to. */
+export type SpeakerTurnIndexRecord = { documentId: DocumentId; outcome: SpeakerTurnIndexOutcome };
+
+/** What the build report says of how the Recording Logs were read. */
+export type RecordingLogReadingNotes = {
+  gaps: {
+    id: DocumentId;
+    sourceUrl: string;
+    /** `not_read`: the log is stored and its links have not been read (its file could not be fetched again, or came back changed). */
+    kind: "no_event_id" | "conflicting_event_ids" | "not_read";
+    eventIds: string[];
+  }[];
+  readByTimecode: { id: DocumentId; sourceUrl: string; pages: number[] }[];
+};
+
+/** A stored Recording Log with its reading: the outcome and what goes with it are null for a log no reading of is stored. */
+const readingNoteRow = z.object({
+  id: z.string(),
+  source_url: z.string(),
+  outcome: z.enum(["indexed", "no_event_id", "conflicting_event_ids"]).nullable(),
+  event_ids: z.string().nullable(),
+  pages_read_by_timecode: z.string().nullable(),
+});
+const heldMeasureRow = z.object({ prefix: z.string(), number: z.number() });
+const contentHashRow = z.object({ content_hash: z.string() });
+
+const agendaItemFields = z.object({
+  measure_prefix: z.string().nullable(),
+  measure_number: z.number().nullable(),
+  meeting_type: z.string().nullable(),
+  action: z.string().nullable(),
+  comments: z.string().nullable(),
+});
 
 /** What search keeps of one document, stored in the same transaction as the document. */
 export type SearchRecord = {
@@ -312,6 +349,30 @@ export type IndexWriter = {
    * was recorded has none.
    */
   storedAgendaRevisions(session: SessionKey): Map<DocumentId, number>;
+  /**
+   * Keeps what reading a Recording Log's links and text came to (ticket #126, ADR-0052): its event ID and speaker turns, or
+   * the gap that left it with none. It replaces whatever the log had, in one transaction.
+   */
+  storeSpeakerTurnIndex(record: SpeakerTurnIndexRecord): void;
+  /** The stored Recording Logs of the Session that have no speaker-turn index yet (a gap counts as one): the ones to fetch again to read their links. */
+  recordingLogsWithoutIndex(session: SessionKey): Set<DocumentId>;
+  /**
+   * What the stored readings of the Session's Recording Logs say for the build report: the logs left with no index (no event
+   * ID, or conflicting ones) and the logs some of whose pages were read by timecode, each with its source URL.
+   */
+  recordingLogReadingNotes(session: SessionKey): RecordingLogReadingNotes;
+  /** The Measures the store holds for the Session, as the ids of the Measures: what a turn's Agenda item may name. */
+  heldMeasureIds(session: SessionKey): Set<MeasureId>;
+  /** The hash of the file a stored document was made from, or undefined when the store holds no such document. */
+  storedContentHash(document: DocumentId): string | undefined;
+  /** The Agenda items the store holds for a Meeting, as the feed gave them, for the parser to match a log's lines against. */
+  agendaItemsOfMeeting(meeting: MeetingId): {
+    measurePrefix: string | null;
+    measureNumber: number | null;
+    meetingType: string | null;
+    action: string | null;
+    comments: string | null;
+  }[];
   /**
    * The files of the Session's stored Versions and postings of Proposed Amendments that have not been read
    * for Statute Links with this snapshot, each once however many documents share it: a file never read, and every
@@ -991,6 +1052,76 @@ export function openIndexWriter(path: string): IndexWriter {
         const stored = memberRow.parse(row);
         return { committeeCode: stored.committee_code, legislatorCode: stored.legislator_code };
       });
+    },
+    storeSpeakerTurnIndex(record) {
+      storeSpeakerTurnIndex(database, record.documentId, record.outcome);
+    },
+    recordingLogsWithoutIndex(session) {
+      const rows = database
+        .prepare(
+          `SELECT d.id FROM document d
+           WHERE d.session_key = ? AND d.kind = 'recording_log'
+             AND NOT EXISTS (SELECT 1 FROM speaker_turn_index i WHERE i.document_id = d.id)`,
+        )
+        .all(session);
+      return new Set(rows.map((row) => idRow.parse(row).id as DocumentId));
+    },
+    recordingLogReadingNotes(session) {
+      const rows = database
+        .prepare(
+          `SELECT d.id, d.source_url, i.outcome, i.event_ids, i.pages_read_by_timecode
+           FROM document d LEFT JOIN speaker_turn_index i ON i.document_id = d.id
+           WHERE d.session_key = ? AND d.kind = 'recording_log' ORDER BY d.id`,
+        )
+        .all(session)
+        .map((row) => readingNoteRow.parse(row));
+      const notes: RecordingLogReadingNotes = { gaps: [], readByTimecode: [] };
+      for (const row of rows) {
+        const id = row.id as DocumentId;
+        if (row.outcome === null) {
+          notes.gaps.push({ id, sourceUrl: row.source_url, kind: "not_read", eventIds: [] });
+          continue;
+        }
+        if (row.outcome !== "indexed") {
+          const eventIds = z.array(z.string()).parse(JSON.parse(row.event_ids ?? "[]"));
+          notes.gaps.push({ id, sourceUrl: row.source_url, kind: row.outcome, eventIds });
+          continue;
+        }
+        const pages = z.array(z.number()).parse(JSON.parse(row.pages_read_by_timecode ?? "[]"));
+        if (pages.length > 0) notes.readByTimecode.push({ id, sourceUrl: row.source_url, pages });
+      }
+      return notes;
+    },
+    heldMeasureIds(session) {
+      const rows = database.prepare("SELECT prefix, number FROM measure WHERE session_key = ?").all(session);
+      return new Set(
+        rows.map((row) => {
+          const { prefix, number } = heldMeasureRow.parse(row);
+          return measureIdOf({ session, prefix, number });
+        }),
+      );
+    },
+    storedContentHash(document) {
+      const found = database.prepare("SELECT content_hash FROM document WHERE id = ?").get(document);
+      return found === undefined ? undefined : contentHashRow.parse(found).content_hash;
+    },
+    agendaItemsOfMeeting(meeting) {
+      return database
+        .prepare(
+          `SELECT measure_prefix, measure_number, meeting_type, action, comments FROM agenda_item
+           WHERE meeting_id = ? ORDER BY id`,
+        )
+        .all(meeting)
+        .map((row) => {
+          const item = agendaItemFields.parse(row);
+          return {
+            measurePrefix: item.measure_prefix,
+            measureNumber: item.measure_number,
+            meetingType: item.meeting_type,
+            action: item.action,
+            comments: item.comments,
+          };
+        });
     },
     storedDocumentIds(session) {
       const rows = database.prepare("SELECT id FROM document WHERE session_key = ?").all(session);

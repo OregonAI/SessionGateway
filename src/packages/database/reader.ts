@@ -29,6 +29,7 @@ import {
   type MeetingId,
   type NodeId,
   type PostedAmendment,
+  type RecordingLogDocument,
   type PulledEntitySet,
   type Relation,
   type RelatedNode,
@@ -76,6 +77,8 @@ import {
 } from "#/packages/domain/votes.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceFromJson, storedEvidenceKinds } from "./lib/agency-evidence.ts";
+import { readSpeakerTurnIndex, readSpeakerTurnSummary } from "./lib/speaker-turns.ts";
+import type { SpeakerTurnIndexOutcome } from "#/packages/domain/speaker-turns.ts";
 import { openReadConnection } from "./lib/connection.ts";
 import { agencyLinkListings, openListingReader, type ListingRead } from "./lib/listing.ts";
 import {
@@ -214,6 +217,12 @@ export type IndexReader = {
   findMeetings(session: SessionKey, filter: MeetingFilter): MeetingHeader[];
   /** What one meeting holds. */
   meetingContents(meeting: MeetingId): MeetingContents;
+  /**
+   * What the worker read of a Recording Log's links and text (ticket #126): its event ID and speaker turns in media-clock
+   * order, or the gap that left it with none. Undefined when the store holds no reading of it (a log not fetched, or
+   * fetched before the index existed).
+   */
+  speakerTurnIndexOf(document: DocumentId): SpeakerTurnIndexOutcome | undefined;
   /**
    * Every Testimony row the feed lists for a Measure, in the order of the feed's `CommTestId`, whether or not
    * its file is fetched.
@@ -1254,6 +1263,9 @@ export function openIndexReader(path: string): IndexReader {
           });
       });
     },
+    speakerTurnIndexOf(document) {
+      return inOneSnapshot(() => readSpeakerTurnIndex(database, document));
+    },
     meetingContents(meeting) {
       return inOneSnapshot(() => {
         const agendaItems = selectAgendaItems.all(meeting).map((row): ListedAgendaItem => {
@@ -1292,6 +1304,10 @@ export function openIndexReader(path: string): IndexReader {
               listing: listings.ofDocument(stored.id as DocumentId).listing,
             }))
             .sort((a, b) => numbersInOrder.compare(a.id, b.id));
+        const recordingLogs = documentsOfKind("recording_log").map((log): RecordingLogDocument => ({
+          ...log,
+          speakerTurnIndex: readSpeakerTurnSummary(database, log.id),
+        }));
         const amendments = listed
           .filter((stored) => stored.kind === "proposed_amendment")
           .map((stored): PostedAmendment => {
@@ -1318,7 +1334,7 @@ export function openIndexReader(path: string): IndexReader {
           agendaItems,
           amendments,
           exhibits: documentsOfKind("exhibit"),
-          recordingLogs: documentsOfKind("recording_log"),
+          recordingLogs,
         };
       });
     },

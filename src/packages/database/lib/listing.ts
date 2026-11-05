@@ -10,9 +10,8 @@
 // the feed no longer lists (`listedDocumentSql`, with the number it binds, `noLongerListedThrough`), and which of some
 // Documents the feed no longer lists, with when each was last listed (`unlistedAmong`). Search names no column of
 // `feed_row` or `feed_pull`.
-// The view `feed_row_state` in connection.ts says the same in SQL and is no longer read by anything: the schema text is
-// version 1 of the index (ADR-0048) and is left as it was
-// (connection.ts says the first numbered upgrade step another ticket adds should drop the view).
+// The view `feed_row_state` in version 1's schema text (connection.ts) said the same in SQL and nothing reads it: the text
+// is version 1 of the index (ADR-0048) and is left as it was, and step 2 drops the view from every file.
 //
 // Which entity set and key a row is kept under is named here too (`listedRowsOf`), one entry for each name in
 // `pulledEntitySets`, so that a ticket that makes the pull read another set adds its rows to that table and to nothing else.

@@ -66,6 +66,11 @@ const meetingOutput = z.object({
     })
     .nullable()
     .describe("The meeting's agenda document, when OLIS links one."),
+  has_speaker_turn_index: z
+    .boolean()
+    .describe(
+      "True when at least one of the meeting's Recording Logs has a speaker-turn index: who spoke when, with a link into the official player. See recording_logs.",
+    ),
   agenda_items: z
     .array(
       z.object({
@@ -122,6 +127,19 @@ const meetingOutput = z.object({
         label: z.string().describe("What OLIS calls it: Recording Log."),
         source_url: z.string().describe("Where the Legislature publishes the file."),
         fetched: z.boolean().describe(fetchedDescription),
+        speaker_turn_index: z
+          .object({
+            event_id: z
+              .string()
+              .describe("The Invintus event ID of the meeting's recording, from the log's own player links."),
+            turn_count: z
+              .number()
+              .describe("How many speaker turns the log has. Give the log's id to get_document for them."),
+          })
+          .nullable()
+          .describe(
+            "The log's speaker-turn index: null when the index does not hold one (the file is not fetched, or the log has no event ID or conflicting ones: get_document says which).",
+          ),
         no_longer_listed: noLongerListedOutput,
       }),
     )
@@ -287,11 +305,16 @@ function meetingOutputOf(
       fetched: exhibit.fetched,
       ...noLongerListedFlag(exhibit.listing),
     })),
+    has_speaker_turn_index: contents.recordingLogs.some((log) => log.speakerTurnIndex !== null),
     recording_logs: contents.recordingLogs.map((log) => ({
       id: log.id,
       label: log.label,
       source_url: log.sourceUrl,
       fetched: log.fetched,
+      speaker_turn_index:
+        log.speakerTurnIndex === null
+          ? null
+          : { event_id: log.speakerTurnIndex.eventId, turn_count: log.speakerTurnIndex.turnCount },
       ...noLongerListedFlag(log.listing),
     })),
     proposed_amendments: contents.amendments.map((amendment) => ({

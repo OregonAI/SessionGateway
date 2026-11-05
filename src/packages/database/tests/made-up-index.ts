@@ -79,6 +79,8 @@ export function asOf(n: number): Timestamp {
 
 /** The index a test opens: the writer, the reader and search on one file, and a way to remove it. */
 export type MadeUpIndex = {
+  /** The database file, for `arranged-files.ts` to arrange what an entry point cannot. */
+  path: string;
   writer: IndexWriter;
   reader: IndexReader;
   search: SearchIndexReader;
@@ -94,6 +96,7 @@ export function openMadeUpIndex(): MadeUpIndex {
   const reader = openIndexReader(path);
   const search = openSearchReader(path);
   return {
+    path,
     writer,
     reader,
     search,

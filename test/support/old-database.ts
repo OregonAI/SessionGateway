@@ -31,3 +31,16 @@ export function readAgencyLinksWithOnlyTheStamp(databasePath: string, commit: st
     database.close();
   }
 }
+
+/**
+ * Makes a database look as one a worker before ticket #126 left: the Recording Logs are stored as text and nothing reads
+ * their links, so no log has a speaker-turn index. It only arranges, like `forgetListing`.
+ */
+export function forgetSpeakerTurns(databasePath: string): void {
+  const database = new DatabaseSync(databasePath, { timeout: 5000 });
+  try {
+    database.exec("DELETE FROM speaker_turn; DELETE FROM speaker_turn_index");
+  } finally {
+    database.close();
+  }
+}

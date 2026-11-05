@@ -9,9 +9,10 @@ import type {
 
 // Helpers for the seam-2 rows (#125). The rows quote the research cache (.cache/olis-2025R1/video-research/dl/logs/,
 // not committed: the Acceptable Use Agreement grants no redistribution license; it is not in CI, so each quote is
-// inline). The text is what the pdf-text package extracts; the links are what pdf.js's getAnnotations() gives for the
-// quoted lines' rows, as [page, rect, startStreamAt]. The link address of every row is the one these logs use, with the
-// meeting's own eventID.
+// inline). The text is what the pdf-text package extracts; the links are the quoted lines' rows, as [page, rect,
+// startStreamAt]. The rows of the fixture logs (288741, 289259, 295094, 306568) read each link's /Rect and /URI from the raw
+// PDF; the older rows quoted the cache's logs as pdf.js's getAnnotations() gave them. The link address of every row is the
+// one these logs use, with the meeting's own eventID.
 
 /** [page, rect, startStreamAt]: one real player-link annotation, in the form the rows quote it. */
 export type QuotedLink = readonly [page: number, rect: readonly [number, number, number, number], seconds: number];
