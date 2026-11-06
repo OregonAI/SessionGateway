@@ -74,6 +74,8 @@ describe("the 2026R1 question set", () => {
         expect(link, each.id).toBeDefined();
         const wanted = link !== undefined && "includesText" in link ? [link.includesText].flat() : [];
         const second = seconds !== undefined && "equals" in seconds ? (seconds.equals as number[])[0] : undefined;
+        // The clientID is the one the stored text of testimony-2026r1-234682 (page 4) quotes in a player link; the stored
+        // text of the logs holds none (scripts/eval/questions/2026R1.yml says so).
         expect(wanted, each.id).toContain(
           "https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID=",
         );

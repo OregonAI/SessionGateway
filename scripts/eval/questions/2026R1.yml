@@ -22,11 +22,14 @@
 # from document.text with SQL, never from a tool or a speaker_turn table. The committee, the meeting's start and the log's
 # id are the worker's stored feed columns (meeting.committee_code, meeting.at and meeting_document.document_id, key
 # CommitteeMeetingDocuments <id>). A Legislator Code is the stored committee_member row of the meeting's committee. The
-# player link is the Legislature's player page with the log's own clientID and the line's timecode in seconds, as
+# player link is the Legislature's player page with the clientID named below and the line's timecode in seconds, as
 # src/packages/recording-log/lib/turn-context.ts builds it (playerLinkOf): the check names the page, the clientID and
 # "&startStreamAt=<seconds>". The eventID is NOT checked: it is in the log's PDF link annotations, which the stored text
 # does not hold, and the only stored copy of it is the speaker-turn index under test. The player check against Invintus's
-# player is pending the owner (it is a network request, which this set never makes), and so is the eventID.
+# player, and with it the eventID, is waived for stage 1 by the owner, 2026-11-06 (it is a network request, which this
+# set never makes). The clientID is the one that the stored text of other 2026R1 documents quotes in a player link: the
+# stored text of testimony-2026r1-234682, page 4, footnote 6 ("…/liz/mediaplayer/?clientID=4879615486&eventID=2026021032").
+# The stored text of the logs themselves holds no clientID.
 # A posting's day is its feed row's CreatedDate (document_created), not the Proposed Amendment's posted_at, which OLIS
 # gives as the meeting's start.
 #
@@ -246,12 +249,13 @@ questions:
           - { path: "floor_votes[action=Third reading. Carried by Helfrich. Passed.].votes[vote=Excused for Business].legislator_code", length: 11 }
           - { path: live_status.as_of, present: true }
 
-  # (h1) A witness, on the second Agenda item of the meeting (SB 1569 comes first).
+  # (h1) A witness, on the second Agenda item of the meeting (SB 1569 comes first). The `kind=Public Hearing` filter comes
+  # from the log's line "00:07:00 SB 1518 - Public Hearing"; the feed's agenda item says "Public Hearing and Work Session".
   # Source: the stored text of recording-log-2026r1-313510, page 1, line "00:11:48 Josh Nasbe, Legislative Director, Bureau of
   # Labor and Industries (BOLI)", under the line "00:07:00 SB 1518 - Public Hearing". 00:11:48 is 708 seconds. Meeting: the
   # worker's stored feed columns (meeting.committee_code SLB, meeting.at 2026-02-04T13:00:00-08:00, meeting_document row
   # CommitteeMeetingDocuments 313510). The log was created 2026-02-11T10:59:51-08:00 (document_created), so it is asked on
-  # 2026-02-12. Player: the player check is pending the owner (no request to Invintus is made here).
+  # 2026-02-12. Player: the player check is waived for stage 1 by the owner, 2026-11-06 (no request to Invintus is made here).
   - id: h-nasbe-sb1518
     title: When did Josh Nasbe of BOLI speak on SB 1518 at the Senate Committee On Labor and Business on 2026-02-04, and where is the recording?
     clock: "2026-02-12T12:00:00-08:00"
@@ -280,7 +284,7 @@ questions:
   # (committee_member.legislator_code, key CommitteeCode HCCP, LegislatorCode Rep Reschke, CreatedDate
   # 2026-01-09T16:56:56-08:00). Meeting: meeting.committee_code HCCP, meeting.at 2026-02-05T13:00:00-08:00, meeting_document
   # row CommitteeMeetingDocuments 314108. The log was created 2026-02-13T10:36:15-08:00, so it is asked on 2026-02-14.
-  # Player: the player check is pending the owner.
+  # Player: the player check is waived for stage 1 by the owner, 2026-11-06.
   - id: h-reschke-hb4098
     title: When did Rep. Reschke speak on HB 4098 at the House Committee On Commerce and Consumer Protection on 2026-02-05, and where is the recording?
     clock: "2026-02-14T12:00:00-08:00"
@@ -305,13 +309,14 @@ questions:
               - "&startStreamAt=1691"
 
   # (h3) A witness at a hearing with a recess, after it. The meeting is recessed at 00:55:48 and reconvenes at 00:56:10, and the
-  # media clock goes on (SB 1507 is the second item, after the Revenue Forecast), so the second is the timecode.
+  # media clock goes on (SB 1507 is the third item on the log's MEASURES/ISSUES list, after
+  # "Organize/Adopt Rules" and "Revenue Forecast"), so the second is the timecode.
   # Source: the stored text of recording-log-2026r1-312657, page 2, lines "00:55:48 Meeting Recessed", "00:56:10 Meeting
   # Reconvened", "00:57:28 SB 1507 Public Hearing" and "01:01:19 Daniel Hauser". 01:01:19 is 3679 seconds. The log's own item
   # line has no hyphen, and its page-1 header names the Measure "1507" without a prefix: the 2026R1 quirk this question
   # tests. Meeting: meeting.committee_code SFR, meeting.at 2026-02-04T08:00:00-08:00, meeting_document row
   # CommitteeMeetingDocuments 312657. The log was created 2026-02-06T12:55:17-08:00, so it is asked on 2026-02-07.
-  # Player: the player check is pending the owner.
+  # Player: the player check is waived for stage 1 by the owner, 2026-11-06.
   - id: h-hauser-sb1507
     title: When did Daniel Hauser speak on SB 1507 at the Senate Committee On Finance and Revenue on 2026-02-04, and where is the recording?
     clock: "2026-02-07T12:00:00-08:00"
@@ -334,14 +339,15 @@ questions:
               - "https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID="
               - "&startStreamAt=3679"
 
-  # (h4) A Legislator who testifies as a sponsor (the log gives her name and district, and she is also a committee member), on
-  # the second Agenda item (HB 4005 comes first).
+  # (h4) A Legislator who testifies (the log gives her name and district, and she is also a committee member), on the second
+  # Agenda item (HB 4005 comes first). She is not a sponsor: HB 4004's feed sponsor row (sponsor.sponsor_id 155127, a
+  # presession filing) and its Introduced text (version-2026r1-hb4004-introduced) name Reps Helm and Owens.
   # Source: the stored text of recording-log-2026r1-312218, page 2, line "00:20:41 Rep. Pam Marsh, House District 5", under
   # the line "00:19:21 HB 4004 - Public Hearing". 00:20:41 is 1241 seconds. Rep Marsh is a member of HALNRW: the worker's
   # stored feed columns (committee_member.legislator_code, key CommitteeCode HALNRW, LegislatorCode Rep Marsh, CreatedDate
   # 2026-01-09T16:56:56-08:00). Meeting: meeting.committee_code HALNRW, meeting.at 2026-02-02T13:00:00-08:00, meeting_document
   # row CommitteeMeetingDocuments 312218. The log was created 2026-02-04T09:14:14-08:00, so it is asked on 2026-02-05.
-  # Player: the player check is pending the owner.
+  # Player: the player check is waived for stage 1 by the owner, 2026-11-06.
   - id: h-marsh-hb4004
     title: When did Rep. Pam Marsh speak on HB 4004 at the House Committee On Agriculture, Land Use, Natural Resources, and Water on 2026-02-02, and where is the recording?
     clock: "2026-02-05T12:00:00-08:00"
@@ -367,11 +373,11 @@ questions:
 
   # (h5) A witness who speaks where the log returns to an Agenda item: the log's lines read "00:19:21 HB 4004 - Public
   # Hearing", then "00:52:52 HB 4034 - Public Hearing" with one turn, then "00:53:12 HB 4004 - Public Hearing" again, so the
-  # turn is under the second HB 4004 line, not the first, and not the HB 4034 line before it (the 2026R1 quirk this question
-  # tests). The speaker's line is also the first witness of the return.
+  # turn is under the second HB 4004 line, and the check rules out the HB 4034 line before it (both HB 4004 lines give the
+  # same string, so it cannot tell them apart; the 2026R1 quirk this question tests). The speaker's line is also the first witness of the return.
   # Source: the stored text of recording-log-2026r1-312218, page 2, lines "00:53:12 HB 4004 - Public Hearing" and "00:53:39
   # Kimberley Priestley, Senior Policy Analyst, WaterWatch of Oregon". 00:53:39 is 3219 seconds. Meeting: as h4. Asked on
-  # 2026-02-05, the day after the log was created. Player: the player check is pending the owner.
+  # 2026-02-05, the day after the log was created. Player: the player check is waived for stage 1 by the owner, 2026-11-06.
   - id: h-priestley-hb4004
     title: When did Kimberley Priestley speak on HB 4004 at the House Committee On Agriculture, Land Use, Natural Resources, and Water on 2026-02-02, and where is the recording?
     clock: "2026-02-05T12:00:00-08:00"
