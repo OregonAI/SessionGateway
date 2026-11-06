@@ -35,7 +35,7 @@ export type LoadedVectors = {
 
 export type VectorCache = {
   /**
-   * The vectors the index holds now: read again from the database when the as-of time given or the generation has
+   * The vectors the index holds now, of every document whatever the clock (the search leaves out the hidden ones at each call): read again from the database when the as-of time given or the generation has
    * changed since they were read. The as-of time is the one the tool result envelope read for the call.
    */
   current(asOf: Timestamp): LoadedVectors;

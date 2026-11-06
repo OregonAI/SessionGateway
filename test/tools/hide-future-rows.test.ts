@@ -1,4 +1,4 @@
-// Seam 1 (test/CLAUDE.md): the tools leave out every row created after the server's clock (ticket #151, ADR-0055), so an
+// Seam 1 (test/CLAUDE.md): the tools leave out every row created after the server's clock (ticket #151, ADR-0056), so an
 // evaluation question sees the Session as it stood at its moment. A fake OLIS serves the committed fixture and its
 // documents as the feed stands on 2026-08-05, when every row of it exists, and the worker pulls them. Each case then
 // moves the one injected clock back to a moment before a row's CreatedDate and calls the tools, and moves it on to a
@@ -8,7 +8,7 @@
 // Templates), the one get-document.test.ts reads. The cases only move the clock; no pull follows.
 //
 // Expected values are literals from the fixture's feed rows (test/fixtures/olis-2025R1/feed/), read as Pacific time
-// (ADR-0055): each case names the row and its CreatedDate. A moment is written with the Pacific offset in force on its day
+// (ADR-0056): each case names the row and its CreatedDate. A moment is written with the Pacific offset in force on its day
 // (-08:00 in winter, -07:00 in summer), a second before or after the row's own time where the case is about the edge.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callTool, connectClient, eras, type ConnectedClient, type ToolOutcome } from "../support/mcp-clients.ts";
@@ -249,6 +249,62 @@ describe.for(eras)("the tools at a clock before a row's CreatedDate and after it
       const late = await askAt("2025-01-29T13:13:07-08:00", "get_document", { id: first });
       expect(late.isError).toBe(false);
       expect(late.structured?.["speaker_turns"]).toBeDefined();
+    });
+  });
+
+  // HALNRW's meeting of 2025-01-22 08:00: the CommitteeMeetings row's CreatedDate is "2025-01-17T14:16:07", Pacific, and
+  // the row has the feed's only AgendaUrl for the meeting, so its agenda document (a document of its own, ADR-0056) is
+  // created with the meeting's row. There is no agenda row with a time of its own (check #151: CommitteeAgendaItems rows
+  // carry none, and the agenda is a column of the meeting).
+  describe("an agenda", () => {
+    const agenda = "agenda-2025r1-halnrw-2025-01-22-0800";
+    const args = { committee: "HALNRW", from: "2025-01-22", to: "2025-01-22" };
+
+    it("is left out of meetings the second before its meeting row was created and listed at the second it was", async () => {
+      const early = await askAt("2025-01-17T14:16:06-08:00", "meetings", args);
+      expect(early.isError).toBe(false);
+      expect(names(early, "meeting-2025r1-halnrw-2025-01-22-0800")).toBe(true);
+      expect(names(early, agenda)).toBe(false);
+
+      const late = await askAt("2025-01-17T14:16:07-08:00", "meetings", args);
+      expect(names(late, agenda)).toBe(true);
+    });
+
+    it("is not served by get_document before it is created, which answers as for an id the index does not know", async () => {
+      const early = await askAt("2025-01-17T14:16:06-08:00", "get_document", { id: agenda });
+      const unknown = await askAt("2025-01-17T14:16:06-08:00", "get_document", {
+        id: "agenda-2025r1-halnrw-2025-01-22-0900",
+      });
+      expect(early.isError).toBe(true);
+      expect(early.text).toBe(unknown.text.replace("agenda-2025r1-halnrw-2025-01-22-0900", agenda));
+
+      const late = await askAt("2025-01-17T14:16:07-08:00", "get_document", { id: agenda });
+      expect(late.isError).toBe(false);
+    });
+  });
+
+  // The meaning side of search (owner decision A, 2026-11-05): one handler is asked at a late clock, which loads the
+  // vectors of every document, and then at an early one. A hit the early clock hides is no hit, and no error names it.
+  describe("search at a late clock and then at an early one, on one handler", () => {
+    const version = "version-2025r1-sb69-a-engrossed";
+    const queries = ["SB 69", "employer labor wages", "workers"];
+
+    it.for(queries)("gives no hidden hit and no error for %s", async (query) => {
+      const late = await askAt("2026-08-05T10:00:00-07:00", "search", { query });
+      expect(late.isError).toBe(false);
+      const early = await askAt("2025-02-03T08:00:00-08:00", "search", { query });
+      expect(early.isError).toBe(false);
+      expect(names(early, version)).toBe(false);
+      expect(early.text).not.toContain("The index has no document");
+      const again = await askAt("2025-02-03T16:50:00-08:00", "search", { query });
+      expect(again.isError).toBe(false);
+    });
+
+    it("finds the document by meaning at a clock that has reached it, after a clock that had not", async () => {
+      const early = await askAt("2025-02-03T08:00:00-08:00", "search", { query: "SB 69" });
+      expect(names(early, version)).toBe(false);
+      const late = await askAt("2025-02-03T16:50:00-08:00", "search", { query: "SB 69" });
+      expect(names(late, version)).toBe(true);
     });
   });
 

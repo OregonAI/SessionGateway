@@ -331,7 +331,7 @@ A connection from a Measure, Version or Proposed Amendment to an Agency, of one 
 _Avoid_: affected agency, unqualified
 
 **Created time**:
-When OLIS created the feed's row for a document (its `CreatedDate`), in Pacific time with its offset. It is not the time of a meeting a document is posted to, which is what "posted" means for a Proposed Amendment's posting. A Proposed Amendment posted to several meetings has a posting, and a row, for each: `find_measures` dates a piece of evidence by the documents whose own file holds it, gives an item the earliest and the latest of those times as `created_at` and `last_created_at`, and reads `since` against the latest (ADR-0028). It is also what the clock hides by: the tools show only rows whose created time is at or before the server's clock, and a row with no created time is shown (ADR-0055).
+When OLIS created the feed's row for a document (its `CreatedDate`), in Pacific time with its offset. It is not the time of a meeting a document is posted to, which is what "posted" means for a Proposed Amendment's posting. A Proposed Amendment posted to several meetings has a posting, and a row, for each: `find_measures` dates a piece of evidence by the documents whose own file holds it, gives an item the earliest and the latest of those times as `created_at` and `last_created_at`, and reads `since` against the latest (ADR-0028). It is also what the clock hides by: the tools show only rows whose created time is at or before the server's clock, and a row with no created time is shown (ADR-0056).
 _Avoid_: posted time, posting date, publication date
 
 **Agency registry**:

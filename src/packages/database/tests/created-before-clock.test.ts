@@ -1,5 +1,5 @@
 // Seam 4 (test/CLAUDE.md): the rule that a reader shows only the rows created at or before its clock (ticket #151,
-// ADR-0055), through the writer's, the reader's and search's entry points. A WAL database in a temp directory of each
+// ADR-0056), through the writer's, the reader's and search's entry points. A WAL database in a temp directory of each
 // case's own, and a clock the case moves under readers that stay open: the clock is read at each call, not when the reader
 // is opened. Every value is MADE UP (made-up-index.ts): the Session 2099R1, SB 9001, the log and its turns, and the times.
 // The real rows at the edges of the rule, and the tools' answers, are seam 1's (test/tools/hide-future-rows.test.ts).
@@ -57,18 +57,20 @@ const word = '"zebracrossing"';
 const text = "A zebracrossing is a made-up thing.";
 
 /** What the reader serves of a document, and what search finds by the made-up word. */
-function seen(id: DocumentId): { served: boolean; searchFinds: boolean; vectors: boolean } {
+function seen(id: DocumentId): { served: boolean; searchFinds: boolean; meaningHides: boolean; vectorsHold: boolean } {
   return {
     served: index.reader.findDocument(id) !== undefined,
     searchFinds: index.search
       .keyword(word, { session, withTestimony: true }, 10)
       .some((match) => match.documentId === id),
-    vectors: [...index.search.vectors(session, modelId)].some((row) => row.documentId === id),
+    // The meaning side loads the vectors of every document and filters each call by the hidden set (ADR-0056, decision A).
+    meaningHides: index.search.hiddenDocuments().has(id),
+    vectorsHold: [...index.search.vectors(session, modelId)].some((row) => row.documentId === id),
   };
 }
 
-const shown = { served: true, searchFinds: true, vectors: true };
-const hidden = { served: false, searchFinds: false, vectors: false };
+const shown = { served: true, searchFinds: true, meaningHides: false, vectorsHold: true };
+const hidden = { served: false, searchFinds: false, meaningHides: true, vectorsHold: true };
 
 describe("a document created after the clock", () => {
   test("is left out of the reader and of both sides of search, and comes back when the clock reaches its creation, to the millisecond", () => {

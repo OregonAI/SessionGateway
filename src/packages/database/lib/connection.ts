@@ -3,7 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { statuteLinkKinds, tableActions } from "#/packages/domain/statute-links.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { storedEvidenceKinds } from "./agency-evidence.ts";
-import { showOnlyRowsCreatedBy } from "./created-before-clock.ts";
+import { showOnlyRowsCreatedBy, type ClockView } from "./created-before-clock.ts";
 
 // The only production file that opens a node:sqlite connection (src/CLAUDE.md, "Shape"; lib/run-state.ts imports its type
 // only): the API is Stability 1.2, so keeping it here keeps a swap to better-sqlite3 local. The tests' arrangers
@@ -709,7 +709,7 @@ function openReadOnly(path: string): DatabaseSync {
  * knows. The worker creates the file and stamps it, so a file that is missing, or that has no version yet, is a server
  * started before the worker, and the errors say to start the worker first.
  */
-export function openReadConnection(path: string, clock: Clock): DatabaseSync {
+export function openReadConnection(path: string, clock: Clock): { database: DatabaseSync; clockView: ClockView } {
   if (!existsSync(path)) {
     throw new Error(
       `The database at "${path}" does not exist: the ingest worker creates it. Start the ingest worker first, then the server.`,
@@ -730,8 +730,7 @@ export function openReadConnection(path: string, clock: Clock): DatabaseSync {
     );
   }
   // After the version check, which reads a table the views do not cover, and before any caller prepares a statement.
-  showOnlyRowsCreatedBy(database, clock);
-  return database;
+  return { database, clockView: showOnlyRowsCreatedBy(database, clock) };
 }
 
 /**

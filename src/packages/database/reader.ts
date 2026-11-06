@@ -67,6 +67,7 @@ import {
   type StoredAmendment,
   type StoredVersion,
   tableActions,
+  versionDescriptionOfTableLevel,
 } from "#/packages/domain/statute-links.ts";
 import {
   groupCommitteeVotes,
@@ -506,8 +507,8 @@ const relationRow = z.object({
 });
 
 export function openIndexReader(path: string, clock: Clock): IndexReader {
-  // The index as it stood at the clock (ADR-0055): every query below reads rows created by then, and no query says so.
-  const database = openReadConnection(path, clock);
+  // The index as it stood at the clock (ADR-0056): every query below reads rows created by then, and no query says so.
+  const { database } = openReadConnection(path, clock);
   const selectMeasure = database.prepare(
     "SELECT catchline, location, committee_code, digest, created_at, modified_at FROM measure WHERE session_key = ? AND prefix = ? AND number = ?",
   );
@@ -690,6 +691,10 @@ export function openIndexReader(path: string, clock: Clock): IndexReader {
   );
   const selectTable = database.prepare(
     "SELECT source_url, retrieved_at FROM statutes_affected_table WHERE session_key = ?",
+  );
+  // The descriptions of the Versions of a Measure that the feed lists and the clock has not reached (ADR-0056, decision B).
+  const selectHiddenVersionLabels = database.prepare(
+    "SELECT DISTINCT label FROM hidden_version_listing WHERE measure_id = ?",
   );
   const selectTableEntries = database.prepare(
     `SELECT level, action, target_type, target_id, measure_section, emergency, lone_e FROM statutes_affected_entry
@@ -888,7 +893,7 @@ export function openIndexReader(path: string, clock: Clock): IndexReader {
    * Increment stored it).
    */
   function unheldOf(id: DocumentId | AmendmentId): UnheldDocument | undefined {
-    // A row created after the clock is not yet known, whatever the Listing says of it (ADR-0055).
+    // A row created after the clock is not yet known, whatever the Listing says of it (ADR-0056).
     if (selectHiddenDocument.get(id) !== undefined) return undefined;
     const document = listings.ofDocument(id as DocumentId);
     const read = document.kind === "checked" ? document : listings.ofAmendment(id as AmendmentId);
@@ -1240,7 +1245,26 @@ export function openIndexReader(path: string, clock: Clock): IndexReader {
       const listedVersions = selectListedVersions
         .all(measureIdOf(key))
         .map((listed) => listedVersionRow.parse(listed).label);
-      return { sourceUrl: table.source_url, retrievedAt: table.retrieved_at as Timestamp, entries, listedVersions };
+      // The table is one file read at the last pull: an entry for a Version the clock has not reached is left out, as if the
+      // table had been read that day. An entry that ends in an E alone is not told apart from an emergency clause on an
+      // earlier Version, and a level that names no Version is not guessed at, so both stay.
+      const notYet = new Set(
+        selectHiddenVersionLabels
+          .all(measureIdOf(key))
+          .map((hiddenLabel) => listedVersionRow.parse(hiddenLabel).label)
+          .filter((label) => !listedVersions.includes(label)),
+      );
+      const reached = entries.filter((entry) => {
+        if (entry.loneE) return true;
+        const description = versionDescriptionOfTableLevel(entry.level);
+        return description === undefined || !notYet.has(description);
+      });
+      return {
+        sourceUrl: table.source_url,
+        retrievedAt: table.retrieved_at as Timestamp,
+        entries: reached,
+        listedVersions,
+      };
     },
     findCommittee(session, reference) {
       const row = selectCommittee.get(session, reference.trim(), reference.trim());

@@ -1,4 +1,4 @@
-// The rule that a reader sees only the rows created at or before the clock (ticket #151, ADR-0055), in one place.
+// The rule that a reader sees only the rows created at or before the clock (ticket #151, ADR-0056), in one place.
 //
 // The server's connections never write, so they can be given a view of the index that is the index as it stood at the
 // clock: temp views that carry the name of each table that holds a stamped row, over the table itself (`main.<name>`).
@@ -6,59 +6,135 @@
 // rule or can forget it. The readers (`reader.ts`, `search.ts`) open their connection through `openReadConnection`, which
 // installs the views before anything is prepared; the worker's connection never does, so it still sees every row.
 //
-// What a row's creation time is (ADR-0055):
+// What a row's creation time is (ADR-0056):
 // - a Measure's own `created_at`;
 // - a document's, from `document_created`: the CreatedDate of the feed row that links it (a Version, a posting, an
-//   analysis, a Testimony, an Exhibit, a Recording Log). The feed's text has no offset and is Pacific wall-clock time; the
+//   analysis, a Testimony, an Exhibit, a Recording Log, an agenda: its meeting row's). The feed's text has no offset and is Pacific wall-clock time; the
 //   OLIS client wrote it with the Pacific offset in force that day, so a stored time names an instant, and SQLite's
 //   `unixepoch` compares instants whatever the offset (a text comparison would not, across a change to or from daylight time);
 // - a row with no creation time is shown: nothing says it is from after the clock, and hiding it would hide it for ever.
 // Whatever hangs off a document follows the document (its passages, its speaker turns, its listings).
-import type { DatabaseSync } from "node:sqlite";
+//
+// How it stays fast (the first version filtered with `NOT IN (SELECT ... FROM document_created WHERE unixepoch(..) > ..)`,
+// which SQLite rebuilt for each statement by reading every row of `document_created`: search went from 25 to 120 ms):
+// - `temp.document_epoch` holds each stamped document's creation as epoch seconds, indexed, and is read again only when
+//   another connection has committed (`PRAGMA data_version`), so `unixepoch` runs once for each row for each change;
+// - `temp.hidden_document` holds the ids created after the clock, taken from that index, and is refreshed only when the
+//   clock's value differs from the value it was taken at. Every view probes it by primary key.
+// A statement run through the connection refreshes first (`prepare` is wrapped), so no reader has to remember to.
+import type { DatabaseSync, StatementSync } from "node:sqlite";
 import type { Clock } from "#/packages/time/clock.ts";
 
 /** The clock's time as seconds since 1970, to the millisecond: what `unixepoch(text, 'subsec')` is compared with. */
 const CLOCK_FUNCTION = "created_clock";
 
-/** Whether a stored creation time (SQL text) is after the clock. A time SQLite cannot read gives NULL, which is not after. */
-const after = (column: string): string => `unixepoch(${column}, 'subsec') > ${CLOCK_FUNCTION}()`;
+/** The members of a statement that read or write rows: each is a point where the view's temp tables are made current. */
+const RUNS = ["run", "get", "all", "iterate"] as const;
+
+export type ClockView = {
+  /** The ids of the documents created after the clock, as of now: what the views hide. A set is made again only when the clock or the index has moved. */
+  hiddenDocuments(): ReadonlySet<string>;
+};
 
 /**
- * Gives a read-only connection the index as it stood at the clock. The clock is read at each statement, so a clock that
- * moves (an evaluation run asks each question at its own moment; production's moves with time) moves what is seen. Call
- * it before any statement is prepared on the connection.
+ * Gives a read-only connection the index as it stood at the clock. The clock is read before each statement runs, so a
+ * clock that moves (an evaluation run asks each question at its own moment; production's moves with time) moves what is
+ * seen. Call it before any statement is prepared on the connection.
  */
-export function showOnlyRowsCreatedBy(database: DatabaseSync, clock: Clock): void {
-  // Deterministic: constant within a statement, so the cutoff is one instant for a whole query. It is called again for
-  // each execution of a prepared statement.
-  database.function(CLOCK_FUNCTION, { deterministic: true }, () => clock.now().getTime() / 1000);
-  const hiddenDocuments = `SELECT document_id FROM main.document_created WHERE ${after("created_at")}`;
+export function showOnlyRowsCreatedBy(database: DatabaseSync, clock: Clock): ClockView {
+  const prepareStatement = database.prepare.bind(database);
+  const readDataVersion = prepareStatement("PRAGMA data_version");
   database.exec(`
-    CREATE TEMP VIEW hidden_document AS ${hiddenDocuments};
-    CREATE TEMP VIEW measure AS SELECT * FROM main.measure WHERE COALESCE(${after("created_at")}, 0) = 0;
+    CREATE TEMP TABLE document_epoch (document_id TEXT NOT NULL PRIMARY KEY, epoch REAL NOT NULL) WITHOUT ROWID;
+    CREATE INDEX temp.document_epoch_at ON document_epoch (epoch);
+    CREATE TEMP TABLE hidden_document (document_id TEXT NOT NULL PRIMARY KEY) WITHOUT ROWID;
+  `);
+  // A row whose time SQLite cannot read has no epoch and is not hidden.
+  const rebuildEpochs = prepareStatement(
+    `INSERT INTO temp.document_epoch (document_id, epoch)
+     SELECT document_id, unixepoch(created_at, 'subsec') FROM main.document_created
+     WHERE unixepoch(created_at, 'subsec') IS NOT NULL`,
+  );
+  const clearEpochs = prepareStatement("DELETE FROM temp.document_epoch");
+  const clearHidden = prepareStatement("DELETE FROM temp.hidden_document");
+  const fillHidden = prepareStatement(
+    "INSERT INTO temp.hidden_document (document_id) SELECT document_id FROM temp.document_epoch WHERE epoch > ?",
+  );
+  const readHidden = prepareStatement("SELECT document_id FROM temp.hidden_document");
+
+  let seenDataVersion: unknown;
+  /** The clock's seconds when the hidden ids were taken: what `created_clock()` answers until the next refresh. */
+  let clockSeconds = Number.NaN;
+  let hiddenSet: Set<string> | undefined;
+
+  const refresh = (): void => {
+    const dataVersion = (readDataVersion.get() as { data_version: unknown }).data_version;
+    const seconds = clock.now().getTime() / 1000;
+    const indexMoved = dataVersion !== seenDataVersion;
+    if (!indexMoved && seconds === clockSeconds) return;
+    if (indexMoved) {
+      clearEpochs.run();
+      rebuildEpochs.run();
+      seenDataVersion = dataVersion;
+    }
+    clearHidden.run();
+    fillHidden.run(seconds);
+    clockSeconds = seconds;
+    hiddenSet = undefined;
+  };
+
+  // Deterministic is safe here: the function takes no argument and answers the value the last refresh took, which only
+  // changes between statements (a statement's run refreshes before it starts), so it is one instant for a whole statement
+  // and for every execution of a prepared one. SQLite may evaluate it once and reuse the result, which is what we want.
+  database.function(CLOCK_FUNCTION, { deterministic: true }, () => clockSeconds);
+  // Every statement prepared on this connection refreshes the temp tables before it runs.
+  database.prepare = (sql: string): StatementSync => {
+    const statement = prepareStatement(sql);
+    // Own properties over the statement's prototype methods: a Proxy would cost a trap on every property read.
+    for (const member of RUNS) {
+      const run = statement[member].bind(statement) as (...args: never[]) => unknown;
+      Object.defineProperty(statement, member, {
+        value: (...args: never[]) => {
+          refresh();
+          return run(...args);
+        },
+      });
+    }
+    return statement;
+  };
+
+  // The rule for the Measure's own row: a time after the clock hides it.
+  const afterClock = (column: string): string => `unixepoch(${column}, 'subsec') > ${CLOCK_FUNCTION}()`;
+  const visible = "document_id NOT IN (SELECT document_id FROM temp.hidden_document)";
+  database.exec(`
+    CREATE TEMP VIEW measure AS SELECT * FROM main.measure WHERE COALESCE(${afterClock("created_at")}, 0) = 0;
     CREATE TEMP VIEW document AS
-      SELECT * FROM main.document WHERE id NOT IN (SELECT document_id FROM hidden_document);
+      SELECT * FROM main.document WHERE id NOT IN (SELECT document_id FROM temp.hidden_document);
     -- A relation that points at a document not created yet is no relation: an analysis the feed places on a Version that
     -- does not exist yet is on no Version (domain/analysis.ts: an edge to a document that is not there is worse than none).
     CREATE TEMP VIEW document_relation AS
       SELECT rowid AS rowid, * FROM main.document_relation
-      WHERE document_id NOT IN (SELECT document_id FROM hidden_document)
-        AND to_id NOT IN (SELECT document_id FROM hidden_document);
-    CREATE TEMP VIEW search_document AS
-      SELECT * FROM main.search_document WHERE document_id NOT IN (SELECT document_id FROM hidden_document);
-    CREATE TEMP VIEW meeting_document AS
-      SELECT * FROM main.meeting_document WHERE document_id NOT IN (SELECT document_id FROM hidden_document);
-    CREATE TEMP VIEW testimony AS
-      SELECT * FROM main.testimony WHERE document_id NOT IN (SELECT document_id FROM hidden_document);
-    CREATE TEMP VIEW version_listing AS
-      SELECT * FROM main.version_listing WHERE document_id NOT IN (SELECT document_id FROM hidden_document);
-    CREATE TEMP VIEW analysis_listing AS
-      SELECT * FROM main.analysis_listing WHERE document_id NOT IN (SELECT document_id FROM hidden_document);
-    CREATE TEMP VIEW speaker_turn_index AS
-      SELECT * FROM main.speaker_turn_index WHERE document_id NOT IN (SELECT document_id FROM hidden_document);
-    CREATE TEMP VIEW speaker_turn AS
-      SELECT * FROM main.speaker_turn WHERE document_id NOT IN (SELECT document_id FROM hidden_document);
-    CREATE TEMP VIEW speaker_turn_item_measure AS
-      SELECT * FROM main.speaker_turn_item_measure WHERE document_id NOT IN (SELECT document_id FROM hidden_document);
+      WHERE ${visible} AND to_id NOT IN (SELECT document_id FROM temp.hidden_document);
+    CREATE TEMP VIEW search_document AS SELECT * FROM main.search_document WHERE ${visible};
+    CREATE TEMP VIEW meeting_document AS SELECT * FROM main.meeting_document WHERE ${visible};
+    CREATE TEMP VIEW testimony AS SELECT * FROM main.testimony WHERE ${visible};
+    CREATE TEMP VIEW version_listing AS SELECT * FROM main.version_listing WHERE ${visible};
+    -- The Versions that exist but not yet at the clock: what get_measure's Statutes Affected Table entries are held back by.
+    CREATE TEMP VIEW hidden_version_listing AS
+      SELECT * FROM main.version_listing WHERE document_id IN (SELECT document_id FROM temp.hidden_document);
+    CREATE TEMP VIEW analysis_listing AS SELECT * FROM main.analysis_listing WHERE ${visible};
+    CREATE TEMP VIEW speaker_turn_index AS SELECT * FROM main.speaker_turn_index WHERE ${visible};
+    CREATE TEMP VIEW speaker_turn AS SELECT * FROM main.speaker_turn WHERE ${visible};
+    CREATE TEMP VIEW speaker_turn_item_measure AS SELECT * FROM main.speaker_turn_item_measure WHERE ${visible};
   `);
+
+  return {
+    hiddenDocuments() {
+      refresh();
+      if (hiddenSet === undefined) {
+        hiddenSet = new Set(readHidden.all().map((row) => (row as { document_id: string }).document_id));
+      }
+      return hiddenSet;
+    },
+  };
 }

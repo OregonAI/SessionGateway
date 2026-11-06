@@ -54,7 +54,7 @@ import {
 export type HandlerDeps = {
   /**
    * The time the server answers by: it times the rate limit's window, dates each live lookup, and
-   * `meetings` measures "upcoming" and the next meeting from it, and the readers show only the rows created by it (ADR-0055). A test that freezes or moves it moves all four.
+   * `meetings` measures "upcoming" and the next meeting from it, and the readers show only the rows created by it (ADR-0056). A test that freezes or moves it moves all four.
    */
   clock: Clock;
   /** Reads OLIS for the live status of get_measure. */

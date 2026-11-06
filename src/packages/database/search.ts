@@ -156,6 +156,11 @@ export type TranscriptHitDetails = SearchedTranscriptPassage & {
 
 export type SearchIndexReader = {
   /**
+   * The documents created after the clock, as of this call (ADR-0056). The vectors are read whatever the clock, so a hit
+   * from them is checked against this set at every call; no other query needs it, since the views hide these rows.
+   */
+  hiddenDocuments(): ReadonlySet<DocumentId>;
+  /**
    * The passages that match an FTS5 expression, best first (BM25), at most `limit`; only the passages of
    * keyword-only documents when `keywordOnly` is true.
    */
@@ -339,8 +344,8 @@ function passageTextOf(stored: z.infer<typeof detailsRow>, citedAt: number | und
 }
 
 export function openSearchReader(path: string, clock: Clock): SearchIndexReader {
-  // The index as it stood at the clock (ADR-0055): `document` and `search_document` hide what was created after it.
-  const database = openReadConnection(path, clock);
+  // The index as it stood at the clock (ADR-0056): `document` and `search_document` hide what was created after it.
+  const { database, clockView } = openReadConnection(path, clock);
   /** The last pull whose rows are No longer listed, for a Session, as of now: asked for each query. */
   const unlistedThrough = (session: SessionKey): number => noLongerListedThrough(database, session);
   const selectDetails = database.prepare(
@@ -351,8 +356,10 @@ export function openSearchReader(path: string, clock: Clock): SearchIndexReader 
        LEFT JOIN passage p ON p.id = ? AND p.document_id = d.id
      WHERE d.id = ?`,
   );
+  // The vectors of every document, whatever the clock: they are loaded once for a generation and a clock that moves back
+  // must not leave a hidden document in them unseen, so the search leaves the hidden ones out of each call (`hiddenDocuments`).
   const vectorSelection = `FROM passage p
-       JOIN search_document sd ON sd.document_id = p.document_id
+       JOIN main.search_document sd ON sd.document_id = p.document_id
        JOIN passage_vector v ON v.text_hash = p.text_hash AND v.model_id = ?2
      WHERE sd.session_key = ?1 AND sd.keyword_only = 0 AND ${listedDocumentSql("sd", "?3")}`;
   const selectMeetingOfDocument = database.prepare("SELECT meeting_id FROM meeting_document WHERE document_id = ?");
@@ -445,6 +452,9 @@ export function openSearchReader(path: string, clock: Clock): SearchIndexReader 
           turnPosition: stored.turn_position,
         };
       });
+    },
+    hiddenDocuments() {
+      return clockView.hiddenDocuments() as ReadonlySet<DocumentId>;
     },
     generation() {
       return generationRow.parse(selectGeneration.get()).generation;
