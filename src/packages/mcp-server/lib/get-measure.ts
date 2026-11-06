@@ -232,8 +232,16 @@ export const getMeasureOutput = z.object({
         .describe(
           'The committee code OLIS gives with the location, such as JWM, or null when it gives none. It is the feed\'s field, not a statement that the Measure is in that committee: OLIS can give a code while `current` says the Measure is elsewhere, such as "At Presidents Desk Upon Adjournment", and none while `current` says "In House Committee". Read `current` for where the Measure is.',
         ),
+      as_of: z
+        .string()
+        .optional()
+        .describe(
+          "Present only when the server's clock is before the last full pull: the time of that pull, in Pacific time with its UTC offset. The location is then as of the last pull, not as of the server's clock: the Measure may have been elsewhere at the clock's moment. Absent when the clock is at or after the last pull.",
+        ),
     })
-    .describe("The Measure's current location as of the last full pull (see as_of)."),
+    .describe(
+      "The Measure's current location as of the last full pull (see as_of). The history does not say where a Measure was at an earlier moment, so when the server's clock is before the last pull this is still the location the pull read, and location.as_of says so.",
+    ),
   created_at: z.string().describe("When OLIS created the Measure, in Pacific time with its UTC offset."),
   modified_at: z
     .string()
@@ -391,6 +399,7 @@ export async function getMeasure(
   session: SessionKey,
   input: z.infer<typeof getMeasureInput>,
   asOf: Timestamp,
+  now: Date,
 ): Promise<GetMeasureOutcome> {
   const key = parseMeasureReference(input.measure, session);
   const measure = key === undefined ? undefined : reader.findMeasure(key);
@@ -426,7 +435,12 @@ export async function getMeasure(
         supersededAmendments: statuteLinks.supersededAmendments,
       }),
       source_url: olisPageUrlOf(measure),
-      location: { current: measure.location.current, committee_code: measure.location.committeeCode },
+      location: {
+        current: measure.location.current,
+        committee_code: measure.location.committeeCode,
+        // The stored location is the last pull's; a clock before that pull is told so (owner decision 2026-11-05, ADR-0056).
+        ...(now.getTime() < new Date(asOf).getTime() ? { as_of: asOf } : {}),
+      },
       created_at: measure.createdAt,
       modified_at: measure.modifiedAt,
       sponsors: reader.findSponsors(measure).map((sponsor) => ({

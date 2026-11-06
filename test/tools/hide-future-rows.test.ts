@@ -444,6 +444,32 @@ describe.for(eras)("the tools at a clock before a row's CreatedDate and after it
     });
   });
 
+  // Owner decision of 2026-11-05: the Measure's location is one value of the last pull, and the history does not carry
+  // enough to derive where the Measure was at an earlier clock (a row has a chamber, a date and free text, no location). So at
+  // a clock before the database's as_of the stored location is kept and marked as of the last pull, with the pull's time;
+  // at or after as_of there is no marker. This database's pull ran at 2026-08-05T17:00:00Z (the beforeAll clock), which
+  // get_measure gives as "2026-08-05T10:00:00-07:00"; SB 69's stored location is "Chapter Number Assigned".
+  describe("a Measure's location at a clock before the last pull", () => {
+    type Located = { as_of: string; location: { current: string; as_of?: string } };
+    const located = async (moment: string): Promise<Located> => {
+      const outcome = await askAt(moment, "get_measure", { measure: "SB 69" });
+      expect(outcome.isError, outcome.text).toBe(false);
+      return outcome.structured as Located;
+    };
+
+    it("is marked as of the last pull, with its time, at 2025-02-03T10:40-08:00", async () => {
+      const early = await located("2025-02-03T10:40:00-08:00");
+      expect(early.location).toMatchObject({ current: "Chapter Number Assigned", as_of: "2026-08-05T10:00:00-07:00" });
+    });
+
+    it("has no marker at the last pull's time or after it", async () => {
+      const at = await located("2026-08-05T10:00:00-07:00");
+      expect(at.location).toEqual({ current: "Chapter Number Assigned", committee_code: null });
+      const after = await located("2026-08-06T10:00:00-07:00");
+      expect(after.location).toEqual({ current: "Chapter Number Assigned", committee_code: null });
+    });
+  });
+
   // A Measure's own row is stamped too: SB 69's Measures row says "created" before every clock above. A clock before
   // it hides the Measure: it is no Measure the index knows.
   describe("a Measure", () => {
