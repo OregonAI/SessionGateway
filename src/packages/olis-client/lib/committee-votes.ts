@@ -17,6 +17,7 @@ const committeeVoteRow = z.looseObject({
   // (MeasureVotes has them the other way round: VoteName and Vote).
   VoteName: z.string(),
   Meaning: z.string(),
+  CreatedDate: feedTimestamp.nullish(),
 });
 
 export async function readCommitteeVoteRows(
@@ -34,5 +35,6 @@ export async function readCommitteeVoteRows(
     meetingDate: row.MeetingDate,
     legislatorCode: row.VoteName,
     vote: row.Meaning,
+    ...(row.CreatedDate === null || row.CreatedDate === undefined ? {} : { createdAt: row.CreatedDate }),
   }));
 }

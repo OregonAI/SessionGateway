@@ -13,6 +13,7 @@ const historyRow = z.looseObject({
   Chamber: feedChamber,
   ActionDate: feedTimestamp,
   ActionText: z.string(),
+  CreatedDate: feedTimestamp.nullish(),
 });
 
 export async function readHistoryActionRows(
@@ -28,5 +29,6 @@ export async function readHistoryActionRows(
     chamber: row.Chamber,
     date: row.ActionDate,
     text: row.ActionText,
+    ...(row.CreatedDate === null || row.CreatedDate === undefined ? {} : { createdAt: row.CreatedDate }),
   }));
 }

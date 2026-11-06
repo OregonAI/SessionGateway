@@ -19,6 +19,7 @@ const floorVoteRow = z.looseObject({
   // (CommitteeVotes has them the other way round: VoteName and Meaning).
   VoteName: z.string(),
   Vote: z.string(),
+  CreatedDate: feedTimestamp.nullish(),
 });
 
 export async function readFloorVoteRows(
@@ -37,5 +38,6 @@ export async function readFloorVoteRows(
     action: row.ActionText,
     legislatorCode: row.VoteName,
     vote: row.Vote,
+    ...(row.CreatedDate === null || row.CreatedDate === undefined ? {} : { createdAt: row.CreatedDate }),
   }));
 }

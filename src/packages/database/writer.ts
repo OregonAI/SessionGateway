@@ -630,38 +630,40 @@ export function openIndexWriter(path: string): IndexWriter {
     );
     const upsertSponsor = database.prepare(
       `INSERT INTO sponsor (session_key, sponsor_id, prefix, number, kind, level, print_order,
-                              legislator_code, legislator_id, committee_code, presession_message)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                              legislator_code, legislator_id, committee_code, presession_message, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (session_key, sponsor_id) DO UPDATE SET
            prefix = excluded.prefix, number = excluded.number, kind = excluded.kind, level = excluded.level,
            print_order = excluded.print_order, legislator_code = excluded.legislator_code,
            legislator_id = excluded.legislator_id, committee_code = excluded.committee_code,
-           presession_message = excluded.presession_message`,
+           presession_message = excluded.presession_message, created_at = excluded.created_at`,
     );
     const upsertFloorVote = database.prepare(
       `INSERT INTO floor_vote (session_key, vote_id, history_id, prefix, number, chamber, action_date, action_text,
-                                 legislator_code, legislator_id, vote)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                 legislator_code, legislator_id, vote, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (session_key, vote_id) DO UPDATE SET
            history_id = excluded.history_id, prefix = excluded.prefix, number = excluded.number,
            chamber = excluded.chamber, action_date = excluded.action_date, action_text = excluded.action_text,
-           legislator_code = excluded.legislator_code, legislator_id = excluded.legislator_id, vote = excluded.vote`,
+           legislator_code = excluded.legislator_code, legislator_id = excluded.legislator_id, vote = excluded.vote,
+           created_at = excluded.created_at`,
     );
     const upsertCommitteeVote = database.prepare(
       `INSERT INTO committee_vote (session_key, vote_id, report_id, prefix, number, committee_code, meeting_date,
-                                     legislator_code, legislator_id, vote)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     legislator_code, legislator_id, vote, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (session_key, vote_id) DO UPDATE SET
            report_id = excluded.report_id, prefix = excluded.prefix, number = excluded.number,
            committee_code = excluded.committee_code, meeting_date = excluded.meeting_date,
-           legislator_code = excluded.legislator_code, legislator_id = excluded.legislator_id, vote = excluded.vote`,
+           legislator_code = excluded.legislator_code, legislator_id = excluded.legislator_id, vote = excluded.vote,
+           created_at = excluded.created_at`,
     );
     const upsertHistory = database.prepare(
-      `INSERT INTO history_action (session_key, history_id, prefix, number, chamber, action_date, action_text)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO history_action (session_key, history_id, prefix, number, chamber, action_date, action_text, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (session_key, history_id) DO UPDATE SET
            prefix = excluded.prefix, number = excluded.number, chamber = excluded.chamber,
-           action_date = excluded.action_date, action_text = excluded.action_text`,
+           action_date = excluded.action_date, action_text = excluded.action_text, created_at = excluded.created_at`,
     );
     const recordAsOf = database.prepare(
       `INSERT INTO index_state (session_key, full_pull_as_of) VALUES (?, ?)
@@ -676,18 +678,20 @@ export function openIndexWriter(path: string): IndexWriter {
          ON CONFLICT (session_key, code) DO UPDATE SET id = excluded.id, name = excluded.name`,
     );
     const upsertMeeting = database.prepare(
-      `INSERT INTO meeting (id, session_key, committee_code, committee_id, at, status) VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO meeting (id, session_key, committee_code, committee_id, at, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET committee_code = excluded.committee_code,
-           committee_id = excluded.committee_id, at = excluded.at, status = excluded.status`,
+           committee_id = excluded.committee_id, at = excluded.at, status = excluded.status,
+           created_at = excluded.created_at`,
     );
     const upsertAgendaItem = database.prepare(
       `INSERT INTO agenda_item (id, meeting_id, session_key, measure_prefix, measure_number, meeting_type, action,
-                                  print_order, comments, board_name, executive_appointee)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                  print_order, comments, board_name, executive_appointee, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET meeting_id = excluded.meeting_id, measure_prefix = excluded.measure_prefix,
            measure_number = excluded.measure_number, meeting_type = excluded.meeting_type, action = excluded.action,
            print_order = excluded.print_order, comments = excluded.comments, board_name = excluded.board_name,
-           executive_appointee = excluded.executive_appointee`,
+           executive_appointee = excluded.executive_appointee, created_at = excluded.created_at`,
     );
     const upsertMeetingDocument = database.prepare(
       `INSERT INTO meeting_document (document_id, meeting_id, session_key, kind, node_id, label, source_url,
@@ -780,6 +784,7 @@ export function openIndexWriter(path: string): IndexWriter {
           columns.legislatorId,
           columns.committeeCode,
           columns.message,
+          sponsor.createdAt ?? null,
         );
       }
       for (const entry of pulled.MeasureVotes) {
@@ -795,6 +800,7 @@ export function openIndexWriter(path: string): IndexWriter {
           entry.legislatorCode,
           entry.legislatorId,
           entry.vote,
+          entry.createdAt ?? null,
         );
       }
       for (const entry of pulled.CommitteeVotes) {
@@ -809,6 +815,7 @@ export function openIndexWriter(path: string): IndexWriter {
           entry.legislatorCode,
           entry.legislatorId,
           entry.vote,
+          entry.createdAt ?? null,
         );
       }
       for (const action of pulled.MeasureHistoryActions) {
@@ -820,13 +827,22 @@ export function openIndexWriter(path: string): IndexWriter {
           action.chamber,
           action.date,
           action.text,
+          action.createdAt ?? null,
         );
       }
       for (const committee of pulled.Committees) {
         upsertCommittee.run(session, committee.code, committee.id, committee.name);
       }
       for (const meeting of pulled.CommitteeMeetings) {
-        upsertMeeting.run(meeting.id, session, meeting.committeeCode, meeting.committeeId, meeting.at, meeting.status);
+        upsertMeeting.run(
+          meeting.id,
+          session,
+          meeting.committeeCode,
+          meeting.committeeId,
+          meeting.at,
+          meeting.status,
+          meeting.createdAt ?? null,
+        );
       }
       for (const item of pulled.CommitteeAgendaItems) {
         upsertAgendaItem.run(
@@ -841,6 +857,7 @@ export function openIndexWriter(path: string): IndexWriter {
           item.comments,
           item.boardName,
           item.executiveAppointee,
+          item.createdAt ?? null,
         );
       }
       // Every CommitteeMembers row, by the whole row (the set's declared key is not unique). Two rows with one

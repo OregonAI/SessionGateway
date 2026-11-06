@@ -17,6 +17,7 @@ import type {
 import type { HistoryAction, Measure, MeasureKey } from "#/packages/domain/index.ts";
 import type { Legislator, LegislatorId, LegislatorRow, SponsorLevel } from "#/packages/domain/legislators.ts";
 import type { AgencyId } from "#/packages/domain/oregonai.ts";
+import type { Timestamp } from "#/packages/time/pacific.ts";
 import type { CommitteeVoteEntry, FloorVoteEntry } from "#/packages/domain/votes.ts";
 
 type SponsorRecordFields = {
@@ -24,6 +25,8 @@ type SponsorRecordFields = {
   measure: MeasureKey;
   level: SponsorLevel;
   printOrder: number;
+  /** The row's `CreatedDate` (ADR-0056, ticket #153); absent when the feed gave none. */
+  createdAt?: Timestamp;
 };
 
 /**

@@ -43,6 +43,7 @@ export async function readMeetings(
       committeeId,
       at: row.MeetingDate,
       status: row.MeetingStatus,
+      ...(row.CreatedDate === null || row.CreatedDate === undefined ? {} : { createdAt: row.CreatedDate }),
       agenda:
         row.AgendaUrl === null
           ? null
@@ -104,6 +105,7 @@ const agendaItemRow = z.looseObject({
   Comments: z.string().nullable(),
   BoardName: z.string().nullable(),
   ExecutiveAppointee: z.string().nullable(),
+  CreatedDate: feedTimestamp.nullish(),
 });
 
 /** Every agenda item of every committee meeting of the Session. */
@@ -127,5 +129,6 @@ export async function readAgendaItems(
     comments: row.Comments,
     boardName: row.BoardName,
     executiveAppointee: row.ExecutiveAppointee,
+    ...(row.CreatedDate === null || row.CreatedDate === undefined ? {} : { createdAt: row.CreatedDate }),
   }));
 }

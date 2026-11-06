@@ -263,7 +263,8 @@ describe.for(eras)("the tools at a clock before a row's CreatedDate and after it
     it("is left out of meetings the second before its meeting row was created and listed at the second it was", async () => {
       const early = await askAt("2025-01-17T14:16:06-08:00", "meetings", args);
       expect(early.isError).toBe(false);
-      expect(names(early, "meeting-2025r1-halnrw-2025-01-22-0800")).toBe(true);
+      // Ticket #153: the meeting row is created at the same second as its agenda, so neither is there yet (it was listed here before).
+      expect(names(early, "meeting-2025r1-halnrw-2025-01-22-0800")).toBe(false);
       expect(names(early, agenda)).toBe(false);
 
       const late = await askAt("2025-01-17T14:16:07-08:00", "meetings", args);
@@ -280,6 +281,112 @@ describe.for(eras)("the tools at a clock before a row's CreatedDate and after it
 
       const late = await askAt("2025-01-17T14:16:07-08:00", "get_document", { id: agenda });
       expect(late.isError).toBe(false);
+    });
+  });
+
+  // Ticket #153: the rows of MeasureSponsors, MeasureHistoryActions, MeasureVotes, CommitteeVotes, CommitteeMeetings and
+  // CommitteeAgendaItems carry a CreatedDate in the feed (FloorLetters carries none: see hide-future-rows-no-time.test.ts).
+  // Each case names the row and its CreatedDate; a clock a second before it is the "before", the second itself the "after"
+  // (a row created at the clock's instant is shown).
+  const measureAt = async (moment: string, measure: string): Promise<Record<string, any>> => {
+    const outcome = await askAt(moment, "get_measure", { measure });
+    expect(outcome.isError, outcome.text).toBe(false);
+    return outcome.structured as Record<string, any>;
+  };
+
+  describe("a sponsor", () => {
+    // MeasureSponsors 148617: Sen Reynolds on SB 64, created "2025-01-23T08:49:51". Sen Hayden (142250, "2024-12-20T17:28:43") is the control.
+    it("is left out of get_measure's sponsors a second before its CreatedDate and listed at it", async () => {
+      const early = await measureAt("2025-01-23T08:49:50-08:00", "SB 64");
+      const codes = (sponsors: { legislator_code: string }[]) => sponsors.map((sponsor) => sponsor.legislator_code);
+      expect(codes(early["sponsors"])).toContain("Sen Hayden");
+      expect(codes(early["sponsors"])).not.toContain("Sen Reynolds");
+
+      const late = await measureAt("2025-01-23T08:49:51-08:00", "SB 64");
+      expect(codes(late["sponsors"])).toContain("Sen Reynolds");
+    });
+
+    // MeasureSponsors 149379: the committee SED on SB 983, created "2025-02-03T17:56:47".
+    it("leaves a committee sponsor out the same way: SED on SB 983", async () => {
+      const early = await measureAt("2025-02-03T17:56:46-08:00", "SB 983");
+      expect(early["committee_sponsors"]).toEqual([]);
+      const late = await measureAt("2025-02-03T17:56:47-08:00", "SB 983");
+      expect(late["committee_sponsors"]).toEqual([{ committee_code: "SED" }]);
+    });
+  });
+
+  describe("a history action", () => {
+    // MeasureHistoryActions 620210 on SB 69: ActionDate "2025-02-03T10:37:16", CreatedDate "2025-02-03T10:41:38". A clock
+    // between the two hides it: the row is not there until OLIS created it, whatever the action's own date.
+    const texts = (measure: Record<string, any>) => (measure["history"] as { text: string }[]).map((line) => line.text);
+
+    it("is left out while the clock is before its CreatedDate, though after its ActionDate, and listed at it", async () => {
+      const between = await measureAt("2025-02-03T10:40:00-08:00", "SB 69");
+      expect(texts(between)).toContain("Referred to Labor and Business.");
+      expect(texts(between)).not.toContain("Recommendation: Do pass with amendments.  (Printed A-Eng.)");
+
+      const late = await measureAt("2025-02-03T10:41:38-08:00", "SB 69");
+      expect(texts(late)).toContain("Recommendation: Do pass with amendments.  (Printed A-Eng.)");
+      expect(texts(late)).not.toContain("Second reading.");
+    });
+  });
+
+  describe("a floor vote", () => {
+    // MeasureVotes of SB 69's Senate vote (MeasureHistoryId 620916): 30 entries, all created "2025-02-06T11:21:40"; its history
+    // action, created "2025-02-06T11:21:34", is there before the vote.
+    it("is left out of get_measure's floor_votes until its entries are created, when all 30 appear", async () => {
+      const early = await measureAt("2025-02-06T11:21:39-08:00", "SB 69");
+      expect((early["history"] as { text: string }[]).map((line) => line.text)).toContain(
+        "Third reading.  Carried by Bonham.  Passed.",
+      );
+      expect(early["floor_votes"]).toEqual([]);
+
+      const late = await measureAt("2025-02-06T11:21:40-08:00", "SB 69");
+      expect(late["floor_votes"]).toHaveLength(1);
+      expect(late["floor_votes"][0].votes).toHaveLength(30);
+    });
+  });
+
+  describe("a committee vote", () => {
+    // CommitteeVotes of SB 69 at SLB on 2025-01-30: 5 entries (324937 to 324941), created "2025-01-23T07:44:41".
+    it("is left out of get_measure's committee_votes until its entries are created, when all 5 appear", async () => {
+      const early = await measureAt("2025-01-23T07:44:40-08:00", "SB 69");
+      expect(early["committee_votes"]).toEqual([]);
+
+      const late = await measureAt("2025-01-23T07:44:41-08:00", "SB 69");
+      expect(late["committee_votes"]).toHaveLength(1);
+      expect(late["committee_votes"][0].committee_code).toBe("SLB");
+      expect(late["committee_votes"][0].votes).toHaveLength(5);
+    });
+  });
+
+  describe("a meeting and its agenda items", () => {
+    // SLB's meeting of 2025-01-21 08:00 was created "2025-01-15T13:40:11"; its agenda item 201898 (SB 69, an
+    // Informational Meeting) "2025-01-17T15:12:24". The meeting of 2025-01-30 and its item 202165 were both created
+    // "2025-01-23T07:44:41".
+    const slb21 = { committee: "SLB", from: "2025-01-21", to: "2025-01-21" };
+    const meeting21 = "meeting-2025r1-slb-2025-01-21-0800";
+
+    it("leaves the meeting out of meetings before its row was created and lists it at the second it was", async () => {
+      const early = await askAt("2025-01-15T13:40:10-08:00", "meetings", slb21);
+      expect(names(early, meeting21)).toBe(false);
+      const late = await askAt("2025-01-15T13:40:11-08:00", "meetings", slb21);
+      expect(names(late, meeting21)).toBe(true);
+    });
+
+    it("leaves an agenda item out of meetings, and the meeting out of a search by Measure, until the item was created", async () => {
+      const early = await askAt("2025-01-17T15:12:23-08:00", "meetings", slb21);
+      expect(names(early, meeting21)).toBe(true);
+      expect(early.structured?.["meetings"]).toMatchObject([{ id: meeting21, agenda_items: [] }]);
+      const byMeasure = await askAt("2025-01-17T15:12:23-08:00", "meetings", { measure: "SB 69", from: "2025-01-21", to: "2025-01-21" });
+      expect(names(byMeasure, meeting21)).toBe(false);
+
+      const late = await askAt("2025-01-17T15:12:24-08:00", "meetings", slb21);
+      expect(late.structured?.["meetings"]).toMatchObject([
+        { id: meeting21, agenda_items: [{ measure_id: "measure-2025r1-sb69", meeting_type: "Informational Meeting" }] },
+      ]);
+      const lateByMeasure = await askAt("2025-01-17T15:12:24-08:00", "meetings", { measure: "SB 69", from: "2025-01-21", to: "2025-01-21" });
+      expect(names(lateByMeasure, meeting21)).toBe(true);
     });
   });
 
