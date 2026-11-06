@@ -77,60 +77,39 @@ async function meetingsOnSb69(connected: ConnectedClient): Promise<MeetingOutput
 
 describe.for(eras)("meetings with a database of its own, for a %s client", (era) => {
   describe("a Recording Log", () => {
-    // MADE UP FOR THIS TEST. It predates the fixture's Recording Logs: the fixture now holds 34 real ones
-    // (ticket #124, read in meetings-recording-logs.test.ts), none of them created by this case's clock
-    // (2025-01-29, noon Pacific), and replacing this case with a real log is follow-up #137 (ADR-0011 says how the
-    // row is read). Until then it adds a row of that shape, with the made-up id 900101, to SLB's meeting of
-    // 2025-01-30, and serves a fixture file (Exhibit 288650's) as its document. It shows the wiring from the row to
-    // the tool, not a real log.
-    const recordingLogUrl = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/900101";
+    // A REAL log: SLB's Recording Log of 2025-01-30, CommitteeMeetingDocuments row 302332 in the fixture's feed
+    // (DocumentType "Recording Log", created 2025-04-21, modified 2025-10-15, ExhibitTitle "1.30.25 SLB (recording log)"),
+    // and its file, committee-meeting-documents/302332.pdf. The case starts from a copy of the template for the
+    // fixture's whole clock (2026-08-05 10:00 Oregon), where the row exists, and serves the fixture's files. Its
+    // expected values are the feed row's address and the file's own player link (eventID=2025011109) and 34 turns,
+    // the hand count in get-document-speaker-turns.test.ts. The meeting's other posted documents are the feed's
+    // rows 288650 and 289456 (both SB 69, Exhibits); no other row of the feed is posted to it.
+    const recordingLogUrl = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument/302332";
 
-    it("is listed with the meeting it belongs to, apart from the Exhibits (made-up row)", async () => {
-      const { connected } = await start(
-        era,
-        {
-          clockAt: "2025-01-29T20:00:00Z",
-          documents: true,
-        },
-        {
-          rows: {
-            CommitteeMeetingDocuments: [
-              {
-                SessionKey: "2025R1",
-                CommitteeMeetingDocumentId: 900101,
-                CommitteeCode: "SLB",
-                MeetingDate: "2025-01-30T08:00:00",
-                DocumentType: "Recording Log",
-                MeasurePrefix: null,
-                MeasureNumber: null,
-                DocumentUrl: recordingLogUrl,
-              },
-            ],
-          },
-          documents: { [new URL(recordingLogUrl).pathname]: "committee-meeting-documents/288650.pdf" },
-        },
-      );
+    it("is listed with the meeting it belongs to, apart from the Exhibits (real log 302332)", async () => {
+      const { connected } = await start(era, { clockAt: "2026-08-05T17:00:00Z", documents: true });
 
       const meetings = await meetingsOnSb69(connected);
 
       const byId = new Map(meetings.map((meeting) => [meeting.id, meeting]));
       expect(byId.get("meeting-2025r1-slb-2025-01-30-0800")?.["recording_logs"]).toEqual([
         {
-          id: "recording-log-2025r1-900101",
+          id: "recording-log-2025r1-302332",
           label: "Recording Log",
           source_url: recordingLogUrl,
           fetched: true,
-          // The file served is an Exhibit's, which has no player link: the log has no index (ticket #126).
-          speaker_turn_index: null,
+          speaker_turn_index: { event_id: "2025011109", turn_count: 34 },
         },
       ]);
       // It is the meeting's Recording Log and not an Exhibit, and no other meeting has it.
       expect(
         (byId.get("meeting-2025r1-slb-2025-01-30-0800")?.["exhibits"] as { id: string }[]).map((exhibit) => exhibit.id),
-      ).toEqual(["exhibit-2025r1-288650"]);
-      expect(byId.get("meeting-2025r1-slb-2025-01-28-0800")?.["recording_logs"]).toEqual([]);
+      ).toEqual(["exhibit-2025r1-288650", "exhibit-2025r1-289456"]);
+      expect(byId.get("meeting-2025r1-slb-2025-01-28-0800")?.["recording_logs"]).toEqual([
+        expect.objectContaining({ id: "recording-log-2025r1-288906" }),
+      ]);
       // Its id is one get_document resolves, to a document of its own kind.
-      const served = await callTool(connected, "get_document", { id: "recording-log-2025r1-900101" });
+      const served = await callTool(connected, "get_document", { id: "recording-log-2025r1-302332" });
       expect(served.isError).toBe(false);
       expect(served.structured).toMatchObject({ kind: "recording_log", source_url: recordingLogUrl });
     });
