@@ -56,7 +56,7 @@ The layout is the deep-module one in `src/packages/README.md`:
 - seam 4 lives in the package's own `tests/` folder, next to the entry point it tests, as seam 2 does;
 - seam 1 lives in `test/tools/`, one file per kind of database use. Read-only cases and state-changing cases are in separate files (see Database);
 - the names say the kind of database use:
-  - `test/evaluation/` holds seam 3: the evaluation runner's report, in one file (`evaluation-runner.test.ts`) whose header says which databases it copies;
+  - `test/evaluation/` holds seam 3: the evaluation runner's report (`evaluation-runner.test.ts`, whose header says which databases it copies) and the question sets' loading (`question-sets.test.ts`, which loads the sets and runs no database);
   - `<tool>.test.ts` shares one read-only database, a copy of the run's template (exceptions, in a few words: a file whose subject is the real model, the Statutes Affected Table, the clock or the schedule builds its own, and the files for increments, staleness, revised agendas and the listing tables build or copy a system for each case);
   - `<tool>-pull.test.ts` builds its own for each case, where the pull is the subject (exception: a case that only reads or moves a row may copy the template, and some files let one system serve several cases that run in the order written);
   - `<tool>-feed.test.ts` changes the fake feed (rows, clock, page size), after the pull or before it;
