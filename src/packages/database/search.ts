@@ -366,9 +366,10 @@ export function openSearchReader(path: string, clock: Clock): SearchIndexReader 
   const selectGeneration = database.prepare("SELECT generation FROM search_generation WHERE id = 1");
   const selectVectorCount = database.prepare(`SELECT COUNT(*) AS n ${vectorSelection}`);
   // A transcript marked for attaching again (an empty `attached_to`) is left out: its passages' turn positions are stale (ADR-0055).
-  const transcriptVectorSelection = `FROM transcript_passage tp
-       JOIN transcript tr ON tr.meeting_id = tp.meeting_id AND tr.event_id = tp.event_id AND tr.attached_to <> ''
-       JOIN search_document sd ON sd.document_id = tp.document_id
+  // Like the documents' vectors, they are read from the tables whatever the clock (`main.`): a hidden log's passages are left out of each call.
+  const transcriptVectorSelection = `FROM main.transcript_passage tp
+       JOIN main.transcript tr ON tr.meeting_id = tp.meeting_id AND tr.event_id = tp.event_id AND tr.attached_to <> ''
+       JOIN main.search_document sd ON sd.document_id = tp.document_id
        JOIN passage_vector v ON v.text_hash = tp.text_hash AND v.model_id = ?2
      WHERE sd.session_key = ?1 AND ${listedDocumentSql("sd", "?3")}`;
   const selectTranscriptVectorCount = database.prepare(`SELECT COUNT(*) AS n ${transcriptVectorSelection}`);

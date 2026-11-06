@@ -126,6 +126,20 @@ export function showOnlyRowsCreatedBy(database: DatabaseSync, clock: Clock): Clo
     CREATE TEMP VIEW speaker_turn_index AS SELECT * FROM main.speaker_turn_index WHERE ${visible};
     CREATE TEMP VIEW speaker_turn AS SELECT * FROM main.speaker_turn WHERE ${visible};
     CREATE TEMP VIEW speaker_turn_item_measure AS SELECT * FROM main.speaker_turn_item_measure WHERE ${visible};
+    -- A machine transcript follows its Recording Log (ticket #134's tables, ADR-0056): a passage is of a log (document_id) and
+    -- of one of its turns, so the log's creation is the passage's. The passage's keyword entry (transcript_passage_fts, a
+    -- contentless table no view can stand over) is reached through its passage, which is how every reader finds it.
+    CREATE TEMP VIEW transcript_passage AS SELECT * FROM main.transcript_passage WHERE ${visible};
+    -- A transcript row has no log id of its own: it is of the Meeting and the event ID that the log's speaker-turn index names
+    -- (the log is the one the transcript was attached to), so it is left out while that log is hidden.
+    CREATE TEMP VIEW transcript AS
+      SELECT * FROM main.transcript t
+      WHERE NOT EXISTS (
+        SELECT 1 FROM main.meeting_document md
+          JOIN main.speaker_turn_index i ON i.document_id = md.document_id
+        WHERE md.meeting_id = t.meeting_id AND i.event_id = t.event_id
+          AND md.document_id IN (SELECT document_id FROM temp.hidden_document)
+      );
   `);
 
   return {
