@@ -15,7 +15,7 @@ Scratch files are in `/home/dzinck/.claude/jobs/a3847f05/tmp/bakeoff/` (outside 
 1. The two models are close on the Recording Log's names: each model gets 37 of the 106 names exactly right, and 28 (turbo) against 29 (small.en) of the 66 witnesses. The counts match but the names do not entirely: 33 names are exact in both; `small.en` alone got Alison Lutz, Christopher Allnatt, Justin Francese and Susan Meyers, and `large-v3-turbo` alone got Lisa Fragala, Peggy Oberstaller, Stephen Gladfelter and Nick Budnick (the last only because the Chair said it: at the witness's own turn turbo wrote "Nick Buttnick"). Both miss the same kinds of names (unusual surnames, nicknames). Neither is better on names. **local measurement**
 2. On four 10-minute excerpts the models disagree with each other on 2.4% to 6.7% of `large-v3-turbo`'s words (4.6% over all four; 2.4% to 6.8% and 4.7% counted against `small.en`'s words). That is inter-model disagreement, not word error. Word error is not measured; it needs the owner's hand-check.
 3. Throughput: `large-v3-turbo` on the GPU took about 98 s of wall time per audio hour (about 37 times real time; the first of its four events, which includes the model download, is left out of this figure); `small.en` on the CPU took about 323 s per audio hour (about 11 times real time). **local measurement**
-4. The owner picks. The "Owner's pick" section at the end is blank.
+4. The owner picked `large-v3-turbo` on the GPU (the "Owner's pick" section at the end).
 
 ---
 
@@ -513,4 +513,9 @@ print("all", "small", T[1], "turbo", T[2], "edits", T[0], f"vs turbo {T[0]/T[2]:
 
 ## Owner's pick
 
-(blank: to be filled in by the owner)
+**`large-v3-turbo` on the GPU** (CUDA, float16), the owner's pick on 2026-11-06. The owner accepted the recommendation below.
+
+Why:
+- **Names (section 2): a tie.** Each model gets 37 of the 106 names exactly right, and neither is better on names.
+- **Throughput (section 4): only the GPU fits the night.** 100 audio hours take about 2.7 h with `large-v3-turbo` on the GPU, inside the 6-hour night, and about 9.0 h with `small.en` on the CPU, which does not fit. The 279 2026R1 recordings (#135) are therefore a matter of nights on the GPU, and the night window (ADR-0051) is the binding constraint.
+- **Word error (section 3): not measured.** The pick was made without the owner's hand-check. The excerpt files and `wer.py` are kept, so the check can still be run; if it shows `large-v3-turbo` clearly worse than `small.en`, the pick is reopened before #135's first night.
