@@ -16,6 +16,17 @@
 #     stored them.
 #   - "the snapshot fixture (ERF 6c41efe)": the Agency of a chapter is the fixture's snapshot.json
 #     (test/fixtures/oregonai-snapshot/), the executive-regulatory-frameworks commit 6c41efe that the 2026R1 build holds too.
+# The hearing questions (h-*, stage 1 of spec #123, ticket #129) ask "when did [named speaker] speak on [Measure] at [Committee]
+# on [date], and where is the recording?". Each names its source as the stored text of the Recording Log, the page the line is
+# on (a page is the one the log's own "Page n of m" footer names) and the log's line, its timecode and speaker line, read
+# from document.text with SQL, never from a tool or a speaker_turn table. The committee, the meeting's start and the log's
+# id are the worker's stored feed columns (meeting.committee_code, meeting.at and meeting_document.document_id, key
+# CommitteeMeetingDocuments <id>). A Legislator Code is the stored committee_member row of the meeting's committee. The
+# player link is the Legislature's player page with the log's own clientID and the line's timecode in seconds, as
+# src/packages/recording-log/lib/turn-context.ts builds it (playerLinkOf): the check names the page, the clientID and
+# "&startStreamAt=<seconds>". The eventID is NOT checked: it is in the log's PDF link annotations, which the stored text
+# does not hold, and the only stored copy of it is the speaker-turn index under test. The player check against Invintus's
+# player is pending the owner (it is a network request, which this set never makes), and so is the eventID.
 # A posting's day is its feed row's CreatedDate (document_created), not the Proposed Amendment's posted_at, which OLIS
 # gives as the meeting's start.
 #
@@ -234,3 +245,151 @@ questions:
           - { path: "floor_votes[chamber=senate].votes[vote=Excused].legislator_code", equals: [Sen Linthicum] }
           - { path: "floor_votes[action=Third reading. Carried by Helfrich. Passed.].votes[vote=Excused for Business].legislator_code", length: 11 }
           - { path: live_status.as_of, present: true }
+
+  # (h1) A witness, on the second Agenda item of the meeting (SB 1569 comes first).
+  # Source: the stored text of recording-log-2026r1-313510, page 1, line "00:11:48 Josh Nasbe, Legislative Director, Bureau of
+  # Labor and Industries (BOLI)", under the line "00:07:00 SB 1518 - Public Hearing". 00:11:48 is 708 seconds. Meeting: the
+  # worker's stored feed columns (meeting.committee_code SLB, meeting.at 2026-02-04T13:00:00-08:00, meeting_document row
+  # CommitteeMeetingDocuments 313510). The log was created 2026-02-11T10:59:51-08:00 (document_created), so it is asked on
+  # 2026-02-12. Player: the player check is pending the owner (no request to Invintus is made here).
+  - id: h-nasbe-sb1518
+    title: When did Josh Nasbe of BOLI speak on SB 1518 at the Senate Committee On Labor and Business on 2026-02-04, and where is the recording?
+    clock: "2026-02-12T12:00:00-08:00"
+    steps:
+      - tool: get_measure
+        arguments: { measure: SB 1518 }
+        expect:
+          - { path: "hearings[kind=Public Hearing].committee_code", includes: [SLB] }
+          - { path: "hearings[kind=Public Hearing].meeting_date", includes: ["2026-02-04T13:00:00-08:00"] }
+          - { path: "hearings[kind=Public Hearing].recording_log_id", includes: [recording-log-2026r1-313510] }
+      - tool: get_document
+        arguments: { id: recording-log-2026r1-313510 }
+        expect:
+          - { path: kind, equals: recording_log }
+          - { path: "speaker_turns.turns[timecode=00:11:48].speaker", equals: ["Josh Nasbe, Legislative Director, Bureau of Labor and Industries (BOLI)"] }
+          - { path: "speaker_turns.turns[timecode=00:11:48].agenda_item", equals: ["SB 1518 - Public Hearing"] }
+          - { path: "speaker_turns.turns[timecode=00:11:48].offset_seconds", equals: [708] }
+          - path: "speaker_turns.turns[timecode=00:11:48].player_link"
+            includes:
+              - "https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID="
+              - "&startStreamAt=708"
+
+  # (h2) A Legislator, on a non-first Agenda item (HB 4024 and HB 4025 Work Sessions come first).
+  # Source: the stored text of recording-log-2026r1-314108, page 2, line "00:28:11 Rep. Reschke", under the line "00:04:37
+  # HB 4098 - Public Hearing". 00:28:11 is 1691 seconds. Rep Reschke is a member of HCCP: the worker's stored feed columns
+  # (committee_member.legislator_code, key CommitteeCode HCCP, LegislatorCode Rep Reschke, CreatedDate
+  # 2026-01-09T16:56:56-08:00). Meeting: meeting.committee_code HCCP, meeting.at 2026-02-05T13:00:00-08:00, meeting_document
+  # row CommitteeMeetingDocuments 314108. The log was created 2026-02-13T10:36:15-08:00, so it is asked on 2026-02-14.
+  # Player: the player check is pending the owner.
+  - id: h-reschke-hb4098
+    title: When did Rep. Reschke speak on HB 4098 at the House Committee On Commerce and Consumer Protection on 2026-02-05, and where is the recording?
+    clock: "2026-02-14T12:00:00-08:00"
+    steps:
+      - tool: get_measure
+        arguments: { measure: HB 4098 }
+        expect:
+          - { path: "hearings[kind=Public Hearing].committee_code", includes: [HCCP] }
+          - { path: "hearings[kind=Public Hearing].meeting_date", includes: ["2026-02-05T13:00:00-08:00"] }
+          - { path: "hearings[kind=Public Hearing].recording_log_id", includes: [recording-log-2026r1-314108] }
+      - tool: get_document
+        arguments: { id: recording-log-2026r1-314108 }
+        expect:
+          - { path: kind, equals: recording_log }
+          - { path: "speaker_turns.turns[timecode=00:28:11].speaker", equals: ["Rep. Reschke"] }
+          - { path: "speaker_turns.turns[timecode=00:28:11].legislator_code", equals: [Rep Reschke] }
+          - { path: "speaker_turns.turns[timecode=00:28:11].agenda_item", equals: ["HB 4098 - Public Hearing"] }
+          - { path: "speaker_turns.turns[timecode=00:28:11].offset_seconds", equals: [1691] }
+          - path: "speaker_turns.turns[timecode=00:28:11].player_link"
+            includes:
+              - "https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID="
+              - "&startStreamAt=1691"
+
+  # (h3) A witness at a hearing with a recess, after it. The meeting is recessed at 00:55:48 and reconvenes at 00:56:10, and the
+  # media clock goes on (SB 1507 is the second item, after the Revenue Forecast), so the second is the timecode.
+  # Source: the stored text of recording-log-2026r1-312657, page 2, lines "00:55:48 Meeting Recessed", "00:56:10 Meeting
+  # Reconvened", "00:57:28 SB 1507 Public Hearing" and "01:01:19 Daniel Hauser". 01:01:19 is 3679 seconds. The log's own item
+  # line has no hyphen, and its page-1 header names the Measure "1507" without a prefix: the 2026R1 quirk this question
+  # tests. Meeting: meeting.committee_code SFR, meeting.at 2026-02-04T08:00:00-08:00, meeting_document row
+  # CommitteeMeetingDocuments 312657. The log was created 2026-02-06T12:55:17-08:00, so it is asked on 2026-02-07.
+  # Player: the player check is pending the owner.
+  - id: h-hauser-sb1507
+    title: When did Daniel Hauser speak on SB 1507 at the Senate Committee On Finance and Revenue on 2026-02-04, and where is the recording?
+    clock: "2026-02-07T12:00:00-08:00"
+    steps:
+      - tool: get_measure
+        arguments: { measure: SB 1507 }
+        expect:
+          - { path: "hearings[kind=Public Hearing].committee_code", includes: [SFR] }
+          - { path: "hearings[kind=Public Hearing].meeting_date", includes: ["2026-02-04T08:00:00-08:00"] }
+          - { path: "hearings[kind=Public Hearing].recording_log_id", includes: [recording-log-2026r1-312657] }
+      - tool: get_document
+        arguments: { id: recording-log-2026r1-312657 }
+        expect:
+          - { path: kind, equals: recording_log }
+          - { path: "speaker_turns.turns[timecode=01:01:19].speaker", equals: ["Daniel Hauser"] }
+          - { path: "speaker_turns.turns[timecode=01:01:19].agenda_item", equals: ["SB 1507 Public Hearing"] }
+          - { path: "speaker_turns.turns[timecode=01:01:19].offset_seconds", equals: [3679] }
+          - path: "speaker_turns.turns[timecode=01:01:19].player_link"
+            includes:
+              - "https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID="
+              - "&startStreamAt=3679"
+
+  # (h4) A Legislator who testifies as a sponsor (the log gives her name and district, and she is also a committee member), on
+  # the second Agenda item (HB 4005 comes first).
+  # Source: the stored text of recording-log-2026r1-312218, page 2, line "00:20:41 Rep. Pam Marsh, House District 5", under
+  # the line "00:19:21 HB 4004 - Public Hearing". 00:20:41 is 1241 seconds. Rep Marsh is a member of HALNRW: the worker's
+  # stored feed columns (committee_member.legislator_code, key CommitteeCode HALNRW, LegislatorCode Rep Marsh, CreatedDate
+  # 2026-01-09T16:56:56-08:00). Meeting: meeting.committee_code HALNRW, meeting.at 2026-02-02T13:00:00-08:00, meeting_document
+  # row CommitteeMeetingDocuments 312218. The log was created 2026-02-04T09:14:14-08:00, so it is asked on 2026-02-05.
+  # Player: the player check is pending the owner.
+  - id: h-marsh-hb4004
+    title: When did Rep. Pam Marsh speak on HB 4004 at the House Committee On Agriculture, Land Use, Natural Resources, and Water on 2026-02-02, and where is the recording?
+    clock: "2026-02-05T12:00:00-08:00"
+    steps:
+      - tool: get_measure
+        arguments: { measure: HB 4004 }
+        expect:
+          - { path: "hearings[kind=Public Hearing].committee_code", includes: [HALNRW] }
+          - { path: "hearings[kind=Public Hearing].meeting_date", includes: ["2026-02-02T13:00:00-08:00"] }
+          - { path: "hearings[kind=Public Hearing].recording_log_id", includes: [recording-log-2026r1-312218] }
+      - tool: get_document
+        arguments: { id: recording-log-2026r1-312218 }
+        expect:
+          - { path: kind, equals: recording_log }
+          - { path: "speaker_turns.turns[timecode=00:20:41].speaker", equals: ["Rep. Pam Marsh, House District 5"] }
+          - { path: "speaker_turns.turns[timecode=00:20:41].legislator_code", equals: [Rep Marsh] }
+          - { path: "speaker_turns.turns[timecode=00:20:41].agenda_item", equals: ["HB 4004 - Public Hearing"] }
+          - { path: "speaker_turns.turns[timecode=00:20:41].offset_seconds", equals: [1241] }
+          - path: "speaker_turns.turns[timecode=00:20:41].player_link"
+            includes:
+              - "https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID="
+              - "&startStreamAt=1241"
+
+  # (h5) A witness who speaks where the log returns to an Agenda item: the log's lines read "00:19:21 HB 4004 - Public
+  # Hearing", then "00:52:52 HB 4034 - Public Hearing" with one turn, then "00:53:12 HB 4004 - Public Hearing" again, so the
+  # turn is under the second HB 4004 line, not the first, and not the HB 4034 line before it (the 2026R1 quirk this question
+  # tests). The speaker's line is also the first witness of the return.
+  # Source: the stored text of recording-log-2026r1-312218, page 2, lines "00:53:12 HB 4004 - Public Hearing" and "00:53:39
+  # Kimberley Priestley, Senior Policy Analyst, WaterWatch of Oregon". 00:53:39 is 3219 seconds. Meeting: as h4. Asked on
+  # 2026-02-05, the day after the log was created. Player: the player check is pending the owner.
+  - id: h-priestley-hb4004
+    title: When did Kimberley Priestley speak on HB 4004 at the House Committee On Agriculture, Land Use, Natural Resources, and Water on 2026-02-02, and where is the recording?
+    clock: "2026-02-05T12:00:00-08:00"
+    steps:
+      - tool: get_measure
+        arguments: { measure: HB 4004 }
+        expect:
+          - { path: "hearings[kind=Public Hearing].committee_code", includes: [HALNRW] }
+          - { path: "hearings[kind=Public Hearing].meeting_date", includes: ["2026-02-02T13:00:00-08:00"] }
+          - { path: "hearings[kind=Public Hearing].recording_log_id", includes: [recording-log-2026r1-312218] }
+      - tool: get_document
+        arguments: { id: recording-log-2026r1-312218 }
+        expect:
+          - { path: kind, equals: recording_log }
+          - { path: "speaker_turns.turns[timecode=00:53:39].speaker", equals: ["Kimberley Priestley, Senior Policy Analyst, WaterWatch of Oregon"] }
+          - { path: "speaker_turns.turns[timecode=00:53:39].agenda_item", equals: ["HB 4004 - Public Hearing"] }
+          - { path: "speaker_turns.turns[timecode=00:53:39].offset_seconds", equals: [3219] }
+          - path: "speaker_turns.turns[timecode=00:53:39].player_link"
+            includes:
+              - "https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID="
+              - "&startStreamAt=3219"
