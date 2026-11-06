@@ -574,6 +574,8 @@ describe.for(eras)("find_measures for a %s client", (era) => {
 
       const tool = tools.find((candidate) => candidate.name === "find_measures");
       expect(tool?.description).toContain("next_page_with_items");
+      expect(tool?.description).toContain("a group with total 0 has none");
+      expect(tool?.description).not.toContain("an empty group");
       const group = (
         tool?.outputSchema as { properties: { groups: { items: { properties: Record<string, unknown> } } } }
       ).properties.groups.items.properties;

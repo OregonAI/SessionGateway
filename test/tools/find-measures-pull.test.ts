@@ -614,7 +614,8 @@ describe.for(eras)("find_measures counts a page across the groups, for a %s clie
   });
 
   // Ticket #152: on page 1 the Fiscal Impact Statement, named-in-text and Testimony groups have a total and no items.
-  // Their first items sit at positions 27, 28 and 52 of the 52 (26 derived first), which are pages 3, 3 and 5 of 12.
+  // Their first items sit at positions 27, 28 and 52 of the 52 (1-based; 26 derived first), which are pages 3, 3 and 5 of
+  // 12 (positions 25 to 36 are page 3, 49 to 52 are page 5).
   it("points a group with items only on a later page at the page that has them, and following it finds them", async () => {
     const system = await template.start();
     started.push(system);
@@ -641,10 +642,66 @@ describe.for(eras)("find_measures counts a page across the groups, for a %s clie
       (group) => group.evidence_kind === "fiscal-impact-statement",
     );
     expect(fisGroup?.items.map((item) => item.id)).toEqual(["version-2025r1-sb69-a-engrossed"]);
+    // The named-in-text pointer of page 1 names page 3 too, and that page lists the group's items.
+    const named = (fis.structured as unknown as Found).groups.find((group) => group.evidence_kind === "named-in-text");
+    expect(named?.items).toHaveLength(9);
     const testimony = await find(system, era, { agency: "bureau-of-labor-and-industries", page: 5 });
     const testimonyGroup = (testimony.structured as unknown as Found).groups.find(
       (group) => group.evidence_kind === "testimony",
     );
     expect(testimonyGroup?.items.map((item) => item.id)).toEqual(["measure-2025r1-sb69"]);
+  });
+  // A `since` that empties a group leaves it with a total of 0 and no pointer; the made-up rows are the only evidence
+  // created since 2026-01-01, so the Fiscal Impact Statement and Testimony groups are empty and the 20 derived and 20
+  // named-in-text items are 40 in all (4 pages of 12, 12, 12 and 4), the first named-in-text one at position 21 (page 2).
+  it("gives a group that a since filter empties a total of 0 and no pointer, and points the rest by what is left", async () => {
+    const system = await template.start();
+    started.push(system);
+    const kinds = ["derived", "fiscal-impact-statement", "named-in-text", "testimony"];
+    const on = async (page: number): Promise<Found> => {
+      const outcome = await find(system, era, { agency: "bureau-of-labor-and-industries", since: "2026-01-01", page });
+      expect(outcome.isError, outcome.text).toBe(false);
+      return outcome.structured as unknown as Found;
+    };
+    const summary = (found: Found): [number, number | undefined][] =>
+      kinds.map((kind) => {
+        const group = found.groups.find((candidate) => candidate.evidence_kind === kind);
+        return [group?.total ?? -1, group?.next_page_with_items];
+      });
+
+    const first = await on(1);
+    expect([first.total, first.last_page]).toEqual([40, 4]);
+    expect(summary(first)).toEqual([
+      [20, undefined],
+      [0, undefined],
+      [20, 2],
+      [0, undefined],
+    ]);
+    expect(summary(await on(2))).toEqual([
+      [20, undefined],
+      [0, undefined],
+      [20, undefined],
+      [0, undefined],
+    ]);
+  });
+
+  // #151: a row created after the clock is not there, so a clock before the made-up rows' 2026-01-01 leaves the 12
+  // fixture items on one page and no group points anywhere; at the later clock the first pages move (3, 3 and 5).
+  it("moves a group's pointer with the page its first item falls on when the clock hides rows", async () => {
+    const system = await template.start();
+    started.push(system);
+    const pointers = async (): Promise<(number | undefined)[]> => {
+      const outcome = await find(system, era, { agency: "bureau-of-labor-and-industries" });
+      expect(outcome.isError, outcome.text).toBe(false);
+      const found = outcome.structured as unknown as Found;
+      return ["derived", "fiscal-impact-statement", "named-in-text", "testimony"].map(
+        (kind) => found.groups.find((group) => group.evidence_kind === kind)?.next_page_with_items,
+      );
+    };
+
+    system.clock.set("2025-12-31T20:00:00Z");
+    expect(await pointers()).toEqual([undefined, undefined, undefined, undefined]);
+    system.clock.set("2026-08-05T17:00:00Z");
+    expect(await pointers()).toEqual([undefined, 3, 3, 5]);
   });
 });

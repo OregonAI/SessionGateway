@@ -186,7 +186,7 @@ const groupOutput = z.object({
     .int()
     .optional()
     .describe(
-      "Present only when the group has items (total is above 0) but none on this page, and some on a later page: the number of the first later page that lists them. Ask for it with page. Absent when the group lists items here, and when its items were all on earlier pages.",
+      "A group with total > 0 and no items on this page either carries this (its items start on that page: ask for it with page), or, without it, had its items on earlier pages. A group with total 0 has none, and a group that lists items here does not carry it.",
     ),
 });
 
