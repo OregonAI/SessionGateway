@@ -325,7 +325,7 @@ questions:
       - tool: testimony
         arguments: { measure: HB 3131 }
         expect:
-          - { path: "positions[*].position", includesText: [uppo, ppos] }
+          - { path: "positions[*].position", includesText: [uppo, rt] }
   - id: made-up-text-missing
     title: MADE UP, no position's text contains the words
     steps:
@@ -347,6 +347,46 @@ questions:
       expect.stringMatching(
         /^testimony \{"measure":"HB 3131"\}: measure_id should have a text that includes "nothing-like-this", and it is "measure-/,
       ),
+    ]);
+  });
+
+  // Ticket #129 (review): the words must all be in ONE text, and a word that ends in a digit must not run on into another
+  // digit, so that "&startStreamAt=70" is not found in "&startStreamAt=708".
+  it("wants all the words in one text, and a word ending in a digit not followed by another digit (includesText)", async () => {
+    const system = await startCopiedSystem(augustOptions);
+    started.push(system);
+    const questions = writeSet(`
+session: 2025R1
+questions:
+  - id: made-up-across-texts
+    title: MADE UP, the words are in two different positions
+    steps:
+      - tool: testimony
+        arguments: { measure: HB 3131 }
+        expect:
+          - { path: "positions[*].position", includesText: [uppo, ppos] }
+  - id: made-up-digit-prefix
+    title: MADE UP, a word ending in a digit that is the start of a longer number
+    steps:
+      - tool: testimony
+        arguments: { measure: HB 3131 }
+        expect:
+          - { path: "measure_id", includesText: ["measure-", "hb313"] }
+  - id: made-up-digit-whole
+    title: MADE UP, a word ending in a digit that is the whole number
+    steps:
+      - tool: testimony
+        arguments: { measure: HB 3131 }
+        expect:
+          - { path: "measure_id", includesText: ["measure-", "hb3131"] }
+`);
+
+    const report = await evaluate(system, { questions });
+
+    expect(report.results.map((result) => [result.id, result.passed])).toEqual([
+      ["made-up-across-texts", false],
+      ["made-up-digit-prefix", false],
+      ["made-up-digit-whole", true],
     ]);
   });
 
