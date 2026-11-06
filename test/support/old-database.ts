@@ -7,6 +7,7 @@
 // through the MCP tools (test/CLAUDE.md, "Seam 1"). The harness cannot run the base commit's worker instead: that
 // code is not in the tree, and a committed database built by it would be a fixture of its own.
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 
 /** Removes everything the two-pull rule keeps, so that every row the file holds has never been listed by a pull. */
@@ -90,6 +91,27 @@ export function leaveTurnsUnlinkedFromPassages(databasePath: string): void {
     }
     database.exec("PRAGMA user_version = 2");
     database.exec("COMMIT");
+  } finally {
+    database.close();
+  }
+}
+
+/**
+ * Builds a file as a release that knew only schema version 1 left it: the frozen text of version 1 (the database package's
+ * `tests/version-one-schema.sql`, never edited, read here as a file because a seam-1 test imports no package's tests/),
+ * stamped 1, in WAL mode. The file must not exist yet. It only arranges, like `forgetListing`.
+ */
+export function buildVersionOneFile(databasePath: string): void {
+  // Why a path into a package's tests/ folder: the boundary rule (test/CLAUDE.md, dependency-cruiser) is about imports, and this
+  // imports nothing; it reads the frozen text of version 1 as a file, so that the SQL is not copied into a second place that
+  // could drift from the one the package's own seam-4 tests arrange from.
+  const frozen = readFileSync(
+    new URL("../../src/packages/database/tests/version-one-schema.sql", import.meta.url),
+    "utf8",
+  );
+  const database = new DatabaseSync(databasePath, { timeout: 5000 });
+  try {
+    database.exec(`PRAGMA journal_mode = WAL;\n${frozen}\nPRAGMA user_version = 1`);
   } finally {
     database.close();
   }

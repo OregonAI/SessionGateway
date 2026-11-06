@@ -322,7 +322,7 @@ dependencies and the pinned embedding model, and nothing else: no database, no s
 and checked against its lock during the build (`scripts/model/fetch.ts` and `verify.ts`, into `MODEL_PATH=/app/model`), so a build needs
 the network (huggingface.co and the npm registry) and no other input. `npm ci --omit=dev` runs under the repository's `.npmrc`, so
 `onnxruntime-node`'s install script stays denied (ADR-0026), and the macOS, Windows and ARM runtimes are removed from the image. The one
-image runs both entry scripts from `/app`: `node src/bin/server.ts` (the default) and `node src/bin/ingest.ts`.
+image runs both entry scripts from `/app`: `node src/bin/server.ts` (the default) and `node src/bin/ingest.ts`; `node src/bin/schema-version.ts` is a third entry script, a read-only print of the schema versions (below).
 
 ```
 docker build -t oregonai/session-gateway:current .
@@ -336,6 +336,25 @@ docker run --user 1000:1000 -v <data>:/data -p 127.0.0.1:8000:8000 \
 `<data>` holds `index.db` and `snapshot.json`; the container user must be able to write there (SQLite's WAL needs the `-shm` file
 even for a reader). The server exits at start-up when `index.db` is missing, was never opened by the worker, or is at another schema
 version than the image's (ADR-0048).
+
+**The schema version of an image and of a database.** `node src/bin/schema-version.ts [--database <path>]` (also
+`--database=<path>`) prints one JSON line and exits 0, compact as `JSON.stringify` writes it: `{"image":N}` is the schema
+version this image's code knows, and with `--database` it is `{"image":N,"database":M}`, where `M` is the version the file
+records (0 for a file nobody has stamped) and `null` for a path with no file. It opens the file read-only, never upgrades it,
+never changes `index.db` (the same bytes before and after, measured against the live box's version-3 file) and sends nothing
+to OLIS; it exits non-zero only on an argument it does not know, `--database` given twice or without a path, or a file that is
+not a readable SQLite database. The data directory must be writable, as the server's is (above): a read-only open of a WAL
+file may leave `index.db-shm` and an empty `index.db-wal` beside it, which the server shares. On a read-only directory SQLite
+cannot create them and the script exits 1 with "attempt to write a readonly database" instead of guessing from the file's
+header, which does not hold what the WAL holds. The file itself may be mounted read-only inside a writable directory.
+
+```
+docker run --rm --entrypoint node -v <data>:/data -v <data>/index.db:/data/index.db:ro \
+  oregonai/session-gateway:current src/bin/schema-version.ts --database /data/index.db
+```
+
+This is what [platform-deploy#45](https://github.com/OregonAI/platform-deploy/issues/45)'s schema gate reads, before a deploy, to
+compare the image's version with the live database's (ticket #146).
 
 platform-deploy runs it: its `docker-compose.yml` defines the two services (`session-gateway`, `session-gateway-ingest`), `deploy.sh`
 builds `main` and tags `oregonai/session-gateway:current`, the reconcile loop redeploys on a merge, and `deployed.txt` records the

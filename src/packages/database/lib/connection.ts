@@ -571,7 +571,7 @@ const upgradeSteps: readonly ((database: DatabaseSync) => void)[] = [
 ];
 
 /** The version the newest step leaves a file at. The server opens a file at this version only. */
-const schemaVersion = upgradeSteps.length;
+export const schemaVersion = upgradeSteps.length;
 
 /** The default timeout of 0 fails at once on a busy database, so both sides wait up to 5 seconds. */
 const BUSY_TIMEOUT_MS = 5000;
@@ -636,6 +636,11 @@ function recordedVersionOf(database: DatabaseSync): number {
   return version;
 }
 
+/** The read-only open both the server's connection and the version read share. */
+function openReadOnly(path: string): DatabaseSync {
+  return new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
+}
+
 /**
  * The server's connection: it never writes, so it never upgrades a file and refuses one that is not at the version it
  * knows. The worker creates the file and stamps it, so a file that is missing, or that has no version yet, is a server
@@ -647,7 +652,7 @@ export function openReadConnection(path: string): DatabaseSync {
       `The database at "${path}" does not exist: the ingest worker creates it. Start the ingest worker first, then the server.`,
     );
   }
-  const database = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
+  const database = openReadOnly(path);
   const found = recordedVersionOf(database);
   if (found === 0) {
     database.close();
@@ -662,6 +667,21 @@ export function openReadConnection(path: string): DatabaseSync {
     );
   }
   return database;
+}
+
+/**
+ * The schema version a database file records, for a gate that decides whether an image may run against it (ticket #146). It
+ * opens the file read-only and runs no upgrade step, so the file is never changed; a path with no file is null, and a file
+ * that cannot be read as SQLite throws. A file nobody has stamped is 0.
+ */
+export function readRecordedVersion(path: string): number | null {
+  if (!existsSync(path)) return null;
+  const database = openReadOnly(path);
+  try {
+    return recordedVersionOf(database);
+  } finally {
+    database.close();
+  }
 }
 
 /**

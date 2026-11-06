@@ -4,6 +4,7 @@
 #
 #   node src/bin/server.ts   the MCP server (the default CMD)
 #   node src/bin/ingest.ts   the ingest worker
+#   node src/bin/schema-version.ts [--database <path>]   prints the schema versions, read-only (ticket #146)
 #
 # Both run from the WORKDIR, /app, as Node 26 runs .ts directly (type stripping: no build step).
 # Pinned by digest, as node:26.13.0-bookworm-slim: Debian, because onnxruntime-node ships glibc binaries.
