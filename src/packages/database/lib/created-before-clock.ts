@@ -111,7 +111,15 @@ export function showOnlyRowsCreatedBy(database: DatabaseSync, clock: Clock): Clo
   // votes, the meetings and their agenda items, and the committees' members. A reader asks for them by Measure, meeting or
   // committee (an index probe) and reads a few hundred rows at most, so the rule is the Measure's: the row's own time against
   // the clock, no temp table to keep. A row with no time (null, or a text SQLite cannot read) is shown.
-  const stampedByTheRow = ["sponsor", "history_action", "floor_vote", "committee_vote", "meeting", "agenda_item", "committee_member"]
+  const stampedByTheRow = [
+    "sponsor",
+    "history_action",
+    "floor_vote",
+    "committee_vote",
+    "meeting",
+    "agenda_item",
+    "committee_member",
+  ]
     .map(
       (table) =>
         `CREATE TEMP VIEW ${table} AS SELECT * FROM main.${table} WHERE COALESCE(${afterClock("created_at")}, 0) = 0;`,

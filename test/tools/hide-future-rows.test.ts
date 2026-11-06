@@ -32,6 +32,15 @@ afterAll(async () => {
 
 const boli = "bureau-of-labor-and-industries";
 
+/** The parts of get_measure's answer the cases of ticket #153 read. */
+type MeasureView = {
+  sponsors: { legislator_code: string }[];
+  committee_sponsors: { committee_code: string }[];
+  history: { text: string }[];
+  floor_votes: { votes: unknown[] }[];
+  committee_votes: { committee_code: string; votes: unknown[] }[];
+};
+
 /** Whether an answer names an id anywhere: in a field of its structured result or in its text. */
 function names(outcome: ToolOutcome, id: string): boolean {
   return JSON.stringify(outcome.structured ?? null).includes(id) || outcome.text.includes(id);
@@ -288,10 +297,10 @@ describe.for(eras)("the tools at a clock before a row's CreatedDate and after it
   // CommitteeAgendaItems carry a CreatedDate in the feed (FloorLetters carries none: see hide-future-rows-no-time.test.ts).
   // Each case names the row and its CreatedDate; a clock a second before it is the "before", the second itself the "after"
   // (a row created at the clock's instant is shown).
-  const measureAt = async (moment: string, measure: string): Promise<Record<string, any>> => {
+  const measureAt = async (moment: string, measure: string): Promise<MeasureView> => {
     const outcome = await askAt(moment, "get_measure", { measure });
     expect(outcome.isError, outcome.text).toBe(false);
-    return outcome.structured as Record<string, any>;
+    return outcome.structured as MeasureView;
   };
 
   describe("a sponsor", () => {
@@ -299,26 +308,26 @@ describe.for(eras)("the tools at a clock before a row's CreatedDate and after it
     it("is left out of get_measure's sponsors a second before its CreatedDate and listed at it", async () => {
       const early = await measureAt("2025-01-23T08:49:50-08:00", "SB 64");
       const codes = (sponsors: { legislator_code: string }[]) => sponsors.map((sponsor) => sponsor.legislator_code);
-      expect(codes(early["sponsors"])).toContain("Sen Hayden");
-      expect(codes(early["sponsors"])).not.toContain("Sen Reynolds");
+      expect(codes(early.sponsors)).toContain("Sen Hayden");
+      expect(codes(early.sponsors)).not.toContain("Sen Reynolds");
 
       const late = await measureAt("2025-01-23T08:49:51-08:00", "SB 64");
-      expect(codes(late["sponsors"])).toContain("Sen Reynolds");
+      expect(codes(late.sponsors)).toContain("Sen Reynolds");
     });
 
     // MeasureSponsors 149379: the committee SED on SB 983, created "2025-02-03T17:56:47".
     it("leaves a committee sponsor out the same way: SED on SB 983", async () => {
       const early = await measureAt("2025-02-03T17:56:46-08:00", "SB 983");
-      expect(early["committee_sponsors"]).toEqual([]);
+      expect(early.committee_sponsors).toEqual([]);
       const late = await measureAt("2025-02-03T17:56:47-08:00", "SB 983");
-      expect(late["committee_sponsors"]).toEqual([{ committee_code: "SED" }]);
+      expect(late.committee_sponsors).toEqual([{ committee_code: "SED" }]);
     });
   });
 
   describe("a history action", () => {
     // MeasureHistoryActions 620210 on SB 69: ActionDate "2025-02-03T10:37:16", CreatedDate "2025-02-03T10:41:38". A clock
     // between the two hides it: the row is not there until OLIS created it, whatever the action's own date.
-    const texts = (measure: Record<string, any>) => (measure["history"] as { text: string }[]).map((line) => line.text);
+    const texts = (measure: MeasureView) => measure.history.map((line) => line.text);
 
     it("is left out while the clock is before its CreatedDate, though after its ActionDate, and listed at it", async () => {
       const between = await measureAt("2025-02-03T10:40:00-08:00", "SB 69");
@@ -336,14 +345,14 @@ describe.for(eras)("the tools at a clock before a row's CreatedDate and after it
     // action, created "2025-02-06T11:21:34", is there before the vote.
     it("is left out of get_measure's floor_votes until its entries are created, when all 30 appear", async () => {
       const early = await measureAt("2025-02-06T11:21:39-08:00", "SB 69");
-      expect((early["history"] as { text: string }[]).map((line) => line.text)).toContain(
+      expect((early.history as { text: string }[]).map((line) => line.text)).toContain(
         "Third reading.  Carried by Bonham.  Passed.",
       );
-      expect(early["floor_votes"]).toEqual([]);
+      expect(early.floor_votes).toEqual([]);
 
       const late = await measureAt("2025-02-06T11:21:40-08:00", "SB 69");
-      expect(late["floor_votes"]).toHaveLength(1);
-      expect(late["floor_votes"][0].votes).toHaveLength(30);
+      expect(late.floor_votes).toHaveLength(1);
+      expect(late.floor_votes[0]?.votes).toHaveLength(30);
     });
   });
 
@@ -351,12 +360,12 @@ describe.for(eras)("the tools at a clock before a row's CreatedDate and after it
     // CommitteeVotes of SB 69 at SLB on 2025-01-30: 5 entries (324937 to 324941), created "2025-01-23T07:44:41".
     it("is left out of get_measure's committee_votes until its entries are created, when all 5 appear", async () => {
       const early = await measureAt("2025-01-23T07:44:40-08:00", "SB 69");
-      expect(early["committee_votes"]).toEqual([]);
+      expect(early.committee_votes).toEqual([]);
 
       const late = await measureAt("2025-01-23T07:44:41-08:00", "SB 69");
-      expect(late["committee_votes"]).toHaveLength(1);
-      expect(late["committee_votes"][0].committee_code).toBe("SLB");
-      expect(late["committee_votes"][0].votes).toHaveLength(5);
+      expect(late.committee_votes).toHaveLength(1);
+      expect(late.committee_votes[0]?.committee_code).toBe("SLB");
+      expect(late.committee_votes[0]?.votes).toHaveLength(5);
     });
   });
 
@@ -378,14 +387,22 @@ describe.for(eras)("the tools at a clock before a row's CreatedDate and after it
       const early = await askAt("2025-01-17T15:12:23-08:00", "meetings", slb21);
       expect(names(early, meeting21)).toBe(true);
       expect(early.structured?.["meetings"]).toMatchObject([{ id: meeting21, agenda_items: [] }]);
-      const byMeasure = await askAt("2025-01-17T15:12:23-08:00", "meetings", { measure: "SB 69", from: "2025-01-21", to: "2025-01-21" });
+      const byMeasure = await askAt("2025-01-17T15:12:23-08:00", "meetings", {
+        measure: "SB 69",
+        from: "2025-01-21",
+        to: "2025-01-21",
+      });
       expect(names(byMeasure, meeting21)).toBe(false);
 
       const late = await askAt("2025-01-17T15:12:24-08:00", "meetings", slb21);
       expect(late.structured?.["meetings"]).toMatchObject([
         { id: meeting21, agenda_items: [{ measure_id: "measure-2025r1-sb69", meeting_type: "Informational Meeting" }] },
       ]);
-      const lateByMeasure = await askAt("2025-01-17T15:12:24-08:00", "meetings", { measure: "SB 69", from: "2025-01-21", to: "2025-01-21" });
+      const lateByMeasure = await askAt("2025-01-17T15:12:24-08:00", "meetings", {
+        measure: "SB 69",
+        from: "2025-01-21",
+        to: "2025-01-21",
+      });
       expect(names(lateByMeasure, meeting21)).toBe(true);
     });
   });

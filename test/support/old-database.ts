@@ -97,7 +97,14 @@ export function leaveTurnsUnlinkedFromPassages(databasePath: string): void {
   }
 }
 
-const createdTimeTables = ["sponsor", "history_action", "floor_vote", "committee_vote", "meeting", "agenda_item"] as const;
+const createdTimeTables = [
+  "sponsor",
+  "history_action",
+  "floor_vote",
+  "committee_vote",
+  "meeting",
+  "agenda_item",
+] as const;
 
 /**
  * Makes a database look as one a worker left just after it applied step 5 (ticket #153) and before its next full pull: the columns

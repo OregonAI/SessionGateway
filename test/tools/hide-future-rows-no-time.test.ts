@@ -56,7 +56,10 @@ describe("a Floor Letter, whose feed row has no CreatedDate", () => {
       "floor-letter-2025r1-900001",
     ]);
 
-    const found = await callTool(connected, "search", { query: "lighthouse keepers quahog chowder", kind: "floor_letter" });
+    const found = await callTool(connected, "search", {
+      query: "lighthouse keepers quahog chowder",
+      kind: "floor_letter",
+    });
     expect(found.isError, found.text).toBe(false);
     expect((found.structured?.["results"] as { id: string }[])[0]?.id).toBe("floor-letter-2025r1-900002");
 

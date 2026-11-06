@@ -604,7 +604,14 @@ const transcriptSchema = `
  * pull writes it), and a null is shown. `committee_member` has had its `created_at` since version 1; Floor Letters have no
  * `CreatedDate` in the feed and no column.
  */
-const createdTimeTables = ["sponsor", "history_action", "floor_vote", "committee_vote", "meeting", "agenda_item"] as const;
+const createdTimeTables = [
+  "sponsor",
+  "history_action",
+  "floor_vote",
+  "committee_vote",
+  "meeting",
+  "agenda_item",
+] as const;
 
 /**
  * The numbered upgrade steps (ADR-0048): step N takes a file from version N - 1 to version N, and the file's version
