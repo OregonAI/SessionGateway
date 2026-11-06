@@ -4,15 +4,18 @@
 # carries the moment it is asked at (`clock`), because "$since" is the Pacific day before that moment (ticket #79).
 #
 # Expected values come from sources that are not the tools: each question names its source in a comment, and none of
-# them was copied from an answer of the tools the runner checks (test/CLAUDE.md, "Expected values"; ADR-0046). The sources:
-#   - The OLIS feed row, as the 2026R1 build (#24, as of 2026-11-03) pulled it. The database keeps the feed as pulled, and
-#     a comment names the entity set and the row's key (a PostingId, a CommTestId, an agenda item's id). The values of
-#     a row are read from the columns the worker stored from it, never from a tool.
-#   - The document's own text, re-read from the stored text of the document (document id and page; a page is the one
-#     the document's own "Page n" footer names).
-#   - The Statutes Affected Table (artables2026R1.pdf), its lines as the build stored them.
-#   - The snapshot: the Agency of a chapter is the fixture's snapshot.json (test/fixtures/oregonai-snapshot/), the
-#     executive-regulatory-frameworks commit 6c41efe that the 2026R1 build holds too (snapshot_state).
+# them was copied from an answer of the tools the runner checks (test/CLAUDE.md, "Expected values"; ADR-0046). A source
+# is named as one of:
+#   - "the worker's stored feed columns (table.column, key)": the raw 2026R1 feed isn't kept, so the columns the worker
+#     stored from each feed row stand in for it (owner decision, 2026-11-05). The comment names the table and column and
+#     the row's key (a PostingId, a CommTestId, an agenda item's id), and the values are read from the stored columns,
+#     never from a tool.
+#   - "the stored text of <document id>, page N": the document's own text, re-read from the stored text (a page is the
+#     one the document's own "Page n" footer names).
+#   - "the Statutes Affected Table line ...": the Statutes Affected Table (artables2026R1.pdf), its lines as the build
+#     stored them.
+#   - "the snapshot fixture (ERF 6c41efe)": the Agency of a chapter is the fixture's snapshot.json
+#     (test/fixtures/oregonai-snapshot/), the executive-regulatory-frameworks commit 6c41efe that the 2026R1 build holds too.
 # A posting's day is its feed row's CreatedDate (document_created), not the Proposed Amendment's posted_at, which OLIS
 # gives as the meeting's start.
 #
@@ -22,19 +25,19 @@ session: 2026R1
 
 questions:
   # (a), story 1: "what was introduced or posted since yesterday that touches statutes my Agency administers?"
-  # Proposed Amendment SB 1518-1 is CommitteeProposedAmendments row 29832 (id posting-2026r1-29832), created
-  # 2026-02-02T10:00:54-08:00 (document_created). Its text (document posting-2026r1-29832) amends ORS 653.020 in its
-  # SECTION 1 (page 1) and ORS 653.547 in its SECTION 2 (page 5). Chapter 653 is the Bureau of Labor and Industries' in
-  # the snapshot (snapshot.json chapterAgencies ors-chapter-653), and no other Agency's. Asked on 2026-02-03, the day after.
-  # The build is of 2026-11-03 and the tool has no upper bound on `since`, so it also lists everything the Agency's
-  # evidence has had since, newest first, across 14 pages of 12 items: the posting is on page 7 (the first run of this set,
-  # which asked page 1, is in ticket #83's report). A build made on 2026-02-03 would show it on page 1.
+  # Source: the worker's stored feed columns (document_created.created_at, key posting-2026r1-29832): Proposed Amendment
+  # SB 1518-1 is CommitteeProposedAmendments row 29832, created 2026-02-02T10:00:54-08:00. The stored text of
+  # posting-2026r1-29832, page 1, amends ORS 653.020 in its SECTION 1, and page 5 amends ORS 653.547 in its SECTION 2.
+  # Chapter 653 is the Bureau of Labor and Industries' and no other Agency's: the snapshot fixture (ERF 6c41efe),
+  # snapshot.json chapterAgencies ors-chapter-653. Asked on 2026-02-03, the day after, and the posting is on page 1.
+  # The build is of 2026-11-03 and the tool has no upper bound on `since`, so it also lists what the Agency's evidence has
+  # had since; the tool hides rows created after the clock (#151), so page 1 is what the agent at that moment saw.
   - id: a-statutes
     title: What was introduced or posted since yesterday that touches statutes my Agency (BOLI) administers?
     clock: "2026-02-03T12:00:00-08:00"
     steps:
       - tool: find_measures
-        arguments: { agency: bureau-of-labor-and-industries, since: $since, page: 7 }
+        arguments: { agency: bureau-of-labor-and-industries, since: $since }
         expect:
           - path: groups[evidence_kind=derived].items[*].id
             includes: [amendment-2026r1-sb1518-1]
@@ -43,32 +46,34 @@ questions:
           - path: groups[evidence_kind=derived].items[id=amendment-2026r1-sb1518-1].type
             includes: [proposed_amendment]
 
-  # (a), story 2: "...or names my Agency in a Fiscal Impact Statement?" HB 4013's Fiscal Impact Statement is
-  # MeasureAnalysisDocuments row 94215 (analysis-2026r1-94215), created 2026-02-03T14:01:46-08:00 (document_created).
-  # Its own text (page 1 of 1) says "Measure: HB 4013" and "Government Unit(s) Affected: Bureau of Labor and Industries".
-  # Asked on 2026-02-04, the day after. As for a-statutes the build is later than the moment: the statement is on page 8.
+  # (a), story 2: "...or names my Agency in a Fiscal Impact Statement?"
+  # Source: the worker's stored feed columns (document_created.created_at, key analysis-2026r1-94215): HB 4013's Fiscal
+  # Impact Statement is MeasureAnalysisDocuments row 94215, created 2026-02-03T14:01:46-08:00. The stored text of
+  # analysis-2026r1-94215, page 1 of 1, says "Measure: HB 4013" and "Government Unit(s) Affected: Bureau of Labor and
+  # Industries". Asked on 2026-02-04, the day after; the statement is on page 1 (the tool hides rows created after the clock, #151).
   - id: a-fiscal
     title: What was introduced or posted since yesterday that names my Agency (BOLI) in a Fiscal Impact Statement?
     clock: "2026-02-04T12:00:00-08:00"
     steps:
       - tool: find_measures
-        arguments: { agency: bureau-of-labor-and-industries, since: $since, page: 8 }
+        arguments: { agency: bureau-of-labor-and-industries, since: $since }
         expect:
           - path: groups[evidence_kind=fiscal-impact-statement].items[*].evidence[*].examples[*].document_id
             includes: [analysis-2026r1-94215]
           - path: groups[evidence_kind=fiscal-impact-statement].items[*].evidence[*].examples[document_id=analysis-2026r1-94215].unit
             includes: [Bureau of Labor and Industries]
 
-  # (b): "what would SB 1527-1 change compared with the Version it amends, and in which ORS sections?" SB 1527-1 is
-  # CommitteeProposedAmendments row 29833 (posting-2026r1-29833), "Adopted" at the Senate Committee On Health Care's
-  # meeting of 2026-02-04 15:00 Pacific (the row's posted-to meeting, meeting-2026r1-shc-2026-02-04-1500, committee SHC).
-  # It amends the printed bill ("On page 1 of the printed bill", page 1 of its text), so the Introduced Version. Its
-  # text amends ORS 243.144 in SECTIONs 4 and 5 and ORS 243.877 in SECTIONs 6 and 7 (pages 1 to 3), which the Statutes
-  # Affected Table's lines for SB 1527 confirm ("243.144 A §4 SB 1527 A", "A §5 SB 1527 A", "243.877 A §6 SB 1527 A",
-  # "A §7 SB 1527 A").
+  # (b): "what would SB 1527-1 change compared with the Version it amends, and in which ORS sections?"
+  # Source: the worker's stored feed columns (meeting_document.meaning, key posting-2026r1-29833): SB 1527-1 is
+  # CommitteeProposedAmendments row 29833, "Adopted" at the Senate Committee On Health Care's meeting of 2026-02-04 15:00
+  # Pacific (meeting-2026r1-shc-2026-02-04-1500, committee SHC). The stored text of posting-2026r1-29833, page 1, says
+  # "On page 1 of the printed bill", so it amends the Introduced Version. Its text amends ORS 243.144 in SECTIONs 4 and 5
+  # and ORS 243.877 in SECTIONs 6 and 7 (pages 1 to 3), which the Statutes Affected Table line for SB 1527 confirms
+  # ("243.144 A §4 SB 1527 A", "A §5 SB 1527 A", "243.877 A §6 SB 1527 A", "A §7 SB 1527 A").
   # The second case is HB 4076-A2, row 30680 (posting-2026r1-30680), Adopted at the Senate Committee On Energy and
-  # Environment on 2026-02-25 15:00; its text is headed "PROPOSED AMENDMENTS TO A-ENGROSSED HOUSE BILL 4076" (page 1),
-  # so it amends the A-Engrossed Version, and its SECTION 2 (page 1) amends ORS 215.446, as the Table's line "215.446 A
+  # Environment on 2026-02-25 15:00 (the worker's stored feed columns, meeting_document.meaning). The stored text of
+  # posting-2026r1-30680, page 1, is headed "PROPOSED AMENDMENTS TO A-ENGROSSED HOUSE BILL 4076", so it amends the
+  # A-Engrossed Version, and its SECTION 2 (page 1) amends ORS 215.446, as the Statutes Affected Table line "215.446 A
   # §2 HB 4076 B" does for the later engrossment.
   # Asked at 2026-02-26 at noon Pacific, the day after the later of the two adoptions (HB 4076-A2, 2026-02-25).
   - id: b-amendment
@@ -93,11 +98,13 @@ questions:
           - { path: "files[*].statute_links.amends.sections[*].target_id", includes: [ors-215.446] }
 
   # (c): "when is the next hearing or work session on SB 1518, and which Proposed Amendments are posted for it?" Asked
-  # on 2026-02-03 at 18:00 Pacific, the evening before: the Senate Committee On Labor and Business' Public Hearing and
-  # Work Session of 2026-02-04 at 13:00 (CommitteeAgendaItems row 214673, MeetingType "Public Hearing and Work Session",
-  # meeting-2026r1-slb-2026-02-04-1300), with -1 posted for it (CommitteeProposedAmendments row 29888, created
-  # 2026-02-03T12:33:57-08:00, before the clock; its text is headed "SB 1518-1"). The informational meeting of
-  # 2026-02-02 (agenda item 214689) is already past.
+  # on 2026-02-03 at 18:00 Pacific, the evening before.
+  # Source: the worker's stored feed columns (agenda_item.meeting_type, key 214673): the Senate Committee On Labor and
+  # Business' Public Hearing and Work Session of 2026-02-04 at 13:00 (CommitteeAgendaItems row 214673, MeetingType "Public
+  # Hearing and Work Session", meeting-2026r1-slb-2026-02-04-1300). -1 is posted for it: the worker's stored feed columns
+  # (document_created.created_at, key posting-2026r1-29888), row 29888, created 2026-02-03T12:33:57-08:00, before the
+  # clock; the stored text of posting-2026r1-29888, page 1, is headed "SB 1518-1". The informational meeting of
+  # 2026-02-02 (agenda item 214689, the same stored columns) is already past.
   - id: c-meeting
     title: When is the next hearing or work session on SB 1518, and which Proposed Amendments are posted for it?
     clock: "2026-02-03T18:00:00-08:00"
@@ -113,19 +120,24 @@ questions:
           - path: "meetings[id=meeting-2026r1-slb-2026-02-04-1300].proposed_amendments[*].number"
             includes: ["-1"]
 
-  # (d): "who testified on HB 4084, for and against, grouped by organization, with the text?" HB 4084 has 112 Testimony
-  # rows (CommitteePublicTestimonies, by CommTestId): 52 with PositionOnMeasureId 3983 (support), 54 with 3982 (oppose)
-  # and 6 with 3981; 3983 and 3982 are the ids 2025R1's seam 1 established as support and oppose (testimony.test.ts).
-  # Eight of the oppose rows name the Organization "Portland" (five of the support rows do too). The most
-  # common Organization of the Measure is not asked: the path language cannot say "no other group has eight".
-  # A page lists 50 rows in the order support, oppose, neutral, unknown, so the 112 rows are 3 pages (last_page 3) and the
-  # oppose group of Portland has its rows on page 2 (a group's count is the same on every page).
-  # Identical letters: CommTestIds 232488, 232524, 236469 and 243972 (all from Elizabeth Remley, for the Oregon Business
-  # Council or the Industrial Lands Coalition, position 3983) are one letter of 1,578 characters, "Support for $40
-  # million Industrial Site Loan Fund in HB 4084", identical as stored (the four stored texts have one SHA-256), and the
-  # lowest CommTestId is 232488. Its file is at the Legislature's address
-  # https://olis.oregonlegislature.gov/liz/2026R1/Downloads/PublicTestimonyDocument/232488 (page 1 of 1).
-  # Asked at 2026-03-06 at noon Pacific, the day HB 4084's Enrolled Version was created (version-2026r1-hb4084-enrolled, 2026-03-06), so the Measure's testimony is all in.
+  # (d): "who testified on HB 4084, for and against, grouped by organization, with the text?"
+  # Source: the worker's stored feed columns (testimony.position_id, key CommTestId): HB 4084 has 112 Testimony rows
+  # (CommitteePublicTestimonies): 52 with position_id 3983 (support), 54 with 3982 (oppose) and 6 with 3981; 3983 and
+  # 3982 are the ids 2025R1's seam 1 established as support and oppose (testimony.test.ts). Eight of the oppose rows
+  # have testimony.organization "Portland" (five of the support rows do too). The most common Organization of the
+  # Measure is not asked: the path language cannot say "no other group has eight".
+  # A page lists 50 rows in the order support, oppose, neutral, unknown, so the 112 rows are 3 pages (last_page 3). The
+  # oppose group is on page 2, so the second step asks page 2: this question tests paging, and the page is not a pin that
+  # hides anything (a group's count is the same on every page).
+  # Identical letters: CommTestIds 232488 and 232524 (testimony.organization "Oregon Business Council", testimony.behalf_of
+  # "Industrial Site Readiness Coalition"), 236469 (organization "Industrial Lands Coalition letter") and 243972
+  # (organization "Industrial Lands Coalition"), all from Elizabeth Remley with position_id 3983, are one letter of
+  # 1,578 characters, "Support for $40 million Industrial Site Loan Fund in HB 4084", identical as stored (the stored text
+  # of the four documents has one SHA-256, document.text_hash), and the lowest CommTestId is 232488. The stored text of
+  # testimony-2026r1-232488, page 1 of 1, names the Industrial Site Loan Fund. Its file is at the Legislature's address
+  # https://olis.oregonlegislature.gov/liz/2026R1/Downloads/PublicTestimonyDocument/232488 (testimony.source_url).
+  # Asked at 2026-03-06 at noon Pacific, the day HB 4084's Enrolled Version was created (version-2026r1-hb4084-enrolled,
+  # 2026-03-06), after the last testimony meeting, 2026-03-02, so the Measure's testimony is all in.
   - id: d-testimony
     title: Who testified on HB 4084, for and against, grouped by organization, with the text?
     clock: "2026-03-06T12:00:00-08:00"
@@ -152,15 +164,18 @@ questions:
           - { path: text, includes: Industrial Site Loan Fund }
 
   # (e): "what do the Fiscal Impact Statement and the revenue impact statement say, for each Version?" HB 4060 has them
-  # for two Versions. The Introduced Version's Fiscal Impact Statement is MeasureAnalysisDocuments row 94459 (its text:
-  # "Measure: HB 4060", dated February 11, 2026) and its Revenue Impact Statement is row 94443 ("Bill Number: HB 4060",
-  # 2/11/2026); the A-Engrossed Version's are 95184 ("Measure: HB 4060 - A", February 25, 2026) and 95187 ("Bill Number:
-  # HB 4060 - A", 2/25/2026). Each text is one page. The feed's Version column says INTRO for 94459 and 94443 and A for
-  # the others. Each id is read with get_document.
-  # Asked at 2026-02-26 at noon Pacific, the day after the A-Engrossed statements (2026-02-25).
+  # for two Versions.
+  # Source: the worker's stored feed columns (document.analysis_version_label, key analysis id; the feed's Version column):
+  # INTRO for 94459 and 94443 and A for the others (MeasureAnalysisDocuments rows). The stored text of
+  # analysis-2026r1-94459, page 1 of 1, says "Measure: HB 4060", dated February 11, 2026, and of analysis-2026r1-94443
+  # "Bill Number: HB 4060", 2/11/2026 (the Introduced Version's Fiscal Impact Statement and Revenue Impact Statement); the
+  # stored text of analysis-2026r1-95184 says "Measure: HB 4060 - A", February 25, 2026, and of analysis-2026r1-95187
+  # "Bill Number: HB 4060 - A", 2/25/2026 (the A-Engrossed Version's). Each text is one page. Each id is read with get_document.
+  # Asked at 2026-02-28 at noon Pacific, after the A-Engrossed Version's creation (2026-02-27T16:51:06), so the tool lists
+  # both Versions' statements.
   - id: e-analysis
     title: What do the Fiscal Impact Statement and the revenue impact statement say, for each Version?
-    clock: "2026-02-26T12:00:00-08:00"
+    clock: "2026-02-28T12:00:00-08:00"
     steps:
       - tool: get_measure
         arguments: { measure: HB 4060 }
@@ -180,18 +195,24 @@ questions:
           - { path: label, equals: Fiscal Impact Statement }
           - { path: text, includes: "Measure: HB 4060 - A" }
 
-  # (f): "who sponsored HB 4060, where is it now, and how did the committees and the chambers vote?" Sponsors
-  # (MeasureSponsors rows 155315 and 155316, chief, in print order 1 and 2): Rep Helfrich and Sen Anderson; regular
-  # sponsors Rep Levy E (155317), Sen Starr (155319), Rep Owens (157540) and Rep Reschke (157775); one presession row
-  # (155314, "(Presession filed.)"). Location: the Measures row's CurrentLocation, "Chapter Number Assigned" (history:
-  # "Chapter 38, (2026 Laws): Effective date March 31, 2026."). Committee votes (CommitteeVotes reports 40057 and
-  # 40317): HCEE on 2026-02-12 at 8:00 (12 Aye, vote ids 349632 to 349643) and SEE on 2026-02-25 at 15:00 (Sen Smith DB
-  # Excused, the other four Aye). Floor votes (MeasureVotes, history ids 667249, 669463 and 669613): the Senate's third
-  # reading of 2026-03-03 had eight Nay (Sen Campos, Girod, Taylor, Patterson, Neron Misslin, Prozanski, Golden and Pham)
-  # and Sen Linthicum Excused; the House's third reading of 2026-02-17 had Reps Hartman, Lewis, Sosa and Valderrama
-  # Excused and eleven "Excused for Business". The live status block is there and dated whether or not the lookup could
-  # be made; the evaluation never asks OLIS, so it says it failed (seam 1's get-measure-live.test.ts has the cases where
-  # OLIS answers).
+  # (f): "who sponsored HB 4060, where is it now, and how did the committees and the chambers vote?"
+  # Source: the worker's stored feed columns (sponsor.legislator_code, key sponsor_id): MeasureSponsors rows 155315 and
+  # 155316, chief, in print order 1 and 2: Rep Helfrich and Sen Anderson; regular sponsors Rep Levy E (155317), Sen Starr
+  # (155319), Rep Owens (157540) and Rep Reschke (157775); one presession row (155314, sponsor.presession_message
+  # "(Presession filed.)"). Location: the worker's stored feed columns (measure.location, key HB 4060), the Measures row's
+  # CurrentLocation, "Chapter Number Assigned" (history_action: "Chapter 38, (2026 Laws): Effective date March 31, 2026.").
+  # Committee votes (committee_vote.vote, CommitteeVotes reports 40057 and 40317): HCEE on 2026-02-12 at 8:00 (12 Aye, vote
+  # ids 349632 to 349643) and SEE on 2026-02-25 at 15:00 (Sen Smith DB Excused, the other four Aye).
+  # Floor votes (floor_vote.vote, MeasureVotes by history_id 667249, 669463 and 669613): the Senate's third reading of
+  # 2026-03-03 (669463) had eight Nay (Sen Campos, Girod, Taylor, Patterson, Neron Misslin, Prozanski, Golden and Pham)
+  # and Sen Linthicum Excused. The House's third reading of 2026-02-17 (667249, "Third reading. Carried by Helfrich.
+  # Passed.") had Reps Hartman, Lewis, Sosa and Valderrama Excused and eleven "Excused for Business" (Reps Bunch, Mannix,
+  # Diehl, Skarlatos, Watanabe, Speaker Fahey, McIntire, Gomberg, Boshart Davis, Nguyen D and Elmer). The check below
+  # selects that one floor vote by its action and expects 11. The House's concurrence vote of 2026-03-04 (669613, "House
+  # concurred in Senate amendments and repassed bill.") is a second House floor vote with three "Excused for Business"
+  # (Levy E, Boshart Davis, Elmer), and is not counted here.
+  # The live status block is there and dated whether or not the lookup could be made; the evaluation never asks OLIS, so
+  # it says it failed (seam 1's get-measure-live.test.ts has the cases where OLIS answers).
   # Asked at 2026-04-07 at noon Pacific, the day after the Chapter number was assigned (history 2026-04-06).
   - id: f-status
     title: Who sponsored HB 4060, where is it now, and how did the committees and the chambers vote?
@@ -211,5 +232,5 @@ questions:
           - { path: "committee_votes[committee_code=SEE].votes[vote=Excused].legislator_code", equals: [Sen Smith DB] }
           - { path: "floor_votes[chamber=senate].votes[vote=Nay].legislator_code", length: 8 }
           - { path: "floor_votes[chamber=senate].votes[vote=Excused].legislator_code", equals: [Sen Linthicum] }
-          - { path: "floor_votes[chamber=house].votes[vote=Excused for Business].legislator_code", length: 14 }
+          - { path: "floor_votes[action=Third reading. Carried by Helfrich. Passed.].votes[vote=Excused for Business].legislator_code", length: 11 }
           - { path: live_status.as_of, present: true }
