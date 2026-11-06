@@ -40,7 +40,7 @@ type Item = {
   last_created_at: string | null;
   evidence: KindEvidence[];
 };
-type Group = { evidence_kind: string; total: number; items: Item[] };
+type Group = { evidence_kind: string; total: number; items: Item[]; next_page_with_items?: number };
 type Found = { total: number; page: number; last_page: number; page_size: number; groups: Group[] };
 
 async function find(system: System, era: Era, args: Record<string, unknown>) {
@@ -611,5 +611,40 @@ describe.for(eras)("find_measures counts a page across the groups, for a %s clie
     expect(pages[2]?.groups.find((group) => group.evidence_kind === "fiscal-impact-statement")?.items[0]?.id).toBe(
       "version-2025r1-sb69-a-engrossed",
     );
+  });
+
+  // Ticket #152: on page 1 the Fiscal Impact Statement, named-in-text and Testimony groups have a total and no items.
+  // Their first items sit at positions 27, 28 and 52 of the 52 (26 derived first), which are pages 3, 3 and 5 of 12.
+  it("points a group with items only on a later page at the page that has them, and following it finds them", async () => {
+    const system = await template.start();
+    started.push(system);
+    const kinds = ["derived", "fiscal-impact-statement", "named-in-text", "testimony"];
+    const pointersOn = async (page: number): Promise<(number | undefined)[]> => {
+      const outcome = await find(system, era, { agency: "bureau-of-labor-and-industries", page });
+      expect(outcome.isError, outcome.text).toBe(false);
+      const found = outcome.structured as unknown as Found;
+      return kinds.map((kind) => found.groups.find((group) => group.evidence_kind === kind)?.next_page_with_items);
+    };
+
+    // Page 1 lists derived items alone; the other three groups have items on later pages.
+    expect(await pointersOn(1)).toEqual([undefined, 3, 3, 5]);
+    // Page 2 is still all derived. Page 3 lists the first three groups' items, so only Testimony points on.
+    expect(await pointersOn(2)).toEqual([undefined, 3, 3, 5]);
+    expect(await pointersOn(3)).toEqual([undefined, undefined, undefined, 5]);
+    // A group whose items were all on earlier pages has nothing later to point at; the page that lists items points at nothing.
+    expect(await pointersOn(4)).toEqual([undefined, undefined, undefined, 5]);
+    expect(await pointersOn(5)).toEqual([undefined, undefined, undefined, undefined]);
+
+    // Following the pointers finds the items.
+    const fis = await find(system, era, { agency: "bureau-of-labor-and-industries", page: 3 });
+    const fisGroup = (fis.structured as unknown as Found).groups.find(
+      (group) => group.evidence_kind === "fiscal-impact-statement",
+    );
+    expect(fisGroup?.items.map((item) => item.id)).toEqual(["version-2025r1-sb69-a-engrossed"]);
+    const testimony = await find(system, era, { agency: "bureau-of-labor-and-industries", page: 5 });
+    const testimonyGroup = (testimony.structured as unknown as Found).groups.find(
+      (group) => group.evidence_kind === "testimony",
+    );
+    expect(testimonyGroup?.items.map((item) => item.id)).toEqual(["measure-2025r1-sb69"]);
   });
 });

@@ -181,6 +181,13 @@ const groupOutput = z.object({
   description: z.string().describe("The group in words."),
   total: z.number().int().describe("How many items the group has, on every page."),
   items: z.array(itemOutput).describe("The group's items that are on this page, the most recently created first."),
+  next_page_with_items: z
+    .number()
+    .int()
+    .optional()
+    .describe(
+      "Present only when the group has items (total is above 0) but none on this page, and some on a later page: the number of the first later page that lists them. Ask for it with page. Absent when the group lists items here, and when its items were all on earlier pages.",
+    ),
 });
 
 export const findMeasuresOutput = z.object({
@@ -427,15 +434,19 @@ function pageOf(
   const paged = groups.map((group) => {
     const start = Math.max(0, first - before);
     const end = Math.max(0, first + PAGE_SIZE - before);
+    // The group's items are positions `before` to `before + length - 1` of the answer; its first sits on this page.
+    const firstPage = Math.floor(before / PAGE_SIZE) + 1;
     before += group.items.length;
+    const items = group.items.slice(start, end).map(({ documents: named, listing, ...item }): ItemOutput => {
+      for (const document of named) documents.set(document.id, document.sourceUrl);
+      return { ...item, ...noLongerListedFlag(listing) };
+    });
     return {
       evidence_kind: group.kind,
       description: groupDescriptions[group.kind],
       total: group.items.length,
-      items: group.items.slice(start, end).map(({ documents: named, listing, ...item }): ItemOutput => {
-        for (const document of named) documents.set(document.id, document.sourceUrl);
-        return { ...item, ...noLongerListedFlag(listing) };
-      }),
+      items,
+      ...(items.length === 0 && group.items.length > 0 && firstPage > page ? { next_page_with_items: firstPage } : {}),
     };
   });
   return {

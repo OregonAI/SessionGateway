@@ -568,6 +568,17 @@ describe.for(eras)("find_measures for a %s client", (era) => {
       expect(properties["since"]?.description).toContain("created_at");
       expect(properties["since"]?.description).not.toContain("posted_at");
     });
+
+    it("tells an agent that a group with a total and no items on a page points at its next page", async () => {
+      const { tools } = await connected.client.listTools();
+
+      const tool = tools.find((candidate) => candidate.name === "find_measures");
+      expect(tool?.description).toContain("next_page_with_items");
+      const group = (
+        tool?.outputSchema as { properties: { groups: { items: { properties: Record<string, unknown> } } } }
+      ).properties.groups.items.properties;
+      expect(Object.keys(group)).toContain("next_page_with_items");
+    });
   });
 
   describe("what every result carries", () => {
