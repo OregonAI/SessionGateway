@@ -116,3 +116,18 @@ export function buildVersionOneFile(databasePath: string): void {
     database.close();
   }
 }
+
+/**
+ * Makes the transcripts a worker stored look as if they had been attached to an older reading of the Recording Log's links, in
+ * which every turn sat one position later (ticket #134): each stored transcript passage that is a turn's names the next
+ * position. It only arranges, like `forgetSpeakerTurns`. Used with it, so that the next pull stores the log's index again: a
+ * passage that is not attached again then names the wrong turn, or one the index does not hold.
+ */
+export function attachTranscriptsToAnOlderIndex(databasePath: string): void {
+  const database = new DatabaseSync(databasePath, { timeout: 5000 });
+  try {
+    database.exec("UPDATE transcript_passage SET turn_position = turn_position + 1 WHERE speaker_kind = 'turn'");
+  } finally {
+    database.close();
+  }
+}

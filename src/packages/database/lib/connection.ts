@@ -539,6 +539,63 @@ const turnPassageSchema = `
 `;
 
 /**
+ * Step 4's text (ticket #134, ADR-0055). A Meeting's machine transcript, one row for each (Meeting, event ID) it was read for
+ * with the file's hash and what the transcript read measured, and a row for each passage. A passage is not a slice of a
+ * document's text, so it is not a row of `passage`: it holds its own text, its own keyword entry
+ * (`transcript_passage_fts`, its id the rowid) and its vector under `passage_vector` by the hash of its text, like any
+ * passage. It is of a Recording Log (`document_id`) and, when it is a turn's, of that turn (`turn_position`, the turn's place in
+ * the log) and holds the quality numbers of the segment it comes from (`avg_logprob`, `compression_ratio`, `no_speech_prob`,
+ * `temperature`, null when the file left one out). A transcript whose `attached_to` is empty is marked for attaching again: its
+ * log's index was stored again, so its turn positions cannot be trusted and the readers leave it out. It adds no column to a
+ * table that exists, so a file with the tables already there (one a `CREATE ... IF NOT EXISTS` pass made) upgrades as a new one does.
+ */
+const transcriptSchema = `
+  CREATE TABLE IF NOT EXISTS transcript (
+    meeting_id TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    file TEXT NOT NULL,
+    file_sha256 TEXT NOT NULL,
+    attached_to TEXT NOT NULL,
+    audio_sha256 TEXT NOT NULL,
+    duration_seconds REAL NOT NULL,
+    model_id TEXT NOT NULL,
+    made_at TEXT NOT NULL,
+    drift_median_seconds REAL,
+    drift_max_seconds REAL,
+    drift_flagged_turns INTEGER NOT NULL,
+    meeting_flagged INTEGER NOT NULL,
+    PRIMARY KEY (meeting_id, event_id)
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS transcript_passage (
+    id INTEGER PRIMARY KEY,
+    meeting_id TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL,
+    document_id TEXT NOT NULL,
+    start_seconds REAL NOT NULL,
+    end_seconds REAL NOT NULL,
+    text TEXT NOT NULL,
+    text_hash TEXT NOT NULL,
+    speaker_kind TEXT NOT NULL CHECK (speaker_kind IN ('turn', 'procedural', 'not_given')),
+    turn_position INTEGER,
+    entry_kind TEXT,
+    not_given_reason TEXT,
+    agenda_item TEXT,
+    measure_id TEXT,
+    player_link TEXT NOT NULL,
+    avg_logprob REAL,
+    compression_ratio REAL,
+    no_speech_prob REAL,
+    temperature REAL
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS transcript_passage_of_meeting ON transcript_passage (meeting_id, event_id, ordinal);
+  CREATE INDEX IF NOT EXISTS transcript_passage_of_log ON transcript_passage (document_id, start_seconds);
+  CREATE VIRTUAL TABLE IF NOT EXISTS transcript_passage_fts USING fts5(
+    text, content = '', contentless_delete = 1, tokenize = 'porter unicode61 remove_diacritics 2'
+  );
+`;
+
+/**
  * The numbered upgrade steps (ADR-0048): step N takes a file from version N - 1 to version N, and the file's version
  * is the number of steps there are. The worker applies the ones a file lacks, in order, in one transaction when it opens
  * the file, so a file is never left half upgraded. Step 1 is today's schema: its pass of `CREATE ... IF NOT EXISTS`
@@ -567,6 +624,10 @@ const upgradeSteps: readonly ((database: DatabaseSync) => void)[] = [
     database.exec("ALTER TABLE speaker_turn_index ADD COLUMN turns_without_passage INTEGER");
     database.exec("ALTER TABLE speaker_turn_index ADD COLUMN item_measures_read INTEGER NOT NULL DEFAULT 0");
     database.exec(turnPassageSchema);
+  },
+  // Step 4 (ticket #134, ADR-0055): a Meeting's machine transcript and its passages. A new table and no change to an old one.
+  (database) => {
+    database.exec(transcriptSchema);
   },
 ];
 

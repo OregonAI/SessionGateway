@@ -71,6 +71,12 @@ const meetingOutput = z.object({
     .describe(
       "True when at least one of the meeting's Recording Logs has a speaker-turn index: who spoke when, with a link into the official player. See recording_logs.",
     ),
+  has_transcript: z
+    .boolean()
+    .optional()
+    .describe(
+      "Present only while the machine transcripts are published: true when this service holds a machine transcript of the meeting's recording (words said, attached to the speaker turns: search finds them, and get_document on the Recording Log shows each turn's), false when it does not. A machine transcript of the official recording is not an official record.",
+    ),
   agenda_items: z
     .array(
       z.object({
@@ -204,6 +210,8 @@ export function meetings(
   session: SessionKey,
   now: Date,
   input: z.infer<typeof meetingsInput>,
+  /** The publication gate (ticket #134, ADR-0055): whether `has_transcript` is said. Off, the answer has no such field. */
+  transcriptsPublished: boolean,
 ): MeetingsOutcome {
   if (
     input.measure === undefined &&
@@ -231,7 +239,7 @@ export function meetings(
   const returned: MeetingsOutput["meetings"] = [];
   let characters = 0;
   for (const day of groupByDay(found)) {
-    const meetingsOfDay = day.map((meeting) => meetingOutputOf(reader, session, meeting));
+    const meetingsOfDay = day.map((meeting) => meetingOutputOf(reader, session, meeting, transcriptsPublished));
     const size = JSON.stringify(meetingsOfDay).length;
     if (returned.length > 0 && characters + size > MAX_MEETINGS_CHARACTERS) break;
     returned.push(...meetingsOfDay);
@@ -266,6 +274,7 @@ function meetingOutputOf(
   reader: IndexReader,
   session: SessionKey,
   meeting: FoundMeeting,
+  transcriptsPublished: boolean,
 ): MeetingsOutput["meetings"][number] {
   const contents = reader.meetingContents(meeting.id);
   return {
@@ -306,6 +315,7 @@ function meetingOutputOf(
       ...noLongerListedFlag(exhibit.listing),
     })),
     has_speaker_turn_index: contents.recordingLogs.some((log) => log.speakerTurnIndex !== null),
+    ...(transcriptsPublished ? { has_transcript: reader.meetingHasTranscript(meeting.id) } : {}),
     recording_logs: contents.recordingLogs.map((log) => ({
       id: log.id,
       label: log.label,

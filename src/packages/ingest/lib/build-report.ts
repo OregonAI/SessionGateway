@@ -1,6 +1,6 @@
 import { renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { DocumentId, PulledEntitySet } from "#/packages/domain/documents.ts";
+import type { DocumentId, MeetingId, PulledEntitySet } from "#/packages/domain/documents.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import type { StatutesAffectedTableReport } from "./statutes-affected-table.ts";
@@ -25,6 +25,52 @@ type ListedSetReport = SetReport & {
   listed: number;
   /** Rows the index still holds that two complete pulls in a row have missed (ADR-0030). They are out of search and still served by id. */
   no_longer_listed: number;
+};
+
+/**
+ * What a full pull says of the transcript folder: the files it read this time, the files it refused (unknown version, an event ID
+ * that is not the Meeting's, not valid), the files of events no Meeting's log names, and the Meetings whose turns are far from the
+ * transcript's segments (as measured when the file was read, so a flag is repeated while the transcript is stored).
+ */
+export type TranscriptsReport = {
+  /** Why the folder could not be listed, or null. */
+  folder_error: string | null;
+  /** The transcripts the index holds for the Session. */
+  stored: number;
+  /** The files read by this run and stored, with the passages each made and how many of them it embedded and reused a vector for. */
+  ingested: {
+    meeting_id: MeetingId;
+    event_id: string;
+    file: string;
+    passages: number;
+    embedded: number;
+    reused: number;
+  }[];
+  /**
+   * The transcripts this run attached to the Meeting's turns again from the words it had stored, because the turns changed (the
+   * Recording Log's index was stored again) and the file could not be read again: it is gone, or the run refused it.
+   */
+  reattached_from_stored_words: { meeting_id: MeetingId; event_id: string; file: string; passages: number }[];
+  /** The files this run read and refused, by file name; what was stored for the Meeting before is kept. */
+  refused: { file: string; reason: string; message: string }[];
+  /** The Meetings whose Meeting or some turns were flagged: more than ten seconds from the transcript's segment starts (ADR-0054). */
+  drift_flags: {
+    meeting_id: MeetingId;
+    event_id: string;
+    file: string;
+    median_seconds: number | null;
+    max_seconds: number | null;
+    flagged_turns: number;
+    meeting_flagged: boolean;
+  }[];
+  /** Files named `<eventId>.transcript.json` whose event ID no Meeting's Recording Log names. */
+  unmatched_files: string[];
+  /**
+   * Every stored transcript whose file is no longer in the folder (or the deployment names no folder), whether or not this run
+   * noticed it first: it stays stored and, while the gate is on, served (owner decision 2 of 2026-11-05). The Meeting, the event
+   * ID, the file's name and the sha256 it was stored with.
+   */
+  file_no_longer_in_folder: { meeting_id: MeetingId; event_id: string; file: string; file_sha256: string }[];
 };
 
 /** What the operator reads after a full pull (spec #1, story 54): the documents that are scans or photographs, whose text is empty, to chase by hand, and the documents this pull could not get. */
@@ -90,6 +136,11 @@ export type BuildReport = {
    * are part of the text between the turns, so a search still finds the words, but not as that turn: the Hit has no turn.
    */
   recording_log_turns_without_passage: { id: DocumentId; source_url: string; turns: number }[];
+  /**
+   * What the worker did about the folder of transcript files (ticket #134, ADR-0055). Left out while the deployment names no
+   * folder and holds no transcript, so a report of a deployment without transcripts is as it was.
+   */
+  transcripts?: TranscriptsReport;
   /** What this pull made of the passages of the documents it stored, or refiled as embeddable (ADR-0025). */
   search_index: {
     /** The embedder's model id: the vectors this pull stored are under it. */

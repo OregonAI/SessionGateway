@@ -725,9 +725,9 @@ describe("the entry scripts", () => {
     expect(finished.stderr).toContain("WAL");
   });
   describe("src/bin/schema-version.ts (ticket #146, for platform-deploy#45's schema gate)", () => {
-    // The image knows three upgrade steps (version 3 is the speaker-turn passages of ticket #127). The literal moves with the
+    // The image knows four upgrade steps (version 3 is the speaker-turn passages of ticket #127, version 4 the transcript passages of ticket #134). The literal moves with the
     // next step, as the seam-4 schema-version test's does.
-    const imageVersion = 3;
+    const imageVersion = 4;
     const script = "src/bin/schema-version.ts";
 
     function aDatabaseFile(): TempDatabase {

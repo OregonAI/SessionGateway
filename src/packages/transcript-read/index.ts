@@ -120,3 +120,35 @@ export function readTranscript<T extends TurnAt, E extends EntryAt = EntryAt>(in
     drift: input.turns === null ? null : driftOf(input.turns, data.segments),
   };
 }
+
+/**
+ * Attaches passages that were read and stored before to a Meeting's turns and entries as they are now, by each passage's start
+ * second: what the worker does when the turns changed and the transcript file is no longer in the folder (ticket #134, ADR-0055).
+ * Only the words' seconds that the store keeps are known, so a passage goes whole to the turn or entry that began at or before
+ * its start, as a segment with no word timing does; it is not split where a new turn begins inside it. `quality` is each
+ * passage's own numbers, handed back unchanged. Pure.
+ */
+export function attachStoredPassages<T extends TurnAt, E extends EntryAt = EntryAt>(input: {
+  turns: readonly T[];
+  entries?: readonly E[];
+  passages: readonly { startSeconds: number; endSeconds: number; text: string; quality: SegmentQuality }[];
+}): Passage<T, E>[] {
+  const timeline = timelineOf(input.turns, input.entries ?? []);
+  return input.passages.flatMap((passage) =>
+    passagesOf<T, E>(
+      {
+        start: passage.startSeconds,
+        end: passage.endSeconds,
+        text: passage.text,
+        ...(passage.quality.avgLogprob === undefined ? {} : { avg_logprob: passage.quality.avgLogprob }),
+        ...(passage.quality.compressionRatio === undefined
+          ? {}
+          : { compression_ratio: passage.quality.compressionRatio }),
+        ...(passage.quality.noSpeechProb === undefined ? {} : { no_speech_prob: passage.quality.noSpeechProb }),
+        ...(passage.quality.temperature === undefined ? {} : { temperature: passage.quality.temperature }),
+        words: [],
+      },
+      timeline,
+    ),
+  );
+}

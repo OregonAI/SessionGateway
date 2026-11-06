@@ -28,6 +28,21 @@ export function storeSpeakerTurnIndex(
     // (`recordingLogsWithoutTurnPassages`, `recordingLogsWithoutItemMeasures`; ADR-0053).
     database.prepare("UPDATE passage SET turn_position = NULL WHERE document_id = ?").run(documentId);
     database.prepare("DELETE FROM speaker_turn_item_measure WHERE document_id = ?").run(documentId);
+    // A transcript's passages point at turns by their position in the log, which this store may change: the Meeting's
+    // transcripts are marked for attaching again (an empty `attached_to`), which the worker does in the same pull from the
+    // file or from the stored words, and the readers leave them out until then (ADR-0055). The search generation moves, so the
+    // server loads its vectors again without them.
+    const marked = database
+      .prepare(
+        `UPDATE transcript SET attached_to = ''
+         WHERE attached_to <> '' AND (
+           meeting_id IN (SELECT meeting_id FROM meeting_document WHERE document_id = ?1)
+           OR EXISTS (SELECT 1 FROM transcript_passage tp
+                      WHERE tp.meeting_id = transcript.meeting_id AND tp.event_id = transcript.event_id
+                        AND tp.document_id = ?1))`,
+      )
+      .run(documentId);
+    if (Number(marked.changes) > 0) database.prepare("UPDATE search_generation SET generation = generation + 1").run();
     database
       .prepare(
         `INSERT INTO speaker_turn_index (document_id, outcome, event_id, event_ids, pages_read_by_timecode, turn_count)

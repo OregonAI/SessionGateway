@@ -46,6 +46,19 @@ function noticeOf(holdsSourceUrl: boolean): string {
   return holdsSourceUrl ? `${NOTICE_STEM}; use source_url for the Legislature's own page.` : `${NOTICE_STEM}.`;
 }
 
+/**
+ * The sentence a result adds when it holds a machine-transcript passage (ticket #134, ADR-0055). It sits after the non-official
+ * notice, whatever that notice's clause says, because it is about the words in the result and not about the copy of the
+ * Legislature's data as a whole.
+ */
+const TRANSCRIPT_NOTICE =
+  "This result includes a machine transcript of the official recording, not an official record.";
+
+/** The notice for a result: the non-official notice, and the machine-transcript sentence when the result holds a passage. */
+function resultNoticeOf(holdsSourceUrl: boolean, holdsTranscript: boolean): string {
+  return holdsTranscript ? `${noticeOf(holdsSourceUrl)} ${TRANSCRIPT_NOTICE}` : noticeOf(holdsSourceUrl);
+}
+
 /** The MCP annotations a tool is registered with. */
 type Annotations = { readOnlyHint: true; openWorldHint: boolean };
 
@@ -65,6 +78,13 @@ export type Tool<Input extends z.ZodObject, Output extends z.ZodObject, Fault> =
    * an empty search's, gets a notice without the clause that tells the reader to use a source_url.
    */
   carriesSourceUrl(answer: z.infer<Output>): boolean;
+  /**
+   * Whether this answer holds the text of a machine-transcript passage (ticket #134, ADR-0055), which the envelope words the
+   * notice by as it does for `carriesSourceUrl`: the sentence "machine transcript of the official recording, not an official
+   * record" is added to the notice of that result, and of no other. A tool that never holds one leaves it out. A tool says it from
+   * its own typed answer, and says false for every answer while the publication gate is off, because no answer then holds a passage.
+   */
+  carriesTranscript?(answer: z.infer<Output>): boolean;
   input: Input;
   output: Output;
   /** Answers a call, given the As of the envelope read for it. */
@@ -135,7 +155,14 @@ export function createEnvelope(deps: EnvelopeDeps): Envelope {
     const outcome = await tool.run(input, asOf);
     switch (outcome.kind) {
       case "answer": {
-        const stamped = { ...outcome.answer, as_of: asOf, notice: noticeOf(tool.carriesSourceUrl(outcome.answer)) };
+        const stamped = {
+          ...outcome.answer,
+          as_of: asOf,
+          notice: resultNoticeOf(
+            tool.carriesSourceUrl(outcome.answer),
+            tool.carriesTranscript?.(outcome.answer) === true,
+          ),
+        };
         return { content: [{ type: "text", text: JSON.stringify(stamped) }], structuredContent: stamped };
       }
       case "fault":

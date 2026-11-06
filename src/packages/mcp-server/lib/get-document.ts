@@ -5,6 +5,7 @@ import type { Outcome } from "./outcome.ts";
 import { floorLetterDocumentOutput, floorLetterDocumentShown } from "./floor-letters.ts";
 import { documentListingOutput, documentListingShown } from "./listing.ts";
 import { splitIntoParts } from "./parts.ts";
+import { splitLogWithTranscript } from "./transcript-parts.ts";
 import { speakerTurnsOutput, speakerTurnsShown } from "./speaker-turns.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
@@ -76,6 +77,8 @@ export function getDocument(
   reader: IndexReader,
   session: SessionKey,
   input: z.infer<typeof getDocumentInput>,
+  /** The publication gate (ticket #134, ADR-0055): the Recording Log's machine transcript is shown only while it is on. */
+  transcriptsPublished: boolean,
 ): GetDocumentOutcome {
   const id = parseDocumentReference(input.id, session);
   if (id === undefined) return { kind: "fault", fault: { kind: "unknown", id: input.id, session } };
@@ -90,11 +93,29 @@ export function getDocument(
       return found satisfies never;
   }
   const stored = found.document;
-  const parts = splitIntoParts(stored.text);
-  const part = input.part ?? 1;
-  if (part > parts.length) return { kind: "fault", fault: { kind: "no_such_part", id, part, partCount: parts.length } };
   const floorLetter = stored.kind === "floor_letter" ? reader.floorLetterDetails(stored.id) : undefined;
   const speakerTurns = stored.kind === "recording_log" ? reader.speakerTurnIndexOf(stored.id) : undefined;
+  // Read only while the gate is on, so that with it off nothing of a transcript is read, let alone shown.
+  const transcript =
+    stored.kind === "recording_log" && transcriptsPublished ? reader.transcriptOfLog(stored.id) : undefined;
+  // A log with a transcript is paged with it (ADR-0055): each part holds the transcript of the turns in that part, and no part
+  // is over the part size because of transcript text. Any other document, and a log without one, is cut as its text alone.
+  if (
+    transcript !== undefined &&
+    speakerTurns?.kind === "indexed" &&
+    transcript.turns.length !== speakerTurns.turns.length
+  ) {
+    throw new Error(
+      `The transcript of ${stored.id} has the passages of ${String(transcript.turns.length)} turns and the index has ${String(speakerTurns.turns.length)}`,
+    );
+  }
+  const paged =
+    transcript !== undefined && speakerTurns?.kind === "indexed"
+      ? splitLogWithTranscript(stored.text, speakerTurns.turns, transcript)
+      : undefined;
+  const parts = paged === undefined ? splitIntoParts(stored.text) : paged.map((each) => each.text);
+  const part = input.part ?? 1;
+  if (part > parts.length) return { kind: "fault", fault: { kind: "no_such_part", id, part, partCount: parts.length } };
   return {
     kind: "answer",
     answer: {
@@ -117,7 +138,9 @@ export function getDocument(
         document_id: node.relation === "posted_to" ? node.documentId : null,
       })),
       ...(floorLetter === undefined ? {} : { floor_letter: floorLetterDocumentShown(floorLetter) }),
-      ...(speakerTurns === undefined ? {} : { speaker_turns: speakerTurnsShown(speakerTurns) }),
+      ...(speakerTurns === undefined
+        ? {}
+        : { speaker_turns: speakerTurnsShown(speakerTurns, paged?.[part - 1]?.transcript) }),
       ...documentListingShown(found.listing),
     },
   };
@@ -185,4 +208,9 @@ function noLongerListedNotHeldMessage(id: string, session: SessionKey, lastListe
 function noSuchPartMessage(id: string, part: number, partCount: number): string {
   const parts = partCount === 1 ? "1 part" : `${partCount} parts`;
   return `Document "${id}" has ${parts}, so there is no part ${part}. Ask for a part from 1 to ${partCount}.`;
+}
+
+/** Whether an answer holds the words of a machine-transcript passage, for the envelope's notice (ticket #134). */
+export function getDocumentCarriesTranscript(answer: GetDocumentOutput): boolean {
+  return (answer.speaker_turns?.transcript?.passage_count ?? 0) > 0;
 }

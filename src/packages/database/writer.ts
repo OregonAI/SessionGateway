@@ -18,6 +18,13 @@ import type { Citation } from "#/packages/domain/citations.ts";
 import type { Passage, SearchEntry } from "#/packages/domain/search.ts";
 import type { SpeakerTurnIndexOutcome } from "#/packages/domain/speaker-turns.ts";
 import type {
+  StoredTranscriptKey,
+  StoredTranscriptWords,
+  TranscriptNotes,
+  TranscriptRecord,
+  TranscriptTarget,
+} from "#/packages/domain/transcripts.ts";
+import type {
   RelatingClauseEdit,
   StatuteLink,
   StatuteLinkSource,
@@ -32,6 +39,14 @@ import {
   storeItemMeasuresOf,
   storeSpeakerTurnIndex,
 } from "./lib/speaker-turns.ts";
+import {
+  readStoredTranscriptWords,
+  readStoredTranscripts,
+  readTranscriptNotes,
+  readTranscriptTargets,
+  reattachTranscript,
+  storeTranscript,
+} from "./lib/transcripts.ts";
 import { openWriteConnection } from "./lib/connection.ts";
 import {
   readAsOf,
@@ -401,6 +416,33 @@ export type IndexWriter = {
   recordingLogReadingNotes(session: SessionKey): RecordingLogReadingNotes;
   /** The Measures the store holds for the Session, as the ids of the Measures: what a turn's Agenda item may name. */
   heldMeasureIds(session: SessionKey): Set<MeasureId>;
+  /**
+   * The Session's Recording Logs that have an index, grouped by the Meeting they belong to and the event ID their links name,
+   * each with its text and its turns in the order of the log (ticket #134, ADR-0055): what a transcript file is read against.
+   */
+  transcriptTargets(session: SessionKey): TranscriptTarget[];
+  /**
+   * The transcripts the Session's Meetings have, with the file's name and the hashes that say whether a file was read and what
+   * it was attached to. `attachedTo` is empty for a transcript marked for attaching again: storing its log's index again marks
+   * it (`storeSpeakerTurnIndex`), and the worker attaches it in the same pull.
+   */
+  storedTranscripts(session: SessionKey): StoredTranscriptKey[];
+  /** The words of a Meeting's stored transcript for an event ID, in order, each with its seconds: what is attached again when the file is gone. */
+  storedTranscriptWords(meeting: MeetingId, eventId: string): StoredTranscriptWords[];
+  /**
+   * Replaces a stored transcript's passages with these and records what they were attached to, keeping the rest of its row, in
+   * one transaction with the vectors the index lacked; it raises the search generation.
+   */
+  reattachTranscript(
+    record: Pick<TranscriptRecord, "meetingId" | "eventId" | "attachedTo" | "passages" | "vectors">,
+  ): void;
+  /**
+   * Stores a Meeting's transcript for an event ID, replacing the one it had for that event, in one transaction: the passages,
+   * their words in the keyword index and the vectors the index lacked. It raises the search generation.
+   */
+  storeTranscript(record: TranscriptRecord): void;
+  /** What the build report says of the Session's stored transcripts: how many, and their drift flags as measured when stored. */
+  transcriptNotes(session: SessionKey): TranscriptNotes;
   /** The hash of the file a stored document was made from, or undefined when the store holds no such document. */
   storedContentHash(document: DocumentId): string | undefined;
   /** The Agenda items the store holds for a Meeting, as the feed gave them, for the parser to match a log's lines against. */
@@ -1119,6 +1161,24 @@ export function openIndexWriter(path: string): IndexWriter {
     },
     storeSpeakerTurnIndex(record) {
       storeSpeakerTurnIndex(database, record.documentId, record.outcome);
+    },
+    transcriptTargets(session) {
+      return readTranscriptTargets(database, session);
+    },
+    storedTranscripts(session) {
+      return readStoredTranscripts(database, session);
+    },
+    storeTranscript(record) {
+      storeTranscript(database, record);
+    },
+    storedTranscriptWords(meeting, eventId) {
+      return readStoredTranscriptWords(database, meeting, eventId);
+    },
+    reattachTranscript(record) {
+      reattachTranscript(database, record);
+    },
+    transcriptNotes(session) {
+      return readTranscriptNotes(database, session);
     },
     recordingLogsWithoutTurnPassages(session) {
       return readLogsWithoutTurnPassages(database, session);

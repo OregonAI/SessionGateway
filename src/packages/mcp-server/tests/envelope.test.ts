@@ -179,6 +179,32 @@ describe("an answer", () => {
     });
   });
 
+  it("of a result that holds a transcript passage adds the machine-transcript notice beside the non-official one (ticket #134), whatever its source_url clause says", async () => {
+    const { envelope } = arrange({ pulledAt: "2026-08-01T17:00:00Z" });
+    const spoken: Greeter = {
+      ...greeter(),
+      carriesTranscript: (answer) => answer.greeting === "Hello, Ada",
+    };
+
+    const held = await envelope.answer(spoken, { name: "Ada" });
+    const none = await envelope.answer(spoken, { name: "Grace" });
+    const withoutUrl = await envelope.answer({ ...spoken, carriesSourceUrl: () => false }, { name: "Ada" });
+
+    expect(held.structuredContent).toMatchObject({
+      notice:
+        "Not the official record of the Oregon Legislature. This is an unofficial copy of public information from the Legislature's Open Data Service; use source_url for the Legislature's own page. This result includes a machine transcript of the official recording, not an official record.",
+    });
+    // A result with no passage in it has the notice it always had, word for word.
+    expect(none.structuredContent).toMatchObject({
+      notice:
+        "Not the official record of the Oregon Legislature. This is an unofficial copy of public information from the Legislature's Open Data Service; use source_url for the Legislature's own page.",
+    });
+    expect(withoutUrl.structuredContent).toMatchObject({
+      notice:
+        "Not the official record of the Oregon Legislature. This is an unofficial copy of public information from the Legislature's Open Data Service. This result includes a machine transcript of the official recording, not an official record.",
+    });
+  });
+
   it("is dated by the Index's As of: a later Increment's, and the tool is given the same", async () => {
     const { envelope } = arrange({ pulledAt: "2026-08-01T17:00:00Z", incrementedAt: "2026-08-01T17:45:00Z" });
     const seen: Timestamp[] = [];
