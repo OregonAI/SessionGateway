@@ -14,6 +14,7 @@ import { openIndexReader } from "#/packages/database/reader.ts";
 import { parseSessionKey, type SessionKey } from "#/packages/domain/index.ts";
 import type { Embedder } from "#/packages/embedder/index.ts";
 import { createSessionGatewayHandler, type SessionGatewayHandler } from "#/packages/mcp-server/handler.ts";
+import { systemClock } from "#/packages/time/clock.ts";
 import { problemWith } from "./paths.ts";
 import { pacificTimestampOf, readTimestamp } from "#/packages/time/pacific.ts";
 import { loadQuestionSet, questionAsksSince, questionSetPath, type Question, type Step } from "./questions.ts";
@@ -178,7 +179,7 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
   }
   if (!existsSync(options.databasePath)) throw new Error(`There is no database at ${options.databasePath}`);
 
-  const reader = openIndexReader(options.databasePath);
+  const reader = openIndexReader(options.databasePath, systemClock);
   let session: SessionKey;
   let asOf: string | undefined;
   try {

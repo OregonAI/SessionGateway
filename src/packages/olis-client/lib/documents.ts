@@ -215,6 +215,7 @@ const exhibitRow = z.looseObject({
   MeasurePrefix: z.string().nullable(),
   MeasureNumber: z.number().int().nullable(),
   DocumentUrl: z.string(),
+  CreatedDate: feedTimestamp.nullish(),
 });
 
 async function readExhibits(
@@ -237,6 +238,8 @@ async function readExhibits(
       sourceUrl: sourceUrlOf(row.DocumentUrl),
       postedAt: null,
       date: row.MeetingDate,
+      // The row's CreatedDate, which the tools hide the document by while the clock is before it (ADR-0055).
+      ...createdAtOf(row.CreatedDate),
       ...(row.ExhibitTitle === null || row.ExhibitTitle === undefined ? {} : { title: row.ExhibitTitle }),
       relations: meetingBoundRelations(session, row, `CommitteeMeetingDocuments ${row.CommitteeMeetingDocumentId}`),
     };

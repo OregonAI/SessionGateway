@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { afterEach, expect, test } from "vitest";
 import { checkpointIndex } from "../checkpoint.ts";
 import { openIndexReader } from "../reader.ts";
+import { afterEverythingMadeUp } from "./clock.ts";
 import { openIndexWriter } from "../writer.ts";
 import { createIndexFile, leaveAsBeforeVersions, type IndexFile } from "./arranged-files.ts";
 import { nothingPulled, pulledAt, pulledAtText, session } from "./nothing-pulled.ts";
@@ -31,7 +32,7 @@ test("checkpointIndex puts everything the open writer stored into the database f
 
   const copy = join(dirname(file.path), "copy.db");
   copyFileSync(file.path, copy);
-  const reader = openIndexReader(copy);
+  const reader = openIndexReader(copy, afterEverythingMadeUp);
   connections.push(reader);
   expect(reader.lastFullPull(session)).toBe(pulledAtText);
 });
@@ -57,5 +58,5 @@ test("checkpointIndex runs no upgrade step: a file with no recorded version is s
 
   checkpointIndex(file.path);
 
-  expect(() => openIndexReader(file.path)).toThrow(/no recorded schema version/);
+  expect(() => openIndexReader(file.path, afterEverythingMadeUp)).toThrow(/no recorded schema version/);
 });

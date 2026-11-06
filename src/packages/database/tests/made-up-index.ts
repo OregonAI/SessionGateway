@@ -39,6 +39,8 @@ import {
 import type { LegislatorRow } from "#/packages/domain/legislators.ts";
 import type { AgencyId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
+import type { Clock } from "#/packages/time/clock.ts";
+import { afterEverythingMadeUp } from "./clock.ts";
 import { openIndexReader, type IndexReader } from "../reader.ts";
 import { openSearchReader, type SearchIndexReader } from "../search.ts";
 import {
@@ -89,12 +91,12 @@ export type MadeUpIndex = {
 };
 
 /** Opens the writer first, which creates the schema, and then the two read-only sides. */
-export function openMadeUpIndex(): MadeUpIndex {
+export function openMadeUpIndex(clock: Clock = afterEverythingMadeUp): MadeUpIndex {
   const directory = mkdtempDisposableSync(join(tmpdir(), "session-gateway-listing-"));
   const path = join(directory.path, "index.db");
   const writer = openIndexWriter(path);
-  const reader = openIndexReader(path);
-  const search = openSearchReader(path);
+  const reader = openIndexReader(path, clock);
+  const search = openSearchReader(path, clock);
   return {
     path,
     writer,

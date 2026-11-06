@@ -7,6 +7,7 @@ import type { MeasureId, SessionKey } from "#/packages/domain/index.ts";
 import type { MeetingId } from "#/packages/domain/documents.ts";
 import type { SearchedSpeakerTurn } from "#/packages/domain/speaker-turns.ts";
 import type { SearchedTranscriptPassage } from "#/packages/domain/transcripts.ts";
+import type { Clock } from "#/packages/time/clock.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { openReadConnection } from "./lib/connection.ts";
 import { listedDocumentSql, noLongerListedThrough, unlistedAmong } from "./lib/listing.ts";
@@ -337,8 +338,9 @@ function passageTextOf(stored: z.infer<typeof detailsRow>, citedAt: number | und
   return stored.text.slice(stored.start_offset, end);
 }
 
-export function openSearchReader(path: string): SearchIndexReader {
-  const database = openReadConnection(path);
+export function openSearchReader(path: string, clock: Clock): SearchIndexReader {
+  // The index as it stood at the clock (ADR-0055): `document` and `search_document` hide what was created after it.
+  const database = openReadConnection(path, clock);
   /** The last pull whose rows are No longer listed, for a Session, as of now: asked for each query. */
   const unlistedThrough = (session: SessionKey): number => noLongerListedThrough(database, session);
   const selectDetails = database.prepare(

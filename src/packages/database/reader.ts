@@ -75,6 +75,7 @@ import {
   type FloorVote,
   type LegislatorVote,
 } from "#/packages/domain/votes.ts";
+import type { Clock } from "#/packages/time/clock.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceFromJson, storedEvidenceKinds } from "./lib/agency-evidence.ts";
 import { readSpeakerTurnIndex, readSpeakerTurnSummary, readTurnHearingsOf } from "./lib/speaker-turns.ts";
@@ -504,8 +505,9 @@ const relationRow = z.object({
   meaning: z.string().nullable(),
 });
 
-export function openIndexReader(path: string): IndexReader {
-  const database = openReadConnection(path);
+export function openIndexReader(path: string, clock: Clock): IndexReader {
+  // The index as it stood at the clock (ADR-0055): every query below reads rows created by then, and no query says so.
+  const database = openReadConnection(path, clock);
   const selectMeasure = database.prepare(
     "SELECT catchline, location, committee_code, digest, created_at, modified_at FROM measure WHERE session_key = ? AND prefix = ? AND number = ?",
   );
@@ -654,6 +656,7 @@ export function openIndexReader(path: string): IndexReader {
     `SELECT document_id AS id, floor_letter_id, source_url, chamber, letter_date, title, description
      FROM floor_letter WHERE document_id = ?`,
   );
+  const selectHiddenDocument = database.prepare("SELECT 1 AS hidden FROM temp.hidden_document WHERE document_id = ?");
   const selectTestimonyExists = database.prepare("SELECT 1 AS found FROM testimony WHERE document_id = ?");
   // The postings the feed lists for one Proposed Amendment, with the meeting each was posted to.
   const selectPostingsOfAmendment = database.prepare(
@@ -885,6 +888,8 @@ export function openIndexReader(path: string): IndexReader {
    * Increment stored it).
    */
   function unheldOf(id: DocumentId | AmendmentId): UnheldDocument | undefined {
+    // A row created after the clock is not yet known, whatever the Listing says of it (ADR-0055).
+    if (selectHiddenDocument.get(id) !== undefined) return undefined;
     const document = listings.ofDocument(id as DocumentId);
     const read = document.kind === "checked" ? document : listings.ofAmendment(id as AmendmentId);
     const testimony = selectTestimonyExists.get(id) !== undefined;
