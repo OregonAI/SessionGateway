@@ -96,7 +96,7 @@ function buildServer(
     output: getMeasureOutput,
     carriesSourceUrl: () => true,
     annotations: { readOnlyHint: true, openWorldHint: true },
-    run: (input, asOf) => getMeasure(reader, liveStatus, config.session, input, asOf),
+    run: (input, asOf) => getMeasure(reader, liveStatus, config.session, input, asOf, clock.now()),
     faultMessage: getMeasureFaultMessage,
   });
   envelope.register(server, {

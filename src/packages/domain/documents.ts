@@ -620,6 +620,8 @@ export type Meeting = {
   status: string;
   /** The meeting's agenda, when the feed links one. */
   agenda: DocumentLink | null;
+  /** When OLIS created the meeting's row (its `CreatedDate`), with its Pacific offset; absent when the feed gave none (ADR-0056, ticket #153). */
+  createdAt?: Timestamp;
 };
 
 /** A floor convening the feed schedules (a ConveneTimes row): a chamber convening on a day. Its day is a day the Session meets (ADR-0042). */
@@ -741,6 +743,8 @@ export type AgendaItem = {
   /** For an executive appointment: the board and the appointee. */
   boardName: string | null;
   executiveAppointee: string | null;
+  /** When OLIS created the item's row (its `CreatedDate`), with its Pacific offset; absent when the feed gave none (ADR-0056, ticket #153). */
+  createdAt?: Timestamp;
 };
 
 /** An agenda item as the server reads it, with whether the feed still lists it (ADR-0030). */

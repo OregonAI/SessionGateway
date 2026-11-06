@@ -4,7 +4,7 @@ import type { FloorVoteEntry } from "#/packages/domain/votes.ts";
 import { feedChamber } from "./chamber.ts";
 import { readSessionRows, type RowSelection } from "./feed.ts";
 import type { OlisClientOptions } from "./options.ts";
-import { feedTimestamp } from "./timestamps.ts";
+import { createdAtOf, feedTimestamp } from "./timestamps.ts";
 
 const floorVoteRow = z.looseObject({
   SessionKey: z.string(),
@@ -19,6 +19,7 @@ const floorVoteRow = z.looseObject({
   // (CommitteeVotes has them the other way round: VoteName and Meaning).
   VoteName: z.string(),
   Vote: z.string(),
+  CreatedDate: feedTimestamp.nullish(),
 });
 
 export async function readFloorVoteRows(
@@ -37,5 +38,6 @@ export async function readFloorVoteRows(
     action: row.ActionText,
     legislatorCode: row.VoteName,
     vote: row.Vote,
+    ...createdAtOf(row.CreatedDate),
   }));
 }

@@ -174,6 +174,7 @@ function sponsorRecordOf(sponsorship: Sponsorship, resolver: LegislatorResolver)
     measure: sponsorship.measure,
     level: sponsorship.level,
     printOrder: sponsorship.printOrder,
+    ...(sponsorship.createdAt === undefined ? {} : { createdAt: sponsorship.createdAt }),
   };
   switch (sponsorship.kind) {
     case "member":

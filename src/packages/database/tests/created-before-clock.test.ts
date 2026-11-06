@@ -16,6 +16,9 @@ import {
   analysisLink,
   asOf,
   committee,
+  committeeVote,
+  floorVote,
+  historyAction,
   measure,
   measureKey,
   meetingOn,
@@ -25,6 +28,7 @@ import {
   recordingLogLink,
   searchRecordOf,
   session,
+  sponsor,
   storedOf,
   storeMadeUpDocument,
   testimonyRecord,
@@ -263,5 +267,127 @@ describe("a Recording Log created after the clock", () => {
     expect(index.reader.speakerTurnIndexOf(log.id)).toMatchObject({ kind: "indexed", eventId: "2099010001" });
     expect(index.reader.turnHearingsOf(sb9001).map((hearing) => hearing.recordingLog)).toEqual([log.id]);
     expect(index.reader.meetingContents(meetingOn(10).id).recordingLogs.map((listed) => listed.id)).toEqual([log.id]);
+  });
+});
+
+// Ticket #153 (ADR-0056, extended): the rows of MeasureSponsors, MeasureHistoryActions, MeasureVotes, CommitteeVotes,
+// CommitteeMeetings and CommitteeAgendaItems carry the feed's CreatedDate, stored as the Pacific time with that day's offset,
+// and the reader leaves out a row created after its clock. A row with no time is shown.
+describe("a sponsor, history action, vote, meeting and agenda item created after the clock", () => {
+  const at = (createdAt: string): { createdAt: Timestamp } => ({ createdAt: createdAt as Timestamp });
+  const sb9001 = measureKey;
+
+  test("each is left out of the reader's lists until the clock reaches its creation, to the millisecond, and comes back with it", () => {
+    const clock = movableClock("2099-01-05T10:00:00.249-08:00");
+    index = openMadeUpIndex(clock);
+    const meeting = { ...meetingOn(10), ...at("2099-01-05T10:00:00.250-08:00") };
+    index.writer.recordFullPull(
+      session,
+      asOf(1),
+      pullOf({
+        Measures: [measure],
+        MeasureSponsors: [{ ...sponsor, ...at("2099-01-05T10:00:00.250-08:00") }],
+        MeasureHistoryActions: [{ ...historyAction, ...at("2099-01-05T10:00:00.250-08:00") }],
+        MeasureVotes: [{ ...floorVote, ...at("2099-01-05T10:00:00.250-08:00") }],
+        CommitteeVotes: [{ ...committeeVote, ...at("2099-01-05T10:00:00.250-08:00") }],
+        Committees: [committee],
+        CommitteeMeetings: [meeting],
+        CommitteeAgendaItems: [{ ...agendaItem, ...at("2099-01-05T10:00:00.250-08:00") }],
+      }),
+    );
+    const everything = () => ({
+      sponsors: index.reader.findSponsors(sb9001).length,
+      history: index.reader.findHistory(sb9001).length,
+      floorVotes: index.reader.findFloorVotes(sb9001).length,
+      committeeVotes: index.reader.findCommitteeVotes(sb9001).length,
+      meetings: index.reader.findMeetings(session, {}).length,
+      agendaItems: index.reader.meetingContents(meetingOn(10).id).agendaItems.length,
+      meetingsAboutTheMeasure: index.reader.findMeetings(session, { measure: sb9001 }).length,
+    });
+    const none = {
+      sponsors: 0,
+      history: 0,
+      floorVotes: 0,
+      committeeVotes: 0,
+      meetings: 0,
+      agendaItems: 0,
+      meetingsAboutTheMeasure: 0,
+    };
+    // A committee vote counts from the later of its creation and its meeting's start (owner's decision of 2026-11-05): the
+    // made-up vote's meeting is 2099-01-10 08:00, five days after the row was created.
+    const allButTheCommitteeVote = {
+      sponsors: 1,
+      history: 1,
+      floorVotes: 1,
+      committeeVotes: 0,
+      meetings: 1,
+      agendaItems: 1,
+      meetingsAboutTheMeasure: 1,
+    };
+
+    expect(everything()).toEqual(none);
+    clock.moveTo("2099-01-05T10:00:00.250-08:00");
+    expect(everything()).toEqual(allButTheCommitteeVote);
+    clock.moveTo("2099-01-10T07:59:59-08:00");
+    expect(everything()).toEqual(allButTheCommitteeVote);
+    clock.moveTo("2099-01-10T08:00:00-08:00");
+    expect(everything()).toEqual({ ...allButTheCommitteeVote, committeeVotes: 1 });
+    clock.moveTo("2099-01-05T09:59:00-08:00");
+    expect(everything()).toEqual(none);
+  });
+
+  test("a committee vote whose feed row has no CreatedDate is shown before its meeting too", () => {
+    const clock = movableClock("2099-01-01T00:00:01-08:00");
+    index = openMadeUpIndex(clock);
+    index.writer.recordFullPull(
+      session,
+      asOf(1),
+      pullOf({ Measures: [measure], CommitteeVotes: [committeeVote], Committees: [committee] }),
+    );
+
+    expect(index.reader.findCommitteeVotes(sb9001).length).toBe(1);
+  });
+
+  test("a row whose feed gave no time is shown at any clock", () => {
+    const clock = movableClock("2099-01-01T00:00:01-08:00");
+    index = openMadeUpIndex(clock);
+    index.writer.recordFullPull(
+      session,
+      asOf(1),
+      pullOf({
+        Measures: [measure],
+        MeasureSponsors: [sponsor],
+        MeasureHistoryActions: [historyAction],
+        MeasureVotes: [floorVote],
+        CommitteeVotes: [committeeVote],
+        Committees: [committee],
+        CommitteeMeetings: [meetingOn(10)],
+        CommitteeAgendaItems: [agendaItem],
+      }),
+    );
+
+    expect(index.reader.findSponsors(sb9001).length).toBe(1);
+    expect(index.reader.findHistory(sb9001).length).toBe(1);
+    expect(index.reader.findFloorVotes(sb9001).length).toBe(1);
+    expect(index.reader.findCommitteeVotes(sb9001).length).toBe(1);
+    expect(index.reader.findMeetings(session, {}).length).toBe(1);
+    expect(index.reader.meetingContents(meetingOn(10).id).agendaItems.length).toBe(1);
+  });
+
+  test("is compared as an instant: a vote created at 01:30 PDT is before a clock of 01:15 PST on the day the hour repeats", () => {
+    const clock = movableClock("2099-11-01T01:15:00-08:00");
+    index = openMadeUpIndex(clock);
+    index.writer.recordFullPull(
+      session,
+      asOf(1),
+      pullOf({
+        Measures: [{ ...measure, createdAt: "2099-10-01T00:00:00-07:00" as Timestamp }],
+        MeasureVotes: [{ ...floorVote, ...at("2099-11-01T01:30:00-07:00") }],
+      }),
+    );
+
+    expect(index.reader.findFloorVotes(sb9001).length).toBe(1);
+    clock.moveTo("2099-11-01T01:29:59-07:00");
+    expect(index.reader.findFloorVotes(sb9001).length).toBe(0);
   });
 });

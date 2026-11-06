@@ -75,27 +75,43 @@ describe("a committee roll the feed lists before its meeting", () => {
   // The same day, 2025-01-29 09:00 in Oregon. SB 69's SLB roll (CommitteeVotes 324937 to 324941, report 37391)
   // was created 2025-01-23T07:44:41 and last modified 2025-01-29T09:14:12, for the meeting of 2025-01-30T08:00:00,
   // so the fake OLIS has it a day early, with the answers the rows carry. The history's last line is still
-  // "Public Hearing held.": the work session has not happened.
-  it("is shown like any other committee vote, with a meeting_date later than as_of", async () => {
-    const outcome = await getMeasure({ clockAt: "2025-01-29T17:00:00Z" }, "SB 69");
+  // "Public Hearing held.": the work session has not happened. The server counts the roll from the start of its meeting
+  // (ticket #153, the owner's decision of 2026-11-05): until then it is not listed, and from the meeting on it is,
+  // with a meeting_date later than the as_of of the pull that read it (the clock moves on, the database does not).
+  it("is not listed until its meeting has started, and then is, with a meeting_date later than as_of", async () => {
+    const system = await startSystem({ clockAt: "2025-01-29T17:00:00Z" });
+    started.push(system);
+    const connected = await connectClient("2026-07-28", system.handler);
+    try {
+      const before = await callTool(connected, "get_measure", { measure: "SB 69" });
+      expect(before.structured).toMatchObject({ as_of: "2025-01-29T09:00:00-08:00" });
+      expect(historyOf(before)?.at(-1)?.text).toBe("Public Hearing held.");
+      expect(committeeVotesOf(before)).toEqual([]);
 
-    expect(outcome.structured).toMatchObject({ as_of: "2025-01-29T09:00:00-08:00" });
-    expect(historyOf(outcome)?.at(-1)?.text).toBe("Public Hearing held.");
-    expect(
-      committeeVotesOf(outcome)?.map((vote) => [vote.committee_code, vote.meeting_date, tuplesOf(vote.votes)]),
-    ).toEqual([
-      [
-        "SLB",
-        "2025-01-30T08:00:00-08:00",
+      system.clock.set("2025-01-30T07:59:59-08:00");
+      expect(committeeVotesOf(await callTool(connected, "get_measure", { measure: "SB 69" }))).toEqual([]);
+
+      system.clock.set("2025-01-30T08:00:00-08:00");
+      const at = await callTool(connected, "get_measure", { measure: "SB 69" });
+      expect(at.structured).toMatchObject({ as_of: "2025-01-29T09:00:00-08:00" });
+      expect(
+        committeeVotesOf(at)?.map((vote) => [vote.committee_code, vote.meeting_date, tuplesOf(vote.votes)]),
+      ).toEqual([
         [
-          ["Sen Bonham", "Aye", "legislator-2025r1-bonham", "Daniel Bonham"],
-          ["Sen Hayden", "Aye", "legislator-2025r1-hayden", "Cedric Hayden"],
-          ["Sen Pham", "Aye", "legislator-2025r1-pham", "Khanh Pham"],
-          ["Sen Taylor", "Aye", "legislator-2025r1-taylor", "Kathleen Taylor"],
-          ["Sen Woods", "Excused", "legislator-2025r1-woods", "Aaron Woods"],
+          "SLB",
+          "2025-01-30T08:00:00-08:00",
+          [
+            ["Sen Bonham", "Aye", "legislator-2025r1-bonham", "Daniel Bonham"],
+            ["Sen Hayden", "Aye", "legislator-2025r1-hayden", "Cedric Hayden"],
+            ["Sen Pham", "Aye", "legislator-2025r1-pham", "Khanh Pham"],
+            ["Sen Taylor", "Aye", "legislator-2025r1-taylor", "Kathleen Taylor"],
+            ["Sen Woods", "Excused", "legislator-2025r1-woods", "Aaron Woods"],
+          ],
         ],
-      ],
-    ]);
+      ]);
+    } finally {
+      await connected.close();
+    }
   });
 });
 

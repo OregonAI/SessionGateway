@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { statuteLinkKinds, tableActions } from "#/packages/domain/statute-links.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { storedEvidenceKinds } from "./agency-evidence.ts";
+import { tablesGivenCreatedAtByStepFive } from "../stamped-tables.ts";
 import { showOnlyRowsCreatedBy, type ClockView } from "./created-before-clock.ts";
 
 // The only production file that opens a node:sqlite connection (src/CLAUDE.md, "Shape"; lib/run-state.ts imports its type
@@ -630,6 +631,12 @@ const upgradeSteps: readonly ((database: DatabaseSync) => void)[] = [
   // Step 4 (ticket #134, ADR-0055): a Meeting's machine transcript and its passages. A new table and no change to an old one.
   (database) => {
     database.exec(transcriptSchema);
+  },
+  // Step 5 (ticket #153, ADR-0056 extended): the feed's CreatedDate of sponsors, history actions, votes, meetings and agenda
+  // items. A column on each, null until the next full pull stores the time; a row without one is shown.
+  (database) => {
+    for (const table of tablesGivenCreatedAtByStepFive)
+      database.exec(`ALTER TABLE ${table} ADD COLUMN created_at TEXT`);
   },
 ];
 

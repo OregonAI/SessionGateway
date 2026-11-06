@@ -3,7 +3,7 @@ import type { HistoryAction, SessionKey } from "#/packages/domain/index.ts";
 import { feedChamber } from "./chamber.ts";
 import { readSessionRows, type RowSelection } from "./feed.ts";
 import type { OlisClientOptions } from "./options.ts";
-import { feedTimestamp } from "./timestamps.ts";
+import { createdAtOf, feedTimestamp } from "./timestamps.ts";
 
 const historyRow = z.looseObject({
   SessionKey: z.string(),
@@ -13,6 +13,7 @@ const historyRow = z.looseObject({
   Chamber: feedChamber,
   ActionDate: feedTimestamp,
   ActionText: z.string(),
+  CreatedDate: feedTimestamp.nullish(),
 });
 
 export async function readHistoryActionRows(
@@ -28,5 +29,6 @@ export async function readHistoryActionRows(
     chamber: row.Chamber,
     date: row.ActionDate,
     text: row.ActionText,
+    ...createdAtOf(row.CreatedDate),
   }));
 }

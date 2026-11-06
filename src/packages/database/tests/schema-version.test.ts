@@ -2,7 +2,7 @@
 // in a temp directory of the test's own, no fake OLIS and no MCP client. A file at another version is arranged with
 // SQL (`arranged-files.ts`, as `test/support/old-database.ts` arranges the harness's old files), and every assertion
 // goes through the entry points: the version is seen as a reader that opens the file or refuses it, never as a read of
-// the file's header. Steps 1 (the schema as of version 1), 2, 3 and 4 exist; step 2 (ticket #126) adds the speaker-turn index and drops the view nothing reads; step 3 (ticket #127) links a Passage to the turn it is (seam 1's search-speaker-turns-pull.test.ts and speaker-turn-passages.test.ts); step 4 (ticket #134) stores a Meeting's transcript passages (transcript-storage.test.ts); the next ticket that changes a table adds step 5 and its test.
+// the file's header. Steps 1 (the schema as of version 1), 2, 3, 4 and 5 exist; step 2 (ticket #126) adds the speaker-turn index and drops the view nothing reads; step 3 (ticket #127) links a Passage to the turn it is (seam 1's search-speaker-turns-pull.test.ts and speaker-turn-passages.test.ts); step 4 (ticket #134) stores a Meeting's transcript passages (transcript-storage.test.ts); step 5 (ticket #153) stores the feed's CreatedDate of sponsors, history actions, votes, meetings and agenda items (created-before-clock.test.ts and the case below); the next ticket that changes a table adds step 6 and its test.
 import { afterEach, describe, expect, test } from "vitest";
 import { openIndexReader } from "../reader.ts";
 import { afterEverythingMadeUp } from "./clock.ts";
@@ -12,11 +12,14 @@ import {
   buildFrozenVersionOne,
   createIndexFile,
   leaveAsBeforeVersions,
+  leaveAsVersionFour,
   leaveAsVersionThree,
   stampSchemaVersion,
   type IndexFile,
 } from "./arranged-files.ts";
+import { asOf, measure, measureKey, pullOf, session as madeUpSession, sponsor } from "./made-up-index.ts";
 import { nothingPulled, pulledAt, pulledAtText, session } from "./nothing-pulled.ts";
+import type { Timestamp } from "#/packages/time/pacific.ts";
 
 const files: IndexFile[] = [];
 const connections: { close(): void }[] = [];
@@ -61,7 +64,7 @@ const readers = [
 ] as const;
 
 describe.for(readers)("%s", ([, openReader]) => {
-  test("opens a new file: the writer creates it at version 4, the one version the reader knows", () => {
+  test("opens a new file: the writer creates it at version 5, the one version the reader knows", () => {
     const file = createdFile();
 
     expect(() => {
@@ -69,11 +72,11 @@ describe.for(readers)("%s", ([, openReader]) => {
     }).not.toThrow();
   });
 
-  test.for([5, 7])("refuses a file at version %i, naming that version and the version 4 it knows", (found) => {
+  test.for([6, 7])("refuses a file at version %i, naming that version and the version 5 it knows", (found) => {
     const file = createdFile();
     stampSchemaVersion(file.path, found);
 
-    expect(() => openReader(file.path)).toThrow(new RegExp(`version ${String(found)}\\b.*version 4\\b`));
+    expect(() => openReader(file.path)).toThrow(new RegExp(`version ${String(found)}\\b.*version 5\\b`));
   });
 
   test("refuses a file with no recorded version, saying the worker has not opened it yet and to start the worker first", () => {
@@ -94,7 +97,7 @@ describe.for(readers)("%s", ([, openReader]) => {
 });
 
 describe("the writer", () => {
-  test("gives a file with no version today's tables and stamps it 4, and the file keeps its rows", () => {
+  test("gives a file with no version today's tables and stamps it 5, and the file keeps its rows", () => {
     const file = newFile();
     const first = writerOn(file.path);
     first.recordFullPull(session, pulledAt, nothingPulled);
@@ -112,7 +115,7 @@ describe("the writer", () => {
     expect(upgraded.listingCounts(session)).toEqual([]);
     expect(upgraded.committeeMembers(session)).toEqual([]);
     closed(upgraded);
-    // It is at version 4 now, so the reader opens it, and the row it held is there.
+    // It is at version 5 now, so the reader opens it, and the row it held is there.
     const reader = openIndexReader(file.path, afterEverythingMadeUp);
     connections.push(reader);
     expect(reader.lastFullPull(session)).toBe(pulledAtText);
@@ -127,7 +130,7 @@ describe("the writer", () => {
     expect(
       () => openIndexReader(file.path, afterEverythingMadeUp),
       "the server refuses it until the worker has upgraded it",
-    ).toThrow(/version 3\b.*version 4\b/);
+    ).toThrow(/version 3\b.*version 5\b/);
 
     const upgraded = writerOn(file.path);
 
@@ -139,14 +142,45 @@ describe("the writer", () => {
     expect(reader.lastFullPull(session)).toBe(pulledAtText);
   });
 
+  test("upgrades a file at version 4 with step 5: a row held has no creation time and is shown, and the next full pull stores it, which hides the row before it", () => {
+    const file = newFile();
+    const first = writerOn(file.path);
+    first.recordFullPull(madeUpSession, asOf(1), pullOf({ Measures: [measure], MeasureSponsors: [sponsor] }));
+    closed(first);
+    leaveAsVersionFour(file.path);
+    expect(
+      () => openIndexReader(file.path, afterEverythingMadeUp),
+      "the server refuses it until the worker has upgraded it",
+    ).toThrow(/version 4\b.*version 5\b/);
+
+    const upgraded = writerOn(file.path);
+    let now = new Date("2099-01-04T00:00:00-08:00");
+    const reader = openIndexReader(file.path, { now: () => now });
+    connections.push(reader);
+    // Until the next full pull the row has no time, and a row with no time is shown.
+    expect(reader.findSponsors(measureKey)).toHaveLength(1);
+
+    upgraded.recordFullPull(
+      madeUpSession,
+      asOf(2),
+      pullOf({
+        Measures: [measure],
+        MeasureSponsors: [{ ...sponsor, createdAt: "2099-01-05T10:00:00-08:00" as Timestamp }],
+      }),
+    );
+    expect(reader.findSponsors(measureKey)).toHaveLength(0);
+    now = new Date("2099-01-05T10:00:00-08:00");
+    expect(reader.findSponsors(measureKey)).toHaveLength(1);
+  });
+
   test("refuses a file at a newer version than it knows, naming both, and leaves it at that version", () => {
     const file = createdFile();
-    stampSchemaVersion(file.path, 5);
+    stampSchemaVersion(file.path, 6);
 
-    expect(() => openIndexWriter(file.path)).toThrow(/version 5\b.*version 4\b/);
+    expect(() => openIndexWriter(file.path)).toThrow(/version 6\b.*version 5\b/);
 
-    // It was not downgraded or stamped over: the server still sees version 5.
-    expect(() => openIndexReader(file.path, afterEverythingMadeUp)).toThrow(/version 5\b.*version 4\b/);
+    // It was not downgraded or stamped over: the server still sees version 6.
+    expect(() => openIndexReader(file.path, afterEverythingMadeUp)).toThrow(/version 6\b.*version 5\b/);
   });
 });
 

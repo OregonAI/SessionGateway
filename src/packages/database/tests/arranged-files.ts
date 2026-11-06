@@ -4,6 +4,7 @@
 // harness. It only arranges. Every assertion goes through the entry points (test/CLAUDE.md, "Seam 4").
 import { mkdtempDisposableSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
+import { tablesGivenCreatedAtByStepFive } from "../stamped-tables.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -62,9 +63,15 @@ export function leaveAsBeforeVersions(path: string): void {
      ALTER TABLE speaker_turn_index DROP COLUMN turns_without_passage;
      ALTER TABLE speaker_turn_index DROP COLUMN item_measures_read;
      ${dropTranscriptTables}
+     ${dropCreatedTimeColumns}
      PRAGMA user_version = 0`,
   );
 }
+
+/** What step 5 (ticket #153) adds: the feed's CreatedDate of each sponsor, history action, vote, meeting and agenda item. */
+const dropCreatedTimeColumns = tablesGivenCreatedAtByStepFive
+  .map((table) => `ALTER TABLE ${table} DROP COLUMN created_at;`)
+  .join(" ");
 
 /** What step 4 (ticket #134) adds: the tables of a Meeting's transcript and its passages, and the keyword side of them. */
 const dropTranscriptTables = `DROP TABLE transcript_passage_fts; DROP TABLE transcript_passage; DROP TABLE transcript;`;
@@ -74,7 +81,15 @@ const dropTranscriptTables = `DROP TABLE transcript_passage_fts; DROP TABLE tran
  * is stamped 3. The next worker to open it runs step 4. Close the writer first.
  */
 export function leaveAsVersionThree(path: string): void {
-  withSql(path, `${dropTranscriptTables} PRAGMA user_version = 3`);
+  withSql(path, `${dropTranscriptTables} ${dropCreatedTimeColumns} PRAGMA user_version = 3`);
+}
+
+/**
+ * Makes a file look as a release left it after step 4 and before step 5 (ticket #153): the rows have no creation-time column and
+ * it is stamped 4. The next worker to open it runs step 5, which makes the columns, empty. Close the writer first.
+ */
+export function leaveAsVersionFour(path: string): void {
+  withSql(path, `${dropCreatedTimeColumns} PRAGMA user_version = 4`);
 }
 
 /** Arranges a stored speaker-turn index whose `turn_count` is not the number of its turn rows, so a test can tell which one is read. */

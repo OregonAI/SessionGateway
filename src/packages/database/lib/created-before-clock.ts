@@ -7,7 +7,10 @@
 // installs the views before anything is prepared; the worker's connection never does, so it still sees every row.
 //
 // What a row's creation time is (ADR-0056):
-// - a Measure's own `created_at`;
+// - a Measure's own `created_at`, and the same column on a sponsor, a history action, a floor or committee vote, a meeting,
+//   an agenda item and a committee member (ticket #153: the CreatedDate of the feed row; a Floor Letter has none in the feed);
+//   a committee vote is the exception: it counts from the later of that and the start of its meeting (owner's decision of 2026-11-05);
+//   the tables are `stampedTables` (../stamped-tables.ts), the one list the schema step and the tests' arrangers read too;
 // - a document's, from `document_created`: the CreatedDate of the feed row that links it (a Version, a posting, an
 //   analysis, a Testimony, an Exhibit, a Recording Log, an agenda: its meeting row's). The feed's text has no offset and is Pacific wall-clock time; the
 //   OLIS client wrote it with the Pacific offset in force that day, so a stored time names an instant, and SQLite's
@@ -24,6 +27,7 @@
 // A statement run through the connection refreshes first (`prepare` is wrapped), so no reader has to remember to.
 import type { DatabaseSync, StatementSync } from "node:sqlite";
 import type { Clock } from "#/packages/time/clock.ts";
+import { stampedTables, type StampedTable } from "../stamped-tables.ts";
 
 /** The clock's time as seconds since 1970, to the millisecond: what `unixepoch(text, 'subsec')` is compared with. */
 const CLOCK_FUNCTION = "created_clock";
@@ -106,8 +110,30 @@ export function showOnlyRowsCreatedBy(database: DatabaseSync, clock: Clock): Clo
   // The rule for the Measure's own row: a time after the clock hides it.
   const afterClock = (column: string): string => `unixepoch(${column}, 'subsec') > ${CLOCK_FUNCTION}()`;
   const visible = "document_id NOT IN (SELECT document_id FROM temp.hidden_document)";
+  // The sets whose rows are stamped with their own CreatedDate (ticket #153): the Measure's sponsors, history actions and
+  // votes, the meetings and their agenda items, and the committees' members. A reader asks for them by Measure, meeting or
+  // committee (an index probe) and reads a few hundred rows at most, so the rule is the Measure's: the row's own time against
+  // the clock, no temp table to keep. A row with no time (null, or a text SQLite cannot read) is shown.
+  // A committee's vote rows are created before its meeting (OLIS makes every CommitteeVotes row ahead of the meeting and fills
+  // in the votes at it: all 21,959 rows of the 2025R1 cache), so a vote counts from the later of its CreatedDate and the start of
+  // its meeting, which the row holds as `meeting_date` (owner's decision of 2026-11-05). A vote with no readable CreatedDate is shown, as any row without one.
+  const hiddenBy: Record<StampedTable, string> = {
+    sponsor: afterClock("created_at"),
+    history_action: afterClock("created_at"),
+    floor_vote: afterClock("created_at"),
+    committee_vote: `(unixepoch(created_at, 'subsec') IS NOT NULL AND (${afterClock("created_at")} OR COALESCE(${afterClock("meeting_date")}, 0)))`,
+    meeting: afterClock("created_at"),
+    agenda_item: afterClock("created_at"),
+    committee_member: afterClock("created_at"),
+  };
+  const stampedByTheRow = stampedTables
+    .map(
+      (table) => `CREATE TEMP VIEW ${table} AS SELECT * FROM main.${table} WHERE COALESCE(${hiddenBy[table]}, 0) = 0;`,
+    )
+    .join("\n    ");
   database.exec(`
     CREATE TEMP VIEW measure AS SELECT * FROM main.measure WHERE COALESCE(${afterClock("created_at")}, 0) = 0;
+    ${stampedByTheRow}
     CREATE TEMP VIEW document AS
       SELECT * FROM main.document WHERE id NOT IN (SELECT document_id FROM temp.hidden_document);
     -- A relation that points at a document not created yet is no relation: an analysis the feed places on a Version that

@@ -59,6 +59,8 @@ export type HistoryAction = {
   date: Timestamp;
   /** The action as OLIS prints it, spaces included. */
   text: string;
+  /** When OLIS created the row (its `CreatedDate`), with its Pacific offset; absent when the feed gave none (ADR-0056, ticket #153). */
+  createdAt?: Timestamp;
 };
 
 /** Orders history actions oldest first: by when they happened, then by the feed's id. */

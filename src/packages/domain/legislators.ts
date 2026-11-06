@@ -2,6 +2,7 @@
 // and the sponsorships that name them. This entry point also mints the Legislator's id, in the form
 // GLOSSARY.md gives (`legislator-2025r1-<name>`).
 import type { MeasureKey, SessionKey } from "./index.ts";
+import type { Timestamp } from "#/packages/time/pacific.ts";
 
 /** A Legislator's id: `legislator-2025r1-<name>`. One person has one id across every Legislator Code. */
 export type LegislatorId = string & { readonly brand: "LegislatorId" };
@@ -31,6 +32,8 @@ type SponsorshipFields = {
   level: SponsorLevel;
   /** The feed's `PrintOrder`: the order the sponsors are printed in. */
   printOrder: number;
+  /** When OLIS created the row (its `CreatedDate`), with its Pacific offset; absent when the feed gave none (ADR-0056, ticket #153). */
+  createdAt?: Timestamp;
 };
 
 /**

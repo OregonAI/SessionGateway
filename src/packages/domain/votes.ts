@@ -14,6 +14,8 @@ type EntryFields = {
   legislatorCode: string;
   /** The voter's vote, in the feed's word. */
   vote: string;
+  /** When OLIS created the row (its `CreatedDate`), with its Pacific offset; absent when the feed gave none (ADR-0056, ticket #153). */
+  createdAt?: Timestamp;
 };
 
 /**

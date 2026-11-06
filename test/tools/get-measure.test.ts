@@ -115,6 +115,20 @@ describe.for(eras)("get_measure for a %s client", (era) => {
     expect(description).toContain("the feed does not say whether that vote has been taken");
   });
 
+  it("tells an agent that a location marked as_of is the last pull's, not the clock's", async () => {
+    const { tools } = await connected.client.listTools();
+
+    const description = describedAs(tools[0]?.outputSchema, ["location", "as_of"]);
+    expect(description).toContain("as of the last pull, not as of the server's clock");
+  });
+
+  it("tells an agent that a committee vote is left out until its meeting has started", async () => {
+    const { tools } = await connected.client.listTools();
+
+    const description = describedAs(tools[0]?.outputSchema, ["committee_votes"]);
+    expect(description).toContain("is left out until its meeting has started");
+  });
+
   it.for([["floor_votes"], ["committee_votes"]])(
     "says that the votes of a roll in %s come in the order of the ids the feed gives the entries",
     async ([votes]) => {
