@@ -275,7 +275,7 @@ export const getMeasureOutput = z.object({
   committee_votes: z
     .array(committeeVoteOutput)
     .describe(
-      "The Measure's committee votes as of the last full pull (see as_of), in the order the committees met. A roll that OLIS gives under two reports, as it does for a joint committee, is listed once; two different rolls of one committee at one meeting are two entries. OLIS creates these rows before the meeting is held, so a vote whose meeting_date is later than as_of can already list answers; the feed does not say whether that vote has been taken.",
+      "The Measure's committee votes as of the last full pull (see as_of), in the order the committees met. A roll that OLIS gives under two reports, as it does for a joint committee, is listed once; two different rolls of one committee at one meeting are two entries. OLIS creates these rows before the meeting is held, so a vote is left out until its meeting has started (the server's clock reaches its meeting_date); a vote whose meeting_date is later than as_of can still list answers read before the meeting, and the feed does not say whether that vote has been taken.",
     ),
   hearings: z
     .array(hearingOutput)

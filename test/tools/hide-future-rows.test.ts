@@ -357,16 +357,28 @@ describe.for(eras)("the tools at a clock before a row's CreatedDate and after it
   });
 
   describe("a committee vote", () => {
-    // CommitteeVotes of SB 69 at SLB on 2025-01-30: 5 entries (324937 to 324941), created "2025-01-23T07:44:41".
-    it("is left out of get_measure's committee_votes until its entries are created, when all 5 appear", async () => {
-      const early = await measureAt("2025-01-23T07:44:40-08:00", "SB 69");
-      expect(early.committee_votes).toEqual([]);
+    // CommitteeVotes of SB 69 at SLB: 5 entries (324937 to 324941), CreatedDate "2025-01-23T07:44:41", for the meeting of
+    // "2025-01-30T08:00:00". OLIS creates a committee's vote rows before the meeting and fills in the votes at it (the
+    // owner's decision of 2026-11-05; in the 2025R1 cache all 21,959 CommitteeVotes rows are created before their meeting's
+    // start), so a vote counts from the later of the two: not at its CreatedDate, but at the meeting's start.
+    it("is left out of get_measure's committee_votes from its CreatedDate up to the meeting's start, and all 5 appear at the meeting", async () => {
+      const beforeCreated = await measureAt("2025-01-23T07:44:40-08:00", "SB 69");
+      expect(beforeCreated.committee_votes).toEqual([]);
 
-      const late = await measureAt("2025-01-23T07:44:41-08:00", "SB 69");
-      expect(late.committee_votes).toHaveLength(1);
-      expect(late.committee_votes[0]?.committee_code).toBe("SLB");
-      expect(late.committee_votes[0]?.votes).toHaveLength(5);
+      const created = await measureAt("2025-01-23T07:44:41-08:00", "SB 69");
+      expect(created.committee_votes).toEqual([]);
+
+      const aSecondBefore = await measureAt("2025-01-30T07:59:59-08:00", "SB 69");
+      expect(aSecondBefore.committee_votes).toEqual([]);
+
+      const atMeeting = await measureAt("2025-01-30T08:00:00-08:00", "SB 69");
+      expect(atMeeting.committee_votes).toHaveLength(1);
+      expect(atMeeting.committee_votes[0]?.committee_code).toBe("SLB");
+      expect(atMeeting.committee_votes[0]?.votes).toHaveLength(5);
     });
+
+    // A floor vote and a history action keep their CreatedDate: SB 69's Senate vote of 2025-02-06 is shown at its CreatedDate
+    // (see the case above), which is the same decision's other half.
   });
 
   describe("a meeting and its agenda items", () => {

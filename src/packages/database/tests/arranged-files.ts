@@ -4,6 +4,7 @@
 // harness. It only arranges. Every assertion goes through the entry points (test/CLAUDE.md, "Seam 4").
 import { mkdtempDisposableSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
+import { tablesGivenCreatedAtByStepFive } from "../stamped-tables.ts";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -68,7 +69,7 @@ export function leaveAsBeforeVersions(path: string): void {
 }
 
 /** What step 5 (ticket #153) adds: the feed's CreatedDate of each sponsor, history action, vote, meeting and agenda item. */
-const dropCreatedTimeColumns = ["sponsor", "history_action", "floor_vote", "committee_vote", "meeting", "agenda_item"]
+const dropCreatedTimeColumns = tablesGivenCreatedAtByStepFive
   .map((table) => `ALTER TABLE ${table} DROP COLUMN created_at;`)
   .join(" ");
 

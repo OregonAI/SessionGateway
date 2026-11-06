@@ -3,7 +3,7 @@ import type { SessionKey } from "#/packages/domain/index.ts";
 import type { CommitteeVoteEntry } from "#/packages/domain/votes.ts";
 import { readSessionRows, type RowSelection } from "./feed.ts";
 import type { OlisClientOptions } from "./options.ts";
-import { feedTimestamp } from "./timestamps.ts";
+import { createdAtOf, feedTimestamp } from "./timestamps.ts";
 
 const committeeVoteRow = z.looseObject({
   SessionKey: z.string(),
@@ -35,6 +35,6 @@ export async function readCommitteeVoteRows(
     meetingDate: row.MeetingDate,
     legislatorCode: row.VoteName,
     vote: row.Meaning,
-    ...(row.CreatedDate === null || row.CreatedDate === undefined ? {} : { createdAt: row.CreatedDate }),
+    ...createdAtOf(row.CreatedDate),
   }));
 }

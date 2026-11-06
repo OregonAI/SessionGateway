@@ -313,11 +313,13 @@ describe("a sponsor, history action, vote, meeting and agenda item created after
       agendaItems: 0,
       meetingsAboutTheMeasure: 0,
     };
-    const all = {
+    // A committee vote counts from the later of its creation and its meeting's start (owner's decision of 2026-11-05): the
+    // made-up vote's meeting is 2099-01-10 08:00, five days after the row was created.
+    const allButTheCommitteeVote = {
       sponsors: 1,
       history: 1,
       floorVotes: 1,
-      committeeVotes: 1,
+      committeeVotes: 0,
       meetings: 1,
       agendaItems: 1,
       meetingsAboutTheMeasure: 1,
@@ -325,9 +327,25 @@ describe("a sponsor, history action, vote, meeting and agenda item created after
 
     expect(everything()).toEqual(none);
     clock.moveTo("2099-01-05T10:00:00.250-08:00");
-    expect(everything()).toEqual(all);
+    expect(everything()).toEqual(allButTheCommitteeVote);
+    clock.moveTo("2099-01-10T07:59:59-08:00");
+    expect(everything()).toEqual(allButTheCommitteeVote);
+    clock.moveTo("2099-01-10T08:00:00-08:00");
+    expect(everything()).toEqual({ ...allButTheCommitteeVote, committeeVotes: 1 });
     clock.moveTo("2099-01-05T09:59:00-08:00");
     expect(everything()).toEqual(none);
+  });
+
+  test("a committee vote whose feed row has no CreatedDate is shown before its meeting too", () => {
+    const clock = movableClock("2099-01-01T00:00:01-08:00");
+    index = openMadeUpIndex(clock);
+    index.writer.recordFullPull(
+      session,
+      asOf(1),
+      pullOf({ Measures: [measure], CommitteeVotes: [committeeVote], Committees: [committee] }),
+    );
+
+    expect(index.reader.findCommitteeVotes(sb9001).length).toBe(1);
   });
 
   test("a row whose feed gave no time is shown at any clock", () => {

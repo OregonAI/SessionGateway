@@ -26,3 +26,8 @@ export const feedTimestamp = z.string().transform((text, context): Timestamp => 
     return z.NEVER;
   }
 });
+
+/** The `createdAt` of a record: the row's own `CreatedDate`, when the row has one, so a row without it has no `createdAt` at all (ADR-0056: it is shown). */
+export function createdAtOf(createdDate: Timestamp | null | undefined): { createdAt?: Timestamp } {
+  return createdDate === null || createdDate === undefined ? {} : { createdAt: createdDate };
+}

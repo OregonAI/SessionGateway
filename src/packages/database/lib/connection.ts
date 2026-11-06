@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { statuteLinkKinds, tableActions } from "#/packages/domain/statute-links.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { storedEvidenceKinds } from "./agency-evidence.ts";
+import { tablesGivenCreatedAtByStepFive } from "../stamped-tables.ts";
 import { showOnlyRowsCreatedBy, type ClockView } from "./created-before-clock.ts";
 
 // The only production file that opens a node:sqlite connection (src/CLAUDE.md, "Shape"; lib/run-state.ts imports its type
@@ -598,22 +599,6 @@ const transcriptSchema = `
 `;
 
 /**
- * Step 5's tables (ticket #153, ADR-0056 extended): the feed's `CreatedDate` of each row of the sets whose rows the tools
- * hide until the clock reaches them, as the Pacific time with that day's offset (what `document_created` and
- * `measure.created_at` hold). Null for a row the feed gave no time (a row stored before this step has none until the next full
- * pull writes it), and a null is shown. `committee_member` has had its `created_at` since version 1; Floor Letters have no
- * `CreatedDate` in the feed and no column.
- */
-const createdTimeTables = [
-  "sponsor",
-  "history_action",
-  "floor_vote",
-  "committee_vote",
-  "meeting",
-  "agenda_item",
-] as const;
-
-/**
  * The numbered upgrade steps (ADR-0048): step N takes a file from version N - 1 to version N, and the file's version
  * is the number of steps there are. The worker applies the ones a file lacks, in order, in one transaction when it opens
  * the file, so a file is never left half upgraded. Step 1 is today's schema: its pass of `CREATE ... IF NOT EXISTS`
@@ -650,7 +635,8 @@ const upgradeSteps: readonly ((database: DatabaseSync) => void)[] = [
   // Step 5 (ticket #153, ADR-0056 extended): the feed's CreatedDate of sponsors, history actions, votes, meetings and agenda
   // items. A column on each, null until the next full pull stores the time; a row without one is shown.
   (database) => {
-    for (const table of createdTimeTables) database.exec(`ALTER TABLE ${table} ADD COLUMN created_at TEXT`);
+    for (const table of tablesGivenCreatedAtByStepFive)
+      database.exec(`ALTER TABLE ${table} ADD COLUMN created_at TEXT`);
   },
 ];
 

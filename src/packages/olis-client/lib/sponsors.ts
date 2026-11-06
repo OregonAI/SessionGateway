@@ -3,7 +3,7 @@ import type { SessionKey } from "#/packages/domain/index.ts";
 import type { Sponsorship } from "#/packages/domain/legislators.ts";
 import { readSessionRows } from "./feed.ts";
 import type { OlisClientOptions, PullRead } from "./options.ts";
-import { feedTimestamp } from "./timestamps.ts";
+import { createdAtOf, feedTimestamp } from "./timestamps.ts";
 
 // The feed serializes decimal keys as strings: "MeasureSponsorId":"154809", "PrintOrder":"1"
 // (docs/research/olis-odata.md section 8, gotcha 7).
@@ -37,7 +37,7 @@ function sponsorshipOf(session: SessionKey, row: SponsorRow): Sponsorship {
     measure: { session, prefix: row.MeasurePrefix, number: row.MeasureNumber },
     level: row.SponsorLevel === "Chief" ? ("chief" as const) : ("regular" as const),
     printOrder: row.PrintOrder,
-    ...(row.CreatedDate === null || row.CreatedDate === undefined ? {} : { createdAt: row.CreatedDate }),
+    ...createdAtOf(row.CreatedDate),
   };
   const lacks = (column: string): Error =>
     new Error(

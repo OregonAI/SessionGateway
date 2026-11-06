@@ -22,7 +22,7 @@ import {
 } from "#/packages/domain/documents.ts";
 import { readSessionRows } from "./feed.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
-import { feedTimestamp } from "./timestamps.ts";
+import { createdAtOf, feedTimestamp } from "./timestamps.ts";
 import type { OlisClientOptions, PullRead } from "./options.ts";
 
 /** Every document OLIS links is on this origin (docs/research/olis-odata.md section 4). */
@@ -45,11 +45,6 @@ export function sourceUrlOf(link: string): string {
 export function downloadUrlOf(sourceUrl: string, documentOrigin: string): URL {
   const url = new URL(sourceUrl);
   return new URL(url.pathname + url.search, documentOrigin);
-}
-
-/** The `createdAt` of a link: the row's own `CreatedDate`, when the row has one. */
-function createdAtOf(createdDate: Timestamp | null | undefined): { createdAt?: Timestamp } {
-  return createdDate === null || createdDate === undefined ? {} : { createdAt: createdDate };
 }
 
 function measureRelation(key: MeasureKey, provenance: string): DocumentRelation {

@@ -9,6 +9,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
+import { tablesGivenCreatedAtByStepFive } from "#/packages/database/stamped-tables.ts";
 
 /** Removes everything the two-pull rule keeps, so that every row the file holds has never been listed by a pull. */
 export function forgetListing(databasePath: string): void {
@@ -79,7 +80,7 @@ export function leaveTurnsUnlinkedFromPassages(databasePath: string): void {
     database.exec("ALTER TABLE passage DROP COLUMN turn_position");
     database.exec("ALTER TABLE speaker_turn_index DROP COLUMN turns_without_passage");
     database.exec("ALTER TABLE speaker_turn_index DROP COLUMN item_measures_read");
-    for (const table of createdTimeTables) database.exec(`ALTER TABLE ${table} DROP COLUMN created_at`);
+    for (const table of tablesGivenCreatedAtByStepFive) database.exec(`ALTER TABLE ${table} DROP COLUMN created_at`);
     for (const log of logs) {
       const hash = createHash("sha256").update(log.text, "utf8").digest("hex");
       const id = run(
@@ -97,15 +98,6 @@ export function leaveTurnsUnlinkedFromPassages(databasePath: string): void {
   }
 }
 
-const createdTimeTables = [
-  "sponsor",
-  "history_action",
-  "floor_vote",
-  "committee_vote",
-  "meeting",
-  "agenda_item",
-] as const;
-
 /**
  * Makes a database look as one a worker left just after it applied step 5 (ticket #153) and before its next full pull: the columns
  * for the feed's CreatedDate are there and hold no time, for every sponsor, history action, vote, meeting and agenda item. It
@@ -114,7 +106,7 @@ const createdTimeTables = [
 export function forgetCreatedTimes(databasePath: string): void {
   const database = new DatabaseSync(databasePath, { timeout: 5000 });
   try {
-    for (const table of createdTimeTables) database.exec(`UPDATE ${table} SET created_at = NULL`);
+    for (const table of tablesGivenCreatedAtByStepFive) database.exec(`UPDATE ${table} SET created_at = NULL`);
   } finally {
     database.close();
   }
@@ -129,7 +121,7 @@ export function forgetCreatedTimes(databasePath: string): void {
 export function leaveAsVersionFour(databasePath: string): void {
   const database = new DatabaseSync(databasePath, { timeout: 5000 });
   try {
-    for (const table of createdTimeTables) database.exec(`ALTER TABLE ${table} DROP COLUMN created_at`);
+    for (const table of tablesGivenCreatedAtByStepFive) database.exec(`ALTER TABLE ${table} DROP COLUMN created_at`);
     database.exec("PRAGMA user_version = 4");
   } finally {
     database.close();

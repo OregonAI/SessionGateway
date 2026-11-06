@@ -11,7 +11,7 @@ import {
 import { sourceUrlOf } from "./documents.ts";
 import { readSessionRows } from "./feed.ts";
 import type { OlisClientOptions, PullRead } from "./options.ts";
-import { feedTimestamp } from "./timestamps.ts";
+import { createdAtOf, feedTimestamp } from "./timestamps.ts";
 
 const meetingRow = z.looseObject({
   SessionKey: z.string(),
@@ -43,7 +43,7 @@ export async function readMeetings(
       committeeId,
       at: row.MeetingDate,
       status: row.MeetingStatus,
-      ...(row.CreatedDate === null || row.CreatedDate === undefined ? {} : { createdAt: row.CreatedDate }),
+      ...createdAtOf(row.CreatedDate),
       agenda:
         row.AgendaUrl === null
           ? null
@@ -58,7 +58,7 @@ export async function readMeetings(
               date: row.MeetingDate,
               // The agenda is a column of the meeting's row and has no row of its own, so it is created with the meeting's
               // row: the tools hide it while the clock is before that (ADR-0056).
-              ...(row.CreatedDate === null || row.CreatedDate === undefined ? {} : { createdAt: row.CreatedDate }),
+              ...createdAtOf(row.CreatedDate),
               relations: [
                 { relation: "meeting", to: id, meaning: null, provenance },
                 { relation: "committee", to: committeeId, meaning: null, provenance },
@@ -129,6 +129,6 @@ export async function readAgendaItems(
     comments: row.Comments,
     boardName: row.BoardName,
     executiveAppointee: row.ExecutiveAppointee,
-    ...(row.CreatedDate === null || row.CreatedDate === undefined ? {} : { createdAt: row.CreatedDate }),
+    ...createdAtOf(row.CreatedDate),
   }));
 }
