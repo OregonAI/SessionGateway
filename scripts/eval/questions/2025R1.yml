@@ -9,8 +9,11 @@
 # where a fuller database may hold more, and with `equals` where the Session fixes the answer.
 #
 # Each question carries the moment it is asked at (`clock`), and "$since" in an argument is the Pacific day before that
-# moment ("since yesterday"), unless the operator gives --since. So a question about a posting does not depend on the day
-# the database was pulled: (a) is asked on the day after each posting and passes on any database that holds the rows.
+# moment ("since yesterday"), unless the operator gives --since. The tools leave out every row created after the clock
+# (ADR-0055), so a question sees the Session as it stood at its moment and does not depend on the day the database was
+# pulled: (a) is asked on the day after each posting and passes, on page 1, on any database that holds the rows, because
+# the Versions and postings created after that day are hidden. It holds only while the moment is after the creation of
+# every row the question reads; a question asked before one of them cannot see it.
 # A question that says "$since" must name its clock; one that does not is asked at the database's own as-of time. A set
 # for another Session (2026R1) follows the same convention.
 session: 2025R1
