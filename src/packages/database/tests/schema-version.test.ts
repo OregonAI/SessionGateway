@@ -2,7 +2,7 @@
 // in a temp directory of the test's own, no fake OLIS and no MCP client. A file at another version is arranged with
 // SQL (`arranged-files.ts`, as `test/support/old-database.ts` arranges the harness's old files), and every assertion
 // goes through the entry points: the version is seen as a reader that opens the file or refuses it, never as a read of
-// the file's header. Steps 1 (the schema as of version 1), 2 and 3 exist; step 2 (ticket #126) adds the speaker-turn index and drops the view nothing reads; step 3 (ticket #127) links a Passage to the turn it is (seam 1's search-speaker-turns-pull.test.ts and speaker-turn-passages.test.ts); the next ticket that changes a table adds step 4 and its test.
+// the file's header. Steps 1 (the schema as of version 1), 2, 3 and 4 exist; step 2 (ticket #126) adds the speaker-turn index and drops the view nothing reads; step 3 (ticket #127) links a Passage to the turn it is (seam 1's search-speaker-turns-pull.test.ts and speaker-turn-passages.test.ts); step 4 (ticket #134) stores a Meeting's transcript passages (transcript-storage.test.ts); the next ticket that changes a table adds step 5 and its test.
 import { afterEach, describe, expect, test } from "vitest";
 import { openIndexReader } from "../reader.ts";
 import { openSearchReader } from "../search.ts";
@@ -11,6 +11,7 @@ import {
   buildFrozenVersionOne,
   createIndexFile,
   leaveAsBeforeVersions,
+  leaveAsVersionThree,
   stampSchemaVersion,
   type IndexFile,
 } from "./arranged-files.ts";
@@ -59,7 +60,7 @@ const readers = [
 ] as const;
 
 describe.for(readers)("%s", ([, openReader]) => {
-  test("opens a new file: the writer creates it at version 3, the one version the reader knows", () => {
+  test("opens a new file: the writer creates it at version 4, the one version the reader knows", () => {
     const file = createdFile();
 
     expect(() => {
@@ -67,11 +68,11 @@ describe.for(readers)("%s", ([, openReader]) => {
     }).not.toThrow();
   });
 
-  test.for([4, 7])("refuses a file at version %i, naming that version and the version 3 it knows", (found) => {
+  test.for([5, 7])("refuses a file at version %i, naming that version and the version 4 it knows", (found) => {
     const file = createdFile();
     stampSchemaVersion(file.path, found);
 
-    expect(() => openReader(file.path)).toThrow(new RegExp(`version ${String(found)}\\b.*version 3\\b`));
+    expect(() => openReader(file.path)).toThrow(new RegExp(`version ${String(found)}\\b.*version 4\\b`));
   });
 
   test("refuses a file with no recorded version, saying the worker has not opened it yet and to start the worker first", () => {
@@ -92,7 +93,7 @@ describe.for(readers)("%s", ([, openReader]) => {
 });
 
 describe("the writer", () => {
-  test("gives a file with no version today's tables and stamps it 3, and the file keeps its rows", () => {
+  test("gives a file with no version today's tables and stamps it 4, and the file keeps its rows", () => {
     const file = newFile();
     const first = writerOn(file.path);
     first.recordFullPull(session, pulledAt, nothingPulled);
@@ -109,7 +110,27 @@ describe("the writer", () => {
     expect(upgraded.listingCounts(session)).toEqual([]);
     expect(upgraded.committeeMembers(session)).toEqual([]);
     closed(upgraded);
-    // It is at version 3 now, so the reader opens it, and the row it held is there.
+    // It is at version 4 now, so the reader opens it, and the row it held is there.
+    const reader = openIndexReader(file.path);
+    connections.push(reader);
+    expect(reader.lastFullPull(session)).toBe(pulledAtText);
+  });
+
+  test("upgrades a file at version 3 with step 4: the transcript tables are made, empty, and the file keeps its rows", () => {
+    const file = newFile();
+    const first = writerOn(file.path);
+    first.recordFullPull(session, pulledAt, nothingPulled);
+    closed(first);
+    leaveAsVersionThree(file.path);
+    expect(() => openIndexReader(file.path), "the server refuses it until the worker has upgraded it").toThrow(
+      /version 3\b.*version 4\b/,
+    );
+
+    const upgraded = writerOn(file.path);
+
+    expect(upgraded.transcriptNotes(session)).toEqual({ stored: 0, driftFlags: [] });
+    expect(upgraded.storedTranscripts(session)).toEqual([]);
+    closed(upgraded);
     const reader = openIndexReader(file.path);
     connections.push(reader);
     expect(reader.lastFullPull(session)).toBe(pulledAtText);
@@ -117,12 +138,12 @@ describe("the writer", () => {
 
   test("refuses a file at a newer version than it knows, naming both, and leaves it at that version", () => {
     const file = createdFile();
-    stampSchemaVersion(file.path, 4);
+    stampSchemaVersion(file.path, 5);
 
-    expect(() => openIndexWriter(file.path)).toThrow(/version 4\b.*version 3\b/);
+    expect(() => openIndexWriter(file.path)).toThrow(/version 5\b.*version 4\b/);
 
-    // It was not downgraded or stamped over: the server still sees version 4.
-    expect(() => openIndexReader(file.path)).toThrow(/version 4\b.*version 3\b/);
+    // It was not downgraded or stamped over: the server still sees version 5.
+    expect(() => openIndexReader(file.path)).toThrow(/version 5\b.*version 4\b/);
   });
 });
 

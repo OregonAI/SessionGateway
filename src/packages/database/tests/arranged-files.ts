@@ -61,8 +61,20 @@ export function leaveAsBeforeVersions(path: string): void {
      ALTER TABLE passage DROP COLUMN turn_position;
      ALTER TABLE speaker_turn_index DROP COLUMN turns_without_passage;
      ALTER TABLE speaker_turn_index DROP COLUMN item_measures_read;
+     ${dropTranscriptTables}
      PRAGMA user_version = 0`,
   );
+}
+
+/** What step 4 (ticket #134) adds: the tables of a Meeting's transcript and its passages, and the keyword side of them. */
+const dropTranscriptTables = `DROP TABLE transcript_passage_fts; DROP TABLE transcript_passage; DROP TABLE transcript;`;
+
+/**
+ * Makes a file look as a release left it after step 3 and before step 4 (ticket #134): the transcript tables are gone and it
+ * is stamped 3. The next worker to open it runs step 4. Close the writer first.
+ */
+export function leaveAsVersionThree(path: string): void {
+  withSql(path, `${dropTranscriptTables} PRAGMA user_version = 3`);
 }
 
 /** Arranges a stored speaker-turn index whose `turn_count` is not the number of its turn rows, so a test can tell which one is read. */

@@ -2,7 +2,7 @@
 // pull into a database in a disposable directory, and the MCP handler reading that database. It
 // wires the production packages through their entry points, the way src/bin/ does.
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as nodePause } from "node:timers/promises";
@@ -98,6 +98,13 @@ export type SystemOptions = {
   random?: () => number;
   /** The alias file the worker reads, as the entry script would pass it. The committed one by default. */
   legislatorAliasesPath?: string;
+  /**
+   * The transcript files in the folder the worker is pointed at (the TRANSCRIPTS_PATH variable, ticket #134), by file name
+   * (`<eventId>.transcript.json`) and content: `madeUpTranscript` (test/support/made-up-transcript.ts) writes one. The folder
+   * is made beside the database, so a copy of a template holds it. Unset, the worker is given no folder, as a deployment
+   * that has no transcripts leaves it. The server's gate is `serverEnv`'s TRANSCRIPTS_PUBLISHED, which the template ignores.
+   */
+  transcripts?: Record<string, string>;
 };
 
 export type System = {
@@ -106,6 +113,8 @@ export type System = {
   database: TempDatabase;
   /** The server's configuration, as the entry script would load it. */
   serverConfig: ServerConfig;
+  /** The folder of transcript files the worker reads (`transcripts`), made when the system was given any; a case may write more files into it before it pulls again. */
+  transcriptFolder: string;
   /** The MCP handler, serving the database the full pull wrote. */
   handler: SessionGatewayHandler;
   /**
@@ -185,6 +194,7 @@ function templateKey(options: SystemOptions): string | undefined {
     statutesAffectedTableUrl: options.statutesAffectedTableUrl?.(origin),
     documentTimeoutMs: options.documentTimeoutMs,
     olisBaseUrl: options.olisBaseUrl?.(`${origin}/`),
+    transcripts: options.transcripts,
     legislatorAliasesPath:
       options.legislatorAliasesPath === undefined
         ? undefined
@@ -308,6 +318,12 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
   if (copyOf !== undefined) cpSync(copyOf, dirname(database.path), { recursive: true });
   const embedder = options.embedder ?? (await createFakeEmbedder());
   const shutdown = new AbortController();
+  // Inside the database's directory, so the copy of a template holds the files its pull read.
+  const transcriptFolder = join(dirname(database.path), "transcripts");
+  if (options.transcripts !== undefined) {
+    mkdirSync(transcriptFolder, { recursive: true });
+    for (const [name, text] of Object.entries(options.transcripts)) writeFileSync(join(transcriptFolder, name), text);
+  }
   const env = {
     SESSION_KEY: options.sessionKey ?? "2025R1",
     OLIS_BASE_URL: options.olisBaseUrl === undefined ? olis.baseUrl : options.olisBaseUrl(olis.baseUrl),
@@ -316,6 +332,7 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
     SNAPSHOT_PATH: options.snapshot ?? snapshotFixturePath,
     // The entry scripts load the model from here. The harness is given its embedder, so nothing reads it.
     MODEL_PATH: modelPath(),
+    ...(options.transcripts === undefined ? {} : { TRANSCRIPTS_PATH: transcriptFolder }),
     ...(options.ingest?.increments === undefined ? {} : { INGEST_INCREMENTS: options.ingest.increments }),
     ...(options.ingest?.fullPull === undefined ? {} : { INGEST_FULL_PULL: options.ingest.fullPull }),
     ...(options.ingest?.hashSampleSize === undefined ? {} : { INGEST_HASH_SAMPLE_SIZE: options.ingest.hashSampleSize }),
@@ -376,6 +393,7 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
       olis,
       database,
       serverConfig,
+      transcriptFolder,
       handler,
       buildReport: () => readReport(database.path, "build-report.json"),
       hashSampleReport: () => readReport(database.path, "hash-sample-report.json"),
