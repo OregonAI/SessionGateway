@@ -19,6 +19,7 @@ const meetingRow = z.looseObject({
   MeetingDate: feedTimestamp,
   AgendaUrl: z.string().nullable(),
   AgendaRevisionNumber: z.number().int().nullish(),
+  CreatedDate: feedTimestamp.nullish(),
   MeetingStatus: z.string(),
 });
 
@@ -54,6 +55,9 @@ export async function readMeetings(
               sourceUrl: sourceUrlOf(row.AgendaUrl),
               postedAt: null,
               date: row.MeetingDate,
+              // The agenda is a column of the meeting's row and has no row of its own, so it is created with the meeting's
+              // row: the tools hide it while the clock is before that (ADR-0056).
+              ...(row.CreatedDate === null || row.CreatedDate === undefined ? {} : { createdAt: row.CreatedDate }),
               relations: [
                 { relation: "meeting", to: id, meaning: null, provenance },
                 { relation: "committee", to: committeeId, meaning: null, provenance },

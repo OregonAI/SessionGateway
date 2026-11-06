@@ -5,6 +5,7 @@
 // the file's header. Steps 1 (the schema as of version 1), 2, 3 and 4 exist; step 2 (ticket #126) adds the speaker-turn index and drops the view nothing reads; step 3 (ticket #127) links a Passage to the turn it is (seam 1's search-speaker-turns-pull.test.ts and speaker-turn-passages.test.ts); step 4 (ticket #134) stores a Meeting's transcript passages (transcript-storage.test.ts); the next ticket that changes a table adds step 5 and its test.
 import { afterEach, describe, expect, test } from "vitest";
 import { openIndexReader } from "../reader.ts";
+import { afterEverythingMadeUp } from "./clock.ts";
 import { openSearchReader } from "../search.ts";
 import { openIndexWriter } from "../writer.ts";
 import {
@@ -55,8 +56,8 @@ function createdFile(): IndexFile {
 }
 
 const readers = [
-  ["the index reader", openIndexReader],
-  ["the search reader", openSearchReader],
+  ["the index reader", (path: string) => openIndexReader(path, afterEverythingMadeUp)],
+  ["the search reader", (path: string) => openSearchReader(path, afterEverythingMadeUp)],
 ] as const;
 
 describe.for(readers)("%s", ([, openReader]) => {
@@ -100,9 +101,10 @@ describe("the writer", () => {
     closed(first);
     // The file of a worker that predates the listing tables and the version: no version, and the tables are missing.
     leaveAsBeforeVersions(file.path);
-    expect(() => openIndexReader(file.path), "the server refuses it until the worker has upgraded it").toThrow(
-      /no recorded schema version/,
-    );
+    expect(
+      () => openIndexReader(file.path, afterEverythingMadeUp),
+      "the server refuses it until the worker has upgraded it",
+    ).toThrow(/no recorded schema version/);
 
     const upgraded = writerOn(file.path);
 
@@ -111,7 +113,7 @@ describe("the writer", () => {
     expect(upgraded.committeeMembers(session)).toEqual([]);
     closed(upgraded);
     // It is at version 4 now, so the reader opens it, and the row it held is there.
-    const reader = openIndexReader(file.path);
+    const reader = openIndexReader(file.path, afterEverythingMadeUp);
     connections.push(reader);
     expect(reader.lastFullPull(session)).toBe(pulledAtText);
   });
@@ -122,16 +124,17 @@ describe("the writer", () => {
     first.recordFullPull(session, pulledAt, nothingPulled);
     closed(first);
     leaveAsVersionThree(file.path);
-    expect(() => openIndexReader(file.path), "the server refuses it until the worker has upgraded it").toThrow(
-      /version 3\b.*version 4\b/,
-    );
+    expect(
+      () => openIndexReader(file.path, afterEverythingMadeUp),
+      "the server refuses it until the worker has upgraded it",
+    ).toThrow(/version 3\b.*version 4\b/);
 
     const upgraded = writerOn(file.path);
 
     expect(upgraded.transcriptNotes(session)).toEqual({ stored: 0, driftFlags: [] });
     expect(upgraded.storedTranscripts(session)).toEqual([]);
     closed(upgraded);
-    const reader = openIndexReader(file.path);
+    const reader = openIndexReader(file.path, afterEverythingMadeUp);
     connections.push(reader);
     expect(reader.lastFullPull(session)).toBe(pulledAtText);
   });
@@ -143,7 +146,7 @@ describe("the writer", () => {
     expect(() => openIndexWriter(file.path)).toThrow(/version 5\b.*version 4\b/);
 
     // It was not downgraded or stamped over: the server still sees version 5.
-    expect(() => openIndexReader(file.path)).toThrow(/version 5\b.*version 4\b/);
+    expect(() => openIndexReader(file.path, afterEverythingMadeUp)).toThrow(/version 5\b.*version 4\b/);
   });
 });
 
@@ -161,9 +164,9 @@ describe("a file built from the frozen text of version 1", () => {
     const writer = writerOn(file.path);
     writer.recordFullPull(session, pulledAt, nothingPulled);
     closed(writer);
-    const index = openIndexReader(file.path);
+    const index = openIndexReader(file.path, afterEverythingMadeUp);
     connections.push(index);
-    const search = openSearchReader(file.path);
+    const search = openSearchReader(file.path, afterEverythingMadeUp);
     connections.push(search);
 
     expect(index.lastFullPull(session)).toBe(pulledAtText);

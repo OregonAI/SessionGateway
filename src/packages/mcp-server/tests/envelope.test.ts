@@ -112,14 +112,14 @@ function arrange(
   if (state.incrementedAt !== undefined) {
     writer.recordIncrement(config.session, formatPacific(new Date(state.incrementedAt)), readNothing);
   }
-  const reader = openIndexReader(databasePath);
+  const clock: Clock = { now: () => new Date(now) };
+  const reader = openIndexReader(databasePath, clock);
   disposers.push(() => {
     reader.close();
     writer.close();
     rmSync(directory, { recursive: true, force: true });
   });
   let now = new Date(state.now ?? state.pulledAt ?? "2026-08-01T17:00:00Z");
-  const clock: Clock = { now: () => new Date(now) };
   return {
     envelope: createEnvelope({ reader, config, clock }),
     config,

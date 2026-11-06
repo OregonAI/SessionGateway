@@ -7,6 +7,7 @@ import type { MeasureId } from "#/packages/domain/index.ts";
 import type { LegislatorId } from "#/packages/domain/legislators.ts";
 import type { SpeakerTurn } from "#/packages/domain/speaker-turns.ts";
 import { openIndexReader } from "../reader.ts";
+import { afterEverythingMadeUp } from "./clock.ts";
 import { openIndexWriter } from "../writer.ts";
 import {
   buildFrozenVersionOne,
@@ -289,7 +290,7 @@ describe("the second schema step", () => {
     } finally {
       writer.close();
     }
-    const reader = openIndexReader(file.path);
+    const reader = openIndexReader(file.path, afterEverythingMadeUp);
     try {
       expect(reader.speakerTurnIndexOf(logId)).toEqual({
         kind: "indexed",
@@ -307,6 +308,6 @@ describe("the second schema step", () => {
     files.push(file);
     buildFrozenVersionOne(file.path);
 
-    expect(() => openIndexReader(file.path)).toThrow(/version 1\b.*version 4\b/);
+    expect(() => openIndexReader(file.path, afterEverythingMadeUp)).toThrow(/version 1\b.*version 4\b/);
   });
 });

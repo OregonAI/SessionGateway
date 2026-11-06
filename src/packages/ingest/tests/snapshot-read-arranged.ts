@@ -113,7 +113,9 @@ export function openIndexRig(): IndexRig {
   const directory = mkdtempDisposableSync(join(tmpdir(), "session-gateway-snapshot-read-"));
   const path = join(directory.path, "index.db");
   const writer = openIndexWriter(path);
-  const reader = openIndexReader(path);
+  // A clock after every made-up time, so the reader hides nothing. It is the twin of `afterEverythingMadeUp` in
+  // database/tests/clock.ts, written out here because a package's tests do not import another package's test files.
+  const reader = openIndexReader(path, { now: () => new Date("2100-01-01T00:00:00Z") });
   return {
     writer,
     reader,

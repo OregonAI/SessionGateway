@@ -54,7 +54,7 @@ import {
 export type HandlerDeps = {
   /**
    * The time the server answers by: it times the rate limit's window, dates each live lookup, and
-   * `meetings` measures "upcoming" and the next meeting from it. A test that freezes or moves it moves all three.
+   * `meetings` measures "upcoming" and the next meeting from it, and the readers show only the rows created by it (ADR-0056). A test that freezes or moves it moves all four.
    */
   clock: Clock;
   /** Reads OLIS for the live status of get_measure. */
@@ -186,8 +186,8 @@ function buildServer(
 }
 
 export function createSessionGatewayHandler(config: ServerConfig, deps: HandlerDeps): SessionGatewayHandler {
-  const reader = openIndexReader(config.databasePath);
-  const searchIndex = openSearchReader(config.databasePath);
+  const reader = openIndexReader(config.databasePath, deps.clock);
+  const searchIndex = openSearchReader(config.databasePath, deps.clock);
   // One envelope for the process: createMcpHandler builds a server for each request, and the envelope holds the rate
   // limiter, which counts the calls of every request together.
   const envelope = createEnvelope({ reader, config, clock: deps.clock });

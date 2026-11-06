@@ -451,16 +451,23 @@ async function embeddingCandidates(
   const spoken = vectors.transcripts;
   if (vectors.index.size === 0 && spoken.index.size === 0) return found;
   const question = quantizeUnitVector(await deps.embedder.embedQuestion(query));
+  // The vectors are those of every document, and a clock that has moved since they were read has moved what is shown
+  // (ADR-0056): a document created after it is no hit, and no id of it reaches the details.
+  const hidden = deps.searchIndex.hiddenDocuments();
   const near = vectors.index.nearest(
     question,
-    (documentIndex) => acceptsDocument(filter, vectors.documents.facts[documentIndex] as DocumentFacts),
+    (documentIndex) =>
+      !hidden.has(vectors.documents.documentIds[documentIndex] as DocumentId) &&
+      acceptsDocument(filter, vectors.documents.facts[documentIndex] as DocumentFacts),
     CANDIDATE_PASSAGES,
   );
   // The passages of a machine transcript are scanned with the same question (the vectors are of one model, so their scores
   // are comparable) and ranked among the documents' by their score. The scan is empty while the publication gate is off.
   const nearSpoken = spoken.index.nearest(
     question,
-    (passageIndex) => acceptsDocument(filter, spoken.passages.facts[passageIndex] as DocumentFacts),
+    (passageIndex) =>
+      !hidden.has(spoken.passages.documentIds[passageIndex] as DocumentId) &&
+      acceptsDocument(filter, spoken.passages.facts[passageIndex] as DocumentFacts),
     CANDIDATE_PASSAGES,
   );
   const ranked: { score: number; key: HitKey; candidate: Candidate }[] = [];
