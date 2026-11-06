@@ -257,7 +257,6 @@ const detailsRow = z.object({
 });
 const meetingOfRow = z.object({ meeting_id: z.string() });
 const transcriptMatchRow = z.object({ passage_id: z.number(), document_id: z.string(), node_id: z.string() });
-const transcriptVectorRow = vectorRow;
 const transcriptDetailsRow = transcriptPassageRow.extend({
   node_id: z.string(),
   kind: z.string(),
@@ -265,6 +264,30 @@ const transcriptDetailsRow = transcriptPassageRow.extend({
   dated_at: z.string().nullable(),
   source_url: z.string(),
 });
+
+/**
+ * The rows of a vector SELECT as `VectorRow`s, each with its vector copied out: the blob is a view of SQLite's buffer, which the
+ * next row reuses. The documents' passages and a transcript's are read by the one loop.
+ */
+function* vectorRowsOf(rows: Iterable<unknown>): Generator<VectorRow> {
+  for (const row of rows) {
+    const stored = vectorRow.parse(row);
+    yield {
+      passageId: stored.passage_id,
+      documentId: stored.document_id as DocumentId,
+      nodeId: stored.node_id as DocumentId | AmendmentId,
+      facts: {
+        kind: stored.kind as DocumentKind,
+        measureId: stored.measure_id as MeasureId | null,
+        committeeId: stored.committee_id as CommitteeId | null,
+        date: stored.dated_at as Timestamp | null,
+      },
+      vector: new Int8Array(
+        stored.vector.buffer.slice(stored.vector.byteOffset, stored.vector.byteOffset + stored.vector.byteLength),
+      ),
+    };
+  }
+}
 
 /**
  * The WHERE terms of a filter over `search_document` (aliased `sd`), and the values they take. They leave out a document
@@ -333,7 +356,9 @@ export function openSearchReader(path: string): SearchIndexReader {
   const selectMeetingOfDocument = database.prepare("SELECT meeting_id FROM meeting_document WHERE document_id = ?");
   const selectGeneration = database.prepare("SELECT generation FROM search_generation WHERE id = 1");
   const selectVectorCount = database.prepare(`SELECT COUNT(*) AS n ${vectorSelection}`);
+  // A transcript marked for attaching again (an empty `attached_to`) is left out: its passages' turn positions are stale (ADR-0055).
   const transcriptVectorSelection = `FROM transcript_passage tp
+       JOIN transcript tr ON tr.meeting_id = tp.meeting_id AND tr.event_id = tp.event_id AND tr.attached_to <> ''
        JOIN search_document sd ON sd.document_id = tp.document_id
        JOIN passage_vector v ON v.text_hash = tp.text_hash AND v.model_id = ?2
      WHERE sd.session_key = ?1 AND ${listedDocumentSql("sd", "?3")}`;
@@ -426,24 +451,7 @@ export function openSearchReader(path: string): SearchIndexReader {
       return countRow.parse(selectVectorCount.get(session, modelId, unlistedThrough(session))).n;
     },
     *vectors(session, modelId) {
-      for (const row of selectVectors.iterate(session, modelId, unlistedThrough(session))) {
-        const stored = vectorRow.parse(row);
-        yield {
-          passageId: stored.passage_id,
-          documentId: stored.document_id as DocumentId,
-          nodeId: stored.node_id as DocumentId | AmendmentId,
-          facts: {
-            kind: stored.kind as DocumentKind,
-            measureId: stored.measure_id as MeasureId | null,
-            committeeId: stored.committee_id as CommitteeId | null,
-            date: stored.dated_at as Timestamp | null,
-          },
-          // The blob is a view of SQLite's buffer, which the next row reuses: the vector is copied out.
-          vector: new Int8Array(
-            stored.vector.buffer.slice(stored.vector.byteOffset, stored.vector.byteOffset + stored.vector.byteLength),
-          ),
-        };
-      }
+      yield* vectorRowsOf(selectVectors.iterate(session, modelId, unlistedThrough(session)));
     },
     citing(citationId, filter, limit) {
       const terms = filterTerms(filter, unlistedThrough(filter.session));
@@ -541,6 +549,7 @@ export function openSearchReader(path: string): SearchIndexReader {
           `SELECT tp.id AS passage_id, tp.document_id, sd.node_id
            FROM transcript_passage_fts
              JOIN transcript_passage tp ON tp.id = transcript_passage_fts.rowid
+             JOIN transcript tr ON tr.meeting_id = tp.meeting_id AND tr.event_id = tp.event_id AND tr.attached_to <> ''
              JOIN search_document sd ON sd.document_id = tp.document_id
            WHERE transcript_passage_fts MATCH ? AND ${terms.sql}
            ORDER BY transcript_passage_fts.rank, tp.id
@@ -560,24 +569,7 @@ export function openSearchReader(path: string): SearchIndexReader {
       return countRow.parse(selectTranscriptVectorCount.get(session, modelId, unlistedThrough(session))).n;
     },
     *transcriptVectors(session, modelId) {
-      for (const row of selectTranscriptVectors.iterate(session, modelId, unlistedThrough(session))) {
-        const stored = transcriptVectorRow.parse(row);
-        yield {
-          passageId: stored.passage_id,
-          documentId: stored.document_id as DocumentId,
-          nodeId: stored.node_id as DocumentId | AmendmentId,
-          facts: {
-            kind: stored.kind as DocumentKind,
-            measureId: stored.measure_id as MeasureId | null,
-            committeeId: stored.committee_id as CommitteeId | null,
-            date: stored.dated_at as Timestamp | null,
-          },
-          // The blob is a view of SQLite's buffer, which the next row reuses: the vector is copied out.
-          vector: new Int8Array(
-            stored.vector.buffer.slice(stored.vector.byteOffset, stored.vector.byteOffset + stored.vector.byteLength),
-          ),
-        };
-      }
+      yield* vectorRowsOf(selectTranscriptVectors.iterate(session, modelId, unlistedThrough(session)));
     },
     transcriptDetails(passageId) {
       const row = selectTranscriptDetails.get(passageId);

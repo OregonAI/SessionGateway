@@ -544,8 +544,10 @@ const turnPassageSchema = `
  * document's text, so it is not a row of `passage`: it holds its own text, its own keyword entry
  * (`transcript_passage_fts`, its id the rowid) and its vector under `passage_vector` by the hash of its text, like any
  * passage. It is of a Recording Log (`document_id`) and, when it is a turn's, of that turn (`turn_position`, the turn's place in
- * the log). It adds no column to a table that exists, so a file with the tables already there (one a `CREATE ... IF NOT EXISTS`
- * pass made) upgrades as a new one does.
+ * the log) and holds the quality numbers of the segment it comes from (`avg_logprob`, `compression_ratio`, `no_speech_prob`,
+ * `temperature`, null when the file left one out). A transcript whose `attached_to` is empty is marked for attaching again: its
+ * log's index was stored again, so its turn positions cannot be trusted and the readers leave it out. It adds no column to a
+ * table that exists, so a file with the tables already there (one a `CREATE ... IF NOT EXISTS` pass made) upgrades as a new one does.
  */
 const transcriptSchema = `
   CREATE TABLE IF NOT EXISTS transcript (
@@ -580,7 +582,11 @@ const transcriptSchema = `
     not_given_reason TEXT,
     agenda_item TEXT,
     measure_id TEXT,
-    player_link TEXT NOT NULL
+    player_link TEXT NOT NULL,
+    avg_logprob REAL,
+    compression_ratio REAL,
+    no_speech_prob REAL,
+    temperature REAL
   ) STRICT;
   CREATE INDEX IF NOT EXISTS transcript_passage_of_meeting ON transcript_passage (meeting_id, event_id, ordinal);
   CREATE INDEX IF NOT EXISTS transcript_passage_of_log ON transcript_passage (document_id, start_seconds);

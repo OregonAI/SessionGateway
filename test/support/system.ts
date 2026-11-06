@@ -129,9 +129,10 @@ export type System = {
   hashSampleReport(): Record<string, unknown>;
   /**
    * Runs the worker's full pull again, at the clock's time now, into the same database. `embedder` stands in for the
-   * system's own for this pull, to make a pull fail part-way.
+   * system's own for this pull, to make a pull fail part-way. `withoutTranscriptFolder` runs the pull of a worker whose
+   * deployment no longer sets TRANSCRIPTS_PATH (ticket #134).
    */
-  pullAgain(options?: { embedder?: Embedder }): Promise<FullPullResult>;
+  pullAgain(options?: { embedder?: Embedder; withoutTranscriptFolder?: boolean }): Promise<FullPullResult>;
   /**
    * Runs the worker's full pull for another Session (its first, so it is not an "again") into the same database, as a
    * deployment would that was pointed at a second Session (ticket #82). The server stays configured for the system's own Session.
@@ -354,8 +355,16 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
     legislatorAliases: readLegislatorAliases(options.legislatorAliasesPath ?? committedAliasFilePath),
     embedder: workerEmbedder,
   });
-  const pull = (pullOptions: { embedder?: Embedder } = {}): Promise<FullPullResult> =>
-    runFullPull(loadIngestConfig(env), workerDeps(pullOptions.embedder ?? embedder));
+  const pull = (
+    pullOptions: { embedder?: Embedder; withoutTranscriptFolder?: boolean } = {},
+  ): Promise<FullPullResult> => {
+    // A worker whose deployment no longer names a transcript folder: TRANSCRIPTS_PATH is unset for this pull.
+    const withoutFolder: Record<string, string | undefined> = { ...env, TRANSCRIPTS_PATH: undefined };
+    return runFullPull(
+      loadIngestConfig(pullOptions.withoutTranscriptFolder === true ? withoutFolder : env),
+      workerDeps(pullOptions.embedder ?? embedder),
+    );
+  };
   const pullSession = (sessionKey: string): Promise<FullPullResult> =>
     runFullPull(loadIngestConfig({ ...env, SESSION_KEY: sessionKey }), workerDeps(embedder));
   const schedule = async (until: string, scheduleOptions: { stop?: AbortSignal } = {}): Promise<void> => {

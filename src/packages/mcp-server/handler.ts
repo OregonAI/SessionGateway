@@ -115,7 +115,7 @@ function buildServer(
     name: "get_document",
     title: "Get a document",
     description:
-      "Returns the text of one document of the Session exactly as the Legislature published it, in parts, with where and when it was fetched, the ids of the Measure, Version, meeting and committee it belongs to, and whether it has a text layer at all. On a Recording Log with a speaker-turn index, speaker_turns lists the log's turns; while the owner has published machine transcripts, each turn also lists the words of the machine transcript that fall in it, and the passages that are in no turn are listed apart. It is not the official record.",
+      "Returns the text of one document of the Session exactly as the Legislature published it, in parts, with where and when it was fetched, the ids of the Measure, Version, meeting and committee it belongs to, and whether it has a text layer at all. On a Recording Log with a speaker-turn index, speaker_turns lists the log's turns; while the owner has published machine transcripts, each turn also lists the words of the machine transcript that fall in it, and the passages that are in no turn are listed apart. The transcript is paged with the text: a part carries the words of the turns in that part (a turn with many words continues in the parts after it), so read every part for the whole transcript. It is not the official record.",
     input: getDocumentInput,
     output: getDocumentOutput,
     carriesSourceUrl: () => true,

@@ -432,15 +432,25 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
   return documentsFetched;
 }
 
-/** Reads the transcript folder the deployment names (TRANSCRIPTS_PATH), or nothing when it names none. */
+/**
+ * Reads the transcript folder the deployment names (TRANSCRIPTS_PATH). A deployment that names none and holds no transcript has
+ * nothing to do. One that names none and holds transcripts still runs the step, with no files: a stored transcript whose log's
+ * index was stored again is attached to the new turns, and each is reported as without its file (ADR-0055).
+ */
 function ingestTranscriptsOf(
   config: IngestConfig,
   deps: IngestDeps,
   writer: IndexWriter,
 ): Promise<TranscriptsRun | undefined> {
-  return config.transcriptsPath === null
-    ? Promise.resolve(undefined)
-    : ingestTranscripts({ session: config.session, writer, embedder: deps.embedder, folder: config.transcriptsPath });
+  if (config.transcriptsPath === null && writer.storedTranscripts(config.session).length === 0) {
+    return Promise.resolve(undefined);
+  }
+  return ingestTranscripts({
+    session: config.session,
+    writer,
+    embedder: deps.embedder,
+    folder: config.transcriptsPath,
+  });
 }
 
 /** No documents linked: what a Pull that leaves the five document sets alone has of them. */

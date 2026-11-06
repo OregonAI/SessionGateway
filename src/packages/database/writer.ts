@@ -19,6 +19,7 @@ import type { Passage, SearchEntry } from "#/packages/domain/search.ts";
 import type { SpeakerTurnIndexOutcome } from "#/packages/domain/speaker-turns.ts";
 import type {
   StoredTranscriptKey,
+  StoredTranscriptWords,
   TranscriptNotes,
   TranscriptRecord,
   TranscriptTarget,
@@ -39,9 +40,11 @@ import {
   storeSpeakerTurnIndex,
 } from "./lib/speaker-turns.ts";
 import {
+  readStoredTranscriptWords,
   readStoredTranscripts,
   readTranscriptNotes,
   readTranscriptTargets,
+  reattachTranscript,
   storeTranscript,
 } from "./lib/transcripts.ts";
 import { openWriteConnection } from "./lib/connection.ts";
@@ -418,8 +421,21 @@ export type IndexWriter = {
    * each with its text and its turns in the order of the log (ticket #134, ADR-0055): what a transcript file is read against.
    */
   transcriptTargets(session: SessionKey): TranscriptTarget[];
-  /** The transcripts the Session's Meetings have, with the hashes that say whether a file was read and what it was attached to. */
+  /**
+   * The transcripts the Session's Meetings have, with the file's name and the hashes that say whether a file was read and what
+   * it was attached to. `attachedTo` is empty for a transcript marked for attaching again: storing its log's index again marks
+   * it (`storeSpeakerTurnIndex`), and the worker attaches it in the same pull.
+   */
   storedTranscripts(session: SessionKey): StoredTranscriptKey[];
+  /** The words of a Meeting's stored transcript for an event ID, in order, each with its seconds: what is attached again when the file is gone. */
+  storedTranscriptWords(meeting: MeetingId, eventId: string): StoredTranscriptWords[];
+  /**
+   * Replaces a stored transcript's passages with these and records what they were attached to, keeping the rest of its row, in
+   * one transaction with the vectors the index lacked; it raises the search generation.
+   */
+  reattachTranscript(
+    record: Pick<TranscriptRecord, "meetingId" | "eventId" | "attachedTo" | "passages" | "vectors">,
+  ): void;
   /**
    * Stores a Meeting's transcript for an event ID, replacing the one it had for that event, in one transaction: the passages,
    * their words in the keyword index and the vectors the index lacked. It raises the search generation.
@@ -1154,6 +1170,12 @@ export function openIndexWriter(path: string): IndexWriter {
     },
     storeTranscript(record) {
       storeTranscript(database, record);
+    },
+    storedTranscriptWords(meeting, eventId) {
+      return readStoredTranscriptWords(database, meeting, eventId);
+    },
+    reattachTranscript(record) {
+      reattachTranscript(database, record);
     },
     transcriptNotes(session) {
       return readTranscriptNotes(database, session);

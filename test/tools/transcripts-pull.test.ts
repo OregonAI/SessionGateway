@@ -336,6 +336,28 @@ describe("a stored transcript whose file is no longer in the folder (owner decis
   });
 });
 
+describe("a worker whose deployment no longer names a transcript folder (owner decision 2 of 2026-11-05)", () => {
+  it("keeps the stored transcript and serves it, and its build report lists it as without its file", async () => {
+    const system = await withFolder.start();
+    try {
+      writeFileSync(join(system.transcriptFolder, FILE), standard);
+      await system.pullAgain();
+
+      await system.pullAgain({ withoutTranscriptFolder: true });
+
+      expect(transcriptsReport(system)).toMatchObject({
+        folder_error: null,
+        stored: 1,
+        ingested: [],
+        file_no_longer_in_folder: [{ meeting_id: MEETING, event_id: halnrwEventId, file: FILE }],
+      });
+      expect((await hitsFor(system, "quokka laboratory"))[0]?.transcript?.speaker).toMatch(/^Kurt Williams/);
+    } finally {
+      await system.stop();
+    }
+  });
+});
+
 describe("a Recording Log whose index is stored again (review of ticket #134)", () => {
   const systems: System[] = [];
   afterAll(async () => {

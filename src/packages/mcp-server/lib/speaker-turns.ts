@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { SpeakerTurnIndexOutcome } from "#/packages/domain/speaker-turns.ts";
-import type { TranscriptOfLog } from "#/packages/domain/transcripts.ts";
+import type { PagedTranscript } from "./transcript-parts.ts";
 import {
   proceduralOf,
   proceduralOutput,
@@ -76,7 +76,7 @@ export const speakerTurnsOutput = z
             .array(transcriptPassageOutput)
             .optional()
             .describe(
-              "Present only while the machine transcripts are published and this log has one: the words of the machine transcript that fall in this turn, in order. Empty when no words fall in it.",
+              "Present only while the machine transcripts are published, this log has one, and the turn is listed in this part of the text: the words of the machine transcript that fall in this turn and come in this part, in order. The transcript is paged with the text: a turn's words are in the part its lines are in, and a turn with more words than fit continues in the parts after it. Empty when no words fall in the turn.",
             ),
         }),
       )
@@ -85,7 +85,11 @@ export const speakerTurnsOutput = z
       .object({
         model: z.string().describe("The id of the model that made the transcript."),
         made_at: z.string().describe("When the transcript was made, as an ISO 8601 time with its offset."),
-        passage_count: z.number().describe("How many passages the transcript has in all, in turns and apart."),
+        passage_count: z
+          .number()
+          .describe(
+            "How many passages of the transcript this part carries, in turns and apart. The rest are in the other parts of the text.",
+          ),
         other_passages: z
           .array(
             transcriptPassageOutput.extend({
@@ -105,7 +109,7 @@ export const speakerTurnsOutput = z
             }),
           )
           .describe(
-            "The passages that are in no turn of this log, in order: words before the first turn, during a motion, a vote or a roll call, in a recess, or after the meeting adjourned.",
+            "The passages of this part that are in no turn of this log, in order: words before the first turn, during a motion, a vote or a roll call, in a recess, or after the meeting adjourned. They come in the part after the passages of the turn they follow in time (the first part before the first turn).",
           ),
       })
       .optional()
@@ -119,20 +123,16 @@ export const speakerTurnsOutput = z
   );
 
 /**
- * The log's speaker-turn index as `get_document` shows it. `transcript` is the log's machine transcript, given only while the
- * publication gate is on (ticket #134, ADR-0055): the caller leaves it out otherwise, and nothing of a transcript is shown.
+ * The log's speaker-turn index as `get_document` shows it. `transcript` is what the part carries of the log's machine transcript,
+ * given only while the publication gate is on (ticket #134, ADR-0055): the caller leaves it out otherwise, and nothing of a
+ * transcript is shown.
  */
 export function speakerTurnsShown(
   outcome: SpeakerTurnIndexOutcome,
-  transcript?: TranscriptOfLog,
+  transcript?: PagedTranscript,
 ): z.infer<typeof speakerTurnsOutput> {
   switch (outcome.kind) {
     case "indexed": {
-      if (transcript !== undefined && transcript.turns.length !== outcome.turns.length) {
-        throw new Error(
-          `The transcript of the log has the passages of ${String(transcript.turns.length)} turns and the index has ${String(outcome.turns.length)}`,
-        );
-      }
       return {
         indexed: true,
         event_id: outcome.eventId,
@@ -150,9 +150,9 @@ export function speakerTurnsShown(
           agenda_item: turn.agendaItem,
           measure_id: turn.measureId,
           player_link: turn.playerLink,
-          ...(transcript === undefined
+          ...(transcript?.turns[index] === undefined
             ? {}
-            : { transcript: (transcript.turns[index] ?? []).map(transcriptPassageShown) }),
+            : { transcript: transcript.turns[index].map(transcriptPassageShown) }),
         })),
         ...(transcript === undefined ? {} : { transcript: transcriptShown(transcript) }),
       };
@@ -183,12 +183,12 @@ export function speakerTurnsShown(
 }
 
 function transcriptShown(
-  transcript: TranscriptOfLog,
+  transcript: PagedTranscript,
 ): NonNullable<NonNullable<z.infer<typeof speakerTurnsOutput>>["transcript"]> {
   return {
     model: transcript.modelId,
     made_at: transcript.madeAt,
-    passage_count: transcript.turns.reduce((n, passages) => n + passages.length, 0) + transcript.other.length,
+    passage_count: transcript.turns.reduce((n, passages) => n + (passages?.length ?? 0), 0) + transcript.other.length,
     other_passages: transcript.other.map((passage) => ({
       ...transcriptPassageShown(passage),
       speaker: speakerLabelOf(passage.speaker),

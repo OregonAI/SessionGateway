@@ -46,6 +46,11 @@ export type TranscriptsReport = {
     embedded: number;
     reused: number;
   }[];
+  /**
+   * The transcripts this run attached to the Meeting's turns again from the words it had stored, because the turns changed (the
+   * Recording Log's index was stored again) and the file could not be read again: it is gone, or the run refused it.
+   */
+  reattached_from_stored_words: { meeting_id: MeetingId; event_id: string; file: string; passages: number }[];
   /** The files this run read and refused, by file name; what was stored for the Meeting before is kept. */
   refused: { file: string; reason: string; message: string }[];
   /** The Meetings whose Meeting or some turns were flagged: more than ten seconds from the transcript's segment starts (ADR-0054). */
@@ -60,6 +65,12 @@ export type TranscriptsReport = {
   }[];
   /** Files named `<eventId>.transcript.json` whose event ID no Meeting's Recording Log names. */
   unmatched_files: string[];
+  /**
+   * Every stored transcript whose file is no longer in the folder (or the deployment names no folder), whether or not this run
+   * noticed it first: it stays stored and, while the gate is on, served (owner decision 2 of 2026-11-05). The Meeting, the event
+   * ID, the file's name and the sha256 it was stored with.
+   */
+  file_no_longer_in_folder: { meeting_id: MeetingId; event_id: string; file: string; file_sha256: string }[];
 };
 
 /** What the operator reads after a full pull (spec #1, story 54): the documents that are scans or photographs, whose text is empty, to chase by hand, and the documents this pull could not get. */
@@ -127,7 +138,7 @@ export type BuildReport = {
   recording_log_turns_without_passage: { id: DocumentId; source_url: string; turns: number }[];
   /**
    * What the worker did about the folder of transcript files (ticket #134, ADR-0055). Left out while the deployment names no
-   * folder, so a report of a deployment without transcripts is as it was.
+   * folder and holds no transcript, so a report of a deployment without transcripts is as it was.
    */
   transcripts?: TranscriptsReport;
   /** What this pull made of the passages of the documents it stored, or refiled as embeddable (ADR-0025). */

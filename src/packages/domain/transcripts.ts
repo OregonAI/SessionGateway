@@ -16,6 +16,19 @@ export type StoredPassageSpeaker =
   | { kind: "procedural"; entry: string }
   | { kind: "not_given"; reason: NotGivenReason | null };
 
+/**
+ * The numbers faster-whisper gave for the segment a passage was cut from, as the file gives them: a number the file left out is
+ * null. A passage is always the words of one segment (or the piece of one between two speaker changes, or a cut of such a piece),
+ * and takes that segment's numbers as they are. Nothing is filtered by them (ADR-0055: a threshold is decided after the first
+ * real transcripts have been read). Were a passage ever to be made of several segments, ADR-0055 says which number it keeps.
+ */
+export type PassageQuality = {
+  avgLogprob: number | null;
+  compressionRatio: number | null;
+  noSpeechProb: number | null;
+  temperature: number | null;
+};
+
 /** One passage of a transcript to store: an attached run of words, cut to a Passage's size, embedded like Testimony. */
 export type TranscriptPassage = {
   startSeconds: number;
@@ -31,6 +44,7 @@ export type TranscriptPassage = {
   measureId: MeasureId | null;
   /** The official player at the passage's first whole second, built from the log's own player link. */
   playerLink: string;
+  quality: PassageQuality;
 };
 
 /** How far a transcript's segments are from the log's turns, as the transcript read measured it (ADR-0054). */
@@ -75,8 +89,25 @@ export type TranscriptTarget = {
   }[];
 };
 
-/** A transcript the store holds, as far as the worker needs to tell whether a file has been read. */
-export type StoredTranscriptKey = { meetingId: MeetingId; eventId: string; fileSha256: string; attachedTo: string };
+/**
+ * A transcript the store holds, as far as the worker needs to tell whether a file has been read and what to say of a file that
+ * has gone. `attachedTo` is empty while the transcript is marked for attaching again (its log's index was stored again).
+ */
+export type StoredTranscriptKey = {
+  meetingId: MeetingId;
+  eventId: string;
+  file: string;
+  fileSha256: string;
+  attachedTo: string;
+};
+
+/** One stored passage as the worker needs it to attach a transcript to new turns when the file is gone: its words and seconds. */
+export type StoredTranscriptWords = {
+  startSeconds: number;
+  endSeconds: number;
+  text: string;
+  quality: PassageQuality;
+};
 
 /** What the build report says of the stored transcripts. */
 export type TranscriptNotes = {
@@ -108,6 +139,7 @@ export type ShownTranscriptPassage = {
   agendaItem: string | null;
   measureId: MeasureId | null;
   speaker: ShownPassageSpeaker;
+  quality: PassageQuality;
 };
 
 /**
@@ -122,6 +154,11 @@ export type TranscriptOfLog = {
   madeAt: string;
   turns: ShownTranscriptPassage[][];
   other: ShownTranscriptPassage[];
+  /**
+   * Where each turn's lines start in the log's text (`text.slice(offset)`), one for each turn in the order of `turns`; null for a
+   * turn the worker could not place in the text. The tools page the transcript with the log's text by these (ADR-0055).
+   */
+  turnTextOffsets: (number | null)[];
 };
 
 /** A transcript passage as search shows it: the passage, and the Recording Log and Meeting it is of. */

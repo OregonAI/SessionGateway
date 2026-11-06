@@ -7,11 +7,14 @@ import type { DocumentId, MeetingId } from "#/packages/domain/documents.ts";
 import type { MeasureId, SessionKey } from "#/packages/domain/index.ts";
 import type {
   NotGivenReason,
+  PassageQuality,
   ShownPassageSpeaker,
   ShownTranscriptPassage,
   StoredTranscriptKey,
+  StoredTranscriptWords,
   TranscriptNotes,
   TranscriptOfLog,
+  TranscriptPassage,
   TranscriptRecord,
   TranscriptTarget,
 } from "#/packages/domain/transcripts.ts";
@@ -57,37 +60,7 @@ export function storeTranscript(database: DatabaseSync, record: TranscriptRecord
         record.drift.flaggedTurns,
         record.drift.meetingFlagged ? 1 : 0,
       );
-    const insertPassage = database.prepare(
-      `INSERT INTO transcript_passage (meeting_id, event_id, ordinal, document_id, start_seconds, end_seconds, text,
-         text_hash, speaker_kind, turn_position, entry_kind, not_given_reason, agenda_item, measure_id, player_link)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    );
-    const insertText = database.prepare("INSERT INTO transcript_passage_fts (rowid, text) VALUES (?, ?)");
-    record.passages.forEach((passage, ordinal) => {
-      const speaker = passage.speaker;
-      const inserted = insertPassage.run(
-        record.meetingId,
-        record.eventId,
-        ordinal,
-        passage.documentId,
-        passage.startSeconds,
-        passage.endSeconds,
-        passage.text,
-        passage.hash,
-        speaker.kind,
-        speaker.kind === "turn" ? speaker.position : null,
-        speaker.kind === "procedural" ? speaker.entry : null,
-        speaker.kind === "not_given" ? speaker.reason : null,
-        passage.agendaItem,
-        passage.measureId,
-        passage.playerLink,
-      );
-      insertText.run(inserted.lastInsertRowid, passage.text);
-    });
-    const insertVector = database.prepare(
-      "INSERT OR IGNORE INTO passage_vector (text_hash, model_id, vector) VALUES (?, ?, ?)",
-    );
-    for (const row of record.vectors.rows) insertVector.run(row.hash, record.vectors.modelId, row.vector);
+    insertPassages(database, record.meetingId, record.eventId, record.passages, record.vectors);
     database.prepare("UPDATE search_generation SET generation = generation + 1").run();
     database.exec("COMMIT");
   } catch (error) {
@@ -96,9 +69,135 @@ export function storeTranscript(database: DatabaseSync, record: TranscriptRecord
   }
 }
 
+/** The passages of a transcript, their keyword entries and the vectors the index lacked: the part of a store that both ways share. */
+function insertPassages(
+  database: DatabaseSync,
+  meetingId: MeetingId,
+  eventId: string,
+  passages: readonly TranscriptPassage[],
+  vectors: TranscriptRecord["vectors"],
+): void {
+  const insertPassage = database.prepare(
+    `INSERT INTO transcript_passage (meeting_id, event_id, ordinal, document_id, start_seconds, end_seconds, text,
+       text_hash, speaker_kind, turn_position, entry_kind, not_given_reason, agenda_item, measure_id, player_link,
+       avg_logprob, compression_ratio, no_speech_prob, temperature)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const insertText = database.prepare("INSERT INTO transcript_passage_fts (rowid, text) VALUES (?, ?)");
+  passages.forEach((passage, ordinal) => {
+    const speaker = passage.speaker;
+    const inserted = insertPassage.run(
+      meetingId,
+      eventId,
+      ordinal,
+      passage.documentId,
+      passage.startSeconds,
+      passage.endSeconds,
+      passage.text,
+      passage.hash,
+      speaker.kind,
+      speaker.kind === "turn" ? speaker.position : null,
+      speaker.kind === "procedural" ? speaker.entry : null,
+      speaker.kind === "not_given" ? speaker.reason : null,
+      passage.agendaItem,
+      passage.measureId,
+      passage.playerLink,
+      passage.quality.avgLogprob,
+      passage.quality.compressionRatio,
+      passage.quality.noSpeechProb,
+      passage.quality.temperature,
+    );
+    insertText.run(inserted.lastInsertRowid, passage.text);
+  });
+  const insertVector = database.prepare(
+    "INSERT OR IGNORE INTO passage_vector (text_hash, model_id, vector) VALUES (?, ?, ?)",
+  );
+  for (const row of vectors.rows) insertVector.run(row.hash, vectors.modelId, row.vector);
+}
+
+/**
+ * Replaces the passages of a stored transcript with these, keeping the rest of its row (the file, the audio, the drift), and
+ * records what they were attached to: what the worker does when the turns changed and the file is no longer there to read
+ * again. In one transaction, with the vectors the index lacked, and raises the search generation.
+ */
+export function reattachTranscript(
+  database: DatabaseSync,
+  record: Pick<TranscriptRecord, "meetingId" | "eventId" | "attachedTo" | "passages" | "vectors">,
+): void {
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    for (const sql of [
+      "DELETE FROM transcript_passage_fts WHERE rowid IN (SELECT id FROM transcript_passage WHERE meeting_id = ?1 AND event_id = ?2)",
+      "DELETE FROM transcript_passage WHERE meeting_id = ?1 AND event_id = ?2",
+    ]) {
+      const statement = database.prepare(sql);
+      statement.setReadBigInts(true);
+      statement.run(record.meetingId, record.eventId);
+    }
+    // Read as BigInt like the deletes above: an UPDATE leaves the connection's last rowid where the FTS5 delete left it.
+    const mark = database.prepare("UPDATE transcript SET attached_to = ? WHERE meeting_id = ? AND event_id = ?");
+    mark.setReadBigInts(true);
+    mark.run(record.attachedTo, record.meetingId, record.eventId);
+    insertPassages(database, record.meetingId, record.eventId, record.passages, record.vectors);
+    const raise = database.prepare("UPDATE search_generation SET generation = generation + 1");
+    raise.setReadBigInts(true);
+    raise.run();
+    database.exec("COMMIT");
+  } catch (error) {
+    if (database.isTransaction) database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+const qualityColumns = z.object({
+  avg_logprob: z.number().nullable(),
+  compression_ratio: z.number().nullable(),
+  no_speech_prob: z.number().nullable(),
+  temperature: z.number().nullable(),
+});
+
+function qualityOfRow(row: z.infer<typeof qualityColumns>): PassageQuality {
+  return {
+    avgLogprob: row.avg_logprob,
+    compressionRatio: row.compression_ratio,
+    noSpeechProb: row.no_speech_prob,
+    temperature: row.temperature,
+  };
+}
+
+const wordsRow = qualityColumns.extend({
+  start_seconds: z.number(),
+  end_seconds: z.number(),
+  text: z.string(),
+});
+
+/** The words of the stored transcript of a (Meeting, event ID), in the order they were stored; empty when it has none. */
+export function readStoredTranscriptWords(
+  database: DatabaseSync,
+  meeting: MeetingId,
+  eventId: string,
+): StoredTranscriptWords[] {
+  return database
+    .prepare(
+      `SELECT start_seconds, end_seconds, text, avg_logprob, compression_ratio, no_speech_prob, temperature
+       FROM transcript_passage WHERE meeting_id = ? AND event_id = ? ORDER BY ordinal`,
+    )
+    .all(meeting, eventId)
+    .map((row) => {
+      const stored = wordsRow.parse(row);
+      return {
+        startSeconds: stored.start_seconds,
+        endSeconds: stored.end_seconds,
+        text: stored.text,
+        quality: qualityOfRow(stored),
+      };
+    });
+}
+
 const keyRow = z.object({
   meeting_id: z.string(),
   event_id: z.string(),
+  file: z.string(),
   file_sha256: z.string(),
   attached_to: z.string(),
 });
@@ -107,7 +206,7 @@ const keyRow = z.object({
 export function readStoredTranscripts(database: DatabaseSync, session: SessionKey): StoredTranscriptKey[] {
   return database
     .prepare(
-      `SELECT t.meeting_id, t.event_id, t.file_sha256, t.attached_to
+      `SELECT t.meeting_id, t.event_id, t.file, t.file_sha256, t.attached_to
        FROM transcript t JOIN meeting m ON m.id = t.meeting_id
        WHERE m.session_key = ? ORDER BY t.meeting_id, t.event_id`,
     )
@@ -117,6 +216,7 @@ export function readStoredTranscripts(database: DatabaseSync, session: SessionKe
       return {
         meetingId: key.meeting_id as MeetingId,
         eventId: key.event_id,
+        file: key.file,
         fileSha256: key.file_sha256,
         attachedTo: key.attached_to,
       };
@@ -219,7 +319,7 @@ export function meetingHasTranscript(database: DatabaseSync, meeting: MeetingId)
   );
 }
 
-export const transcriptPassageRow = z.object({
+export const transcriptPassageRow = qualityColumns.extend({
   id: z.number(),
   meeting_id: z.string(),
   document_id: z.string(),
@@ -238,7 +338,8 @@ export type TranscriptPassageRow = z.infer<typeof transcriptPassageRow>;
 
 /** What the SELECT of a passage reads. */
 export const passageColumns = `tp.id, tp.meeting_id, tp.document_id, tp.start_seconds, tp.end_seconds, tp.text, tp.speaker_kind,
-  tp.turn_position, tp.entry_kind, tp.not_given_reason, tp.agenda_item, tp.measure_id, tp.player_link`;
+  tp.turn_position, tp.entry_kind, tp.not_given_reason, tp.agenda_item, tp.measure_id, tp.player_link, tp.avg_logprob,
+  tp.compression_ratio, tp.no_speech_prob, tp.temperature`;
 
 /** A stored passage as the readers hand it out; the speaker's turn is read from the log it is a turn of. */
 export function shownPassageOf(database: DatabaseSync, row: TranscriptPassageRow): ShownTranscriptPassage {
@@ -274,6 +375,7 @@ export function shownPassageOf(database: DatabaseSync, row: TranscriptPassageRow
     agendaItem: row.agenda_item,
     measureId: row.measure_id as MeasureId | null,
     speaker,
+    quality: qualityOfRow(row),
   };
 }
 
@@ -284,6 +386,7 @@ const logTranscriptRow = z.object({
   made_at: z.string(),
 });
 const positionRow = z.object({ position: z.number() });
+const turnStartRow = z.object({ turn_position: z.number(), start_offset: z.number() });
 
 /**
  * The transcript of a Recording Log, or undefined when the log has none: the transcript of the Meeting the log belongs to for
@@ -297,7 +400,7 @@ export function readTranscriptOfLog(database: DatabaseSync, log: DocumentId): Tr
        FROM speaker_turn_index i
          JOIN meeting_document md ON md.document_id = i.document_id
          JOIN transcript t ON t.meeting_id = md.meeting_id AND t.event_id = i.event_id
-       WHERE i.document_id = ? AND i.outcome = 'indexed'`,
+       WHERE i.document_id = ? AND i.outcome = 'indexed' AND t.attached_to <> ''`,
     )
     .get(log);
   if (found === undefined) return undefined;
@@ -317,6 +420,16 @@ export function readTranscriptOfLog(database: DatabaseSync, log: DocumentId): Tr
     .prepare("SELECT position FROM speaker_turn WHERE document_id = ? ORDER BY offset_seconds, position")
     .all(log)
     .map((row) => positionRow.parse(row).position);
+  // Where each turn's lines start in the log's text: the start of the passage the worker cut around the turn (ADR-0053).
+  const startsOf = new Map(
+    database
+      .prepare("SELECT turn_position, start_offset FROM passage WHERE document_id = ? AND turn_position IS NOT NULL")
+      .all(log)
+      .map((row) => {
+        const start = turnStartRow.parse(row);
+        return [start.turn_position, start.start_offset] as const;
+      }),
+  );
   return {
     meetingId: transcript.meeting_id as MeetingId,
     eventId: transcript.event_id,
@@ -326,5 +439,6 @@ export function readTranscriptOfLog(database: DatabaseSync, log: DocumentId): Tr
       shown.filter((entry) => entry.position === position).map((entry) => entry.passage),
     ),
     other: shown.filter((entry) => entry.position === null).map((entry) => entry.passage),
+    turnTextOffsets: positions.map((position) => startsOf.get(position) ?? null),
   };
 }

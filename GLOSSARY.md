@@ -211,7 +211,7 @@ _Avoid_: utterance, caption
 The distance in seconds from a Speaker turn's second to the nearest Transcript segment start. A turn over 10 seconds is flagged, and so is the Meeting when the median over its turns is over 10 seconds; the maximum is reported too (ADR-0054). It is a rough alarm: a segment start is not a speaker change.
 
 **Transcript passage**:
-One attached run of a Transcript's words: the words of a Transcript segment, or the piece of one between two speaker changes, cut to the Passage size, with its start and end seconds, a Player link at its first whole second, and whose words they are: a Speaker turn of a Recording Log (by its position), a procedural line of the log (a motion, its result, a vote, a roll call), or "speaker not given" (before the first turn, during a recess, after the meeting adjourned). It carries the Agenda item and Measure in force at its start. The worker stores it and embeds it like Testimony; it is not a row of a document's text (ADR-0055). Search finds it, and the tools show it only while the Publication gate is on.
+One attached run of a Transcript's words: the words of a Transcript segment, or the piece of one between two speaker changes, cut to the Passage size, with its start and end seconds, a Player link at its first whole second, and whose words they are: a Speaker turn of a Recording Log (by its position), a procedural line of the log (a motion, its result, a vote, a roll call), or "speaker not given" (before the first turn, during a recess, after the meeting adjourned). It carries the Agenda item and Measure in force at its start. It keeps the quality numbers of its segment (`avg_logprob`, `compression_ratio`, `no_speech_prob`, `temperature`), which nothing filters by yet. The worker stores it and embeds it like Testimony; it is not a row of a document's text (ADR-0055). Search finds it, and the tools show it only while the Publication gate is on; `get_document` pages it with the Recording Log's text, so a part carries the passages of the turns in that part.
 _Avoid_: caption, quote, utterance
 
 **Machine-transcript notice**:
@@ -222,7 +222,7 @@ The server's `TRANSCRIPTS_PUBLISHED` setting (`true` or `false`, `false` when un
 _Avoid_: feature flag, switch
 
 **Transcript folder**:
-The directory `TRANSCRIPTS_PATH` names, which holds the files `<eventId>.transcript.json` that `OregonAI/hearing-transcripts` writes. The worker reads it at the end of each pull. A file is read when it is new, its sha256 changed, or the turns it is attached to changed; a refused file is named in the Build report and what was stored before is kept.
+The directory `TRANSCRIPTS_PATH` names, which holds the files `<eventId>.transcript.json` that `OregonAI/hearing-transcripts` writes. The worker reads it at the end of each pull. A file is read when it is new, its sha256 changed, or the turns it is attached to changed; a refused file is named in the Build report and what was stored before is kept. A transcript whose file has gone from the folder stays stored and served, and the Build report lists it (`file_no_longer_in_folder`).
 
 **Event ID**:
 The Invintus identifier of one recorded Meeting (such as `2025011038`), the `eventID` of the Legislature's player links in a Recording Log. A log with no player link has none, and a log whose links carry two different ones has two: the parser reports either and picks neither.
