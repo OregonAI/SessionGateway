@@ -51,7 +51,9 @@ describe("the 2026R1 question set", () => {
 
     it("asks the committee, the date and the recording of the Measure's hearing, from get_measure", () => {
       for (const each of hearing) {
-        const paths = each.steps.filter((one) => one.tool === "get_measure").flatMap((one) => one.expect.map((c) => c.path));
+        const paths = each.steps
+          .filter((one) => one.tool === "get_measure")
+          .flatMap((one) => one.expect.map((c) => c.path));
         for (const field of ["committee_code", "meeting_date", "recording_log_id"]) {
           expect(
             paths.some((path) => path.startsWith("hearings[") && path.endsWith(`].${field}`)),
@@ -65,14 +67,16 @@ describe("the 2026R1 question set", () => {
       for (const each of hearing) {
         const link = each.steps
           .flatMap((one) => one.expect)
-          .find((check) => check.path.endsWith("].player_link") && "includes" in check);
+          .find((check) => check.path.endsWith("].player_link") && "includesText" in check);
         const seconds = each.steps
           .flatMap((one) => one.expect)
           .find((check) => check.path.endsWith("].offset_seconds") && "equals" in check);
         expect(link, each.id).toBeDefined();
-        const wanted = link !== undefined && "includes" in link ? [link.includes].flat().map(String) : [];
+        const wanted = link !== undefined && "includesText" in link ? [link.includesText].flat() : [];
         const second = seconds !== undefined && "equals" in seconds ? (seconds.equals as number[])[0] : undefined;
-        expect(wanted, each.id).toContain("https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID=");
+        expect(wanted, each.id).toContain(
+          "https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID=",
+        );
         expect(wanted, each.id).toContain(`&startStreamAt=${String(second)}`);
       }
     });

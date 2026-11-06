@@ -270,7 +270,7 @@ questions:
           - { path: "speaker_turns.turns[timecode=00:11:48].agenda_item", equals: ["SB 1518 - Public Hearing"] }
           - { path: "speaker_turns.turns[timecode=00:11:48].offset_seconds", equals: [708] }
           - path: "speaker_turns.turns[timecode=00:11:48].player_link"
-            includes:
+            includesText:
               - "https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID="
               - "&startStreamAt=708"
 
@@ -300,7 +300,7 @@ questions:
           - { path: "speaker_turns.turns[timecode=00:28:11].agenda_item", equals: ["HB 4098 - Public Hearing"] }
           - { path: "speaker_turns.turns[timecode=00:28:11].offset_seconds", equals: [1691] }
           - path: "speaker_turns.turns[timecode=00:28:11].player_link"
-            includes:
+            includesText:
               - "https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID="
               - "&startStreamAt=1691"
 
@@ -330,7 +330,7 @@ questions:
           - { path: "speaker_turns.turns[timecode=01:01:19].agenda_item", equals: ["SB 1507 Public Hearing"] }
           - { path: "speaker_turns.turns[timecode=01:01:19].offset_seconds", equals: [3679] }
           - path: "speaker_turns.turns[timecode=01:01:19].player_link"
-            includes:
+            includesText:
               - "https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID="
               - "&startStreamAt=3679"
 
@@ -361,7 +361,7 @@ questions:
           - { path: "speaker_turns.turns[timecode=00:20:41].agenda_item", equals: ["HB 4004 - Public Hearing"] }
           - { path: "speaker_turns.turns[timecode=00:20:41].offset_seconds", equals: [1241] }
           - path: "speaker_turns.turns[timecode=00:20:41].player_link"
-            includes:
+            includesText:
               - "https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID="
               - "&startStreamAt=1241"
 
@@ -390,6 +390,6 @@ questions:
           - { path: "speaker_turns.turns[timecode=00:53:39].agenda_item", equals: ["HB 4004 - Public Hearing"] }
           - { path: "speaker_turns.turns[timecode=00:53:39].offset_seconds", equals: [3219] }
           - path: "speaker_turns.turns[timecode=00:53:39].player_link"
-            includes:
+            includesText:
               - "https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID="
               - "&startStreamAt=3219"

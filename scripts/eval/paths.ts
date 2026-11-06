@@ -90,12 +90,15 @@ export function find(root: unknown, path: string): unknown {
   return many ? nodes : nodes[0];
 }
 
-// A check is a path and exactly one of these. The YAML a question set is written in has null, numbers, text, lists and
+// A check is a path and exactly one of these (`equals`, `includes`, `includesText`, `atLeast`, `length`, `present`). The YAML a question set is written in has null, numbers, text, lists and
 // maps, which is JSON's set (z.json()), so `equals` can name any of them.
 const json = z.json();
 export const checkSchema = z.union([
   z.strictObject({ path: z.string(), equals: json }),
   z.strictObject({ path: z.string(), includes: z.union([z.string(), z.array(json)]) }),
+  // Ticket #129: some text the path finds contains the words (each of them, when several), for a long text that a list's
+  // `includes` cannot say whole, such as a player link of which the question knows its page and its second.
+  z.strictObject({ path: z.string(), includesText: z.union([z.string(), z.array(z.string())]) }),
   z.strictObject({ path: z.string(), atLeast: z.number() }),
   z.strictObject({ path: z.string(), length: z.number().int().nonnegative() }),
   z.strictObject({ path: z.string(), present: z.boolean() }),
@@ -129,6 +132,16 @@ export function problemWith(result: unknown, check: Check): string | undefined {
       return true;
     });
     return missing.length === 0 ? undefined : `${check.path} should include ${missing.map(show).join(", ")}, ${got}`;
+  }
+  if ("includesText" in check) {
+    const wanted = typeof check.includesText === "string" ? [check.includesText] : check.includesText;
+    const texts = (Array.isArray(value) ? (value as unknown[]) : [value]).filter(
+      (element): element is string => typeof element === "string",
+    );
+    const missing = wanted.filter((words) => !texts.some((text) => text.includes(words)));
+    return missing.length === 0
+      ? undefined
+      : `${check.path} should have a text that includes ${missing.map(show).join(", ")}, ${got}`;
   }
   if ("atLeast" in check) {
     const count = typeof value === "number" ? value : sizeOf(value);
