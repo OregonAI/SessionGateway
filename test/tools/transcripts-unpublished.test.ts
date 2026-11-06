@@ -7,6 +7,10 @@
 // Its database is shared by every case and is a copy of the run's template for its options (see the published file). Each
 // case reads, so none changes it.
 //
+// The claims are all "nothing is there", which would pass just as well over a database with no transcript in it. So each
+// system's own database is also read by a second server with the gate ON (the same database, the same file, a handler of its
+// own): the case "the database holds the transcript" says the words are there to be kept out.
+//
 // Expected values: the made-up words are the ones in test/support/made-up-transcript.ts (halnrwSegments); the stage-1 turn is
 // a literal from the fixture's real log 288741 (Kurt Williams, 00:02:49 = 169 s, event 2025011038, the log's own player
 // link with the clientID 4879615486; get-document-speaker-turns.test.ts says how those were read from the raw PDF).
@@ -14,6 +18,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { halnrwEventId, halnrwSegments, madeUpTranscript } from "../support/made-up-transcript.ts";
 import { callTool, connectClient, type ConnectedClient } from "../support/mcp-clients.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";
+import { createFakeEmbedder } from "../support/fake-embedder.ts";
+import { createSessionGatewayHandler, type SessionGatewayHandler } from "#/packages/mcp-server/handler.ts";
 
 const options = {
   clockAt: "2026-08-05T17:00:00Z",
@@ -32,6 +38,9 @@ describe.for([
 ] as const)("the gate is %s", ([, setting]) => {
   let system: System;
   let connected: ConnectedClient;
+  /** A server of its own on the same database with the gate on: what the database holds, as an owner who publishes would see it. */
+  let publishing: SessionGatewayHandler;
+  let publishingClient: ConnectedClient;
 
   beforeAll(async () => {
     system = await startCopiedSystem({
@@ -39,11 +48,35 @@ describe.for([
       ...(setting === undefined ? {} : { serverEnv: { TRANSCRIPTS_PUBLISHED: setting } }),
     });
     connected = await connectClient("2026-07-28", system.handler);
+    publishing = createSessionGatewayHandler(
+      { ...system.serverConfig, transcriptsPublished: true },
+      {
+        clock: system.clock,
+        fetch,
+        signal: new AbortController().signal,
+        onLiveLookupFailed: () => {},
+        embedder: await createFakeEmbedder(),
+      },
+    );
+    publishingClient = await connectClient("2026-07-28", publishing);
   }, 60_000);
 
   afterAll(async () => {
+    await publishingClient.close();
+    await publishing.close();
     await connected.close();
     await system.stop();
+  });
+
+  it("the database holds the transcript: a server on it with the gate on finds the words the gate-off server cannot, by their words and in get_document", async () => {
+    const search = await callTool(publishingClient, "search", { query: "quokka laboratory" });
+    const hits = search.structured?.["results"] as { snippet: string; transcript?: { speaker: string } }[];
+    expect(hits.find((hit) => hit.transcript !== undefined)?.snippet).toContain("quokka laboratory tests samples");
+    const log = await callTool(publishingClient, "get_document", { id: "recording-log-2025r1-288741" });
+    expect(JSON.stringify(log.structured?.["speaker_turns"])).toContain("quokka laboratory tests samples");
+    // The same questions of this file's server, with the gate off, find none of it (the cases below hold that for every tool).
+    const off = await callTool(connected, "search", { query: "quokka laboratory" });
+    expect(JSON.stringify(off.structured?.["results"])).not.toContain("quokka laboratory tests samples");
   });
 
   function holdsNoTranscript(outcome: { structured: Record<string, unknown> | undefined }): void {

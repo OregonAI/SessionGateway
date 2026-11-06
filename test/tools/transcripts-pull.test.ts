@@ -18,6 +18,7 @@
 //   nearest of those: 33 of the 38 are more than 10 s from every start, the largest is 1587 s (the turn at 2973 s, 4560 - 2973)
 //   and the median of the 38 distances (the mean of the 19th and 20th when they are put in order) is 315 s, so the Meeting is
 //   flagged (its median is more than 10 s). A file with a segment 0.5 s after each of the 38 turns has every distance 0.5 s.
+import { createHash } from "node:crypto";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -30,6 +31,7 @@ import {
   type MadeUpSegment,
 } from "../support/made-up-transcript.ts";
 import { callTool, connectClient, type ConnectedClient } from "../support/mcp-clients.ts";
+import { attachTranscriptsToAnOlderIndex, forgetSpeakerTurns } from "../support/old-database.ts";
 import { recordEmbeddings } from "../support/recording-embedder.ts";
 import { startCopiedSystem, startSystem, systemTemplate, type System } from "../support/system.ts";
 
@@ -64,6 +66,8 @@ type Report = {
     meeting_flagged: boolean;
   }[];
   unmatched_files: string[];
+  file_no_longer_in_folder: { meeting_id: string; event_id: string; file: string; file_sha256: string }[];
+  reattached_from_stored_words: { meeting_id: string; event_id: string; file: string; passages: number }[];
 };
 
 function transcriptsReport(system: System): Report {
@@ -285,6 +289,103 @@ describe("the worker ingests transcript files", () => {
       ingested: [],
       drift_flags: [{ meeting_id: MEETING, meeting_flagged: true }],
     });
+  });
+});
+
+describe("a stored transcript whose file is no longer in the folder (owner decision 2 of 2026-11-05)", () => {
+  const systems: System[] = [];
+  afterAll(async () => {
+    await Promise.all(systems.splice(0).map((system) => system.stop()));
+  });
+
+  it("stays stored and served, and the build report lists it with its Meeting, event ID and the sha256 it was stored with", async () => {
+    const system = await withFolder.start();
+    systems.push(system);
+    writeFileSync(join(system.transcriptFolder, FILE), standard);
+    await system.pullAgain();
+    expect(transcriptsReport(system).file_no_longer_in_folder).toEqual([]);
+
+    rmSync(join(system.transcriptFolder, FILE));
+    await system.pullAgain();
+
+    // The file's sha256 is of its bytes, which `standard` is the text of.
+    const sha256 = createHash("sha256").update(standard).digest("hex");
+    expect(transcriptsReport(system)).toMatchObject({
+      stored: 1,
+      ingested: [],
+      refused: [],
+      file_no_longer_in_folder: [{ meeting_id: MEETING, event_id: halnrwEventId, file: FILE, file_sha256: sha256 }],
+    });
+    expect((await hitsFor(system, "quokka laboratory"))[0]?.transcript?.speaker).toMatch(/^Kurt Williams/);
+    const connected = await connectClient("2026-07-28", system.handler);
+    try {
+      const outcome = await callTool(connected, "meetings", {
+        committee: "HALNRW",
+        from: "2025-01-22",
+        to: "2025-01-22",
+      });
+      expect((outcome.structured?.["meetings"] as { has_transcript?: boolean }[])[0]?.has_transcript).toBe(true);
+    } finally {
+      await connected.close();
+    }
+
+    // The file comes back: it is read again only if its bytes differ, and it is no longer listed as gone.
+    writeFileSync(join(system.transcriptFolder, FILE), standard);
+    await system.pullAgain();
+    expect(transcriptsReport(system)).toMatchObject({ stored: 1, ingested: [], file_no_longer_in_folder: [] });
+  });
+});
+
+describe("a Recording Log whose index is stored again (review of ticket #134)", () => {
+  const systems: System[] = [];
+  afterAll(async () => {
+    await Promise.all(systems.splice(0).map((system) => system.stop()));
+  });
+
+  /**
+   * The stored transcript was attached to an older reading of the log's links (every turn one position later), and the next
+   * pull stores the log's index again by fetching the log once more. The transcript must then name the right turns again:
+   * from its file when the file is in the folder, and from its stored words when the file is gone.
+   */
+  it.for([
+    ["the file is still in the folder", false],
+    ["the file has gone from the folder", true],
+  ] as const)("attaches the transcript to the new turns when %s", async ([, fileGone]) => {
+    const system = await withFolder.start();
+    systems.push(system);
+    writeFileSync(join(system.transcriptFolder, FILE), standard);
+    await system.pullAgain();
+    attachTranscriptsToAnOlderIndex(system.database.path);
+    forgetSpeakerTurns(system.database.path);
+    if (fileGone) rmSync(join(system.transcriptFolder, FILE));
+
+    await system.pullAgain();
+
+    // Kurt Williams (00:02:49) is the speaker of the words from 169.5 s, as the log's lines say; so is every other speaker.
+    const hit = (await hitsFor(system, "quokka laboratory")).find((found) => found.transcript !== undefined);
+    expect(hit?.transcript?.speaker).toMatch(/^Kurt Williams/);
+    const connected = await connectClient("2026-07-28", system.handler);
+    try {
+      const outcome = await callTool(connected, "get_document", { id: "recording-log-2025r1-288741" });
+      const turns = (
+        outcome.structured?.["speaker_turns"] as { turns: { timecode: string; transcript?: { text: string }[] }[] }
+      ).turns;
+      const said = (timecode: string): string[] | undefined =>
+        turns.find((turn) => turn.timecode === timecode)?.transcript?.map((passage) => passage.text);
+      expect(said("00:00:04")).toEqual(["welcome everyone"]);
+      expect(said("00:01:47")).toEqual(["that concludes the staff summary"]);
+      expect(said("00:02:49")).toEqual(["Good morning members the quokka laboratory tests samples"]);
+      expect(said("00:21:43")).toEqual(["The platypus bill needs a hearing"]);
+      expect(said("01:15:49")).toEqual(["The petunia bill is open"]);
+      expect(said("00:06:15")).toEqual([]);
+    } finally {
+      await connected.close();
+    }
+    const report = transcriptsReport(system);
+    expect(report.reattached_from_stored_words.map((entry) => [entry.file, entry.passages])).toEqual(
+      fileGone ? [[FILE, 8]] : [],
+    );
+    expect(report.ingested.map((entry) => entry.file)).toEqual(fileGone ? [] : [FILE]);
   });
 });
 

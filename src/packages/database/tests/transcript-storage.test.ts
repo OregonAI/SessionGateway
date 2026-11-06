@@ -59,6 +59,8 @@ const turns = [
   }),
 ];
 
+const noQuality = { avgLogprob: null, compressionRatio: null, noSpeechProb: null, temperature: null };
+
 function passageOf(
   startSeconds: number,
   words: string,
@@ -75,6 +77,7 @@ function passageOf(
     agendaItem: null,
     measureId: null,
     playerLink: player(Math.floor(startSeconds)),
+    quality: noQuality,
     ...parts,
   };
 }
@@ -235,7 +238,13 @@ describe("a Meeting's transcript passages", () => {
     expect(index.search.keywordTranscripts('"gooseberry"', { session, withTestimony: false }, 10)).toHaveLength(1);
     expect(index.search.generation()).toBeGreaterThan(before);
     expect(index.writer.storedTranscripts(session)).toEqual([
-      { meetingId: meeting.id, eventId: "2099010001", fileSha256: hash("file two"), attachedTo: hash("turns one") },
+      {
+        meetingId: meeting.id,
+        eventId: "2099010001",
+        file: "2099010001.transcript.json",
+        fileSha256: hash("file two"),
+        attachedTo: hash("turns one"),
+      },
     ]);
   });
 
@@ -274,5 +283,143 @@ describe("a Meeting's transcript passages", () => {
         },
       ],
     });
+  });
+});
+
+describe("the quality numbers of a passage (owner decision 3 of 2026-11-05)", () => {
+  const quality = { avgLogprob: -0.31, compressionRatio: 1.4, noSpeechProb: 0.02, temperature: 0.2 };
+
+  test("are stored with each passage and read back by the log's reader, search's details and the worker's stored words; a number the file did not give is null", () => {
+    index.writer.storeTranscript(
+      recordOf([
+        passageOf(5, "welcome all", { kind: "turn", position: 0 }, { quality }),
+        passageOf(
+          40,
+          "the walrus bill",
+          { kind: "turn", position: 1 },
+          { quality: { ...noQuality, avgLogprob: -1.9, temperature: 0 } },
+        ),
+        passageOf(60, "so moved", { kind: "procedural", entry: "motion" }),
+      ]),
+    );
+
+    const stored = index.reader.transcriptOfLog(logId);
+    expect(stored?.turns[0]?.[0]?.quality).toEqual(quality);
+    expect(stored?.turns[1]?.[0]?.quality).toEqual({
+      avgLogprob: -1.9,
+      compressionRatio: null,
+      noSpeechProb: null,
+      temperature: 0,
+    });
+    expect(stored?.other[0]?.quality).toEqual(noQuality);
+    const [found] = index.search.keywordTranscripts('"welcome"', { session, withTestimony: false }, 10);
+    expect(index.search.transcriptDetails(found?.transcriptPassageId ?? -1).quality).toEqual(quality);
+    expect(
+      index.writer.storedTranscriptWords(meeting.id, "2099010001").map((word) => [word.text, word.quality]),
+    ).toEqual([
+      ["welcome all", quality],
+      ["the walrus bill", { ...noQuality, avgLogprob: -1.9, temperature: 0 }],
+      ["so moved", noQuality],
+    ]);
+  });
+});
+
+describe("the words of a stored transcript, for attaching it again when its file is gone", () => {
+  test("come back in the order they were stored, each with its seconds", () => {
+    index.writer.storeTranscript(
+      recordOf([
+        passageOf(1, "before anyone", { kind: "not_given", reason: null }),
+        passageOf(5, "welcome all", { kind: "turn", position: 0 }),
+      ]),
+    );
+
+    expect(index.writer.storedTranscriptWords(meeting.id, "2099010001")).toEqual([
+      { startSeconds: 1, endSeconds: 4, text: "before anyone", quality: noQuality },
+      { startSeconds: 5, endSeconds: 8, text: "welcome all", quality: noQuality },
+    ]);
+    expect(index.writer.storedTranscriptWords(meeting.id, "2099019999")).toEqual([]);
+  });
+});
+
+describe("a log whose index is stored again", () => {
+  // The log's turns again, with one more at the front: every position moves by one, as a re-read of the links may make them.
+  const turnsAgain = [turn(2, "00:00:02", "Clerk Added"), ...turns];
+  const reindexed = (): void => {
+    index.writer.storeSpeakerTurnIndex({
+      documentId: logId,
+      outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: turnsAgain },
+    });
+  };
+  const vector = new Int8Array(384);
+  vector[7] = 127;
+
+  test("has its transcript marked for attaching again, so it is no longer what the file was attached to", () => {
+    index.writer.storeTranscript(recordOf([passageOf(40, "the walrus bill", { kind: "turn", position: 1 })]));
+    const before = index.search.generation();
+
+    reindexed();
+
+    expect(index.writer.storedTranscripts(session)).toHaveLength(1);
+    expect(index.writer.storedTranscripts(session)[0]?.attachedTo).not.toBe(hash("turns one"));
+    // The server loads the vectors again, which now leave the transcript out.
+    expect(index.search.generation()).toBeGreaterThan(before);
+  });
+
+  test("shows nothing of its transcript until it is attached again: no passage can point at a position that moved", () => {
+    index.writer.storeTranscript(
+      recordOf([passageOf(40, "the walrus bill", { kind: "turn", position: 1 })], {
+        vectors: { modelId, rows: [{ hash: hash("the walrus bill"), vector }] },
+      }),
+    );
+
+    reindexed();
+
+    expect(index.reader.transcriptOfLog(logId)).toBeUndefined();
+    expect(index.search.keywordTranscripts('"walrus"', { session, withTestimony: false }, 10)).toEqual([]);
+    expect(index.search.transcriptVectorCount(session, modelId)).toBe(0);
+    expect([...index.search.transcriptVectors(session, modelId)]).toEqual([]);
+    // It is still stored: the Meeting has it, and its words are there to attach again.
+    expect(index.reader.meetingHasTranscript(meeting.id)).toBe(true);
+    expect(index.writer.storedTranscriptWords(meeting.id, "2099010001").map((word) => word.text)).toEqual([
+      "the walrus bill",
+    ]);
+
+    // Attached again to the new turns, it is shown, and its speaker is the turn at the position the passage names now.
+    index.writer.storeTranscript(
+      recordOf([passageOf(40, "the walrus bill", { kind: "turn", position: 2 })], { attachedTo: hash("turns two") }),
+    );
+    const again = index.reader.transcriptOfLog(logId);
+    expect(again?.turns.map((passages) => passages.map((p) => p.text))).toEqual([[], [], ["the walrus bill"]]);
+    expect(again?.turns[2]?.[0]?.speaker).toMatchObject({
+      kind: "turn",
+      turn: { speaker: "Pat Poe, Director, Made Up Agency" },
+    });
+  });
+});
+
+describe("where a turn's lines start in the log's text", () => {
+  const preamble = "MADE UP COMMITTEE\n";
+  const lineOne = "00:00:04 Co-Chair Upp\n";
+  const lineTwo = "00:00:31 Pat Poe, Director, Made Up Agency\n";
+  const slice = (start: number, end: number, turnPosition?: number): Passage => ({
+    start,
+    end,
+    text: text.slice(start, end),
+    hash: hash(text.slice(start, end)),
+    ...(turnPosition === undefined ? {} : { turn: turnPosition }),
+  });
+
+  test("is given for each turn the worker cut the text around, in the order of the turns, and is null for one it could not place", () => {
+    // The text is the made-up one above: the first line is 18 characters with its break, the second 22.
+    expect(preamble.length).toBe(18);
+    expect(lineOne.length).toBe(22);
+    index.writer.storeTranscript(recordOf([passageOf(5, "welcome all", { kind: "turn", position: 0 })]));
+
+    index.writer.replacePassages(logId, [slice(0, 18), slice(18, 40, 0), slice(40, 40 + lineTwo.length, 1)], 0);
+    expect(index.reader.transcriptOfLog(logId)?.turnTextOffsets).toEqual([18, 40]);
+
+    // A turn with no passage of its own (the text could not place it) has no offset.
+    index.writer.replacePassages(logId, [slice(0, 18), slice(18, 40, 0), slice(40, 40 + lineTwo.length)], 1);
+    expect(index.reader.transcriptOfLog(logId)?.turnTextOffsets).toEqual([18, null]);
   });
 });

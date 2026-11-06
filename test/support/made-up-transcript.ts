@@ -90,3 +90,117 @@ export const halnrwSegments: MadeUpSegment[] = [
   { start: 4560, end: 4565, words: wordsFrom(4560, "The petunia bill is open") },
   { start: 5352, end: 5357, words: wordsFrom(5352, "Thanks everyone gooseberry adjourned") },
 ];
+
+/**
+ * The 38 speaker turns of Recording Log 288741 (HALNRW 2025-01-22), as the log's own timecodes give them, in the order of the
+ * log: the document itself (documents/committee-meeting-documents/288741.pdf as the pdf-text package extracts it).
+ */
+export const halnrwTurnTimecodes = [
+  "00:00:04",
+  "00:00:49",
+  "00:01:38",
+  "00:01:47",
+  "00:02:49",
+  "00:06:15",
+  "00:08:44",
+  "00:11:29",
+  "00:12:05",
+  "00:14:40",
+  "00:16:57",
+  "00:18:05",
+  "00:20:14",
+  "00:21:43",
+  "00:22:38",
+  "00:23:06",
+  "00:24:04",
+  "00:29:18",
+  "00:33:21",
+  "00:33:46",
+  "00:36:37",
+  "00:39:22",
+  "00:40:31",
+  "00:46:53",
+  "00:49:33",
+  "00:51:44",
+  "00:53:00",
+  "00:56:17",
+  "01:00:38",
+  "01:01:23",
+  "01:05:09",
+  "01:10:49",
+  "01:14:42",
+  "01:15:49",
+  "01:16:09",
+  "01:19:58",
+  "01:20:56",
+  "01:21:19",
+];
+
+const secondOfTimecode = (timecode: string): number => {
+  const [hours, minutes, seconds] = timecode.split(":").map(Number);
+  return (hours ?? 0) * 3600 + (minutes ?? 0) * 60 + (seconds ?? 0);
+};
+
+/** The motion at 00:00:52 and the vote at 00:01:09 fall inside the second turn, so no filler is put there. */
+const turnWithNoFiller = 1;
+/** The last turn, which runs until the meeting adjourns at 01:29:10 (5,350 s): the turn whose transcript is longer than a part. */
+export const longTurn = halnrwTurnTimecodes.length - 1;
+/** The filler sentences each ordinary turn gets at most, and the long turn gets. */
+const sentencesOfOrdinaryTurn = 4;
+const sentencesOfLongTurn = 150;
+const adjournedAt = 5350;
+/** A sentence is 12 words 0.25 s apart, and one starts every 3 s from the second after its turn begins. */
+const wordsInSentence = 12;
+
+/** One word of a filler sentence: `MADEUP-t05-s003-w07` is the 8th word of the 4th sentence of the 6th turn. */
+const fillerWord = (turn: number, sentence: number, word: number): string =>
+  `MADEUP-t${String(turn).padStart(2, "0")}-s${String(sentence).padStart(3, "0")}-w${String(word).padStart(2, "0")}`;
+
+/** The text of filler sentence `sentence` of turn `turn` (counting from 0), as it is read back: twelve words with one space between. */
+export function fillerSentence(turn: number, sentence: number): string {
+  return Array.from({ length: wordsInSentence }, (_, word) => fillerWord(turn, sentence, word)).join(" ");
+}
+
+/**
+ * How many filler sentences turn `turn` of log 288741 has: a sentence is kept only if its last word starts before the next turn
+ * (or the adjournment), so no sentence is split between two speakers, and the second turn has none (see `turnWithNoFiller`).
+ */
+export function fillerSentenceCount(turn: number): number {
+  if (turn === turnWithNoFiller) return 0;
+  const start = secondOfTimecode(halnrwTurnTimecodes[turn] ?? "00:00:00");
+  const end = turn === longTurn ? adjournedAt : secondOfTimecode(halnrwTurnTimecodes[turn + 1] ?? "00:00:00");
+  const cap = turn === longTurn ? sentencesOfLongTurn : sentencesOfOrdinaryTurn;
+  let count = 0;
+  while (count < cap && start + 1 + 3 * count + 0.25 * (wordsInSentence - 1) < end) count += 1;
+  return count;
+}
+
+/** The words that are no turn's in `longHalnrwSegments`, in the order of their seconds. */
+export const longHalnrwOtherPassages = [
+  "Okay then",
+  "I move the marmalade amendment as printed",
+  "Thanks everyone gooseberry adjourned",
+];
+
+/**
+ * A MADE-UP transcript of the same hearing as halnrwSegments, long enough that it pages: every turn but the second has up to
+ * four filler sentences ("MADEUP-t05-s003-w07..."), the last turn has 150 (about 36,000 characters, more than a part of 20,000),
+ * and the words before the first turn, during the motion and after the adjournment are the three of `longHalnrwOtherPassages`.
+ * A sentence of turn n is `fillerSentence(n, k)`: it is the one segment, so it is one passage, in the turn that begins before it.
+ */
+export function longHalnrwSegments(): MadeUpSegment[] {
+  const segments: MadeUpSegment[] = [{ start: 0.5, end: 2, words: wordsFrom(0.5, "Okay then") }];
+  segments.push({ start: 53, end: 59, words: wordsFrom(53, "I move the marmalade amendment as printed") });
+  halnrwTurnTimecodes.forEach((timecode, turn) => {
+    for (let sentence = 0; sentence < fillerSentenceCount(turn); sentence += 1) {
+      const start = secondOfTimecode(timecode) + 1 + 3 * sentence;
+      const words = Array.from({ length: wordsInSentence }, (_, word) => ({
+        start: start + 0.25 * word,
+        text: word === 0 ? fillerWord(turn, sentence, word) : ` ${fillerWord(turn, sentence, word)}`,
+      }));
+      segments.push({ start, end: start + 0.25 * wordsInSentence, words });
+    }
+  });
+  segments.push({ start: 5352, end: 5357, words: wordsFrom(5352, "Thanks everyone gooseberry adjourned") });
+  return segments.toSorted((a, b) => a.start - b.start);
+}
