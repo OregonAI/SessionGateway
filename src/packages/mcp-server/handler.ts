@@ -22,7 +22,13 @@ import {
   FIND_MEASURES_MAX_EVIDENCE,
   FIND_MEASURES_PAGE_SIZE,
 } from "./lib/find-measures.ts";
-import { getDocument, getDocumentFaultMessage, getDocumentInput, getDocumentOutput } from "./lib/get-document.ts";
+import {
+  getDocument,
+  getDocumentCarriesTranscript,
+  getDocumentFaultMessage,
+  getDocumentInput,
+  getDocumentOutput,
+} from "./lib/get-document.ts";
 import { getMeasure, getMeasureFaultMessage, getMeasureInput, getMeasureOutput } from "./lib/get-measure.ts";
 import { createLiveStatusReader, type LiveLookupFailure, type LiveStatusReader } from "./lib/live-status.ts";
 import {
@@ -109,23 +115,24 @@ function buildServer(
     name: "get_document",
     title: "Get a document",
     description:
-      "Returns the text of one document of the Session exactly as the Legislature published it, in parts, with where and when it was fetched, the ids of the Measure, Version, meeting and committee it belongs to, and whether it has a text layer at all. It is not the official record.",
+      "Returns the text of one document of the Session exactly as the Legislature published it, in parts, with where and when it was fetched, the ids of the Measure, Version, meeting and committee it belongs to, and whether it has a text layer at all. On a Recording Log with a speaker-turn index, speaker_turns lists the log's turns; while the owner has published machine transcripts, each turn also lists the words of the machine transcript that fall in it, and the passages that are in no turn are listed apart. It is not the official record.",
     input: getDocumentInput,
     output: getDocumentOutput,
     carriesSourceUrl: () => true,
+    carriesTranscript: getDocumentCarriesTranscript,
     annotations: { readOnlyHint: true, openWorldHint: false },
-    run: (input) => getDocument(reader, config.session, input),
+    run: (input) => getDocument(reader, config.session, input, config.transcriptsPublished),
     faultMessage: getDocumentFaultMessage,
   });
   envelope.register(server, {
     name: "meetings",
     title: "Committee meetings",
-    description: `Lists committee meetings of the Session, earliest first, for a Measure (meetings with an agenda item about it), a committee, a date range, or all three together. Each meeting has when it starts, the status OLIS gives it (Scheduled, Cancelled), whether it is still ahead of the service's clock, its agenda items, the Proposed Amendments posted to it, its Exhibits (each with OLIS's title for it), its Recording Logs, its agenda document and a link to its OLIS page. next_meeting_id names the next scheduled meeting. Every document OLIS lists for a meeting is listed, and each says whether this service has fetched the file yet (fetched): only a fetched one can be read with get_document. A call returns whole days of meetings, as many as fit in about ${MAX_MEETINGS_CHARACTERS} characters; when truncated is true, ask again with from set to the day after the last meeting returned. It is not the official record.`,
+    description: `Lists committee meetings of the Session, earliest first, for a Measure (meetings with an agenda item about it), a committee, a date range, or all three together. Each meeting has when it starts, the status OLIS gives it (Scheduled, Cancelled), whether it is still ahead of the service's clock, its agenda items, the Proposed Amendments posted to it, its Exhibits (each with OLIS's title for it), its Recording Logs, whether it has a speaker-turn index and, while the owner has published machine transcripts, whether it has a machine transcript (has_transcript), its agenda document and a link to its OLIS page. next_meeting_id names the next scheduled meeting. Every document OLIS lists for a meeting is listed, and each says whether this service has fetched the file yet (fetched): only a fetched one can be read with get_document. A call returns whole days of meetings, as many as fit in about ${MAX_MEETINGS_CHARACTERS} characters; when truncated is true, ask again with from set to the day after the last meeting returned. It is not the official record.`,
     input: meetingsInput,
     output: meetingsOutput,
     carriesSourceUrl: (answer) => answer.meetings.length > 0,
     annotations: { readOnlyHint: true, openWorldHint: false },
-    run: (input) => meetings(reader, config.session, clock.now(), input),
+    run: (input) => meetings(reader, config.session, clock.now(), input, config.transcriptsPublished),
     faultMessage: meetingsFaultMessage,
   });
   envelope.register(server, {
@@ -154,10 +161,11 @@ function buildServer(
     name: "search",
     title: "Search the Session",
     description:
-      "Searches every document of the Session at once, by the words in it and by the meaning of its passages, and returns the best hits first, at most 20 (up to 50 with limit). A passage matches by words when it holds every word of the query; the meaning side finds passages whose sense is near the question's, so a question worded differently from the document still finds it. A citation anywhere in the query (HB 3131, SB 69-2, ORS 468.130) puts its exact matches first: a Measure's Versions from Introduced to Enrolled, the amendment, the documents whose text holds the section. A citation that names nothing the index holds puts nothing first, and `notes` says so. Testimony is left out unless include_testimony is true, kind is testimony, measure is given, the query says testimony, or the query cites exactly one Measure (HB 3131): that Measure is then the question's subject for this rule only, and the search is not filtered to it. Agendas, Recording Logs and witness-registration lists are found by their words only: by a passage that holds every word of the query, or after those by one that holds some of them. Each speaker turn of a Recording Log is a hit of its own, with `turn` giving the speaker (and Legislator Code), Meeting, Agenda item, Measure, timecode and a link into the official player at that second; the hit's id is the log's. Filters: kind, measure, committee, agency (the Measures with an Agency Link, of any evidence, to an Agency: its OregonAI registry slug), and from and to (Pacific dates). Each hit has its id (give it to get_document), kind, title, Measure, date, a snippet of the passage that matched, the link to the document and how it was found (found_by). It is not the official record.",
+      "Searches every document of the Session at once, by the words in it and by the meaning of its passages, and returns the best hits first, at most 20 (up to 50 with limit). A passage matches by words when it holds every word of the query; the meaning side finds passages whose sense is near the question's, so a question worded differently from the document still finds it. A citation anywhere in the query (HB 3131, SB 69-2, ORS 468.130) puts its exact matches first: a Measure's Versions from Introduced to Enrolled, the amendment, the documents whose text holds the section. A citation that names nothing the index holds puts nothing first, and `notes` says so. Testimony is left out unless include_testimony is true, kind is testimony, measure is given, the query says testimony, or the query cites exactly one Measure (HB 3131): that Measure is then the question's subject for this rule only, and the search is not filtered to it. Agendas, Recording Logs and witness-registration lists are found by their words only: by a passage that holds every word of the query, or after those by one that holds some of them. Each speaker turn of a Recording Log is a hit of its own, with `turn` giving the speaker (and Legislator Code), Meeting, Agenda item, Measure, timecode and a link into the official player at that second; the hit's id is the log's. While the owner has published machine transcripts, a passage of one is a hit of its own too, with `transcript` giving the speaker of the turn the words fall in (or \"speaker not given\"), Meeting, Agenda item, Measure, start and end seconds, timecode and a link into the official player at the start; the result's notice then says it holds a machine transcript of the official recording, which is not an official record. Filters: kind, measure, committee, agency (the Measures with an Agency Link, of any evidence, to an Agency: its OregonAI registry slug), and from and to (Pacific dates). Each hit has its id (give it to get_document), kind, title, Measure, date, a snippet of the passage that matched, the link to the document and how it was found (found_by). It is not the official record.",
     input: searchInput,
     output: searchOutput,
     carriesSourceUrl: (answer) => answer.results.length > 0,
+    carriesTranscript: (answer) => answer.results.some((result) => result.transcript !== undefined),
     annotations: { readOnlyHint: true, openWorldHint: false },
     run: (input, asOf) => search(searchDeps, config.session, input, asOf),
     faultMessage: searchFaultMessage,
@@ -195,10 +203,12 @@ export function createSessionGatewayHandler(config: ServerConfig, deps: HandlerD
     reader,
     searchIndex,
     embedder: deps.embedder,
+    transcriptsPublished: config.transcriptsPublished,
     vectors: createVectorCache({
       searchIndex,
       session: config.session,
       modelId: deps.embedder.modelId,
+      transcriptsPublished: config.transcriptsPublished,
     }),
   };
   const handler = createMcpHandler(() => buildServer(envelope, reader, searchDeps, liveStatus, config, deps.clock));

@@ -79,6 +79,8 @@ import type { Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceFromJson, storedEvidenceKinds } from "./lib/agency-evidence.ts";
 import { readSpeakerTurnIndex, readSpeakerTurnSummary, readTurnHearingsOf } from "./lib/speaker-turns.ts";
 import type { SpeakerTurnIndexOutcome, TurnHearing } from "#/packages/domain/speaker-turns.ts";
+import type { TranscriptOfLog } from "#/packages/domain/transcripts.ts";
+import { meetingHasTranscript, readTranscriptOfLog } from "./lib/transcripts.ts";
 import { openReadConnection } from "./lib/connection.ts";
 import { agencyLinkListings, openListingReader, type ListingRead } from "./lib/listing.ts";
 import {
@@ -223,6 +225,14 @@ export type IndexReader = {
    * fetched before the index existed).
    */
   speakerTurnIndexOf(document: DocumentId): SpeakerTurnIndexOutcome | undefined;
+  /**
+   * The Recording Log's machine transcript (ticket #134, ADR-0055): the passages of each of its turns, in the order of
+   * `speakerTurnIndexOf`'s turns, and the passages of the log that are no turn's; or undefined when the log has none. The
+   * caller decides whether to show it: the publication gate is the server's, and the reader returns what is stored.
+   */
+  transcriptOfLog(document: DocumentId): TranscriptOfLog | undefined;
+  /** Whether the Meeting has a stored machine transcript. */
+  meetingHasTranscript(meeting: MeetingId): boolean;
   /**
    * The hearings at which a Measure was taken up (ticket #127): each Recording Log's Agenda item that names it, with the
    * Meeting and the first turn under the item, earliest Meeting first. Empty when no log the index holds names the Measure.
@@ -1273,6 +1283,12 @@ export function openIndexReader(path: string): IndexReader {
     },
     speakerTurnIndexOf(document) {
       return inOneSnapshot(() => readSpeakerTurnIndex(database, document));
+    },
+    transcriptOfLog(document) {
+      return inOneSnapshot(() => readTranscriptOfLog(database, document));
+    },
+    meetingHasTranscript(meeting) {
+      return inOneSnapshot(() => meetingHasTranscript(database, meeting));
     },
     meetingContents(meeting) {
       return inOneSnapshot(() => {

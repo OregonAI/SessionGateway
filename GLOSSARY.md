@@ -189,7 +189,7 @@ _Avoid_: speech, statement
 
 **Speaker-turn index**:
 What the index holds of a Recording Log: its Event ID and each Speaker turn, with the speaker as logged, the Legislator Code and Legislator where the speaker resolved (among the Meeting's committee first, then among all the Session's Legislators, by title, chamber, surname and first name: ADR-0052), the Agenda item and its Measure (kept only when the index holds that Measure), the second on the recording's clock and the Player link. The worker reads it from the log's link annotations when it fetches the file. A log with no Event ID, or with two, has no index. A turn whose speaker does not resolve is kept with its text.
-_Avoid_: transcript (the index holds no words that were spoken)
+_Avoid_: transcript (the index holds no words that were spoken; the Transcript passages of ADR-0055 are a separate store, shown only while the Publication gate is on)
 
 **Hearing**:
 In `get_measure`, an Agenda item of a Recording Log with a Speaker-turn index that names the Measure, with the first Speaker turn under it and its Player link (ADR-0053; owner decision of 2026-11-05). A Public Hearing and a Work Session are each one, labelled by kind, and so is an item with other wording ("Informational Meeting"). An Agenda line that names several Measures ("SB 1542 and SB 1543 - Public Hearing") is a hearing of each, and lists them all; the turn keeps the first as its Measure. A log's hearings of a Measure come in the order of the recording.
@@ -209,6 +209,20 @@ _Avoid_: utterance, caption
 
 **Drift** (of a Speaker turn):
 The distance in seconds from a Speaker turn's second to the nearest Transcript segment start. A turn over 10 seconds is flagged, and so is the Meeting when the median over its turns is over 10 seconds; the maximum is reported too (ADR-0054). It is a rough alarm: a segment start is not a speaker change.
+
+**Transcript passage**:
+One attached run of a Transcript's words: the words of a Transcript segment, or the piece of one between two speaker changes, cut to the Passage size, with its start and end seconds, a Player link at its first whole second, and whose words they are: a Speaker turn of a Recording Log (by its position), a procedural line of the log (a motion, its result, a vote, a roll call), or "speaker not given" (before the first turn, during a recess, after the meeting adjourned). It carries the Agenda item and Measure in force at its start. The worker stores it and embeds it like Testimony; it is not a row of a document's text (ADR-0055). Search finds it, and the tools show it only while the Publication gate is on.
+_Avoid_: caption, quote, utterance
+
+**Machine-transcript notice**:
+The sentence a result adds to the non-official notice when it holds a Transcript passage: "This result includes a machine transcript of the official recording, not an official record." The tool result envelope adds it, for each result, from `carriesTranscript` (ADR-0055).
+
+**Publication gate**:
+The server's `TRANSCRIPTS_PUBLISHED` setting (`true` or `false`, `false` when unset; any other value stops the start-up). While it is false no tool's answer holds any Transcript passage, and nothing is read from the transcript tables to answer; the worker ingests transcript files whatever it says. Turning it on is the owner's go-live decision for transcripts (spec #123, decision 23; ADR-0055). Stage-1 Speaker turns are never gated.
+_Avoid_: feature flag, switch
+
+**Transcript folder**:
+The directory `TRANSCRIPTS_PATH` names, which holds the files `<eventId>.transcript.json` that `OregonAI/hearing-transcripts` writes. The worker reads it at the end of each pull. A file is read when it is new, its sha256 changed, or the turns it is attached to changed; a refused file is named in the Build report and what was stored before is kept.
 
 **Event ID**:
 The Invintus identifier of one recorded Meeting (such as `2025011038`), the `eventID` of the Legislature's player links in a Recording Log. A log with no player link has none, and a log whose links carry two different ones has two: the parser reports either and picks neither.

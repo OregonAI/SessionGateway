@@ -38,6 +38,11 @@ export type IngestConfig = {
    * when the deployment does not load it. The worker fetches it in each full pull (ADR-0034).
    */
   statutesAffectedTableUrl: string | null;
+  /**
+   * The folder of machine-transcript files (`<eventId>.transcript.json`, which OregonAI/hearing-transcripts writes) the worker
+   * ingests, or null when the deployment has none (ticket #134, ADR-0055). The worker ingests whatever the publication gate says.
+   */
+  transcriptsPath: string | null;
 };
 
 export type ServerConfig = {
@@ -64,6 +69,11 @@ export type ServerConfig = {
   rateLimit: number;
   /** The length of that window, in seconds. */
   rateWindowSeconds: number;
+  /**
+   * The publication gate for machine transcripts (ticket #134, ADR-0055): TRANSCRIPTS_PUBLISHED, `false` unless it is the text
+   * `true`. While it is false no tool's answer holds any transcript text. The owner turns it on.
+   */
+  transcriptsPublished: boolean;
 };
 
 const sessionKey = z.string().transform((text, context) => {
@@ -122,6 +132,8 @@ const ingestSchema = z.object({
     .url({ protocol: /^https?$/ })
     .transform((text) => new URL(text).href)
     .optional(),
+  // Where the transcript files are (OregonAI/hearing-transcripts writes them, ADR-0051, ADR-0054). Unset, the worker ingests none.
+  TRANSCRIPTS_PATH: z.string().min(1).optional(),
   // One thread by default: the worker on the deploy box shares two cores with seven corpora (ADR-0007).
   // The backfill on the GPU desktop sets more.
   MODEL_THREADS: z
@@ -192,6 +204,12 @@ const serverSchema = z.object({
   // is on by default: 120 calls a minute over every caller together.
   MCP_RATE_LIMIT: positiveWholeNumber.default(120),
   MCP_RATE_WINDOW_SECONDS: positiveWholeNumber.default(60),
+  // The publication gate (ADR-0055): the text `true` or `false`, and anything else stops the start-up, because a gate that reads
+  // "yes" or "TRUE" as off, or as on, is a decision the owner did not make. It is false when unset.
+  TRANSCRIPTS_PUBLISHED: z
+    .enum(["true", "false"], { error: "must be true or false" })
+    .default("false")
+    .transform((text) => text === "true"),
 });
 
 function parseEnvironment<Schema extends z.ZodType>(schema: Schema, env: Environment): z.output<Schema> {
@@ -215,6 +233,7 @@ export function loadIngestConfig(env: Environment): IngestConfig {
     modelPath: parsed.MODEL_PATH,
     modelThreads: parsed.MODEL_THREADS,
     statutesAffectedTableUrl: parsed.STATUTES_AFFECTED_TABLE_URL ?? null,
+    transcriptsPath: parsed.TRANSCRIPTS_PATH ?? null,
   };
 }
 
@@ -235,5 +254,6 @@ export function loadServerConfig(env: Environment): ServerConfig {
     allowedOrigins: parsed.MCP_ALLOWED_ORIGINS,
     rateLimit: parsed.MCP_RATE_LIMIT,
     rateWindowSeconds: parsed.MCP_RATE_WINDOW_SECONDS,
+    transcriptsPublished: parsed.TRANSCRIPTS_PUBLISHED,
   };
 }

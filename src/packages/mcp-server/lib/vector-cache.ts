@@ -12,6 +12,13 @@ export type VectorDocuments = {
   facts: DocumentFacts[];
 };
 
+/** The transcript passages the vectors are of, by the index each vector carries: one entry for each passage (ticket #134). */
+export type VectorTranscriptPassages = {
+  documentIds: DocumentId[];
+  nodeIds: (DocumentId | AmendmentId)[];
+  facts: DocumentFacts[];
+};
+
 export type LoadedVectors = {
   /** The index's as-of time when the vectors were read. */
   asOf: Timestamp;
@@ -19,6 +26,11 @@ export type LoadedVectors = {
   generation: number;
   index: VectorIndex;
   documents: VectorDocuments;
+  /**
+   * The vectors of the machine transcript's passages, scanned beside the documents' (ticket #134, ADR-0055). Empty while the
+   * publication gate is off: the cache never reads them then.
+   */
+  transcripts: { index: VectorIndex; passages: VectorTranscriptPassages };
 };
 
 export type VectorCache = {
@@ -43,6 +55,8 @@ export function createVectorCache(deps: {
   searchIndex: SearchIndexReader;
   session: SessionKey;
   modelId: string;
+  /** The publication gate: whether the passages of a machine transcript are loaded. */
+  transcriptsPublished: boolean;
 }): VectorCache {
   let loaded: LoadedVectors | undefined;
   return {
@@ -64,7 +78,21 @@ export function createVectorCache(deps: {
         }
         index.add(row.passageId, documentIndex, row.vector);
       }
-      loaded = { asOf, generation, index, documents };
+      const passages: VectorTranscriptPassages = { documentIds: [], nodeIds: [], facts: [] };
+      const spoken = createVectorIndex(
+        VECTOR_DIMENSIONS,
+        deps.transcriptsPublished ? deps.searchIndex.transcriptVectorCount(deps.session, deps.modelId) : 0,
+      );
+      if (deps.transcriptsPublished) {
+        for (const row of deps.searchIndex.transcriptVectors(deps.session, deps.modelId)) {
+          // One entry for each passage: a passage's Measure is its own, so its facts are not its log's.
+          spoken.add(row.passageId, passages.documentIds.length, row.vector);
+          passages.documentIds.push(row.documentId);
+          passages.nodeIds.push(row.nodeId);
+          passages.facts.push(row.facts);
+        }
+      }
+      loaded = { asOf, generation, index, documents, transcripts: { index: spoken, passages } };
       return loaded;
     },
   };

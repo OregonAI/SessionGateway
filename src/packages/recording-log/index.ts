@@ -10,7 +10,13 @@ import {
   playerLinkOf as playerLink,
   type CommitteeMemberName,
 } from "./lib/turn-context.ts";
-import type { ParseRecordingLogInput, RecordingLogLink, RecordingLogParse } from "./lib/types.ts";
+import type {
+  FeedAgendaItem,
+  ParseRecordingLogInput,
+  RecordingLogEntry,
+  RecordingLogLink,
+  RecordingLogParse,
+} from "./lib/types.ts";
 
 export type {
   AgendaItemEntry,
@@ -38,6 +44,17 @@ export function parseRecordingLog(input: ParseRecordingLogInput): RecordingLogPa
     ...new Set(blocks.filter((_, index) => offsets[index]?.offsetSource === "timecode").map((block) => block.page)),
   ].toSorted((a, b) => a - b);
   return { kind: "parsed", eventId, speakerTurns, entries, pagesReadByTimecode };
+}
+
+/**
+ * The entries of a stored log's text that are not speaker turns (the call to order, Agenda items, motions, votes, recesses, the
+ * adjournment), read from the text alone, so each entry's second is its timecode in hours, minutes and seconds
+ * (`offsetSource` "timecode"). The worker keeps a log's text and its turns and not its link annotations, so a transcript
+ * (ticket #134, ADR-0055) is read against these. `agendaItems` are the Meeting's, as for `parseRecordingLog`. Pure.
+ */
+export function entriesOfLogText(text: string, agendaItems: readonly FeedAgendaItem[] = []): RecordingLogEntry[] {
+  const blocks = readBlocks(text);
+  return classify(blocks, offsetsOf(blocks, []), agendaItems).entries;
 }
 
 export type { CommitteeMemberName };

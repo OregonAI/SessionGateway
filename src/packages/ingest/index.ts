@@ -68,6 +68,7 @@ import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, pacificTimestampOf, type Timestamp } from "#/packages/time/pacific.ts";
 import { readSpeakerTurnIndex } from "./lib/speaker-turns.ts";
+import { ingestTranscripts, transcriptsReportOf, type TranscriptsRun } from "./lib/transcripts.ts";
 import { buildReportPath, writeBuildReport, type BuildReport, type SetReport } from "./lib/build-report.ts";
 import {
   hashSampleReportPath,
@@ -431,6 +432,17 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
   return documentsFetched;
 }
 
+/** Reads the transcript folder the deployment names (TRANSCRIPTS_PATH), or nothing when it names none. */
+function ingestTranscriptsOf(
+  config: IngestConfig,
+  deps: IngestDeps,
+  writer: IndexWriter,
+): Promise<TranscriptsRun | undefined> {
+  return config.transcriptsPath === null
+    ? Promise.resolve(undefined)
+    : ingestTranscripts({ session: config.session, writer, embedder: deps.embedder, folder: config.transcriptsPath });
+}
+
 /** No documents linked: what a Pull that leaves the five document sets alone has of them. */
 const noDocuments: DocumentSets = {
   MeasureDocuments: [],
@@ -645,6 +657,9 @@ async function pullEverything(config: IngestConfig, deps: IngestDeps): Promise<F
       notFetched,
       refetches,
     });
+    // The folder of machine-transcript files, when the deployment names one: read after every Recording Log's turns are stored
+    // and cut, so that a transcript of a log fetched in this pull is read in it (ticket #134, ADR-0055).
+    const transcriptsRun = await ingestTranscriptsOf(config, deps, writer);
     // Legislative Counsel's Statutes Affected Table, when the deployment names it: a second source for the Statute Links,
     // fetched in each pull. The Snapshot read reads it, and says what became of it (ADR-0034, ADR-0044).
     const tableUrl = config.statutesAffectedTableUrl;
@@ -693,6 +708,9 @@ async function pullEverything(config: IngestConfig, deps: IngestDeps): Promise<F
         reused: passageCounts.reused,
       },
       ...(statutesAffectedTable === undefined ? {} : { statutes_affected_table: statutesAffectedTable }),
+      ...(transcriptsRun === undefined
+        ? {}
+        : { transcripts: transcriptsReportOf(transcriptsRun, writer.transcriptNotes(config.session)) }),
     });
     return {
       measures: feed.Measures.length,
@@ -754,6 +772,8 @@ export async function runIncrement(config: IngestConfig, deps: IngestDeps): Prom
       notFetched,
       refetches,
     });
+    // A transcript file the folder gained since the last run is read by an increment too; the build report is a full pull's.
+    await ingestTranscriptsOf(config, deps, writer);
     // Whether the Increment read or left it to the next Full pull, it has nothing more to do or to report.
     await snapshotRead.finish();
     return { asOf, documentsFetched, documentsNotFetched: notFetched.length };

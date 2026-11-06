@@ -50,7 +50,7 @@ describe.for([
     // A search answer echoes the query it was asked, which holds the word the case looked for: that is not a hit.
     const answer: Record<string, unknown> = { ...outcome.structured };
     delete answer["query"];
-    const everything = `${JSON.stringify(answer)}`.toLowerCase();
+    const everything = JSON.stringify(answer).toLowerCase();
     for (const word of madeUpWords) expect(everything, word).not.toContain(word);
     expect(everything).not.toContain("machine transcript");
     expect(everything).not.toContain("has_transcript");

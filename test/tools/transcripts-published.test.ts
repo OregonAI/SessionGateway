@@ -77,7 +77,7 @@ type Hit = {
   snippet: string;
   source_url: string;
   turn: unknown;
-  transcript: Transcript | null;
+  transcript?: Transcript;
 };
 
 describe.for(eras)("transcripts with the gate on, for a %s client", (era) => {
@@ -102,7 +102,7 @@ describe.for(eras)("transcripts with the gate on, for a %s client", (era) => {
     const { hits, structured } = await search({ query: "quokka laboratory" });
 
     // The meaning side may offer other passages of the transcript after it: the one that holds the words is first.
-    const found = hits.filter((hit) => hit.transcript !== null);
+    const found = hits.filter((hit) => hit.transcript !== undefined);
     expect(found[0]).toMatchObject({
       id: LOG,
       kind: "recording_log",
@@ -132,7 +132,7 @@ describe.for(eras)("transcripts with the gate on, for a %s client", (era) => {
   it("names a Legislator's Legislator Code when the words are a Legislator's turn", async () => {
     const { hits } = await search({ query: "platypus bill" });
 
-    const found = hits.find((hit) => hit.transcript !== null);
+    const found = hits.find((hit) => hit.transcript !== undefined);
     expect(found?.transcript).toMatchObject({
       speaker: "Vice-Chair Finger McDonald",
       speaker_kind: "turn",
@@ -147,22 +147,22 @@ describe.for(eras)("transcripts with the gate on, for a %s client", (era) => {
     const staff = await search({ query: "concludes the staff summary" });
     const kurt = await search({ query: "quokka" });
 
-    expect(staff.hits.find((hit) => hit.transcript !== null)?.transcript).toMatchObject({
+    expect(staff.hits.find((hit) => hit.transcript !== undefined)?.transcript).toMatchObject({
       speaker: "Anna Glueder, LPRO Analyst",
       turn: { timecode: "00:01:47" },
       start_seconds: 164.5,
     });
-    expect(kurt.hits.find((hit) => hit.transcript !== null)?.transcript).toMatchObject({
+    expect(kurt.hits.find((hit) => hit.transcript !== undefined)?.transcript).toMatchObject({
       speaker: "Kurt Williams, Director, Oregon Veterinary Diagnostics Lab, Oregon State University (OSU)",
     });
     // The two are different passages: the staff words are not in Kurt's.
-    expect(kurt.hits.find((hit) => hit.transcript !== null)?.snippet).not.toContain("staff summary");
+    expect(kurt.hits.find((hit) => hit.transcript !== undefined)?.snippet).not.toContain("staff summary");
   });
 
   it("gives the words said during the motion to the motion line, with no speaker", async () => {
     const { hits } = await search({ query: "marmalade amendment" });
 
-    expect(hits.find((hit) => hit.transcript !== null)?.transcript).toMatchObject({
+    expect(hits.find((hit) => hit.transcript !== undefined)?.transcript).toMatchObject({
       speaker: "speaker not given",
       speaker_kind: "procedural",
       procedural: "motion",
@@ -177,14 +177,14 @@ describe.for(eras)("transcripts with the gate on, for a %s client", (era) => {
     const before = await search({ query: "Okay then" });
     const after = await search({ query: "gooseberry" });
 
-    expect(before.hits.find((hit) => hit.transcript !== null)?.transcript).toMatchObject({
+    expect(before.hits.find((hit) => hit.transcript !== undefined)?.transcript).toMatchObject({
       speaker: "speaker not given",
       speaker_kind: "not_given",
       procedural: null,
       turn: null,
       start_seconds: 0.5,
     });
-    expect(after.hits.find((hit) => hit.transcript !== null)?.transcript).toMatchObject({
+    expect(after.hits.find((hit) => hit.transcript !== undefined)?.transcript).toMatchObject({
       speaker: "speaker not given",
       speaker_kind: "not_given",
       procedural: "after_adjournment",
@@ -198,14 +198,14 @@ describe.for(eras)("transcripts with the gate on, for a %s client", (era) => {
     const filtered = await search({ query: "petunia bill", measure: "HB 3131" });
     const elsewhere = await search({ query: "petunia bill", measure: "HB 3124" });
 
-    expect(unfiltered.hits.find((hit) => hit.transcript !== null)?.transcript).toMatchObject({
+    expect(unfiltered.hits.find((hit) => hit.transcript !== undefined)?.transcript).toMatchObject({
       speaker: "Co-Chair Helm",
       agenda_item: "HB 3131 - Public Hearing",
       measure_id: "measure-2025r1-hb3131",
       start_seconds: 4560,
     });
-    expect(filtered.hits.some((hit) => hit.transcript !== null)).toBe(true);
-    expect(elsewhere.hits.some((hit) => hit.transcript !== null)).toBe(false);
+    expect(filtered.hits.some((hit) => hit.transcript !== undefined)).toBe(true);
+    expect(elsewhere.hits.some((hit) => hit.transcript !== undefined)).toBe(false);
   });
 
   it("puts the machine-transcript notice on no result that carries no transcript passage", async () => {
@@ -214,7 +214,7 @@ describe.for(eras)("transcripts with the gate on, for a %s client", (era) => {
     const measure = await callTool(connected, "get_measure", { measure: "HB 3131" });
 
     expect(withoutTranscript.hits.length).toBeGreaterThan(0);
-    expect(withoutTranscript.hits.some((hit) => hit.transcript !== null)).toBe(false);
+    expect(withoutTranscript.hits.some((hit) => hit.transcript !== undefined)).toBe(false);
     expect(String(withoutTranscript.structured["notice"]).toLowerCase()).not.toContain("machine transcript");
     expect(String(measure.structured?.["notice"]).toLowerCase()).not.toContain("machine transcript");
   });

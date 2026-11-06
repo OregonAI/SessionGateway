@@ -18,7 +18,7 @@
 //   nearest of those: 33 of the 38 are more than 10 s from every start, the largest is 1587 s (the turn at 2973 s, 4560 - 2973)
 //   and the median of the 38 distances (the mean of the 19th and 20th when they are put in order) is 315 s, so the Meeting is
 //   flagged (its median is more than 10 s). A file with a segment 0.5 s after each of the 38 turns has every distance 0.5 s.
-import { writeFileSync } from "node:fs";
+import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { createFakeEmbedder } from "../support/fake-embedder.ts";
@@ -50,6 +50,7 @@ const turnSeconds = [
 ];
 
 type Report = {
+  folder_error: string | null;
   stored: number;
   ingested: { meeting_id: string; event_id: string; file: string; passages: number }[];
   refused: { file: string; reason: string; message: string }[];
@@ -72,12 +73,12 @@ function transcriptsReport(system: System): Report {
 async function hitsFor(
   system: System,
   query: string,
-): Promise<{ transcript: { speaker: string } | null; snippet: string }[]> {
+): Promise<{ transcript?: { speaker: string }; snippet: string }[]> {
   const connected: ConnectedClient = await connectClient("2026-07-28", system.handler);
   try {
     const outcome = await callTool(connected, "search", { query });
     expect(outcome.isError).toBe(false);
-    return outcome.structured?.["results"] as { transcript: { speaker: string } | null; snippet: string }[];
+    return outcome.structured?.["results"] as { transcript?: { speaker: string }; snippet: string }[];
   } finally {
     await connected.close();
   }
@@ -156,7 +157,7 @@ describe("the worker ingests transcript files", () => {
       ingested: [{ event_id: halnrwEventId, passages: 1 }],
     });
     expect((await hitsFor(system, "walrus laboratory"))[0]?.transcript?.speaker).toMatch(/^Kurt Williams/);
-    expect((await hitsFor(system, "quokka")).some((hit) => hit.transcript !== null)).toBe(false);
+    expect((await hitsFor(system, "quokka")).some((hit) => hit.transcript !== undefined)).toBe(false);
   });
 
   it("refuses a file of an unknown version, of another event than its name and Meeting, or not valid, and names each in the build report", async () => {
@@ -199,7 +200,7 @@ describe("the worker ingests transcript files", () => {
     } finally {
       await connected.close();
     }
-    expect((await hitsFor(system, "quokka")).some((hit) => hit.transcript !== null)).toBe(false);
+    expect((await hitsFor(system, "quokka")).some((hit) => hit.transcript !== undefined)).toBe(false);
   });
 
   it("keeps what it stored when the file is replaced by one it refuses, and says so", async () => {
@@ -212,6 +213,17 @@ describe("the worker ingests transcript files", () => {
 
     expect(transcriptsReport(system)).toMatchObject({ stored: 1, refused: [{ file: FILE, reason: "not_valid" }] });
     expect((await hitsFor(system, "quokka laboratory"))[0]?.transcript?.speaker).toMatch(/^Kurt Williams/);
+  });
+
+  it("says in the build report that the folder it is named cannot be listed, and the pull still completes", async () => {
+    const system = await started();
+    rmSync(system.transcriptFolder, { recursive: true });
+
+    await system.pullAgain();
+
+    const report = transcriptsReport(system);
+    expect(report.folder_error).toContain(system.transcriptFolder);
+    expect(report).toMatchObject({ stored: 0, ingested: [], refused: [] });
   });
 
   it("lists a file of an event no Meeting's Recording Log names", async () => {
