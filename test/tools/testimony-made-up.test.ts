@@ -104,7 +104,7 @@ describe.for(eras)("testimony on rows the fixture lacks, for a %s client", (era)
         expect(missing.isError).toBe(true);
         expect(missing.text).toContain('Testimony "testimony-2025r1-117165" is listed in the 2025R1 Session');
         expect(missing.text).toMatch(/does not hold its file/);
-        expect(missing.text).toMatch(/next pull fetches it again/);
+        expect(missing.text).toMatch(/the last pull could not store it/);
         expect(missing.text).not.toContain("Give a document id such as");
         const neighbour = await callTool(connected, "get_document", { id: "testimony-2025r1-117167" });
         expect(neighbour.isError).toBe(false);

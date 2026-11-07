@@ -103,14 +103,14 @@ describe("a database whose rows no complete pull has listed", () => {
     });
   });
 
-  it("says of a Testimony it never fetched what it said before: the next pull fetches it", async () => {
+  it("says of a Testimony it never fetched that the last pull could not store it", async () => {
     const system = await start(firstPull, false);
     forgetListing(system.database.path);
 
     await everyClient(async (era) => {
       const document = await call(system, era, "get_document", { id: letter });
       expect(document.isError).toBe(true);
-      expect(document.text).toContain("next pull fetches it");
+      expect(document.text).toContain("the last pull could not store it");
     });
   });
 
