@@ -2,9 +2,16 @@
 // on is the text layer's own characters, with nothing added or rewritten (ADR-0002,
 // docs/adr/0010-pdf-text-with-unpdf-never-merged.md).
 import { extractPdfText as extract, type ExtractedPdf, type PdfExtraction } from "./lib/extract.ts";
-import { extractPdfLinks as extractLinks, type PdfLink, type PdfLinkExtraction } from "./lib/links.ts";
+import {
+  extractPdfLinks as extractLinks,
+  linkAnnotationsOf,
+  type LinkAnnotation,
+  type PdfLink,
+  type PdfLinkExtraction,
+} from "./lib/links.ts";
 
-export type { ExtractedPdf, PdfExtraction, PdfLink, PdfLinkExtraction };
+export { linkAnnotationsOf };
+export type { ExtractedPdf, LinkAnnotation, PdfExtraction, PdfLink, PdfLinkExtraction };
 
 /**
  * Reads the text layer of a PDF. A file that is not a PDF the extractor can open comes back as

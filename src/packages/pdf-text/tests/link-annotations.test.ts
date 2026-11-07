@@ -29,7 +29,9 @@ const player = (event: string, second: number): string =>
 
 describe("the link annotations of a real Recording Log", () => {
   test("307521 (SHS 2025-05-15): the page and address of each of its 26 links, in the file's order, and no rectangle", async () => {
-    const seconds = [1, 1, 2, 2, 42, 42, 43, 43, 370, 370, 484, 484, 485, 485, 486, 486, 526, 526, 542, 542, 542, 542, 542, 572, 572];
+    const seconds = [
+      1, 1, 2, 2, 42, 42, 43, 43, 370, 370, 484, 484, 485, 485, 486, 486, 526, 526, 542, 542, 542, 542, 542, 572, 572,
+    ];
 
     expect(await annotationsOfFixture("307521.pdf")).toEqual([
       {
