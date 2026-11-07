@@ -1,5 +1,5 @@
 ---
-status: accepted (owner decision of 2026-11-05, spec #123, ticket #131)
+status: accepted (owner decision of 2026-11-05, spec #123, ticket #131); the scope line is amended in place on 2026-11-06 to name the #133 bake-off's four 2025R1 recordings (owner decision); the rest stands
 ---
 
 # Hearing audio is fetched through the Invintus embedder interface once, and the owner accepts the risk
@@ -45,6 +45,7 @@ Some limits are enforced by the downloader's code and tested against a local fak
 
 - **One-time backfill.** It is not a recurring job. A later Session, or a live Session, needs a new decision.
 - **2026R1 committee recordings only.** No floor sessions, no other sessions. The downloader fetches whatever event IDs it is given.
+  - *Amended 2026-11-06 (owner decision):* the one exception is the four 2025R1 committee recordings of the #133 model bake-off (event IDs 2025021032, 2025031177, 2025041200 and 2025041266, fetched 2026-11-06), which spec #123 allowed (user story 27; "separate owner-approved runs"). The research note is `docs/research/2026-11-06-transcription-bake-off.md`. Any other recording outside 2026R1 needs a new decision.
 - **Run from the GPU desktop only**, in runs the owner approves one by one (the `--approved-run` flag carries that approval into the command).
 - **The embedder key** is read from the environment and is never committed.
 
