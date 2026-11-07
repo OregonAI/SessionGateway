@@ -14,6 +14,10 @@ export type IncrementsSetting = (typeof incrementSettings)[number];
 export const fullPullSettings = ["nightly", "weekly", "monthly"] as const;
 export type FullPullSetting = (typeof fullPullSettings)[number];
 
+/** INGEST_WORKER (ADR-0057): `off` declares that no worker runs for the deployment. */
+export const workerSettings = ["on", "off"] as const;
+export type WorkerSetting = (typeof workerSettings)[number];
+
 export type IngestConfig = {
   /** The increments' rhythm: INGEST_INCREMENTS, `daily` unless set. */
   increments: IncrementsSetting;
@@ -46,6 +50,8 @@ export type IngestConfig = {
 };
 
 export type ServerConfig = {
+  /** Whether a worker runs for this deployment: INGEST_WORKER, `on` unless set. `off` makes the index a static copy (ADR-0057). */
+  worker: WorkerSetting;
   /** The worker's rhythms, which the server reads to say when the index is too old (ADR-0039). */
   increments: IncrementsSetting;
   fullPull: FullPullSetting;
@@ -104,6 +110,9 @@ const incrementsSetting = z
 const fullPullSetting = z
   .enum(fullPullSettings, { error: `must be one of ${fullPullSettings.join(", ")}` })
   .default("weekly");
+
+// ADR-0057: the server's one way to know that no worker runs. Only the server reads it. The message names the variable and the values.
+const workerSetting = z.enum(workerSettings, { error: `must be one of ${workerSettings.join(", ")}` }).default("on");
 
 const ingestSchema = z.object({
   INGEST_INCREMENTS: incrementsSetting,
@@ -165,6 +174,7 @@ const positiveWholeNumber = z
 const MAX_LIVE_TIMEOUT_MS = 30_000;
 
 const serverSchema = z.object({
+  INGEST_WORKER: workerSetting,
   INGEST_INCREMENTS: incrementsSetting,
   INGEST_FULL_PULL: fullPullSetting,
   SESSION_KEY: sessionKey,
@@ -240,6 +250,7 @@ export function loadIngestConfig(env: Environment): IngestConfig {
 export function loadServerConfig(env: Environment): ServerConfig {
   const parsed = parseEnvironment(serverSchema, env);
   return {
+    worker: parsed.INGEST_WORKER,
     increments: parsed.INGEST_INCREMENTS,
     fullPull: parsed.INGEST_FULL_PULL,
     session: parsed.SESSION_KEY,

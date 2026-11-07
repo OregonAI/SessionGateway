@@ -19,6 +19,9 @@ export function stalenessWarning(
 ): string | undefined {
   const lastFullPull = reader.lastFullPull(config.session);
   if (lastFullPull === undefined) return undefined;
+  // No worker runs (ADR-0057): the index is a static copy, which is true however long ago the pull was, so nothing is
+  // "missed". The time is the last full pull's, read from the database for this call.
+  if (config.worker === "off") return staticCopyNote(lastFullPull);
   const now = formatPacific(clock.now());
   const staleness = stalenessAt({
     now,
@@ -32,6 +35,10 @@ export function stalenessWarning(
     lastFullPull,
   });
   return staleness.stale ? warningOf(staleness) : undefined;
+}
+
+function staticCopyNote(lastFullPull: Timestamp): string {
+  return `Note: this index is a static copy, as of its last full pull at ${lastFullPull}. No worker updates it, so changes the Legislature has made since then are not in it.`;
 }
 
 const LEAD = "Warning: this index may be out of date.";

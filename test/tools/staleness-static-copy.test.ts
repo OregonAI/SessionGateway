@@ -28,7 +28,7 @@ async function answer(system: System, tool: string): Promise<{ text: string; asO
   try {
     const args = tool === "get_measure" ? { measure: "SB 69" } : {};
     const result = await callTool(connected, tool, args);
-    return { text: result.text, asOf: result.structured?.as_of };
+    return { text: result.text, asOf: result.structured?.["as_of"] };
   } finally {
     await connected.close();
   }
