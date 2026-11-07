@@ -492,15 +492,19 @@ describe("a file OLIS serves empty or broken, and a request OLIS does not answer
     expect(entryOf(system, id).cause).toBe(cause);
   });
 
-  // Box 3 of the ticket: the answer says what is known, and does not promise the next pull fetches it.
-  it("is answered by get_document for a Testimony whose file is empty with what is known: the file is empty", async () => {
+  // Box 3 of the ticket, as the owner decided on 2026-11-07 (wording only, no schema step): the answer for an unheld
+  // Testimony stops promising a fix. It says the last pull could not store the file and that OLIS may serve it empty
+  // or broken, or the request failed; it does not say which, because the cause is not stored where the server reads.
+  it("is answered by get_document for an unheld Testimony without promising that the next pull fetches it", async () => {
     const system = await start(arranged());
 
     const outcome = await getDocument(system, `testimony-2025r1-${String(emptyId)}`);
 
     expect(outcome.isError).toBe(true);
     expect(outcome.text).toContain(`testimony-2025r1-${String(emptyId)}`);
-    expect(outcome.text).toMatch(/file OLIS serves for it is empty/);
+    expect(outcome.text).toContain(
+      "This index does not hold its file: the last pull could not store it. OLIS may serve it empty or broken, or the request failed; the build report says which.",
+    );
     expect(outcome.text).not.toMatch(/next pull|not yet|yet\./i);
   });
 
