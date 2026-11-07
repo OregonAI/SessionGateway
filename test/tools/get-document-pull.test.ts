@@ -493,8 +493,9 @@ describe("a file OLIS serves empty or broken, and a request OLIS does not answer
   });
 
   // Box 3 of the ticket, as the owner decided on 2026-11-07 (wording only, no schema step): the answer for an unheld
-  // Testimony stops promising a fix. It says the last pull could not store the file and that OLIS may serve it empty
-  // or broken, or the request failed; it does not say which, because the cause is not stored where the server reads.
+  // Testimony stops promising a fix. It says the index does not hold the file and that OLIS may serve it empty or
+  // broken, a request for it may have failed, or a pull has not reached it yet. It names no last pull and no build
+  // report, because a full pull may be running, a pull may have stopped, and the cause is not stored where the server reads.
   it("is answered by get_document for an unheld Testimony without promising that the next pull fetches it", async () => {
     const system = await start(arranged());
 
@@ -503,9 +504,9 @@ describe("a file OLIS serves empty or broken, and a request OLIS does not answer
     expect(outcome.isError).toBe(true);
     expect(outcome.text).toContain(`testimony-2025r1-${String(emptyId)}`);
     expect(outcome.text).toContain(
-      "This index does not hold its file: the last pull could not store it. OLIS may serve it empty or broken, or the request failed; the build report says which.",
+      "This index does not hold its file: OLIS may serve it empty or broken, a request for it may have failed, or a pull has not reached it yet.",
     );
-    expect(outcome.text).not.toMatch(/next pull|not yet|yet\./i);
+    expect(outcome.text).not.toMatch(/next pull fetches|last pull|build report/i);
   });
 
   // Box 4 of the ticket: a listed Version whose file is not held is a listed row with no file, not an unknown id. The

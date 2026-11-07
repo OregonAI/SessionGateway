@@ -153,7 +153,7 @@ describe.for(eras)("a list tool, for a %s client", (era) => {
 
 describe.for(eras)("get_document on a Testimony no pull fetched, for a %s client", (era) => {
   // The files are off, so the worker fetched none: HB 3131's Testimony 117165 is a row the feed listed and the index
-  // holds no file for. While the feed lists it, get_document says the next pull fetches it (testimony-made-up.test.ts);
+  // holds no file for. While the feed lists it, get_document says the index does not hold its file (testimony-made-up.test.ts);
   // once the feed does not, no pull will, and it says that instead.
   it("says plainly that a Testimony the feed no longer lists was never fetched", async () => {
     const system = await startCopiedSystem({ clockAt: firstPull });
