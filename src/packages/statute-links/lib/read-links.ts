@@ -39,16 +39,19 @@ function splitIntoSections(body: string): MeasureSection[] {
 }
 
 const addedTo = /(?:is|are) added to and made a part of\s*$/;
-// Legislative Counsel's history of a section, in whichever form: "as amended by section 8, chapter 20,
-// Oregon Laws 2024," or "as amended by section 5 of this 2025 Act," (#6 F2).
+// Legislative Counsel's history of a section, in whichever form: "as amended by section 8, chapter 20, Oregon Laws
+// 2024," or "as amended by section 5 of this 2025 Act," (#6 F2).
 const asAmendedBy = String.raw`(?:,?\s*as amended by [^.;:]{1,400}?)?`;
 const amendedAfter = new RegExp(String.raw`^${asAmendedBy},?\s*(?:is|are) amended\b`);
 // A repeal list can end with sections of an earlier session's law: "ORS 247.016 and 247.018 and section 9, chapter 492,
 // Oregon Laws 2023, are repealed". The list's ORS sections are repealed whatever citation follows them (#55).
 const sessionLawSectionNumbers = String.raw`\d+[a-z]?(?:,\s*\d+[a-z]?)*(?:,?\s*(?:and|or)\s+\d+[a-z]?)?`;
-// The citation may carry its own history: "section 6, chapter 248, Oregon Laws 2023, as amended by section 7, chapter 292,
-// Oregon Laws 2025, are repealed" (#111; SB 1583 Introduced, 2026R1).
-const sessionLawCitation = String.raw`,?\s*(?:and\s+|or\s+)?sections?\s+${sessionLawSectionNumbers},\s*chapter\s+\d+[a-z]?,\s*Oregon Laws\s+\d{4}${asAmendedBy}`;
+// The citation may carry its own history: "section 6, chapter 248, Oregon Laws 2023, as amended by section 7,
+// chapter 292, Oregon Laws 2025, are repealed" (#111; SB 1583 Introduced, 2026R1). The history names only session-law
+// sections, so a clause after the citation ("apply to a member, and section 2 of this 2026 Act") ends the list.
+const sessionLawHistoryItem = String.raw`sections?\s+${sessionLawSectionNumbers}(?:,\s*chapter\s+\d+[a-z]?,\s*Oregon Laws\s+\d{4}(?:\s*\([^()]{1,60}\))?|\s+of this\s+\d{4}\s+Act)`;
+const sessionLawHistory = String.raw`(?:,?\s*as amended by ${sessionLawHistoryItem}(?:(?:,\s*(?:and\s+|or\s+)?|\s+(?:and|or)\s+)${sessionLawHistoryItem})*)?`;
+const sessionLawCitation = String.raw`,?\s*(?:and\s+|or\s+)?sections?\s+${sessionLawSectionNumbers},\s*chapter\s+\d+[a-z]?,\s*Oregon Laws\s+\d{4}${sessionLawHistory}`;
 const repealedAfter = new RegExp(String.raw`^(?:${sessionLawCitation})*,?\s*(?:is|are) repealed\b`);
 
 function kindOf(text: string, reference: OrsReference): StatuteLinkKind {

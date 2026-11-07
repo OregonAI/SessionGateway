@@ -15,7 +15,10 @@ type Expected = [kind: string, targetId: string, measureSection: string | null];
 
 type Row = {
   name: string;
-  /** The document and the page (2026R1) or lines of its pdf-text extraction (research cache) the passage is; "made up" for a constructed sentence. */
+  /**
+   * The document and the page (2026R1) or the lines of its pdf-text extraction (research cache) the passage is;
+   * "made up" for a constructed sentence.
+   */
   source: string;
   text: string;
   expected: Expected[];
