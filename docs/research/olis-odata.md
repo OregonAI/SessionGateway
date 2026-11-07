@@ -433,6 +433,28 @@ Sources: URLs from the 2025R1 pull, fetched 2026-10-28 22:00–22:30 PT. Two sam
 
 ---
 
+## 9. Files OLIS serves empty or broken, and files that time out (2026R1, ticket #116)
+
+Source: the backfill kit's run files on the GPU desktop (`~/wt/backfill-2026R1/`, not committed), read on 2026-11-07. **No request was made to OLIS for this section.** Every row below is **inferred**: it is my reading of what the ingest worker recorded when it asked OLIS, not a fetch of mine, so the first label of this file ("verified: I fetched the URL") does not apply to it. The runs are the worker's full pulls (`runs.log`, and `feed_pull` in `index.db`, opened read-only), in Pacific time:
+
+| Run | Started | What survives of its outcome per document |
+|---|---|---|
+| 2 | 2026-11-03 17:29:53 | `results/build-report.json`, copied after the run: 90 documents not fetched |
+| 3 | 2026-11-06 00:21:17 | No report (run 4 overwrote `data/build-report.json`) and an empty `ingest-3.log`. Only `runs.log` ("stored before: 39533") and `time-3.txt` (1 h 55 min 16 s wall) |
+| 4 | 2026-11-07 06:11:31 | `data/build-report.json` (`as_of` 2026-11-07T06:11:31-08:00): 90 documents not fetched |
+
+| Finding | Status | Source |
+|---|---|---|
+| In run 4 OLIS still served the same 58 files as empty or broken: 56 Testimony files of zero bytes (reason "The PDF file is empty, i.e. its size is zero bytes.") and 2 with "Invalid PDF structure" (`testimony-2026r1-238733` and `version-2026r1-hb4116-minority-report-2-to-a-engrossed`). The 58 ids are exactly the ticket's. | inferred (read from the worker's report of its own requests) | `data/build-report.json`, run 4, compared id by id with the ticket's lists |
+| Run 2 reported the same 90 ids, with the same split of reasons: the sorted id lists of `results/build-report.json` and `data/build-report.json` are equal. So the same 58 were empty or broken on 2026-11-03 and on 2026-11-07. | inferred | the two reports |
+| Run 3 (2026-11-06): the report says nothing of it. What is known is that it stored no document: runs 3 and 4 both began with 39,533 documents stored, and `document` holds none of the 90 ids. So no one of the 58 was fixed by run 3. Whether each of the 58 was answered empty again in run 3 is **not proven** by any file. | inferred | `runs.log`, `index.db` |
+| The 32 timeouts failed again in run 4: 27 Testimony and 5 exhibits (CommitteeMeetingDocument 313110, 313496, 314559, 314774, 315258), each "The operation was aborted due to timeout (3 attempts)", the ids equal to the ticket's. The same 32 timed out in run 2. For run 3 the same limit as for the 58 applies: nothing was stored, and no report survives. | inferred | the two reports, `runs.log` |
+| Runs 3 and 4 took 1 h 55 min and 1 h 58 min of wall time with about 72 s of CPU each. 32 documents of 3 attempts of 60 s are 96 minutes of waiting, so the two runs are consistent with the same 32 timing out in run 3 too. | inferred (arithmetic, not a record) | `time-3.txt`, `time-4.txt` |
+
+What this says: for four days, across a second and a fourth full pull, OLIS has not served a readable file for any of the 58. An empty file is OLIS's, and nothing here says it will ever change; the worker still asks for all 58 again at every full pull, because it treats a document it does not hold as one to fetch.
+
+**The 32 timeouts.** They are not a quirk of the file: the request got no answer within 60 seconds, three times, in two runs that are known to have failed (run 4 and run 2) and, by the arithmetic above, probably in a third. Unlike an empty file, they are all documents OLIS has served in other sessions' samples (gotcha 15: 6 of 350 GETs timed out in 2025R1, at 120 s as well as 60 s), so the likeliest cause is size or server time, not a broken file (**inferred**; the sizes of the 32 files are not known, because the worker records no size for a document it did not get). Two things would tell: the files' sizes from a HEAD request (which needs a new OLIS request, not made here), and whether a longer limit or a streamed read gets them. That is a follow-up ticket, not this one.
+
 ## Open questions
 
 1. **AUA acceptance.** How do you "electronically accept" the AUA when the service has no sign-up or credentials? Does caching and **public mirroring** of the feed data and the linked OLIS PDFs need any further permission? The AUA has no license or redistribution clause. Contact: Leg.Helpdesk@oregonlegislature.gov, listed on the data page.
