@@ -54,6 +54,7 @@ node src/bin/server.ts   # serves it at http://127.0.0.1:3000/mcp
 | `TRANSCRIPTS_PUBLISHED` | server | `false` | The publication gate for machine transcripts: the text `true` or `false` (another value stops the start-up). While it is `false` no tool's answer holds any transcript text. The owner turns it on when transcripts are to be public (ADR-0055). |
 | `INGEST_INCREMENTS` | both | `daily` | How often the worker reads what OLIS changed between full pulls: `off`, `daily` (one a night, 5 pm to 6 am Pacific, on nights the full pull does not run) or `15min` (every 15 minutes, 6 am to 10 pm Pacific, on days the Session meets). Another value stops the start-up (ADR-0039). The server reads it to know when the index is too old. |
 | `INGEST_FULL_PULL` | both | `weekly` | How often the worker reads the whole Session: `nightly`, `weekly` (Saturday) or `monthly` (the 1st). It runs from midnight to 6 am Pacific, once a day at most, whatever the value. Another value stops the start-up (ADR-0039). |
+| `INGEST_WORKER` | server | `on` | `off` declares that no worker runs for this deployment. Every tool result then carries a note that the index is a static copy as of its last full pull (the time is read from the database), and the staleness warning never appears; it never says an update was missed. The worker ignores it. Unset, or `on`, the staleness warning follows `INGEST_INCREMENTS` and `INGEST_FULL_PULL` as before. Another value stops the start-up (ADR-0057). |
 | `INGEST_HASH_SAMPLE_SIZE` | worker | `200` | How many stored documents the nightly hash sample fetches again to compare their hashes with the stored ones (ADR-0040). A whole number of at least 1; another value stops the start-up. The sample runs every night inside 5 pm to 6 am Pacific and writes `hash-sample-report.json` beside the database. |
 | `MCP_PATH` | server | `/mcp` | Where the endpoint is mounted. |
 | `MCP_HOST`, `MCP_PORT` | server | `127.0.0.1`, `3000` | Where it listens. |
@@ -365,10 +366,9 @@ rolling back); this section does not repeat it.
 
 **The ingest worker is off** (the owner's decision of 2026-11-04). The box serves the 2026R1 database as copied from the backfill
 (as of 2026-11-03) and sends OLIS nothing on a schedule; only `get_measure` reads OLIS, one lookup per call. The server's staleness rule
-still reads `INGEST_INCREMENTS` and `INGEST_FULL_PULL` from the environment, and it cannot know the worker is off. With the
-deployment's `daily` and `weekly`, answers carry "this index may be out of date" from 06:00 Pacific on the morning after the first
-night window that passes without an update (2026-11-05 for the copied 2026R1 database), not after a week. The warning reads "a nightly update was missed", and is accepted for go-live. A "static copy" mode that switches it off is OregonAI/SessionGateway#119. platform-deploy's README,
-"Turning the worker back on", says how the worker returns.
+still reads `INGEST_INCREMENTS` and `INGEST_FULL_PULL`, and would call the copy out of date and say a nightly update was missed. A deployment with no worker therefore sets `INGEST_WORKER=off` on the server (platform-deploy's `docker-compose.yml`, `session-gateway` service, while the worker is off; OregonAI/SessionGateway#119, ADR-0057), and every answer then carries a note that the index is a static copy as of its last full pull (2026-11-03T17:29:53-08:00 for the copied 2026R1 database), and never the warning.
+
+**Turning the worker back on** takes these steps, in this order: (1) remove `INGEST_WORKER` from the `session-gateway` service in `docker-compose.yml` (or set it to `on`), so the staleness rule is read again; (2) set the worker's `INGEST_INCREMENTS` and `INGEST_FULL_PULL` for the Session; (3) start the worker (platform-deploy's "Turning the worker back on" has the compose profile and the deploy). Leaving `off` set beside a running worker makes the server call a live index a static copy.
 
 **Switching to a new Session** (say 2027R1; ADR-0003 allows one Session per deployment, and `SESSION_KEY` is never edited on a live volume):
 

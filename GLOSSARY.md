@@ -34,6 +34,9 @@ A day the Session meets: a day with a committee meeting or a floor convening (Co
 **Staleness warning**:
 The block of text added to every tool result when the Index's latest update is too old for the configured rhythm: over two hours old during working hours (`15min`), older than the last night window (`daily`), or a full pull older than the last scheduled one (`off`) (ADR-0039).
 
+**Static copy**:
+The Index of a deployment that declares no worker runs (`INGEST_WORKER=off`). Its tools' results carry a note, not a staleness warning, that the Index is a static copy as of its last full pull, with that time; it never says an update was missed (ADR-0057).
+
 **No longer listed**:
 Said of a row the Index keeps when two complete Full pulls in a row did not list it. The row leaves search results, stays served by id (`get_document` says `no_longer_listed` and when the feed last listed it), and stays in the lists of the other tools, flagged `no_longer_listed`. A row that one complete pull misses is still listed, a pull that was refused counts for nothing, and a row that a later complete pull lists is listed again. A row no complete pull has listed (an old file's, or one an increment stored) is read as listed, not yet checked: `get_document` gives it `last_listed_at: null`. An Agency Link whose every evidence Document is no longer listed is flagged the same way, and search's Agency filter no longer counts it (ADR-0037). Nothing is deleted (ADR-0005, ADR-0030).
 _Avoid_: deleted, withdrawn, removed (OLIS says none of these: a row stops being listed)
