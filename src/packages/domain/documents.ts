@@ -150,6 +150,12 @@ export function exhibitIdOf(session: SessionKey, committeeMeetingDocumentId: num
  * A Recording Log is a CommitteeMeetingDocuments row like an Exhibit, but a document of its own kind:
  * the committee's timecoded index of the meeting's recording, not material posted to the record.
  */
+/**
+ * A link annotation of a Recording Log's PDF as the worker stores it (ticket #160, ADR-0057): the page it is on (from 1) and the
+ * address it points at, as the file holds them. It is source data: it is read from the file's bytes and nothing derived goes in.
+ */
+export type StoredLinkAnnotation = { page: number; url: string };
+
 export function recordingLogIdOf(session: SessionKey, committeeMeetingDocumentId: number): DocumentId {
   return `recording-log-${session.toLowerCase()}-${committeeMeetingDocumentId}` as DocumentId;
 }

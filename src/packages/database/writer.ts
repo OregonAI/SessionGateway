@@ -10,6 +10,7 @@ import {
   type MeetingId,
   type SessionSpan,
   type StoredDocument,
+  type StoredLinkAnnotation,
 } from "#/packages/domain/documents.ts";
 import { measureIdOf, type MeasureId, type SessionKey } from "#/packages/domain/index.ts";
 import type { AgencyId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
@@ -37,6 +38,7 @@ import {
   readLogsWithoutItemMeasures,
   readLogsWithoutTurnPassages,
   storeItemMeasuresOf,
+  storeLinkAnnotations,
   storeSpeakerTurnIndex,
 } from "./lib/speaker-turns.ts";
 import {
@@ -378,6 +380,11 @@ export type IndexWriter = {
    * the gap that left it with none. It replaces whatever the log had, in one transaction.
    */
   storeSpeakerTurnIndex(record: SpeakerTurnIndexRecord): void;
+  /**
+   * Keeps a Recording Log's link annotations as the worker read them from the PDF (ticket #160, ADR-0057), the page and address of
+   * each in the file's order, replacing whatever the log had. They are source data and independent of the speaker-turn index.
+   */
+  storeLinkAnnotations(document: DocumentId, annotations: readonly StoredLinkAnnotation[]): void;
   /** The stored Recording Logs of the Session that have no speaker-turn index yet (a gap counts as one): the ones to fetch again to read their links. */
   recordingLogsWithoutIndex(session: SessionKey): Set<DocumentId>;
   /**
@@ -1175,6 +1182,9 @@ export function openIndexWriter(path: string): IndexWriter {
         const stored = memberRow.parse(row);
         return { committeeCode: stored.committee_code, legislatorCode: stored.legislator_code };
       });
+    },
+    storeLinkAnnotations(document, annotations) {
+      storeLinkAnnotations(database, document, annotations);
     },
     storeSpeakerTurnIndex(record) {
       storeSpeakerTurnIndex(database, record.documentId, record.outcome);

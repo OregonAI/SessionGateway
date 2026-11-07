@@ -3,7 +3,7 @@
 // two forms are written once, here.
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
-import type { DocumentId } from "#/packages/domain/documents.ts";
+import type { DocumentId, StoredLinkAnnotation } from "#/packages/domain/documents.ts";
 import { measureIdOf, type MeasureId } from "#/packages/domain/index.ts";
 import type { LegislatorId } from "#/packages/domain/legislators.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
@@ -390,4 +390,39 @@ export function readTurnHearingsOf(database: DatabaseSync, measure: MeasureId): 
     });
   }
   return hearings;
+}
+
+/**
+ * Replaces a log's stored link annotations (ticket #160, ADR-0057) with these, in the order given, in one transaction. They are
+ * the file's own and keyed by the document alone, so nothing about the speaker-turn index changes them or is changed by them.
+ */
+export function storeLinkAnnotations(
+  database: DatabaseSync,
+  documentId: DocumentId,
+  annotations: readonly StoredLinkAnnotation[],
+): void {
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    database.prepare("DELETE FROM recording_log_link_annotation WHERE document_id = ?").run(documentId);
+    const insert = database.prepare(
+      "INSERT INTO recording_log_link_annotation (document_id, position, page, url) VALUES (?, ?, ?, ?)",
+    );
+    annotations.forEach((annotation, position) => {
+      insert.run(documentId, position, annotation.page, annotation.url);
+    });
+    database.exec("COMMIT");
+  } catch (error) {
+    if (database.isTransaction) database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+const annotationRow = z.object({ page: z.number(), url: z.string() });
+
+/** A log's stored link annotations in the order the file listed them; empty when none are stored. */
+export function readLinkAnnotations(database: DatabaseSync, documentId: DocumentId): StoredLinkAnnotation[] {
+  return database
+    .prepare("SELECT page, url FROM recording_log_link_annotation WHERE document_id = ? ORDER BY position")
+    .all(documentId)
+    .map((row) => annotationRow.parse(row));
 }
