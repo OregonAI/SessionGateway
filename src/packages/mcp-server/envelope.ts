@@ -10,7 +10,7 @@ import type { Clock } from "#/packages/time/clock.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import type { Outcome } from "./lib/outcome.ts";
 import { createRateLimiter, rateLimitMessage } from "./lib/rate-limit.ts";
-import { stalenessWarning } from "./lib/staleness.ts";
+import { stalenessBlock } from "./lib/staleness.ts";
 
 /** The two fields the envelope adds to every tool's output schema, beside the tool's own. */
 const envelopeFields = {
@@ -85,6 +85,12 @@ export type Tool<Input extends z.ZodObject, Output extends z.ZodObject, Fault> =
    * its own typed answer, and says false for every answer while the publication gate is off, because no answer then holds a passage.
    */
   carriesTranscript?(answer: z.infer<Output>): boolean;
+  /**
+   * Whether this tool's answer holds a live_status read from OLIS when the call arrives (get_measure; ADR-0057, owner
+   * decision of 2026-11-06). Under `INGEST_WORKER=off` the static-copy note of that tool, and of no other, says so. A tool
+   * that reads nothing live leaves it out.
+   */
+  readsLiveStatus?: true;
   input: Input;
   output: Output;
   /** Answers a call, given the As of the envelope read for it. */
@@ -139,7 +145,7 @@ export function createEnvelope(deps: EnvelopeDeps): Envelope {
     windowSeconds: deps.config.rateWindowSeconds,
     clock: deps.clock,
   });
-  /** The result of one call, before the Staleness warning. */
+  /** The result of one call, before the staleness block (the warning, or the static-copy note). */
   async function resultOf<Input extends z.ZodObject, Output extends z.ZodObject, Fault>(
     tool: Tool<Input, Output, Fault>,
     input: z.infer<Input>,
@@ -176,15 +182,17 @@ export function createEnvelope(deps: EnvelopeDeps): Envelope {
     tool: Tool<Input, Output, Fault>,
     input: z.infer<Input>,
   ): Promise<CallToolResult> {
-    // The As of is read once for the call: the answer carries it, and the warning is about it.
+    // The As of is read once for the call: the answer carries it, and the staleness block is about it.
     const asOf = deps.reader.asOf(deps.config.session);
     const result = await resultOf(tool, input, asOf);
-    // Every result carries the warning, when there is one (ADR-0039): one more block of text after the tool's own, so no
-    // tool's output schema changes. An Index with no As of is not old, it is empty.
-    const warning = asOf === undefined ? undefined : stalenessWarning(deps.reader, deps.config, deps.clock, asOf);
-    return warning === undefined
-      ? result
-      : { ...result, content: [...result.content, { type: "text", text: warning }] };
+    // Every result carries the staleness block, when there is one: the warning (ADR-0039), or under INGEST_WORKER=off the
+    // static-copy note (ADR-0057). It is one more block of text after the tool's own, so no tool's output schema changes.
+    // An Index with no As of is not old, it is empty.
+    const block =
+      asOf === undefined
+        ? undefined
+        : stalenessBlock(deps.reader, deps.config, deps.clock, asOf, tool.readsLiveStatus === true);
+    return block === undefined ? result : { ...result, content: [...result.content, { type: "text", text: block }] };
   }
 
   function register<Input extends z.ZodObject, Output extends z.ZodObject, Fault>(

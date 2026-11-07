@@ -1,5 +1,5 @@
 ---
-status: accepted; supersedes the schedule of ADR-0005 in part (its 15-minute increments and its nightly full pull; the live lookups, the two-pull rule and the replaced files stand); its note that the worker sees only committee-meeting days is replaced by ADR-0042
+status: accepted; supersedes the schedule of ADR-0005 in part (its 15-minute increments and its nightly full pull; the live lookups, the two-pull rule and the replaced files stand); its note that the worker sees only committee-meeting days is replaced by ADR-0042; amended by ADR-0057 (a deployment with no worker sets `INGEST_WORKER=off`, and the warning becomes a static-copy note)
 ---
 
 # The ingest rhythms are two settings, and the staleness warning follows them
