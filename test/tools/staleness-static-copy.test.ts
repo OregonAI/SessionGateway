@@ -45,6 +45,8 @@ function withoutLiveStatus(own: string): unknown {
 // The pull is Wednesday 2025-01-22 at 7:00 am, a Session meeting day.
 const pulledAt = "2025-01-22T15:00:00Z";
 const pulledAtPacific = "2025-01-22T07:00:00-08:00";
+const LIVE_CLAUSE = "except get_measure's live_status, which is read from OLIS when you ask";
+const LIVE_NOTE = `Note: this index is a static copy, as of its last full pull at ${pulledAtPacific}. No worker updates it, so changes the Legislature has made since then are not in it, ${LIVE_CLAUSE}.`;
 const worker = { off: { INGEST_WORKER: "off" } };
 
 describe("INGEST_WORKER=off: the index is a static copy", () => {
@@ -59,12 +61,14 @@ describe("INGEST_WORKER=off: the index is a static copy", () => {
     const fresh = await answer(system, "session_overview"); // the moment of the pull: nothing is old yet
     expect(fresh.text).toContain("static copy");
     expect(fresh.text).toContain(`as of its last full pull at ${pulledAtPacific}`);
+    expect(fresh.text).not.toContain(LIVE_CLAUSE);
 
     system.clock.set("2025-02-26T20:00:00Z"); // five weeks on, and many night windows with no update
     const { text } = await answer(system, "session_overview");
 
     expect(text).toContain("static copy");
     expect(text).toContain(`as of its last full pull at ${pulledAtPacific}`);
+    expect(text).not.toContain(LIVE_CLAUSE); // only get_measure reads OLIS when asked
     expect(text).not.toContain("may be out of date");
     expect(text).not.toContain("missed");
   });
@@ -79,6 +83,9 @@ describe("INGEST_WORKER=off: the index is a static copy", () => {
 
     expect(later.text).toContain("static copy");
     expect(later.text).toContain(`as of its last full pull at ${pulledAtPacific}`);
+    // get_measure's note, and only its, ends with the clause on its live_status (owner's decision of 2026-11-06, ADR-0057).
+    expect(fresh.text).toContain(LIVE_NOTE);
+    expect(later.text).toContain(LIVE_NOTE);
     expect(later.text).not.toContain("missed");
     // The note is one more block of text after the tool's own; the tool's own block and the As of are the index's, as ever.
     expect(later.own).not.toContain("static copy");
