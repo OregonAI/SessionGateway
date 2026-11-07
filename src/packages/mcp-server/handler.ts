@@ -73,7 +73,7 @@ export type SessionGatewayHandler = {
 };
 
 /**
- * Registers each tool once, through the envelope: the rate limit, the As of, the notice, the Staleness warning and the MCP
+ * Registers each tool once, through the envelope: the rate limit, the As of, the notice, the staleness block (the Staleness warning, or the static-copy note) and the MCP
  * result are the envelope's, and a tool is its name, its schemas, its function, its message for each of its faults and
  * whether an answer of it holds a source_url (`carriesSourceUrl`). The envelope words the notice from that for each
  * result: the clause that tells the reader to use source_url is there when the result holds one, and not otherwise.
@@ -95,6 +95,7 @@ function buildServer(
     input: getMeasureInput,
     output: getMeasureOutput,
     carriesSourceUrl: () => true,
+    readsLiveStatus: true,
     annotations: { readOnlyHint: true, openWorldHint: true },
     run: (input, asOf) => getMeasure(reader, liveStatus, config.session, input, asOf, clock.now()),
     faultMessage: getMeasureFaultMessage,
