@@ -63,23 +63,24 @@ describe("the 2026R1 question set", () => {
       }
     });
 
-    it("builds each player link from the Legislature's player page and the timecode's second", () => {
+    it("checks each whole player link with equals: the player page, the clientID, an eventID and the timecode's second", () => {
       for (const each of hearing) {
-        const link = each.steps
-          .flatMap((one) => one.expect)
-          .find((check) => check.path.endsWith("].player_link") && "includesText" in check);
-        const seconds = each.steps
-          .flatMap((one) => one.expect)
-          .find((check) => check.path.endsWith("].offset_seconds") && "equals" in check);
-        expect(link, each.id).toBeDefined();
-        const wanted = link !== undefined && "includesText" in link ? [link.includesText].flat() : [];
+        const checks = each.steps.flatMap((one) => one.expect);
+        const links = checks.filter((check) => check.path.endsWith("].player_link"));
+        expect(links.length, each.id).toBe(1);
+        const link = links[0];
+        // No partial check stands in for the whole link (ADR-0058, ticket #164).
+        expect(link !== undefined && "equals" in link, `${each.id} checks the link with equals`).toBe(true);
+        const seconds = checks.find((check) => check.path.endsWith("].offset_seconds") && "equals" in check);
         const second = seconds !== undefined && "equals" in seconds ? (seconds.equals as number[])[0] : undefined;
-        // The clientID is the one the stored text of testimony-2026r1-234682 (page 4) quotes in a player link; the stored
-        // text of the logs holds none (scripts/eval/questions/2026R1.yml says so).
-        expect(wanted, each.id).toContain(
-          "https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID=",
+        const wanted = link !== undefined && "equals" in link ? [link.equals].flat() : [];
+        expect(wanted, each.id).toHaveLength(1);
+        // The clientID is the stored link annotations' (the stored text of the logs holds none); the eventID is ten digits.
+        expect(wanted[0], each.id).toMatch(
+          new RegExp(
+            `^https://olis\\.oregonlegislature\\.gov/liz/mediaplayer\\?clientID=4879615486&eventID=\\d{10}&startStreamAt=${String(second)}$`,
+          ),
         );
-        expect(wanted, each.id).toContain(`&startStreamAt=${String(second)}`);
       }
     });
   });
