@@ -6,7 +6,7 @@ import { parseStatuteLinks } from "../index.ts";
 // 492, Oregon Laws 2023, are repealed", and every ORS section of the list is repealed by the measure section that holds
 // it, whatever citation follows the list. Expected links are [kind, target id, measure section].
 //
-// The rows quote the research cache (.cache/olis-2025R1/, not committed: the Acceptable Use Agreement grants no
+// The SB 1583 row (#111) quotes the 2026R1 stored text. The others quote the research cache (.cache/olis-2025R1/, not committed: the Acceptable Use Agreement grants no
 // redistribution license; it is not in CI, so each quote is inline), as the pdf-text package extracts the document (the
 // text the store holds), with the lines of that extraction the passage is. The one made-up row says why it is.
 
