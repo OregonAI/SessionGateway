@@ -510,19 +510,29 @@ describe("a file OLIS serves empty or broken, and a request OLIS does not answer
   });
 
   // Box 4 of the ticket: a listed Version whose file is not held is a listed row with no file, not an unknown id. The
-  // fixture's SB 69 Introduced is a real row; the failure is made up (the fake OLIS answers its download 404).
+  // row is MADE UP (SB 983's "B-Engrossed", which the feed does not list) and its download is not served, so the fake
+  // answers it 404.
   it("is answered by get_document for a listed Version with no file as a listed row, not as an unknown id", async () => {
-    const sb69Introduced = `${olisRoot}/MeasureDocument/SB69/Introduced`;
+    const madeUpVersion = {
+      SessionKey: "2025R1",
+      MeasurePrefix: "SB",
+      MeasureNumber: 983,
+      VersionDescription: "B-Engrossed",
+      DocumentUrl: `${olisRoot}/MeasureDocument/SB983/B-Engrossed`,
+      CreatedDate: "2025-06-05T17:06:32.163",
+      ModifiedDate: null,
+    };
     const system = await start({
-      clockAt: "2025-01-29T17:00:00Z",
+      clockAt,
+      documents: false,
       documentTimeoutMs: 200,
-      olis: { documentFailures: { [sb69Introduced]: [404, 404, 404] } },
+      olis: { madeUpRows: { MeasureDocuments: [madeUpVersion] } },
     });
 
-    const outcome = await getDocument(system, "version-2025r1-sb69-introduced");
+    const outcome = await getDocument(system, "version-2025r1-sb983-b-engrossed");
 
     expect(outcome.isError).toBe(true);
-    expect(outcome.text).toContain("version-2025r1-sb69-introduced");
+    expect(outcome.text).toContain("version-2025r1-sb983-b-engrossed");
     expect(outcome.text).toMatch(/listed .*holds no file/);
     expect(outcome.text).not.toContain("No document");
     expect(outcome.text).not.toContain("Give a document id such as");
