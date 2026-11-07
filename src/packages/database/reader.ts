@@ -928,7 +928,7 @@ export function openIndexReader(path: string, clock: Clock): IndexReader {
     if (meetingKind !== undefined) return z.enum(documentKinds).parse(meetingKind["kind"]);
     if (!isLinkedDocument) return "proposed_amendment";
     for (const row of selectEntitySetsOfDocument.all(id)) {
-      switch (row["entity_set"]) {
+      switch (z.string().parse(row["entity_set"])) {
         case "MeasureDocuments":
           return selectVersionListed.get(id) === undefined ? "printed_amendment" : "version";
         case "MeasureAnalysisDocuments":
