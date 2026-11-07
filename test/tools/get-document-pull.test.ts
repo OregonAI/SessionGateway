@@ -247,6 +247,7 @@ describe("a document that cannot be had", () => {
         id: "version-2025r1-sb69-introduced",
         source_url: sb69Introduced,
         reason: expect.stringContaining("404") as unknown,
+        cause: "request_failed",
       },
     ]);
 
@@ -271,6 +272,7 @@ describe("a document that cannot be had", () => {
         id: "version-2025r1-sb69-introduced",
         source_url: sb69Introduced,
         reason: expect.stringContaining("3 attempts") as unknown,
+        cause: "request_failed",
       },
     ]);
   });
@@ -413,6 +415,7 @@ describe("rows the fixture does not have", () => {
         id: "version-2025r1-sb69-corrupt",
         source_url: corruptUrl,
         reason: expect.stringMatching(/not a PDF/i) as unknown,
+        cause: "unreadable_file",
       },
     ]);
   });
