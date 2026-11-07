@@ -7,7 +7,7 @@ import { committeeIdOf, type DocumentLink, type MeetingId } from "#/packages/dom
 import { measureIdOf, type SessionKey } from "#/packages/domain/index.ts";
 import type { SpeakerTurn, SpeakerTurnIndexOutcome } from "#/packages/domain/speaker-turns.ts";
 import type { LegislatorResolver } from "#/packages/legislators/resolver.ts";
-import { extractPdfLinks } from "#/packages/pdf-text/index.ts";
+import { extractPdfLinks, linkAnnotationsOf } from "#/packages/pdf-text/index.ts";
 import {
   legislatorOfSpeaker,
   measureOfAgendaItem,
@@ -23,7 +23,7 @@ export type SpeakerTurnContext = {
 };
 
 /**
- * Reads a fetched Recording Log into its index. The Agenda items and the committee's members are the ones the store holds
+ * Reads a fetched Recording Log into its index, after storing the link annotations the file holds. The Agenda items and the committee's members are the ones the store holds
  * for the log's Meeting and committee, which the pull stored before it fetched any file, so a full pull and an increment
  * read them the same way. A member's code is resolved through the Legislators rows and the alias file; a code that
  * names no Legislator (a task force's member) is no candidate.
@@ -42,6 +42,9 @@ export async function readSpeakerTurnIndex(
     });
   }
   const { links } = extraction;
+  // The annotations are stored as the file's read gave them, before the parser derives anything from them (ticket #160,
+  // ADR-0057): they are a source the index is not, so a question's expected value can name them and not the index under test.
+  context.writer.storeLinkAnnotations(link.id, linkAnnotationsOf(links));
   const meeting = link.relations.find((relation) => relation.relation === "meeting")?.to;
   const committee = link.relations.find((relation) => relation.relation === "committee")?.to;
   const agendaItems = meeting === undefined ? [] : context.writer.agendaItemsOfMeeting(meeting as MeetingId);
