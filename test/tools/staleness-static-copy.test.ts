@@ -22,16 +22,24 @@ async function start(options: SystemOptions): Promise<System> {
   return system;
 }
 
-/** What an agent reads from one answer: all of its text, and the As of the answer itself carries. */
-async function answer(system: System, tool: string): Promise<{ text: string; asOf: unknown }> {
+/** What an agent reads from one answer: all of its text, the tool's own content (its first block), and the As of it carries. */
+async function answer(system: System, tool: string): Promise<{ text: string; own: string; asOf: unknown }> {
   const connected = await connectClient("2026-07-28", system.handler);
   try {
     const args = tool === "get_measure" ? { measure: "SB 69" } : {};
     const result = await callTool(connected, tool, args);
-    return { text: result.text, asOf: result.structured?.["as_of"] };
+    const raw = await connected.client.callTool({ name: tool, arguments: args });
+    const first = raw.content[0];
+    return { text: result.text, own: first?.type === "text" ? first.text : "", asOf: result.structured?.["as_of"] };
   } finally {
     await connected.close();
   }
+}
+
+/** A tool's own JSON content without live_status. */
+function withoutLiveStatus(own: string): unknown {
+  const { live_status: _liveStatus, ...rest } = JSON.parse(own) as Record<string, unknown>;
+  return rest;
 }
 
 // The pull is Wednesday 2025-01-22 at 7:00 am, a Session meeting day.
@@ -48,6 +56,10 @@ describe("INGEST_WORKER=off: the index is a static copy", () => {
       serverEnv: worker.off,
     });
 
+    const fresh = await answer(system, "session_overview"); // the moment of the pull: nothing is old yet
+    expect(fresh.text).toContain("static copy");
+    expect(fresh.text).toContain(`as of its last full pull at ${pulledAtPacific}`);
+
     system.clock.set("2025-02-26T20:00:00Z"); // five weeks on, and many night windows with no update
     const { text } = await answer(system, "session_overview");
 
@@ -61,13 +73,17 @@ describe("INGEST_WORKER=off: the index is a static copy", () => {
     const system = await start({ clockAt: pulledAt, serverEnv: worker.off });
 
     const fresh = await answer(system, "get_measure");
+    expect(fresh.text).toContain("static copy");
     system.clock.set("2025-03-05T20:00:00Z");
     const later = await answer(system, "get_measure");
 
     expect(later.text).toContain("static copy");
     expect(later.text).toContain(`as of its last full pull at ${pulledAtPacific}`);
     expect(later.text).not.toContain("missed");
-    // The note is one more block of text after the tool's own; the answer's As of is the index's, as ever.
+    // The note is one more block of text after the tool's own; the tool's own block and the As of are the index's, as ever.
+    expect(later.own).not.toContain("static copy");
+    // get_measure's live_status is read from OLIS when the call arrives, so it differs between the two moments by design.
+    expect(withoutLiveStatus(later.own)).toEqual(withoutLiveStatus(fresh.own));
     expect(later.asOf).toBe(fresh.asOf);
   });
 
@@ -81,6 +97,20 @@ describe("INGEST_WORKER=off: the index is a static copy", () => {
 
     expect(asOf).toBe("2025-01-22T09:00:00-08:00");
     expect(text).toContain(`as of its last full pull at ${pulledAtPacific}`);
+  });
+
+  it("treats INGEST_WORKER=on as absent: the warning follows the rhythm settings, and there is no static-copy note", async () => {
+    const system = await start({
+      clockAt: pulledAt,
+      ingest: { increments: "daily", fullPull: "weekly" },
+      serverEnv: { INGEST_WORKER: "on" },
+    });
+
+    system.clock.set("2025-02-26T20:00:00Z");
+    const { text } = await answer(system, "session_overview");
+
+    expect(text).toContain("a nightly update was missed");
+    expect(text).not.toContain("static copy");
   });
 
   it("is the same in a legacy client's answer", async () => {
