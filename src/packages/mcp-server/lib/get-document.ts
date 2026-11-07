@@ -153,7 +153,7 @@ export function getDocument(
 
 /**
  * What an agent is told of an id the index holds no file of. A row the feed no longer lists is a fact whatever it is; a
- * listed Testimony is one the next pull fetches; a listed Version is a listed row with no file; any other listed row
+ * listed Testimony is one the last pull could not store (ADR-0059); a listed Version is a listed row with no file; any other listed row
  * without a file is no id this index serves.
  */
 function unheldResult(found: UnheldDocument, id: string, asked: string, session: SessionKey): GetDocumentOutcome {
@@ -198,11 +198,12 @@ function unknownDocumentMessage(id: string, session: SessionKey): string {
 }
 
 /**
- * What an agent is told when the id is a Testimony that `testimony` lists but whose file the worker has not fetched
- * (a failed or not yet reached download). The id is right; the next pull fetches the file again.
+ * What an agent is told when the id is a Testimony that `testimony` lists but whose file the worker has not stored
+ * (ADR-0059). The id is right. The cause is not stored where the server reads, so the answer says what is known and
+ * promises nothing of a later pull.
  */
 function testimonyNotHeldMessage(id: string, session: SessionKey): string {
-  return `Testimony "${id}" is listed in the ${session} Session, but this index does not hold its file yet. The next pull fetches it again.`;
+  return `Testimony "${id}" is listed in the ${session} Session. This index does not hold its file: the last pull could not store it. OLIS may serve it empty or broken, or the request failed; the build report says which.`;
 }
 
 /** What an agent is told when the id is a Version the feed lists and the index holds no file of: the id is right. */
