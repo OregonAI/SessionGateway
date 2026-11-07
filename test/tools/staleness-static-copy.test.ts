@@ -38,8 +38,9 @@ async function answer(system: System, tool: string): Promise<{ text: string; own
 
 /** A tool's own JSON content without live_status. */
 function withoutLiveStatus(own: string): unknown {
-  const { live_status: _liveStatus, ...rest } = JSON.parse(own) as Record<string, unknown>;
-  return rest;
+  const parsed = JSON.parse(own) as Record<string, unknown>;
+  delete parsed["live_status"];
+  return parsed;
 }
 
 // The pull is Wednesday 2025-01-22 at 7:00 am, a Session meeting day.
