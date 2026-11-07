@@ -184,3 +184,40 @@ describe("a database a worker left before the annotations were stored", () => {
     }
   });
 });
+
+// The re-fetch trigger (ADR-0058): a Recording Log that holds an index and no stored annotation is fetched again by the next
+// pull, through the re-fetch path of ADR-0052 (fetch, hash check, `bytes_changed`, read), and one that holds annotations is not.
+describe("which Recording Logs a pull fetches again for their annotations", () => {
+  let system: System;
+
+  beforeAll(async () => {
+    system = await startCopiedSystem({ clockAt, documents: true });
+  }, 60_000);
+
+  afterAll(async () => {
+    await system.stop();
+  });
+
+  it("does not fetch a log again that holds its index and its annotations", async () => {
+    await system.pullAgain();
+
+    expect(system.buildReport()["recording_log_refetches"]).toEqual({ attempted: 0, failed: [], bytes_changed: [] });
+  });
+
+  it("fetches again every log that holds an index and no annotations, and stores them, and then leaves it alone", async () => {
+    forgetLinkAnnotations(system.database.path);
+    await system.pullAgain();
+
+    // The fixture's 34 stored Recording Logs (get-document-speaker-turns-pull.test.ts counts the same 34).
+    expect(system.buildReport()["recording_log_refetches"]).toEqual({ attempted: 34, failed: [], bytes_changed: [] });
+    const reader = readerOf(system);
+    try {
+      expect(reader.linkAnnotationsOf("recording-log-2025r1-307521" as DocumentId)).toEqual(log307521);
+    } finally {
+      reader.close();
+    }
+
+    await system.pullAgain();
+    expect(system.buildReport()["recording_log_refetches"]).toEqual({ attempted: 0, failed: [], bytes_changed: [] });
+  });
+});

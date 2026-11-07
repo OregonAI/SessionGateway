@@ -144,8 +144,31 @@ describe("the speaker-turn index of a stored Recording Log", () => {
     expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set([logId]));
 
     index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" } });
+    index.writer.storeLinkAnnotations(logId, [
+      { page: 1, url: "https://made-up.example/mediaplayer?clientID=1&eventID=2099010001&startStreamAt=5" },
+    ]);
 
     expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set());
+  });
+
+  test("a log with an index and no stored link annotations is still listed, for the fetch that stores them (ADR-0058)", () => {
+    pulledWithLog();
+    index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" } });
+
+    expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set([logId]));
+
+    index.writer.storeLinkAnnotations(logId, [
+      { page: 1, url: "https://made-up.example/mediaplayer?clientID=1&eventID=2099010001&startStreamAt=5" },
+    ]);
+
+    expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set());
+  });
+
+  test("a log with annotations and no index is listed too: either one missing is a reason to fetch it", () => {
+    pulledWithLog();
+    index.writer.storeLinkAnnotations(logId, [{ page: 1, url: "https://made-up.example/x" }]);
+
+    expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set([logId]));
   });
 
   test("the meeting's listing says per Recording Log whether it has an index: its event ID and turn count", () => {
