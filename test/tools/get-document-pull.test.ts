@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient } from "../support/mcp-clients.ts";
 import { startSystem, type System, type SystemOptions } from "../support/system.ts";
+import { madeUpTestimonyRow, testimonyDownloadPath } from "../support/testimony.ts";
 
 const started: System[] = [];
 
@@ -246,6 +247,7 @@ describe("a document that cannot be had", () => {
         id: "version-2025r1-sb69-introduced",
         source_url: sb69Introduced,
         reason: expect.stringContaining("404") as unknown,
+        cause: "request_failed",
       },
     ]);
 
@@ -270,6 +272,7 @@ describe("a document that cannot be had", () => {
         id: "version-2025r1-sb69-introduced",
         source_url: sb69Introduced,
         reason: expect.stringContaining("3 attempts") as unknown,
+        cause: "request_failed",
       },
     ]);
   });
@@ -412,6 +415,7 @@ describe("rows the fixture does not have", () => {
         id: "version-2025r1-sb69-corrupt",
         source_url: corruptUrl,
         reason: expect.stringMatching(/not a PDF/i) as unknown,
+        cause: "unreadable_file",
       },
     ]);
   });
@@ -430,5 +434,107 @@ describe("rows the fixture does not have", () => {
       content_hash: "c58e10ef692899f88e4d595727d739117b5893775527c09737441b5d95e57fe3",
     });
     expect(first.structured?.["text"]).not.toBe(node.structured?.["text"]);
+  });
+});
+
+describe("a file OLIS serves empty or broken, and a request OLIS does not answer (ticket #116)", () => {
+  // 2025-07-15 10:00 in Oregon: every row of the fixture but eight exists (testimony-made-up.test.ts). Every row and
+  // file here is MADE UP and labelled so; no real 2026R1 document is reproduced. The real cases are 56 Testimony
+  // files of zero bytes and 2 files with invalid PDF structure (docs/research/olis-odata.md, section 9): a zero-byte
+  // file has no text to put into a seam-2 table, so the case is at seam 1, on made-up rows (ADR-0046).
+  const clockAt = "2025-07-15T17:00:00Z";
+  const emptyId = 900101;
+  const brokenId = 900102;
+  const silentId = 900103;
+  const olisRoot = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads";
+
+  type Entry = { id: string; source_url: string; reason: string; cause?: string };
+
+  /** MADE UP: three Testimony rows, filed under SB 983 as the other made-up rows are. */
+  function arranged(): SystemOptions {
+    return {
+      clockAt,
+      documents: false,
+      documentTimeoutMs: 200,
+      olis: {
+        madeUpRows: {
+          CommitteePublicTestimonies: [emptyId, brokenId, silentId].map((commTestId) =>
+            madeUpTestimonyRow({ commTestId }),
+          ),
+        },
+        madeUpDocuments: {
+          // MADE UP: a file of zero bytes, as OLIS serves for 56 of 2026R1's Testimony.
+          [testimonyDownloadPath(emptyId)]: new Uint8Array(0),
+          // MADE UP: bytes that are no PDF at all.
+          [testimonyDownloadPath(brokenId)]: new TextEncoder().encode("MADE UP: this is not a PDF file"),
+        },
+        documentFailures: { [`${olisRoot}/PublicTestimonyDocument/${silentId}`]: ["hang", "hang", "hang"] },
+      },
+    };
+  }
+
+  function entryOf(system: System, id: number): Entry {
+    const entries = system.buildReport()["documents_not_fetched"] as Entry[];
+    const found = entries.find((entry) => entry.id === `testimony-2025r1-${String(id)}`);
+    if (found === undefined) throw new Error(`The build report has no entry for testimony ${String(id)}`);
+    return found;
+  }
+
+  // Box 2 of the ticket: a reader of the report can tell a file OLIS served empty or unreadable (which may never
+  // heal) from a request that got no answer (which can).
+  it.for([
+    ["a file of zero bytes is empty_file", emptyId, "empty_file"],
+    ["bytes that are no PDF are unreadable_file", brokenId, "unreadable_file"],
+    ["a request that times out three times is request_failed", silentId, "request_failed"],
+  ] as const)("the build report says why: %s", async ([, id, cause]) => {
+    const system = await start(arranged());
+
+    expect(entryOf(system, id).cause).toBe(cause);
+  });
+
+  // Box 3 of the ticket, as the owner decided on 2026-11-07 (wording only, no schema step): the answer for an unheld
+  // Testimony stops promising a fix. It says the index does not hold the file and that OLIS may serve it empty or
+  // broken, a request for it may have failed, or a pull has not reached it yet. It names no last pull and no build
+  // report, because a full pull may be running, a pull may have stopped, and the cause is not stored where the server reads.
+  it("is answered by get_document for an unheld Testimony without promising that the next pull fetches it", async () => {
+    const system = await start(arranged());
+
+    const outcome = await getDocument(system, `testimony-2025r1-${String(emptyId)}`);
+
+    expect(outcome.isError).toBe(true);
+    expect(outcome.text).toContain(`testimony-2025r1-${String(emptyId)}`);
+    expect(outcome.text).toContain(
+      "This index does not hold its file: OLIS may serve it empty or broken, a request for it may have failed, or a pull has not reached it yet.",
+    );
+    expect(outcome.text).not.toMatch(/next pull fetches|last pull|build report/i);
+  });
+
+  // Box 4 of the ticket: a listed Version whose file is not held is a listed row with no file, not an unknown id. The
+  // row is MADE UP (SB 983's "B-Engrossed", which the feed does not list) and its download is not served, so the fake
+  // answers it 404.
+  it("is answered by get_document for a listed Version with no file as a listed row, not as an unknown id", async () => {
+    const madeUpVersion = {
+      SessionKey: "2025R1",
+      MeasurePrefix: "SB",
+      MeasureNumber: 983,
+      VersionDescription: "B-Engrossed",
+      DocumentUrl: `${olisRoot}/MeasureDocument/SB983/B-Engrossed`,
+      CreatedDate: "2025-06-05T17:06:32.163",
+      ModifiedDate: null,
+    };
+    const system = await start({
+      clockAt,
+      documents: false,
+      documentTimeoutMs: 200,
+      olis: { madeUpRows: { MeasureDocuments: [madeUpVersion] } },
+    });
+
+    const outcome = await getDocument(system, "version-2025r1-sb983-b-engrossed");
+
+    expect(outcome.isError).toBe(true);
+    expect(outcome.text).toContain("version-2025r1-sb983-b-engrossed");
+    expect(outcome.text).toMatch(/listed .*holds no file/);
+    expect(outcome.text).not.toContain("No document");
+    expect(outcome.text).not.toContain("Give a document id such as");
   });
 });

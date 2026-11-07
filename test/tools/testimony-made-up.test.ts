@@ -81,12 +81,12 @@ describe.for(eras)("testimony on rows the fixture lacks, for a %s client", (era)
     // Ticket #14, box 4: "Each item has an id that get_document resolves". It holds for every item whose file is fetched.
     // The tool still lists a Testimony whose download failed (ADR-0017, listing before fetch: a person who testified
     // must not vanish from the answer because a download failed), and get_document answers for it with an error that
-    // says what is true: the id is the Testimony's, the index does not hold the file, and the next pull fetches it
-    // again. It must not say what it says of an id that is no document's, "Give a document id such as ...", which
+    // says what is true: the id is the Testimony's, and the index does not hold the file (OLIS may serve it empty or
+    // broken, a request may have failed, or a pull has not reached it yet; ADR-0059). It must not say what it says of an id that is no document's, "Give a document id such as ...", which
     // tells the agent that the id the tool just handed out is malformed. The fixture's 117165 (HB 3131, Sophie Els) is
     // a real row; the failure is made up: the fake OLIS answers its download 404 once, as it does in
     // get-document-pull.test.ts for a Version, and then serves it.
-    it("is answered by get_document with an error that says the file is not held and the next pull fetches it", async () => {
+    it("is answered by get_document with an error that says the file is not held and promises no later pull", async () => {
       const download = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/PublicTestimonyDocument/117165";
       const system = await start({ documents: true, olis: { documentFailures: { [download]: [404] } } }, true);
 
@@ -104,7 +104,8 @@ describe.for(eras)("testimony on rows the fixture lacks, for a %s client", (era)
         expect(missing.isError).toBe(true);
         expect(missing.text).toContain('Testimony "testimony-2025r1-117165" is listed in the 2025R1 Session');
         expect(missing.text).toMatch(/does not hold its file/);
-        expect(missing.text).toMatch(/next pull fetches it again/);
+        expect(missing.text).toContain("a pull has not reached it yet");
+        expect(missing.text).not.toMatch(/next pull fetches|last pull/);
         expect(missing.text).not.toContain("Give a document id such as");
         const neighbour = await callTool(connected, "get_document", { id: "testimony-2025r1-117167" });
         expect(neighbour.isError).toBe(false);

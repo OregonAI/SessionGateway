@@ -69,7 +69,13 @@ import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, pacificTimestampOf, type Timestamp } from "#/packages/time/pacific.ts";
 import { readSpeakerTurnIndex } from "./lib/speaker-turns.ts";
 import { ingestTranscripts, transcriptsReportOf, type TranscriptsRun } from "./lib/transcripts.ts";
-import { buildReportPath, writeBuildReport, type BuildReport, type SetReport } from "./lib/build-report.ts";
+import {
+  buildReportPath,
+  writeBuildReport,
+  type BuildReport,
+  type NotFetchedCause,
+  type SetReport,
+} from "./lib/build-report.ts";
 import {
   hashSampleReportPath,
   lastHashSampleAt,
@@ -119,7 +125,9 @@ export type FullPullResult = {
 const DEFAULT_DOCUMENT_TIMEOUT_MS = 60_000;
 
 /** What a pull made of one linked document: its file and text, or why it is left out of the store. */
-type Fetched = { kind: "fetched"; bytes: Uint8Array; pdf: ExtractedPdf } | { kind: "left_out"; reason: string };
+type Fetched =
+  | { kind: "fetched"; bytes: Uint8Array; pdf: ExtractedPdf }
+  | { kind: "left_out"; reason: string; cause: NotFetchedCause };
 
 /**
  * Fetches one document and reads its text. A document OLIS will not give, or a file that is not a PDF,
@@ -135,13 +143,17 @@ async function fetchAndRead(olis: OlisClient, link: DocumentLink, signal: AbortS
         case "read":
           return { kind: "fetched", bytes: download.bytes, pdf: extraction.pdf };
         case "unreadable":
-          return { kind: "left_out", reason: extraction.reason };
+          return {
+            kind: "left_out",
+            reason: extraction.reason,
+            cause: download.bytes.length === 0 ? "empty_file" : "unreadable_file",
+          };
         default:
           return extraction satisfies never;
       }
     }
     case "failed":
-      return { kind: "left_out", reason: download.reason };
+      return { kind: "left_out", reason: download.reason, cause: "request_failed" };
     default:
       return download satisfies never;
   }
@@ -384,7 +396,9 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
     if (fetched.kind === "left_out") {
       // A revised agenda that cannot be fetched stays as it was stored (ADR-0041): the index holds it, so it is not
       // a document the index lacks.
-      if (!revised.has(link.id)) notFetched.push({ id: link.id, source_url: link.sourceUrl, reason: fetched.reason });
+      if (!revised.has(link.id)) {
+        notFetched.push({ id: link.id, source_url: link.sourceUrl, reason: fetched.reason, cause: fetched.cause });
+      }
       continue;
     }
     const entry = searchEntryOf(link, committeeNames);

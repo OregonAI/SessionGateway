@@ -112,7 +112,9 @@ describe("a Proposed Amendment the feed no longer lists", () => {
     });
   });
 
-  it("is still unknown while the feed lists a posting, as an unfetched row has always been", async () => {
+  // Owner decision of 2026-11-07 (ticket #116, ADR-0059): every kind the feed lists before its file is fetched is a listed
+  // row with no file. While the feed lists a posting, the posting and its amendment are such rows, not unknown ids.
+  it("is a listed row with no file, not an unknown id, while the feed lists a posting", async () => {
     const system = await afterTwoMissedPulls(false, (olis) => {
       stopListing(olis, "CommitteeProposedAmendments", (row) => row["ProposedAmendmentId"] === 26286);
     });
@@ -120,10 +122,12 @@ describe("a Proposed Amendment the feed no longer lists", () => {
     await everyClient(async (era) => {
       const posting = await getDocument(system, era, "posting-2025r1-26288");
       expect(posting.isError).toBe(true);
-      expect(posting.text).toContain("No document");
+      expect(posting.text).toMatch(/listed .*holds no file/);
+      expect(posting.text).not.toContain("No document");
       const amendment = await getDocument(system, era, "amendment-2025r1-sb69-2");
       expect(amendment.isError).toBe(true);
-      expect(amendment.text).toContain("No document");
+      expect(amendment.text).toMatch(/listed .*holds no file/);
+      expect(amendment.text).not.toContain("No document");
     });
   });
 });

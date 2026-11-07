@@ -93,7 +93,7 @@ const itemOutput = z.object({
   fetched: z
     .boolean()
     .describe(
-      "True when this index holds the file, so get_document serves the id. False when the file is not here. While the feed lists the Testimony (a failed or not yet reached fetch), get_document answers with an error that says the next pull fetches it. Once the row is flagged no_longer_listed, no pull will fetch the file, since the feed does not list the row, and get_document answers with an error that says so. source_url is where to read it.",
+      "True when this index holds the file, so get_document serves the id. False when the file is not here. While the feed lists the Testimony (a failed or not yet reached fetch), get_document answers with an error that says the index does not hold the file and that OLIS may serve it empty or broken, a request for it may have failed, or a pull has not reached it yet; it does not say which, or that a later pull will fetch it. Once the row is flagged no_longer_listed, no pull will fetch the file, since the feed does not list the row, and get_document answers with an error that says so. source_url is where to read it.",
     ),
   has_text_layer: z
     .boolean()

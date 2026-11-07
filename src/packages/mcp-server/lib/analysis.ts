@@ -28,7 +28,7 @@ export const analysisDocumentsOutput = z
           version_id: z
             .string()
             .describe(
-              "The Version's id. get_document resolves it when this index holds the Version's file, and has no document for it when the Legislature's file could not be fetched.",
+              "The Version's id. get_document resolves it when this index holds the Version's file; when the feed lists the Version and the file is not held, it answers that the Version is listed and the index holds no file for it.",
             ),
           version: z.string().describe("The Version: Introduced, A-Engrossed, B-Engrossed..."),
           documents: z

@@ -73,6 +73,13 @@ export type TranscriptsReport = {
   file_no_longer_in_folder: { meeting_id: MeetingId; event_id: string; file: string; file_sha256: string }[];
 };
 
+/**
+ * Why a linked document is not in the store (ticket #116). `empty_file` and `unreadable_file` are OLIS's: it answered with
+ * a file of zero bytes, or with bytes the extractor cannot read as a PDF, and a later pull may find the same. `request_failed`
+ * is an unanswered request (a timeout, an outage) or a status that is not a file (a 404): nothing is known of the file.
+ */
+export type NotFetchedCause = "empty_file" | "unreadable_file" | "request_failed";
+
 /** What the operator reads after a full pull (spec #1, story 54): the documents that are scans or photographs, whose text is empty, to chase by hand, and the documents this pull could not get. */
 export type BuildReport = {
   session: SessionKey;
@@ -95,7 +102,7 @@ export type BuildReport = {
   }[];
   documents_without_text_layer: { id: DocumentId; source_url: string }[];
   /** Documents the feed links that this pull did not store: the next pull tries them again. */
-  documents_not_fetched: { id: DocumentId; source_url: string; reason: string }[];
+  documents_not_fetched: { id: DocumentId; source_url: string; reason: string; cause: NotFetchedCause }[];
   /**
    * The Recording Logs the index holds with no speaker-turn index, because the log has no player link with an event ID or
    * its links name more than one (ticket #126). The log's text is stored and searchable; its turns are not guessed.

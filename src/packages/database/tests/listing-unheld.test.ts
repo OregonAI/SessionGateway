@@ -36,7 +36,7 @@ describe("an id the feed has a row for and the index holds no file of", () => {
     index.writer.recordFullPull(session, asOf(1), pullOf({ ...context, CommitteeMeetingDocuments: [exhibit] }));
     expect(index.reader.findDocument(exhibit.id)).toEqual({
       held: false,
-      testimony: false,
+      kind: "exhibit",
       listing: { listed: true, lastListedAt: asOf(1) },
     });
 
@@ -44,7 +44,7 @@ describe("an id the feed has a row for and the index holds no file of", () => {
     index.writer.recordFullPull(session, asOf(3), pullOf());
     expect(index.reader.findDocument(exhibit.id)).toEqual({
       held: false,
-      testimony: false,
+      kind: "exhibit",
       listing: { listed: false, lastListedAt: asOf(1) },
     });
   });
@@ -54,7 +54,7 @@ describe("an id the feed has a row for and the index holds no file of", () => {
     index.writer.recordFullPull(session, asOf(1), pullOf({ ...context, CommitteePublicTestimonies: [testimony] }));
     expect(index.reader.findDocument(testimony.link.id)).toEqual({
       held: false,
-      testimony: true,
+      kind: "testimony",
       listing: { listed: true, lastListedAt: asOf(1) },
     });
 
@@ -62,7 +62,7 @@ describe("an id the feed has a row for and the index holds no file of", () => {
     index.writer.recordFullPull(session, asOf(3), pullOf());
     expect(index.reader.findDocument(testimony.link.id)).toEqual({
       held: false,
-      testimony: true,
+      kind: "testimony",
       listing: { listed: false, lastListedAt: asOf(1) },
     });
   });
@@ -73,7 +73,7 @@ describe("an id the feed has a row for and the index holds no file of", () => {
     index.writer.recordIncrement(session, asOf(2), pullOf({ ...context, CommitteePublicTestimonies: [testimony] }));
     expect(index.reader.findDocument(testimony.link.id)).toEqual({
       held: false,
-      testimony: true,
+      kind: "testimony",
       listing: { listed: true, lastListedAt: null },
     });
   });
@@ -85,7 +85,7 @@ describe("an id the feed has a row for and the index holds no file of", () => {
     index.writer.recordFullPull(session, asOf(3), pullOf());
     expect(index.reader.findDocument(amendmentId)).toEqual({
       held: false,
-      testimony: false,
+      kind: "proposed_amendment",
       listing: { listed: false, lastListedAt: asOf(1) },
     });
   });
