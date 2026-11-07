@@ -6,15 +6,19 @@ import { parseStatuteLinks } from "../index.ts";
 // 492, Oregon Laws 2023, are repealed", and every ORS section of the list is repealed by the measure section that holds
 // it, whatever citation follows the list. Expected links are [kind, target id, measure section].
 //
-// The rows quote the research cache (.cache/olis-2025R1/, not committed: the Acceptable Use Agreement grants no
-// redistribution license; it is not in CI, so each quote is inline), as the pdf-text package extracts the document (the
-// text the store holds), with the lines of that extraction the passage is. The one made-up row says why it is.
+// The SB 1583 and HB 4060 rows (#111) quote the 2026R1 stored text, with its document id and page. The others quote the
+// research cache (.cache/olis-2025R1/, not committed: the Acceptable Use Agreement grants no redistribution license; it
+// is not in CI, so each quote is inline), as the pdf-text package extracts the document (the text the store holds), with
+// the lines of that extraction the passage is. The made-up rows say why they are.
 
 type Expected = [kind: string, targetId: string, measureSection: string | null];
 
 type Row = {
   name: string;
-  /** The document and the lines of its pdf-text extraction the passage is; "made up" for a constructed sentence. */
+  /**
+   * The document and the page (2026R1) or the lines of its pdf-text extraction (research cache) the passage is;
+   * "made up" for a constructed sentence.
+   */
   source: string;
   text: string;
   expected: Expected[];
@@ -82,12 +86,55 @@ SECTION 78. ORS 25.575, 25.576, 25.577 and 25.710 are repealed.`,
     ],
   },
   {
+    name: "SB 1583 §15: ORS 430.388 is repealed, with 'section 6, chapter 248, Oregon Laws 2023, as amended by section 7, chapter 292, Oregon Laws 2025' after it (#111)",
+    source:
+      "2026R1 stored text of version-2026r1-sb1583-introduced (SB 1583 Introduced, https://olis.oregonlegislature.gov/liz/2026R1/Downloads/MeasureDocument/SB1583/Introduced), page 15; not in the committed fixture. The history after a session-law citation (#111 form 5)",
+    text: `REPEAL OF OVERSIGHT AND ACCOUNTABILITY COUNCIL
+SECTION 15. ORS 430.388 and section 6, chapter 248, Oregon Laws 2023, as amended by
+section 7, chapter 292, Oregon Laws 2025, are repealed.
+CONFORMING AMENDMENTS`,
+    expected: [["repeals", "ors-430.388", "15"]],
+  },
+  {
     // No document in the research cache or the committed fixture cites a session-law section after ORS sections without
     // a repeal following, so this sentence is made up, in Legislative Counsel's wording, and is not a quote.
     name: "a session-law citation that no repeal follows leaves the ORS sections as citations",
     source: "made up: no real document has the shape",
     text: "SECTION 4. ORS 238A.010 and section 9, chapter 492, Oregon Laws 2023, apply to a member.",
     expected: [["cites", "ors-238a.010", "4"]],
+  },
+  {
+    name: "HB 4060 A-Eng. §4b: a repeal of a session-law section named by its enrolled bill, with '(amending ORS 459.488)' before 'is repealed'",
+    source:
+      "2026R1 stored text of version-2026r1-hb4060-a-engrossed (HB 4060 A-Engrossed, https://olis.oregonlegislature.gov/liz/2026R1/Downloads/MeasureDocument/HB4060/A-Engrossed), page 5; not in the committed fixture. The Statutes Affected Table lists 459.488 for this measure as a citation, not a repeal",
+    text: `SECTION 4b. If House Bill 4066 becomes law, section 23, chapter , Oregon Laws
+2026 (Enrolled House Bill 4066) (amending ORS 459.488), is repealed.
+SECTION 5. The amendments to`,
+    expected: [["cites", "ors-459.488", "4b"]],
+  },
+  {
+    name: "a session-law citation with a history, then a clause that applies, then a separate repeal, leaves the ORS section as a citation",
+    source: "made up: complete citations, in Legislative Counsel's wording; no real document is quoted",
+    text: "SECTION 4. ORS 238A.010 and section 9, chapter 492, Oregon Laws 2023, as amended by section 7, chapter 292, Oregon Laws 2025, apply to a member, and section 2 of this 2026 Act is repealed on January 2, 2028.",
+    expected: [["cites", "ors-238a.010", "4"]],
+  },
+  {
+    name: "a session-law citation with a history, 'become operative', then a separate repeal, leaves the ORS section as a citation",
+    source: "made up: complete citations, in Legislative Counsel's wording; no real document is quoted",
+    text: "SECTION 5. ORS 238A.010 and section 9, chapter 492, Oregon Laws 2023, as amended by section 7, chapter 292, Oregon Laws 2025, become operative on January 1, 2027, and section 9 of this 2026 Act is repealed.",
+    expected: [["cites", "ors-238a.010", "5"]],
+  },
+  {
+    name: "'Notwithstanding' a session-law citation with a history, then provisions 'that are repealed', leaves the ORS section as a citation",
+    source: "made up: complete citations, in Legislative Counsel's wording; no real document is quoted",
+    text: "SECTION 6. Notwithstanding ORS 1.010 and section 6, chapter 248, Oregon Laws 2023, as amended by section 7, chapter 292, Oregon Laws 2025, the provisions of section 9 of this 2026 Act that are repealed remain in effect.",
+    expected: [["cites", "ors-1.010", "6"]],
+  },
+  {
+    name: "'The amendments to' an ORS section and a session-law citation with a history, 'by sections 3 and 4 of this 2026 Act are repealed', leaves the ORS section as a citation",
+    source: "made up: complete citations, in Legislative Counsel's wording; no real document is quoted",
+    text: "SECTION 7. The amendments to ORS 1.010 and section 6, chapter 248, Oregon Laws 2023, as amended by section 7, chapter 292, Oregon Laws 2025, by sections 3 and 4 of this 2026 Act are repealed.",
+    expected: [["cites", "ors-1.010", "7"]],
   },
 ];
 
