@@ -346,8 +346,9 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
       .filter((link) => link.agendaRevision !== undefined && agendaRevisions.get(link.id) !== link.agendaRevision)
       .map((link) => link.id),
   );
-  // A Recording Log stored before the speaker-turn index existed (or whose index never came) is fetched once more to read its
-  // links, which the store does not keep (ticket #126, ADR-0052). Its stored text and search entry stay as they are.
+  // A Recording Log stored before the speaker-turn index existed (or whose index never came), or with no stored link
+  // annotation (ticket #160, ADR-0058), is fetched once more to read its links, which the store keeps only as the index and the
+  // annotations (ticket #126, ADR-0052). Its stored text and search entry stay as they are.
   const unindexed = writer.recordingLogsWithoutIndex(config.session);
   const speakerTurns = { session: config.session, writer, resolver };
   for (const link of links) {

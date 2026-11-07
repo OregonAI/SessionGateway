@@ -385,7 +385,11 @@ export type IndexWriter = {
    * each in the file's order, replacing whatever the log had. They are source data and independent of the speaker-turn index.
    */
   storeLinkAnnotations(document: DocumentId, annotations: readonly StoredLinkAnnotation[]): void;
-  /** The stored Recording Logs of the Session that have no speaker-turn index yet (a gap counts as one): the ones to fetch again to read their links. */
+  /**
+   * The stored Recording Logs of the Session to fetch again to read their links (ADR-0052, ADR-0058): those with no speaker-turn
+   * index yet (a gap counts as one) and those with no stored link annotation. A log whose read finds no link has no annotation
+   * and so is listed on every pull.
+   */
   recordingLogsWithoutIndex(session: SessionKey): Set<DocumentId>;
   /**
    * The stored Recording Logs of the Session that have an index with turns and have not been cut around them (ticket #127,
@@ -1233,7 +1237,8 @@ export function openIndexWriter(path: string): IndexWriter {
         .prepare(
           `SELECT d.id FROM document d
            WHERE d.session_key = ? AND d.kind = 'recording_log'
-             AND NOT EXISTS (SELECT 1 FROM speaker_turn_index i WHERE i.document_id = d.id)`,
+             AND (NOT EXISTS (SELECT 1 FROM speaker_turn_index i WHERE i.document_id = d.id)
+               OR NOT EXISTS (SELECT 1 FROM recording_log_link_annotation a WHERE a.document_id = d.id))`,
         )
         .all(session);
       return new Set(rows.map((row) => idRow.parse(row).id as DocumentId));
