@@ -1,6 +1,12 @@
 import { z } from "zod";
 import type { IndexReader } from "#/packages/database/reader.ts";
-import { documentKinds, parseDocumentReference, relations, type UnheldDocument } from "#/packages/domain/documents.ts";
+import {
+  documentKinds,
+  parseDocumentReference,
+  relations,
+  type DocumentKind,
+  type UnheldDocument,
+} from "#/packages/domain/documents.ts";
 import type { Outcome } from "./outcome.ts";
 import { floorLetterDocumentOutput, floorLetterDocumentShown } from "./floor-letters.ts";
 import { documentListingOutput, documentListingShown } from "./listing.ts";
@@ -68,7 +74,7 @@ export type GetDocumentFault =
    * A Version the feed lists and the store holds no file of (ticket #116): the id is right, and nothing is known of
    * whether a later pull will fetch the file, so the answer says only that the row is listed and has no file.
    */
-  | { kind: "listed_version_not_held"; id: string; session: SessionKey }
+  | { kind: "listed_not_held"; id: string; session: SessionKey; documentKind: DocumentKind }
   /**
    * A row the feed no longer lists and the store never fetched the file of: the id is right, and no pull will
    * fetch the file now.
@@ -153,8 +159,8 @@ export function getDocument(
 
 /**
  * What an agent is told of an id the index holds no file of. A row the feed no longer lists is a fact whatever it is; a
- * listed Testimony is one the last pull could not store (ADR-0059); a listed Version is a listed row with no file; any other listed row
- * without a file is no id this index serves.
+ * listed Testimony has its own answer (ADR-0059); every other kind the feed lists before its file is fetched is a listed row
+ * with no file (ADR-0017, ADR-0059); a row of no kind the index can name is no id this index serves.
  */
 function unheldResult(found: UnheldDocument, id: string, asked: string, session: SessionKey): GetDocumentOutcome {
   switch (found.listing.listed) {
@@ -164,11 +170,11 @@ function unheldResult(found: UnheldDocument, id: string, asked: string, session:
         fault: { kind: "no_longer_listed_not_held", id, session, lastListedAt: found.listing.lastListedAt },
       };
     case true:
-      if (found.testimony) return { kind: "fault", fault: { kind: "not_held", id, session } };
-      // A Version's id is written "version-<session>-...": the id says the kind, as `parseDocumentReference` reads it.
-      return id.startsWith("version-")
-        ? { kind: "fault", fault: { kind: "listed_version_not_held", id, session } }
-        : { kind: "fault", fault: { kind: "unknown", id: asked, session } };
+      if (found.kind === "testimony") return { kind: "fault", fault: { kind: "not_held", id, session } };
+      // The row's kind, which the reader knows, says what the listed row is; the id is not read for it.
+      return found.kind === undefined
+        ? { kind: "fault", fault: { kind: "unknown", id: asked, session } }
+        : { kind: "fault", fault: { kind: "listed_not_held", id, session, documentKind: found.kind } };
     default:
       return found.listing satisfies never;
   }
@@ -181,8 +187,8 @@ export function getDocumentFaultMessage(fault: GetDocumentFault): string {
       return unknownDocumentMessage(fault.id, fault.session);
     case "not_held":
       return testimonyNotHeldMessage(fault.id, fault.session);
-    case "listed_version_not_held":
-      return listedVersionNotHeldMessage(fault.id, fault.session);
+    case "listed_not_held":
+      return listedNotHeldMessage(fault.id, fault.session, fault.documentKind);
     case "no_longer_listed_not_held":
       return noLongerListedNotHeldMessage(fault.id, fault.session, fault.lastListedAt);
     case "no_such_part":
@@ -199,16 +205,29 @@ function unknownDocumentMessage(id: string, session: SessionKey): string {
 
 /**
  * What an agent is told when the id is a Testimony that `testimony` lists but whose file the worker has not stored
- * (ADR-0059). The id is right. The cause is not stored where the server reads, so the answer says what is known and
- * promises nothing of a later pull.
+ * (ADR-0059). The id is right. The cause is not stored where the server reads, and a full pull may be running or may have
+ * stopped, so the answer names no last pull and no build report (a caller cannot read it) and promises no later pull.
  */
 function testimonyNotHeldMessage(id: string, session: SessionKey): string {
-  return `Testimony "${id}" is listed in the ${session} Session. This index does not hold its file: the last pull could not store it. OLIS may serve it empty or broken, or the request failed; the build report says which.`;
+  return `Testimony "${id}" is listed in the ${session} Session. This index does not hold its file: OLIS may serve it empty or broken, a request for it may have failed, or a pull has not reached it yet.`;
 }
 
-/** What an agent is told when the id is a Version the feed lists and the index holds no file of: the id is right. */
-function listedVersionNotHeldMessage(id: string, session: SessionKey): string {
-  return `The Version "${id}" is listed in the ${session} Session, and this index holds no file for it, so it holds no text for it.`;
+/** The words an agent reads a kind of listed row by. */
+const kindNames: Readonly<Record<DocumentKind, string>> = {
+  version: "Version",
+  printed_amendment: "Printed Amendment",
+  proposed_amendment: "Proposed Amendment",
+  analysis: "analysis document",
+  exhibit: "Exhibit",
+  recording_log: "Recording Log",
+  testimony: "Testimony",
+  agenda: "Agenda",
+  floor_letter: "Floor Letter",
+};
+
+/** What an agent is told when the id is a row the feed lists and the index holds no file of, whatever its kind: the id is right. */
+function listedNotHeldMessage(id: string, session: SessionKey, kind: DocumentKind): string {
+  return `The ${kindNames[kind]} "${id}" is listed in the ${session} Session, and this index holds no file for it, so it holds no text for it.`;
 }
 
 /**

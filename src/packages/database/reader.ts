@@ -166,7 +166,7 @@ export type IndexReader = {
    * A document by its id, or a Proposed Amendment by its id: the text of its latest posting, with the nodes all its
    * postings point at, and the Listing in either case. When the index holds no file for the id but the feed has a row for
    * it (a fetch that failed or was not reached, or a row the feed stopped listing before any pull fetched it), it says so
-   * (`held: false`), with the Listing and whether the row is Testimony. Undefined when the index holds no file for the id
+   * (`held: false`), with the Listing and the row's kind. Undefined when the index holds no file for the id
    * and no row that a complete pull has listed names it, unless the id is a Testimony row (an Increment may have stored
    * one that no complete pull has listed yet): a row of any other kind that only an Increment has stored is not known.
    */
@@ -670,6 +670,9 @@ export function openIndexReader(path: string, clock: Clock): IndexReader {
   );
   const selectHiddenDocument = database.prepare("SELECT 1 AS hidden FROM temp.hidden_document WHERE document_id = ?");
   const selectTestimonyExists = database.prepare("SELECT 1 AS found FROM testimony WHERE document_id = ?");
+  const selectMeetingDocumentKind = database.prepare("SELECT kind FROM meeting_document WHERE document_id = ?");
+  const selectEntitySetsOfDocument = database.prepare("SELECT entity_set FROM feed_row WHERE document_id = ?");
+  const selectVersionListed = database.prepare("SELECT 1 AS found FROM version_listing WHERE document_id = ?");
   // The postings the feed lists for one Proposed Amendment, with the meeting each was posted to.
   const selectPostingsOfAmendment = database.prepare(
     `SELECT l.document_id, l.label, l.source_url, l.measure_id, l.meaning, l.meeting_id, m.at AS meeting_at,
@@ -908,10 +911,37 @@ export function openIndexReader(path: string, clock: Clock): IndexReader {
     if (selectHiddenDocument.get(id) !== undefined) return undefined;
     const document = listings.ofDocument(id as DocumentId);
     const read = document.kind === "checked" ? document : listings.ofAmendment(id as AmendmentId);
-    const testimony = selectTestimonyExists.get(id) !== undefined;
+    const kind = unheldKindOf(id, document.kind === "checked");
     // A row no complete pull has listed is known only when it is Testimony; any other such id is no id the index serves.
-    if (read.kind === "no_row" && !testimony) return undefined;
-    return { held: false, testimony, listing: read.listing };
+    if (read.kind === "no_row" && kind !== "testimony") return undefined;
+    return { held: false, kind, listing: read.listing };
+  }
+  /**
+   * The kind of a row the index holds no file for, from the row and not from its id: the Testimony table, what the feed
+   * listed for a meeting (an Exhibit, a Recording Log, an Agenda, a Posting), the entity set of the row that links the
+   * document (a Version or Printed Amendment, an analysis, a Floor Letter), and an amendment's own postings. Undefined for a
+   * row of no kind that has a file to serve.
+   */
+  function unheldKindOf(id: DocumentId | AmendmentId, isLinkedDocument: boolean): DocumentKind | undefined {
+    if (selectTestimonyExists.get(id) !== undefined) return "testimony";
+    const meetingKind = selectMeetingDocumentKind.get(id);
+    if (meetingKind !== undefined) return z.enum(documentKinds).parse(meetingKind["kind"]);
+    if (!isLinkedDocument) return "proposed_amendment";
+    for (const row of selectEntitySetsOfDocument.all(id)) {
+      switch (row["entity_set"]) {
+        case "MeasureDocuments":
+          return selectVersionListed.get(id) === undefined ? "printed_amendment" : "version";
+        case "MeasureAnalysisDocuments":
+          return "analysis";
+        case "FloorLetters":
+          return "floor_letter";
+        case "CommitteeMeetings.AgendaUrl":
+          return "agenda";
+        default:
+          break;
+      }
+    }
+    return undefined;
   }
   function relationsOf(documentId: DocumentId): RelatedNode[] {
     return selectRelations.all(documentId).map((row) => {

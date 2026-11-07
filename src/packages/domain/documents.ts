@@ -566,8 +566,12 @@ export type DocumentView = {
  */
 export type UnheldDocument = {
   held: false;
-  /** Whether the row is a Testimony row. The pull that finds the feed lists it fetches the file again; for no other kind is the id a fact about the index. */
-  testimony: boolean;
+  /**
+   * The row's kind, which the index knows from the row and a caller does not read from the id. Testimony has an answer of
+   * its own (ADR-0059), and its id is a fact about the index even before a complete pull has listed it. Every other kind the
+   * feed lists before its file is fetched is a listed row with no file. Undefined for a row of no kind the index can name.
+   */
+  kind: DocumentKind | undefined;
   /** Whether the feed lists the row. A row it no longer lists is not fetched by any pull. */
   listing: Listing;
 };
