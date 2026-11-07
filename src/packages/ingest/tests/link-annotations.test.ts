@@ -1,10 +1,12 @@
-// The worker's entry point and the reader's (ticket #160, ADR-0057): the link annotations of a Recording Log, stored with the
-// document as the PDF holds them, independent of the speaker-turn index. No tool shows them, so this file does not call one: a
-// fake OLIS serves the committed fixture and its documents (the real Recording Logs of #124 among them), the worker pulls, and
-// the annotations are read back through the index reader's `linkAnnotationsOf` on the database the worker wrote. Seam 1's rule
-// that state is read through the tools has nothing to read here until a tool or an evaluation source names the annotations
-// (the evaluation's sources are SQL over stored columns, scripts/eval/questions/2026R1.yml, so a question can name them without
-// a tool).
+// Seam 4 (test/CLAUDE.md): the ingest worker's entry point, `runFullPull`, and the link annotations of a Recording Log it stores
+// (ticket #160, ADR-0058). A fake OLIS serves the committed fixture and its documents (the real Recording Logs of #124 among
+// them), the worker pulls through the harness (`test/support/system.ts`, which calls `runFullPull` as `src/bin/ingest.ts` does),
+// and the annotations are read back through the index reader's `linkAnnotationsOf` on the database the worker wrote. No tool
+// shows the annotations, so there is no seam-1 reading of them; the evaluation's sources are SQL over stored columns
+// (scripts/eval/questions/2026R1.yml), so a question can name them without one.
+//
+// It imports the seam-1 harness (`test/support/`), unlike the other package tests, which import no `test/` file: the entry point
+// is the whole pull, which needs a feed, and the harness is the one place that wires it (the boundary rules allow it).
 //
 // Which cases copy (test/CLAUDE.md, "Templates"): each case starts from a copy of the run's template of the fixture's pull
 // (documents served). The first describe only reads. The second adds MADE UP logs and pulls, which fetches only what it adds.
@@ -19,9 +21,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openIndexReader, type IndexReader } from "#/packages/database/reader.ts";
 import type { DocumentId, StoredLinkAnnotation } from "#/packages/domain/documents.ts";
-import { madeUpPdf } from "../support/made-up-pdf.ts";
-import { forgetLinkAnnotations, forgetSpeakerTurns } from "../support/old-database.ts";
-import { startCopiedSystem, type System } from "../support/system.ts";
+import { madeUpPdf } from "../../../../test/support/made-up-pdf.ts";
+import { forgetLinkAnnotations, forgetSpeakerTurns } from "../../../../test/support/old-database.ts";
+import { startCopiedSystem, type System } from "../../../../test/support/system.ts";
 
 const clockAt = "2026-08-05T17:00:00Z";
 const root = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument";
