@@ -593,6 +593,12 @@ function createWorkerClient(config: IngestConfig, deps: IngestDeps, onSetRead?: 
 }
 
 export { isFullPullStopped, type FullPullStopped } from "./lib/stop.ts";
+/**
+ * The worker's step that reads a fetched Recording Log (ticket #126, #160; ADR-0052, ADR-0058): it stores the log's link
+ * annotations through `context.writer` and returns the outcome of the speaker-turn index, which the caller stores. Exported so
+ * that the step is called at seam 4 with a real writer and reader and no pull.
+ */
+export { readSpeakerTurnIndex, type SpeakerTurnContext } from "./lib/speaker-turns.ts";
 
 /** How many documents the Index holds for the Session, or `undefined` when it cannot be counted: a count must not turn a stop into a crash. */
 function countStoredDocuments(config: IngestConfig): number | undefined {

@@ -192,7 +192,7 @@ Later tickets add packages as their modules arrive (the document store, the Stat
 - `pdf-text` gains `linkAnnotationsOf` on its entry point: the `{page, url}` of each link `extractPdfLinks` read, in its order.
 - `domain` gains `StoredLinkAnnotation` in `documents.ts`: the stored form of one.
 - `database` gains schema step 6 (`recording_log_link_annotation`); on `writer.ts` `storeLinkAnnotations`, and `recordingLogsWithoutIndex` also lists a log with no stored annotation; on `reader.ts` `linkAnnotationsOf`. The clock's views include the table.
-- `ingest` stores a log's annotations in `lib/speaker-turns.ts` when it reads the log, before the parser derives anything from the links.
+- `ingest` stores a log's annotations in `lib/speaker-turns.ts` when it reads the log, before the parser derives anything from the links, and gains `readSpeakerTurnIndex({ session, writer, resolver }, link, bytes, text)` and the type `SpeakerTurnContext` on its entry point, so that step is test seam 4: called with a real writer and reader and no pull.
 
 ## Considered Options
 

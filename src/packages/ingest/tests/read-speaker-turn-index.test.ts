@@ -21,7 +21,10 @@ import { extractPdfText } from "#/packages/pdf-text/index.ts";
 import { readSpeakerTurnIndex } from "../index.ts";
 import { madeUpPdf } from "./made-up-pdf.ts";
 
-const session = parseSessionKey("2025R1");
+const session = parseSessionKey("2025R1") ?? fail("2025R1 is a Session key");
+function fail(message: string): never {
+  throw new Error(message);
+}
 const PLAYER = "https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486";
 const FIXTURE = new URL(
   "../../../../test/fixtures/olis-2025R1/documents/committee-meeting-documents/307521.pdf",
