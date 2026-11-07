@@ -381,7 +381,7 @@ export type IndexWriter = {
    */
   storeSpeakerTurnIndex(record: SpeakerTurnIndexRecord): void;
   /**
-   * Keeps a Recording Log's link annotations as the worker read them from the PDF (ticket #160, ADR-0057), the page and address of
+   * Keeps a Recording Log's link annotations as the worker read them from the PDF (ticket #160, ADR-0058), the page and address of
    * each in the file's order, replacing whatever the log had. They are source data and independent of the speaker-turn index.
    */
   storeLinkAnnotations(document: DocumentId, annotations: readonly StoredLinkAnnotation[]): void;
