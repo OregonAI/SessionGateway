@@ -64,9 +64,13 @@ export function leaveAsBeforeVersions(path: string): void {
      ALTER TABLE speaker_turn_index DROP COLUMN item_measures_read;
      ${dropTranscriptTables}
      ${dropCreatedTimeColumns}
+     ${dropLinkAnnotationTable}
      PRAGMA user_version = 0`,
   );
 }
+
+/** What step 6 (ticket #160) adds: the table of a Recording Log's link annotations. */
+const dropLinkAnnotationTable = `DROP TABLE IF EXISTS recording_log_link_annotation;`;
 
 /** What step 5 (ticket #153) adds: the feed's CreatedDate of each sponsor, history action, vote, meeting and agenda item. */
 const dropCreatedTimeColumns = tablesGivenCreatedAtByStepFive
@@ -81,7 +85,7 @@ const dropTranscriptTables = `DROP TABLE transcript_passage_fts; DROP TABLE tran
  * is stamped 3. The next worker to open it runs step 4. Close the writer first.
  */
 export function leaveAsVersionThree(path: string): void {
-  withSql(path, `${dropTranscriptTables} ${dropCreatedTimeColumns} PRAGMA user_version = 3`);
+  withSql(path, `${dropTranscriptTables} ${dropCreatedTimeColumns} ${dropLinkAnnotationTable} PRAGMA user_version = 3`);
 }
 
 /**
@@ -89,7 +93,15 @@ export function leaveAsVersionThree(path: string): void {
  * it is stamped 4. The next worker to open it runs step 5, which makes the columns, empty. Close the writer first.
  */
 export function leaveAsVersionFour(path: string): void {
-  withSql(path, `${dropCreatedTimeColumns} PRAGMA user_version = 4`);
+  withSql(path, `${dropCreatedTimeColumns} ${dropLinkAnnotationTable} PRAGMA user_version = 4`);
+}
+
+/**
+ * Makes a file look as a release left it after step 5 and before step 6 (ticket #160): the table of link annotations is gone and
+ * it is stamped 5. The next worker to open it runs step 6, which makes the table, empty. Close the writer first.
+ */
+export function leaveAsVersionFive(path: string): void {
+  withSql(path, `${dropLinkAnnotationTable} PRAGMA user_version = 5`);
 }
 
 /** Arranges a stored speaker-turn index whose `turn_count` is not the number of its turn rows, so a test can tell which one is read. */
