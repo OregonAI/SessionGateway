@@ -1,5 +1,5 @@
 ---
-status: accepted; the sentence of Consequences that a row OLIS stops listing stays in `total` and on its page "until removals are marked" is superseded by ADR-0031
+status: accepted; the sentence of Consequences that a row OLIS stops listing stays in `total` and on its page "until removals are marked" is superseded by ADR-0031; the sentence that `get_document` says "the next pull fetches it again" is amended by ADR-0059
 ---
 
 # `testimony` lists every Testimony row of the feed before its file is fetched, and `get_document` says so when it does not hold a listed file

@@ -455,6 +455,8 @@ What this says: on 2026-11-03 and again on 2026-11-07, OLIS did not serve a read
 
 **The 32 timeouts.** They are not a quirk of the file: the request got no answer within 60 seconds, three times, in two runs that are known to have failed (run 4 and run 2) and, by the arithmetic above, probably in a third. Gotcha 15 found the same kind of failure in 2025R1 (6 of 350 GETs timed out, at 120 s as well as 60 s), so a slow file or a slow server is the likelier cause than a broken file (**inferred**; the sizes of the 32 files are not known, because the worker records no size for a document it did not get). Two things would tell: the files' sizes from a HEAD request (which needs a new OLIS request, not made here), and whether a longer limit or a streamed read gets them. That is a follow-up ticket, not this one.
 
+The decision this led to, on how `get_document` answers a Testimony whose file is not held (wording only, no schema step; the cause per document is ticket #168), is ADR-0059.
+
 ## Open questions
 
 1. **AUA acceptance.** How do you "electronically accept" the AUA when the service has no sign-up or credentials? Does caching and **public mirroring** of the feed data and the linked OLIS PDFs need any further permission? The AUA has no license or redistribution clause. Contact: Leg.Helpdesk@oregonlegislature.gov, listed on the data page.
