@@ -46,7 +46,9 @@ const amendedAfter = new RegExp(String.raw`^${asAmendedBy},?\s*(?:is|are) amende
 // A repeal list can end with sections of an earlier session's law: "ORS 247.016 and 247.018 and section 9, chapter 492,
 // Oregon Laws 2023, are repealed". The list's ORS sections are repealed whatever citation follows them (#55).
 const sessionLawSectionNumbers = String.raw`\d+[a-z]?(?:,\s*\d+[a-z]?)*(?:,?\s*(?:and|or)\s+\d+[a-z]?)?`;
-const sessionLawCitation = String.raw`,?\s*(?:and\s+|or\s+)?sections?\s+${sessionLawSectionNumbers},\s*chapter\s+\d+[a-z]?,\s*Oregon Laws\s+\d{4}`;
+// The citation may carry its own history: "section 6, chapter 248, Oregon Laws 2023, as amended by section 7, chapter 292,
+// Oregon Laws 2025, are repealed" (#111; SB 1583 Introduced, 2026R1).
+const sessionLawCitation = String.raw`,?\s*(?:and\s+|or\s+)?sections?\s+${sessionLawSectionNumbers},\s*chapter\s+\d+[a-z]?,\s*Oregon Laws\s+\d{4}${asAmendedBy}`;
 const repealedAfter = new RegExp(String.raw`^(?:${sessionLawCitation})*,?\s*(?:is|are) repealed\b`);
 
 function kindOf(text: string, reference: OrsReference): StatuteLinkKind {
