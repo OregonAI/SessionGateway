@@ -17,13 +17,19 @@ Ticket #119. The owner turned the ingest worker off on the deploy box on 2026-11
 - **Why a setting of its own, and not a fourth value of `INGEST_INCREMENTS` or `INGEST_FULL_PULL`.** "No worker" is a fact about the deployment, not about a rhythm: a worker that is off runs no increment and no full pull, so it would have to be written into both settings, and either setting alone would leave the other warning. The two rhythms keep their meaning for the day the worker returns.
 - **Why `on` and `off`, and not a bare flag.** The form is the one `TRANSCRIPTS_PUBLISHED` takes (ADR-0055): the exact text, and anything else (`yes`, `OFF`, an empty string) stops the start-up, naming the variable and not its value. A switch that read "OFF" as on would be a decision the owner did not make. Unset is `on`, so a deployment that sets nothing behaves as ADR-0039 says.
 - **Why the name starts with `INGEST_`.** It sits beside the two settings it overrides in effect, and the README lists them together.
-- **Only the server reads it.** The worker's schema does not list it, and a worker started with it set runs as before: the setting says what the deployment does, and it does not stop a worker. Turning the worker back on is unsetting the variable on the server and starting the worker (README, "Deploying it"); a server left at `off` beside a running worker would call a live index a static copy.
+- **Only the server reads it.** The worker's schema does not list it, and a worker started with it set runs as before: the setting says what the deployment does, and it does not stop a worker. Turning the worker back on is starting the worker, setting its rhythm, and only then, once it has run its first update, unsetting the variable on the server (README, "Deploying it"); removing it earlier would make the server warn "an update was missed" in between; a server left at `off` beside a running worker would call a live index a static copy.
 
 ## What the server says
 
 With `INGEST_WORKER=off`, every tool result carries one more block of text after the tool's own, as ADR-0039's warning does (no output schema changes), and it is a note, not a warning:
 
 > Note: this index is a static copy, as of its last full pull at 2025-01-22T07:00:00-08:00. No worker updates it, so changes the Legislature has made since then are not in it.
+
+On `get_measure` only, the note ends with a clause on its live status (the owner's decision, 2026-11-06):
+
+> Note: this index is a static copy, as of its last full pull at 2025-01-22T07:00:00-08:00. No worker updates it, so changes the Legislature has made since then are not in it, except get_measure's live_status, which is read from OLIS when you ask.
+
+Every other tool keeps the first text. The tool is known from the registration, as `carriesSourceUrl` is: a `Tool` may say `readsLiveStatus: true`, and the envelope passes it to the staleness block. No tool name is matched in `staleness.ts`.
 
 - **The time is the last full pull's, read from the database for each call** (`lastFullPull`), not the `as_of` the answer carries: an increment moves `as_of`, and the note still names the full pull, which built the Session's full text. A deployment whose database has no full pull yet gets no note, as it got no warning (an index with nothing in it is empty, not old).
 - **The note is always carried, however recent the pull.** It is not a statement that the index is too old; it states what the index is. It is never worded as "out of date" or as a missed update, because none was scheduled.
@@ -38,4 +44,4 @@ With `INGEST_WORKER=off`, every tool result carries one more block of text after
 
 ## Consequences
 
-`config` adds `INGEST_WORKER` to the server's schema and `worker` to `ServerConfig`; `mcp-server/lib/staleness.ts` returns the note when it is `off`. No schema step: `lastFullPull` is read as before, and `versionOneSchema` is unchanged. platform-deploy's `docker-compose.yml` sets `INGEST_WORKER: "off"` for the `session-gateway` service while the worker is off (a PR there, linking #119); its README's "Turning the worker back on" removes it. This repository's README lists the setting and the same steps.
+`config` adds `INGEST_WORKER` to the server's schema and `worker` to `ServerConfig`; `mcp-server/lib/staleness.ts` returns the note when it is `off`. No schema step: `lastFullPull` is read as before, and `versionOneSchema` is unchanged. platform-deploy's `docker-compose.yml` sets `INGEST_WORKER: "off"` for the `session-gateway` service while the worker is off (platform-deploy PR, linking #119, once it merges); its README's "Turning the worker back on" removes it. This repository's README lists the setting and the same steps.
