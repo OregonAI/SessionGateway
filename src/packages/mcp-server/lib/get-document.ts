@@ -65,6 +65,11 @@ export type GetDocumentFault =
   /** A Testimony the feed lists and the store has not fetched: a fact about the index, not a wrong id. */
   | { kind: "not_held"; id: string; session: SessionKey }
   /**
+   * A Version the feed lists and the store holds no file of (ticket #116): the id is right, and nothing is known of
+   * whether a later pull will fetch the file, so the answer says only that the row is listed and has no file.
+   */
+  | { kind: "listed_version_not_held"; id: string; session: SessionKey }
+  /**
    * A row the feed no longer lists and the store never fetched the file of: the id is right, and no pull will
    * fetch the file now.
    */
@@ -148,7 +153,8 @@ export function getDocument(
 
 /**
  * What an agent is told of an id the index holds no file of. A row the feed no longer lists is a fact whatever it is; a
- * listed Testimony is one the next pull fetches; any other listed row without a file is no id this index serves.
+ * listed Testimony is one the next pull fetches; a listed Version is a listed row with no file; any other listed row
+ * without a file is no id this index serves.
  */
 function unheldResult(found: UnheldDocument, id: string, asked: string, session: SessionKey): GetDocumentOutcome {
   switch (found.listing.listed) {
@@ -158,8 +164,10 @@ function unheldResult(found: UnheldDocument, id: string, asked: string, session:
         fault: { kind: "no_longer_listed_not_held", id, session, lastListedAt: found.listing.lastListedAt },
       };
     case true:
-      return found.testimony
-        ? { kind: "fault", fault: { kind: "not_held", id, session } }
+      if (found.testimony) return { kind: "fault", fault: { kind: "not_held", id, session } };
+      // A Version's id is written "version-<session>-...": the id says the kind, as `parseDocumentReference` reads it.
+      return id.startsWith("version-")
+        ? { kind: "fault", fault: { kind: "listed_version_not_held", id, session } }
         : { kind: "fault", fault: { kind: "unknown", id: asked, session } };
     default:
       return found.listing satisfies never;
@@ -173,6 +181,8 @@ export function getDocumentFaultMessage(fault: GetDocumentFault): string {
       return unknownDocumentMessage(fault.id, fault.session);
     case "not_held":
       return testimonyNotHeldMessage(fault.id, fault.session);
+    case "listed_version_not_held":
+      return listedVersionNotHeldMessage(fault.id, fault.session);
     case "no_longer_listed_not_held":
       return noLongerListedNotHeldMessage(fault.id, fault.session, fault.lastListedAt);
     case "no_such_part":
@@ -193,6 +203,11 @@ function unknownDocumentMessage(id: string, session: SessionKey): string {
  */
 function testimonyNotHeldMessage(id: string, session: SessionKey): string {
   return `Testimony "${id}" is listed in the ${session} Session, but this index does not hold its file yet. The next pull fetches it again.`;
+}
+
+/** What an agent is told when the id is a Version the feed lists and the index holds no file of: the id is right. */
+function listedVersionNotHeldMessage(id: string, session: SessionKey): string {
+  return `The Version "${id}" is listed in the ${session} Session, and this index holds no file for it, so it holds no text for it.`;
 }
 
 /**
