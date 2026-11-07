@@ -2,7 +2,7 @@
 // ADR-0048's sixth step). A WAL database in a temp directory of the test's own; a case arranges state through the writer's
 // entry points and asserts what the reader's entry points return. Every value is MADE UP (made-up-index.ts): the log, its
 // addresses, its pages. The real log's annotations are the seam-2 table's (pdf-text/tests/link-annotations.test.ts) and
-// seam 1's (test/tools/recording-log-link-annotations.test.ts).
+// the pull test's (test/tools/recording-log-link-annotations-pull.test.ts).
 //
 // What the cases pin: the annotations are a source of their own. A log's annotations are there with no speaker-turn index,
 // and storing, replacing or dropping the index leaves them as they were; storing a log's annotations again replaces them.

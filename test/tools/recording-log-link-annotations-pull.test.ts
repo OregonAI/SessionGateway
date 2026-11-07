@@ -1,12 +1,13 @@
-// Seam 4 (test/CLAUDE.md): the ingest worker's entry point, `runFullPull`, and the link annotations of a Recording Log it stores
-// (ticket #160, ADR-0058). A fake OLIS serves the committed fixture and its documents (the real Recording Logs of #124 among
-// them), the worker pulls through the harness (`test/support/system.ts`, which calls `runFullPull` as `src/bin/ingest.ts` does),
-// and the annotations are read back through the index reader's `linkAnnotationsOf` on the database the worker wrote. No tool
-// shows the annotations, so there is no seam-1 reading of them; the evaluation's sources are SQL over stored columns
-// (scripts/eval/questions/2026R1.yml), so a question can name them without one.
-//
-// It imports the seam-1 harness (`test/support/`), unlike the other package tests, which import no `test/` file: the entry point
-// is the whole pull, which needs a feed, and the harness is the one place that wires it (the boundary rules allow it).
+// The worker's pull and the link annotations of a Recording Log it stores (ticket #160, ADR-0058). Not seam 1 in the strict sense
+// and not seam 4: no tool shows the annotations, so the cases read them back through the index reader's `linkAnnotationsOf`
+// on the database the worker wrote (the evaluation's sources are SQL over stored columns, scripts/eval/questions/2026R1.yml, so
+// a question can name them without a tool). The owner decided on 2026-11-06 that the cases move to a seam-4 test of the ingest
+// package, and that was tried: the entry point of the worker is the whole pull, which needs the fake OLIS and the harness
+// (`test/support/`), and a test under `src/packages/` that imports `test/` fails `test/scripts/oregonai-boundary.test.ts` (it lints
+// a copy of `src/` alone), and the made-up Recording Logs below are built by `test/support/made-up-pdf.ts`, which no package test
+// may import (src/packages/pdf-text/tests/links.test.ts says the same). So the file is a pull test, as `<tool>-pull.test.ts` files
+// are. The database package's seam-4 tests (`database/tests/link-annotations.test.ts`, `speaker-turn-index.test.ts`,
+// `created-before-clock.test.ts`) cover the writer's and the reader's rules at seam 4.
 //
 // Which cases copy (test/CLAUDE.md, "Templates"): each case starts from a copy of the run's template of the fixture's pull
 // (documents served). The first describe only reads. The second adds MADE UP logs and pulls, which fetches only what it adds.
@@ -21,9 +22,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openIndexReader, type IndexReader } from "#/packages/database/reader.ts";
 import type { DocumentId, StoredLinkAnnotation } from "#/packages/domain/documents.ts";
-import { madeUpPdf } from "../../../../test/support/made-up-pdf.ts";
-import { forgetLinkAnnotations, forgetSpeakerTurns } from "../../../../test/support/old-database.ts";
-import { startCopiedSystem, type System } from "../../../../test/support/system.ts";
+import { madeUpPdf } from "../support/made-up-pdf.ts";
+import { forgetLinkAnnotations, forgetSpeakerTurns } from "../support/old-database.ts";
+import { startCopiedSystem, type System } from "../support/system.ts";
 
 const clockAt = "2026-08-05T17:00:00Z";
 const root = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument";
