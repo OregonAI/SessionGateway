@@ -138,7 +138,7 @@ describe("the speaker-turn index of a stored Recording Log", () => {
     });
   });
 
-  test("the writer lists the stored Recording Logs that have no index yet, and no other document", () => {
+  test("the writer lists the stored Recording Logs that have no index or no link annotations yet, and no other document", () => {
     pulledWithLog();
     storeMadeUpDocument(index, exhibitLink(), "MADE UP exhibit text");
     expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set([logId]));
