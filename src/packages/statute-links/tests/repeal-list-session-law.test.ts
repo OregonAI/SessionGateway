@@ -82,6 +82,16 @@ SECTION 78. ORS 25.575, 25.576, 25.577 and 25.710 are repealed.`,
     ],
   },
   {
+    name: "SB 1583 §15: ORS 430.388 is repealed, with 'section 6, chapter 248, Oregon Laws 2023, as amended by section 7, chapter 292, Oregon Laws 2025' after it (#111)",
+    source:
+      "2026R1 stored text of version-2026r1-sb1583-introduced (SB 1583 Introduced, measure-documents/SB1583/Introduced.pdf), page 15; not in the committed fixture. The history after a session-law citation (#111 form 5)",
+    text: `REPEAL OF OVERSIGHT AND ACCOUNTABILITY COUNCIL
+SECTION 15. ORS 430.388 and section 6, chapter 248, Oregon Laws 2023, as amended by
+section 7, chapter 292, Oregon Laws 2025, are repealed.
+CONFORMING AMENDMENTS`,
+    expected: [["repeals", "ors-430.388", "15"]],
+  },
+  {
     // No document in the research cache or the committed fixture cites a session-law section after ORS sections without
     // a repeal following, so this sentence is made up, in Legislative Counsel's wording, and is not a quote.
     name: "a session-law citation that no repeal follows leaves the ORS sections as citations",
