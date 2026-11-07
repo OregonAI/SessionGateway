@@ -599,6 +599,22 @@ const transcriptSchema = `
 `;
 
 /**
+ * Step 6's text (ticket #160, ADR-0058). The link annotations of a Recording Log's PDF as the worker read them from the file,
+ * one row for each, in the order the file lists them (`position`), with the page and the address. A table of its own, keyed by
+ * the document and not by the speaker-turn index: storing, replacing or dropping a log's index never touches it. It adds no
+ * column to a table that exists, so a file with the table already there upgrades as a new one does.
+ */
+const linkAnnotationSchema = `
+  CREATE TABLE IF NOT EXISTS recording_log_link_annotation (
+    document_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    page INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    PRIMARY KEY (document_id, position)
+  ) STRICT, WITHOUT ROWID;
+`;
+
+/**
  * The numbered upgrade steps (ADR-0048): step N takes a file from version N - 1 to version N, and the file's version
  * is the number of steps there are. The worker applies the ones a file lacks, in order, in one transaction when it opens
  * the file, so a file is never left half upgraded. Step 1 is today's schema: its pass of `CREATE ... IF NOT EXISTS`
@@ -637,6 +653,11 @@ const upgradeSteps: readonly ((database: DatabaseSync) => void)[] = [
   (database) => {
     for (const table of tablesGivenCreatedAtByStepFive)
       database.exec(`ALTER TABLE ${table} ADD COLUMN created_at TEXT`);
+  },
+  // Step 6 (ticket #160, ADR-0058): a Recording Log's link annotations, as read from the PDF. A new table and no change to an old
+  // one: a log stored before it has none until the worker fetches the log again.
+  (database) => {
+    database.exec(linkAnnotationSchema);
   },
 ];
 

@@ -188,6 +188,12 @@ The worker resolves the Legislator Code of every vote entry through the resolver
 
 Later tickets add packages as their modules arrive (the document store, the Statute Link parser, the Agency Link extractor, the embedder, search) and add entry points to these. A new MCP tool is a file in `mcp-server/lib/` registered in `handler.ts` through the envelope (ticket #98), which the file leaves the rate limit, the As of, the notice and the result to.
 
+**Extended by ticket #160, a Recording Log's link annotations (ADR-0058).** No package is added.
+- `pdf-text` gains `linkAnnotationsOf` on its entry point: the `{page, url}` of each link `extractPdfLinks` read, in its order.
+- `domain` gains `StoredLinkAnnotation` in `documents.ts`: the stored form of one.
+- `database` gains schema step 6 (`recording_log_link_annotation`); on `writer.ts` `storeLinkAnnotations`, and `recordingLogsWithoutIndex` also lists a log with no stored annotation; on `reader.ts` `linkAnnotationsOf`. The clock's views include the table.
+- `ingest` stores a log's annotations in `lib/speaker-turns.ts` when it reads the log, before the parser derives anything from the links, and gains `readSpeakerTurnIndex({ session, writer, resolver }, link, bytes, text)` and the type `SpeakerTurnContext` on its entry point, so that step is test seam 4: called with a real writer and reader and no pull.
+
 ## Considered Options
 
 - **One package per spec module, all twelve now.** Most would be empty folders, and their interfaces would be guesses before any caller exists.

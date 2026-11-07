@@ -138,14 +138,37 @@ describe("the speaker-turn index of a stored Recording Log", () => {
     });
   });
 
-  test("the writer lists the stored Recording Logs that have no index yet, and no other document", () => {
+  test("the writer lists the stored Recording Logs that have no index or no link annotations yet, and no other document", () => {
     pulledWithLog();
     storeMadeUpDocument(index, exhibitLink(), "MADE UP exhibit text");
     expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set([logId]));
 
     index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" } });
+    index.writer.storeLinkAnnotations(logId, [
+      { page: 1, url: "https://made-up.example/mediaplayer?clientID=1&eventID=2099010001&startStreamAt=5" },
+    ]);
 
     expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set());
+  });
+
+  test("a log with an index and no stored link annotations is still listed, for the fetch that stores them (ADR-0058)", () => {
+    pulledWithLog();
+    index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" } });
+
+    expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set([logId]));
+
+    index.writer.storeLinkAnnotations(logId, [
+      { page: 1, url: "https://made-up.example/mediaplayer?clientID=1&eventID=2099010001&startStreamAt=5" },
+    ]);
+
+    expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set());
+  });
+
+  test("a log with annotations and no index is listed too: either one missing is a reason to fetch it", () => {
+    pulledWithLog();
+    index.writer.storeLinkAnnotations(logId, [{ page: 1, url: "https://made-up.example/x" }]);
+
+    expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set([logId]));
   });
 
   test("the meeting's listing says per Recording Log whether it has an index: its event ID and turn count", () => {
@@ -308,6 +331,6 @@ describe("the second schema step", () => {
     files.push(file);
     buildFrozenVersionOne(file.path);
 
-    expect(() => openIndexReader(file.path, afterEverythingMadeUp)).toThrow(/version 1\b.*version 5\b/);
+    expect(() => openIndexReader(file.path, afterEverythingMadeUp)).toThrow(/version 1\b.*version 6\b/);
   });
 });

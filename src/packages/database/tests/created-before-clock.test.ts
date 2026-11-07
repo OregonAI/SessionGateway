@@ -270,6 +270,30 @@ describe("a Recording Log created after the clock", () => {
   });
 });
 
+// Ticket #160 (ADR-0058): a Recording Log's link annotations are keyed by the document, so they follow its creation.
+describe("the link annotations of a Recording Log created after the clock", () => {
+  test("are left out while the log is, and are read once the clock reaches its creation", () => {
+    const log = stamped(recordingLogLink(), "2099-06-01T09:00:00-07:00");
+    const clock = movableClock("2099-03-01T09:00:00-08:00");
+    index = openMadeUpIndex(clock);
+    index.writer.recordFullPull(
+      session,
+      asOf(1),
+      pullOf({ Committees: [committee], CommitteeMeetings: [meetingOn(10)], CommitteeMeetingDocuments: [log] }),
+    );
+    storeMadeUpDocument(index, log, "MADE UP recording log text");
+    const annotations = [
+      { page: 1, url: "https://made-up.example/mediaplayer?clientID=1&eventID=2099010001&startStreamAt=5" },
+    ];
+    index.writer.storeLinkAnnotations(log.id, annotations);
+
+    expect(index.reader.linkAnnotationsOf(log.id)).toEqual([]);
+
+    clock.moveTo("2099-06-01T09:00:00-07:00");
+    expect(index.reader.linkAnnotationsOf(log.id)).toEqual(annotations);
+  });
+});
+
 // Ticket #153 (ADR-0056, extended): the rows of MeasureSponsors, MeasureHistoryActions, MeasureVotes, CommitteeVotes,
 // CommitteeMeetings and CommitteeAgendaItems carry the feed's CreatedDate, stored as the Pacific time with that day's offset,
 // and the reader leaves out a row created after its clock. A row with no time is shown.

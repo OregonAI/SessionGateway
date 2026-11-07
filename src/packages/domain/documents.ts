@@ -154,6 +154,12 @@ export function recordingLogIdOf(session: SessionKey, committeeMeetingDocumentId
   return `recording-log-${session.toLowerCase()}-${committeeMeetingDocumentId}` as DocumentId;
 }
 
+/**
+ * A link annotation of a Recording Log's PDF as the worker stores it (ticket #160, ADR-0058): the page it is on (from 1) and the
+ * address it points at, as the file holds them. It is source data: it is read from the file's bytes and nothing derived goes in.
+ */
+export type StoredLinkAnnotation = { page: number; url: string };
+
 export function testimonyIdOf(session: SessionKey, commTestId: number): DocumentId {
   return `testimony-${session.toLowerCase()}-${commTestId}` as DocumentId;
 }

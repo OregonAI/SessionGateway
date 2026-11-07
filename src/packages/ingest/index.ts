@@ -346,8 +346,9 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
       .filter((link) => link.agendaRevision !== undefined && agendaRevisions.get(link.id) !== link.agendaRevision)
       .map((link) => link.id),
   );
-  // A Recording Log stored before the speaker-turn index existed (or whose index never came) is fetched once more to read its
-  // links, which the store does not keep (ticket #126, ADR-0052). Its stored text and search entry stay as they are.
+  // A Recording Log stored before the speaker-turn index existed (or whose index never came), or with no stored link
+  // annotation (ticket #160, ADR-0058), is fetched once more to read its links, which the store keeps only as the index and the
+  // annotations (ticket #126, ADR-0052). Its stored text and search entry stay as they are.
   const unindexed = writer.recordingLogsWithoutIndex(config.session);
   const speakerTurns = { session: config.session, writer, resolver };
   for (const link of links) {
@@ -592,6 +593,12 @@ function createWorkerClient(config: IngestConfig, deps: IngestDeps, onSetRead?: 
 }
 
 export { isFullPullStopped, type FullPullStopped } from "./lib/stop.ts";
+/**
+ * The worker's step that reads a fetched Recording Log (ticket #126, #160; ADR-0052, ADR-0058): it stores the log's link
+ * annotations through `context.writer` and returns the outcome of the speaker-turn index, which the caller stores. Exported so
+ * that the step is called at seam 4 with a real writer and reader and no pull.
+ */
+export { readSpeakerTurnIndex, type SpeakerTurnContext } from "./lib/speaker-turns.ts";
 
 /** How many documents the Index holds for the Session, or `undefined` when it cannot be counted: a count must not turn a stop into a crash. */
 function countStoredDocuments(config: IngestConfig): number | undefined {

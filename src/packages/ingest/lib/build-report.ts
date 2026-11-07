@@ -112,9 +112,9 @@ export type BuildReport = {
     event_ids: string[];
   }[];
   /**
-   * The stored Recording Logs this pull fetched again to read their links, which the store does not keep (ADR-0052): how many,
-   * those whose fetch failed, and those whose file is no longer the stored one. A log in either list has no index (it is a
-   * `not_read` gap) and is tried again by the next pull. The pull stores no turns from a file that is not the stored one.
+   * The stored Recording Logs this pull fetched again to read their links, which the store keeps only as the speaker-turn
+   * index and the link annotations (ADR-0052, ADR-0058): how many, those whose fetch failed, and those whose file is no longer
+   * the stored one. A log in either list is tried again by the next pull (one with no index is also a `not_read` gap). The pull stores no turns from a file that is not the stored one.
    */
   recording_log_refetches: {
     attempted: number;

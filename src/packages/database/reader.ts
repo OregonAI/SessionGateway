@@ -37,6 +37,7 @@ import {
   type SessionSpan,
   type StoredMeasure,
   type UnheldDocument,
+  type StoredLinkAnnotation,
 } from "#/packages/domain/documents.ts";
 import {
   measureIdOf,
@@ -79,7 +80,12 @@ import {
 import type { Clock } from "#/packages/time/clock.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { evidenceFromJson, storedEvidenceKinds } from "./lib/agency-evidence.ts";
-import { readSpeakerTurnIndex, readSpeakerTurnSummary, readTurnHearingsOf } from "./lib/speaker-turns.ts";
+import {
+  readLinkAnnotations,
+  readSpeakerTurnIndex,
+  readSpeakerTurnSummary,
+  readTurnHearingsOf,
+} from "./lib/speaker-turns.ts";
 import type { SpeakerTurnIndexOutcome, TurnHearing } from "#/packages/domain/speaker-turns.ts";
 import type { TranscriptOfLog } from "#/packages/domain/transcripts.ts";
 import { meetingHasTranscript, readTranscriptOfLog } from "./lib/transcripts.ts";
@@ -227,6 +233,11 @@ export type IndexReader = {
    * fetched before the index existed).
    */
   speakerTurnIndexOf(document: DocumentId): SpeakerTurnIndexOutcome | undefined;
+  /**
+   * The link annotations the worker stored for a Recording Log (ticket #160, ADR-0058), as read from the PDF: the page and address
+   * of each, in the file's order. Empty when none are stored (a log stored before step 6 and not fetched since). No tool shows them.
+   */
+  linkAnnotationsOf(document: DocumentId): StoredLinkAnnotation[];
   /**
    * The Recording Log's machine transcript (ticket #134, ADR-0055): the passages of each of its turns, in the order of
    * `speakerTurnIndexOf`'s turns, and the passages of the log that are no turn's; or undefined when the log has none. The
@@ -1309,6 +1320,9 @@ export function openIndexReader(path: string, clock: Clock): IndexReader {
     },
     turnHearingsOf(measure) {
       return inOneSnapshot(() => readTurnHearingsOf(database, measure));
+    },
+    linkAnnotationsOf(document) {
+      return inOneSnapshot(() => readLinkAnnotations(database, document));
     },
     speakerTurnIndexOf(document) {
       return inOneSnapshot(() => readSpeakerTurnIndex(database, document));

@@ -151,6 +151,8 @@ export function showOnlyRowsCreatedBy(database: DatabaseSync, clock: Clock): Clo
     CREATE TEMP VIEW analysis_listing AS SELECT * FROM main.analysis_listing WHERE ${visible};
     CREATE TEMP VIEW speaker_turn_index AS SELECT * FROM main.speaker_turn_index WHERE ${visible};
     CREATE TEMP VIEW speaker_turn AS SELECT * FROM main.speaker_turn WHERE ${visible};
+    -- A Recording Log's link annotations are keyed by the document alone (ticket #160, ADR-0058), so the log's creation is theirs.
+    CREATE TEMP VIEW recording_log_link_annotation AS SELECT * FROM main.recording_log_link_annotation WHERE ${visible};
     CREATE TEMP VIEW speaker_turn_item_measure AS SELECT * FROM main.speaker_turn_item_measure WHERE ${visible};
     -- A machine transcript follows its Recording Log (ticket #134's tables, ADR-0056): a passage is of a log (document_id) and
     -- of one of its turns, so the log's creation is the passage's. The passage's keyword entry (transcript_passage_fts, a

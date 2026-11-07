@@ -194,6 +194,10 @@ _Avoid_: speech, statement
 What the index holds of a Recording Log: its Event ID and each Speaker turn, with the speaker as logged, the Legislator Code and Legislator where the speaker resolved (among the Meeting's committee first, then among all the Session's Legislators, by title, chamber, surname and first name: ADR-0052), the Agenda item and its Measure (kept only when the index holds that Measure), the second on the recording's clock and the Player link. The worker reads it from the log's link annotations when it fetches the file. A log with no Event ID, or with two, has no index. A turn whose speaker does not resolve is kept with its text.
 _Avoid_: transcript (the index holds no words that were spoken; the Transcript passages of ADR-0055 are a separate store, shown only while the Publication gate is on)
 
+**Link annotation**:
+One link of a Recording Log's PDF, as `extractPdfLinks` reads it and the worker stores it (ADR-0058): the page it is on and the address it points at, in the order the file lists them, with nothing derived from them. They are source data, stored apart from the Speaker-turn index, so an evaluation question can cite "the stored link annotations of recording-log-…, page N" for a player link's Event ID. No tool shows them; a log with none stored is fetched again by the next pull to store them.
+_Avoid_: links (a Statute Link or an Agency Link is a derived link of another kind)
+
 **Hearing**:
 In `get_measure`, an Agenda item of a Recording Log with a Speaker-turn index that names the Measure, with the first Speaker turn under it and its Player link (ADR-0053; owner decision of 2026-11-05). A Public Hearing and a Work Session are each one, labelled by kind, and so is an item with other wording ("Informational Meeting"). An Agenda line that names several Measures ("SB 1542 and SB 1543 - Public Hearing") is a hearing of each, and lists them all; the turn keeps the first as its Measure. A log's hearings of a Measure come in the order of the recording.
 _Avoid_: meeting (a Meeting may hold several hearings of a Measure, and one hearing may be of several Measures)

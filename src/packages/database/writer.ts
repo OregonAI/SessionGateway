@@ -10,6 +10,7 @@ import {
   type MeetingId,
   type SessionSpan,
   type StoredDocument,
+  type StoredLinkAnnotation,
 } from "#/packages/domain/documents.ts";
 import { measureIdOf, type MeasureId, type SessionKey } from "#/packages/domain/index.ts";
 import type { AgencyId, SnapshotVersion } from "#/packages/domain/oregonai.ts";
@@ -37,6 +38,7 @@ import {
   readLogsWithoutItemMeasures,
   readLogsWithoutTurnPassages,
   storeItemMeasuresOf,
+  storeLinkAnnotations,
   storeSpeakerTurnIndex,
 } from "./lib/speaker-turns.ts";
 import {
@@ -378,7 +380,16 @@ export type IndexWriter = {
    * the gap that left it with none. It replaces whatever the log had, in one transaction.
    */
   storeSpeakerTurnIndex(record: SpeakerTurnIndexRecord): void;
-  /** The stored Recording Logs of the Session that have no speaker-turn index yet (a gap counts as one): the ones to fetch again to read their links. */
+  /**
+   * Keeps a Recording Log's link annotations as the worker read them from the PDF (ticket #160, ADR-0058), the page and address of
+   * each in the file's order, replacing whatever the log had. They are source data and independent of the speaker-turn index.
+   */
+  storeLinkAnnotations(document: DocumentId, annotations: readonly StoredLinkAnnotation[]): void;
+  /**
+   * The stored Recording Logs of the Session to fetch again to read their links (ADR-0052, ADR-0058): those with no speaker-turn
+   * index yet (a gap counts as one) and those with no stored link annotation. A log whose read finds no link has no annotation
+   * and so is listed on every pull.
+   */
   recordingLogsWithoutIndex(session: SessionKey): Set<DocumentId>;
   /**
    * The stored Recording Logs of the Session that have an index with turns and have not been cut around them (ticket #127,
@@ -1176,6 +1187,9 @@ export function openIndexWriter(path: string): IndexWriter {
         return { committeeCode: stored.committee_code, legislatorCode: stored.legislator_code };
       });
     },
+    storeLinkAnnotations(document, annotations) {
+      storeLinkAnnotations(database, document, annotations);
+    },
     storeSpeakerTurnIndex(record) {
       storeSpeakerTurnIndex(database, record.documentId, record.outcome);
     },
@@ -1223,7 +1237,8 @@ export function openIndexWriter(path: string): IndexWriter {
         .prepare(
           `SELECT d.id FROM document d
            WHERE d.session_key = ? AND d.kind = 'recording_log'
-             AND NOT EXISTS (SELECT 1 FROM speaker_turn_index i WHERE i.document_id = d.id)`,
+             AND (NOT EXISTS (SELECT 1 FROM speaker_turn_index i WHERE i.document_id = d.id)
+               OR NOT EXISTS (SELECT 1 FROM recording_log_link_annotation a WHERE a.document_id = d.id))`,
         )
         .all(session);
       return new Set(rows.map((row) => idRow.parse(row).id as DocumentId));

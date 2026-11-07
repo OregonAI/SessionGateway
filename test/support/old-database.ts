@@ -36,6 +36,19 @@ export function readAgencyLinksWithOnlyTheStamp(databasePath: string, commit: st
 }
 
 /**
+ * Makes a database look as one a worker before ticket #160 left: no Recording Log has its link annotations stored (the file
+ * has the table, which step 6 makes, and it is empty). It only arranges, like `forgetListing`.
+ */
+export function forgetLinkAnnotations(databasePath: string): void {
+  const database = new DatabaseSync(databasePath, { timeout: 5000 });
+  try {
+    database.exec("DELETE FROM recording_log_link_annotation");
+  } finally {
+    database.close();
+  }
+}
+
+/**
  * Makes a database look as one a worker before ticket #126 left: the Recording Logs are stored as text and nothing reads
  * their links, so no log has a speaker-turn index. It only arranges, like `forgetListing`.
  */

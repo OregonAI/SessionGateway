@@ -1,0 +1,37 @@
+---
+status: accepted (owner-approved 2026-11-06); extends ADR-0052 (the worker reads a log's links when it fetches the file) and ADR-0048 (the sixth numbered step)
+---
+
+# A Recording Log's link annotations are stored as the PDF holds them, and the speaker-turn index is not their source
+
+A Recording Log's event ID, and so a turn's player link, is in the PDF's link annotations and nowhere in the stored `document.text` (ADR-0052). The worker read them to build the index and kept only what the index derived from them. An evaluation question that names a player link's event ID therefore had no source that was not the index under test (#83's rule, test/CLAUDE.md "Expected values"), and for stage 1 of spec #123 the owner waived the player check (#129, 2026-11-06). Ticket #160 stores the annotations so a question can name "the stored link annotations of recording-log-…, page N".
+
+## Decision
+
+- **The worker stores each Recording Log's link annotations as `extractPdfLinks` read them: the page (from 1) and the address of each, in the order the file lists them.** `linkAnnotationsOf` (`pdf-text`) is the one place that makes the stored form: it keeps `{ page, url }` and drops the rectangle, which no question needs and the player link does not use. Nothing derived goes in: no event ID, offset or turn.
+- **They are stored before anything is derived from them.** `readSpeakerTurnIndex` (`ingest/lib/speaker-turns.ts`) stores the annotations from the read's own links, then hands the same links to `parseRecordingLog`. The two writes are independent: the annotations are keyed by the document alone, so storing, replacing or dropping the log's index (`storeSpeakerTurnIndex`, any outcome, including a log with no event ID or with two) never touches them, and they are stored for a log whose index is a gap. A log whose bytes changed since the stored text (ADR-0052's `bytes_changed`) is not read, so nothing is stored from it, as for the index.
+- **Storage is schema step 6 (ADR-0048): one table, `recording_log_link_annotation`**, with `document_id`, `position` (the order in the file), `page` and `url`, created with `CREATE TABLE IF NOT EXISTS`. It adds no column to a table that exists. Steps 1 to 5 and `versionOneSchema` are unchanged. Storing a log's annotations again replaces them, in one transaction.
+- **The step is an entry point of the ingest package: `readSpeakerTurnIndex(context, link, bytes, text)`** (ADR-0009), which stores the annotations and returns the index outcome for the caller to store. It is exported so a seam-4 test calls it with a real writer and reader and no fake OLIS (`ingest/tests/read-speaker-turn-index.test.ts`).
+- **The reader gets one entry point, `linkAnnotationsOf(document)`; no tool shows them.** Nothing in the tools needs to: the annotations are for an evaluation question's expected values, whose sources are SQL over stored columns (scripts/eval/questions/2026R1.yml), so a question names `recording_log_link_annotation` (page, url, by `document_id`) as it names `document.text` or `meeting.committee_code`, and needs no tool. A tool that shows them is a later ticket's decision.
+- **A log with no stored link annotation is fetched again by the next pull (the owner's decision, 2026-11-06).** `recordingLogsWithoutIndex` lists a Recording Log that has no speaker-turn index and also one that has no stored annotation row, so the existing re-fetch path of ADR-0052 applies unchanged: fetch, hash check against the stored content hash, `bytes_changed` when the file is not the stored one, then the read, which stores the annotations and the index.
+- **The reader hides a log's annotations while the log is hidden (ADR-0056).** The clock's views include `recording_log_link_annotation`, keyed by `document_id` like the other document-keyed tables, and `linkAnnotationsOf` reads through it.
+
+## Considered Options
+
+- **Store the PDF bytes, or the whole `PdfLink` with its rectangle.** Rejected: the store keeps no bytes (ADR-0005), and a rectangle is layout, not what a question cites.
+- **Take the event ID and offsets from the index and store those as the "annotations".** Rejected: that is the derived value under test, the thing the ticket exists to stand apart from.
+- **A column on `document` or on `speaker_turn_index`.** Rejected: the index's row is replaced when the log is read again and exists only for a log the parser read; the annotations must not follow it, and a list needs rows.
+- **A marker for "read, no links" so that a zero-link log is not fetched again, and no re-fetch for a log that already has an index.** Not chosen: the owner chose to re-fetch every log with no annotation rows and to accept the consequences below, so the table needs no marker. A marker is a later step if the cost of the zero-link case matters.
+
+## Consequences
+
+The re-fetch is by design and has four consequences, which the owner chose knowingly (2026-11-06):
+
+1. **Every existing database fetches all its Recording Logs again on its first pull after the release** (279 for 2026R1), because none has annotation rows. On the deploy box the worker is off, so this happens only when the worker is run; the approved 2026R1 run is ticket #164.
+2. **That fetch also rebuilds each log's speaker-turn index**, not only its annotations: the turn positions and the item measures; and, when the log's Meeting has an attached transcript, the re-attaching of that Meeting's transcripts and a `search_generation` bump (`storeSpeakerTurnIndex` raises the generation only when it marks a transcript).
+3. **A log whose read finds no link at all has no annotation rows, so it is fetched again on every pull.** The table does not tell a zero-link log from a log never read since step 6. Whether real logs can have no link is not known: the 9 2026R1 logs with no event id (314824, 314969, 315084, 316067, 316216, 316221, 316222, 316234, 316243) may hold other links or none, and which is true is read from the fetch in #164. Each such pull also stores the log's gap index again, and that marks for re-attaching every attached transcript of the log's *Meeting*, not only this log's: a zero-link log in a Meeting with an attached transcript would raise `search_generation` on every pull, so the server reloads its vectors after every pull. Whether any of the 9 shares a Meeting with an attached transcript is read from #164's run; if one does, a marker goes in a new schema step.
+4. **A log whose bytes have changed since the stored text is reported in `bytes_changed` on every pull**, because nothing is stored from it and so it still has no annotations (ADR-0052 already said it is tried again). A failed or bytes-changed fetch leaves the stored annotations as they were: both branches return before the annotations are written. No test pins this, since a build-report count cannot show it.
+
+An evaluation question about a player link's event ID can name the stored annotations of the log and the page. Until the 2026R1 run, that database holds none, so the #129 questions keep their waiver. The 2026R1 data and the #129 whole-link check are ticket #164; ticket #160 closes for the code.
+
+The expected values for the real log are in `src/packages/ingest/tests/read-speaker-turn-index.test.ts` (the addresses of 307521, read from its raw PDF), the re-fetch trigger is pinned in `database/tests/speaker-turn-index.test.ts` and, as a count in the build report, in `test/tools/recording-log-link-annotations-pull.test.ts`, and the seam-2 table is `pdf-text/tests/link-annotations.test.ts`.
