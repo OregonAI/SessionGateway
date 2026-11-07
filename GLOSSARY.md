@@ -192,7 +192,7 @@ What the index holds of a Recording Log: its Event ID and each Speaker turn, wit
 _Avoid_: transcript (the index holds no words that were spoken; the Transcript passages of ADR-0055 are a separate store, shown only while the Publication gate is on)
 
 **Link annotation**:
-One link of a Recording Log's PDF as the worker stores it (ADR-0057): the page it is on and the address it points at, in the order the file lists them, with nothing derived from them. They are source data, stored apart from the Speaker-turn index, so an evaluation question can cite "the stored link annotations of recording-log-…, page N" for a player link's Event ID. No tool shows them; a log stored before schema step 6 has none until the worker fetches it again.
+One link of a Recording Log's PDF as `extractPdfLinks` read them and the worker stores it (ADR-0058): the page it is on and the address it points at, in the order the file lists them, with nothing derived from them. They are source data, stored apart from the Speaker-turn index, so an evaluation question can cite "the stored link annotations of recording-log-…, page N" for a player link's Event ID. No tool shows them; a log with none stored is fetched again by the next pull to store them.
 _Avoid_: links (a Statute Link or an Agency Link is a derived link of another kind)
 
 **Hearing**:

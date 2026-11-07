@@ -393,7 +393,7 @@ export function readTurnHearingsOf(database: DatabaseSync, measure: MeasureId): 
 }
 
 /**
- * Replaces a log's stored link annotations (ticket #160, ADR-0057) with these, in the order given, in one transaction. They are
+ * Replaces a log's stored link annotations (ticket #160, ADR-0058) with these, in the order given, in one transaction. They are
  * the file's own and keyed by the document alone, so nothing about the speaker-turn index changes them or is changed by them.
  */
 export function storeLinkAnnotations(

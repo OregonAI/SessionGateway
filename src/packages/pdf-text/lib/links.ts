@@ -9,7 +9,12 @@ export type PdfLink = {
   rect: readonly [number, number, number, number];
 };
 
-/** What the worker stores of a link annotation (ticket #160): where it points and the page it is on, as the file holds them. */
+/**
+ * What the worker stores of a link annotation (ticket #160): where it points and the page it is on, as the file holds them.
+ * The same shape as `StoredLinkAnnotation` in `domain`, and not one type: the parser packages import no other package (this one
+ * reads PDF bytes and nothing else), and the domain must not import a PDF reader. The shapes are structural, so the worker
+ * passes one to the writer with no conversion and the compiler fails if they drift apart.
+ */
 export type LinkAnnotation = { page: number; url: string };
 
 /**

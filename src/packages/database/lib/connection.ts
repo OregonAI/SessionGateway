@@ -599,7 +599,7 @@ const transcriptSchema = `
 `;
 
 /**
- * Step 6's text (ticket #160, ADR-0057). The link annotations of a Recording Log's PDF as the worker read them from the file,
+ * Step 6's text (ticket #160, ADR-0058). The link annotations of a Recording Log's PDF as the worker read them from the file,
  * one row for each, in the order the file lists them (`position`), with the page and the address. A table of its own, keyed by
  * the document and not by the speaker-turn index: storing, replacing or dropping a log's index never touches it. It adds no
  * column to a table that exists, so a file with the table already there upgrades as a new one does.
@@ -654,7 +654,7 @@ const upgradeSteps: readonly ((database: DatabaseSync) => void)[] = [
     for (const table of tablesGivenCreatedAtByStepFive)
       database.exec(`ALTER TABLE ${table} ADD COLUMN created_at TEXT`);
   },
-  // Step 6 (ticket #160, ADR-0057): a Recording Log's link annotations, as read from the PDF. A new table and no change to an old
+  // Step 6 (ticket #160, ADR-0058): a Recording Log's link annotations, as read from the PDF. A new table and no change to an old
   // one: a log stored before it has none until the worker fetches the log again.
   (database) => {
     database.exec(linkAnnotationSchema);

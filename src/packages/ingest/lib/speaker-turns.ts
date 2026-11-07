@@ -43,7 +43,7 @@ export async function readSpeakerTurnIndex(
   }
   const { links } = extraction;
   // The annotations are stored as the file's read gave them, before the parser derives anything from them (ticket #160,
-  // ADR-0057): they are a source the index is not, so a question's expected value can name them and not the index under test.
+  // ADR-0058): they are a source the index is not, so a question's expected value can name them and not the index under test.
   context.writer.storeLinkAnnotations(link.id, linkAnnotationsOf(links));
   const meeting = link.relations.find((relation) => relation.relation === "meeting")?.to;
   const committee = link.relations.find((relation) => relation.relation === "committee")?.to;

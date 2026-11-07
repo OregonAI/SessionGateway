@@ -234,7 +234,7 @@ export type IndexReader = {
    */
   speakerTurnIndexOf(document: DocumentId): SpeakerTurnIndexOutcome | undefined;
   /**
-   * The link annotations the worker stored for a Recording Log (ticket #160, ADR-0057), as read from the PDF: the page and address
+   * The link annotations the worker stored for a Recording Log (ticket #160, ADR-0058), as read from the PDF: the page and address
    * of each, in the file's order. Empty when none are stored (a log stored before step 6 and not fetched since). No tool shows them.
    */
   linkAnnotationsOf(document: DocumentId): StoredLinkAnnotation[];
