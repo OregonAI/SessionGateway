@@ -345,7 +345,8 @@ function knownOfFile(lastFetch: LastFetchFailure | undefined): string | undefine
     case "empty_file":
       return "the file OLIS serves for it is empty.";
     case "unreadable_file":
-      return `the file OLIS serves for it is not a readable PDF (${lastFetch.reason}).`;
+      // The reason is the worker's own sentence (a capital, its own parenthesis), so it is quoted after a full stop.
+      return `the file OLIS serves for it is not a readable PDF. The worker's reason: "${lastFetch.reason}"`;
     case "request_failed":
       return undefined;
     default:
