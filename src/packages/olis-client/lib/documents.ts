@@ -394,8 +394,9 @@ export async function readDocumentLinks(
 /**
  * The bytes of one file, or why they could not be had. `status` is the HTTP status of the last answer when the last
  * attempt got one (404 for a file that is not there), and null when it got none. `bytesReceived` is there when an attempt's
- * answer began and was cut off before the file ended (a stall, or the overall cap): the most bytes any attempt received
- * (ticket #167). It is absent when no attempt's file began to arrive.
+ * answer began and was cut off before the file ended (a stall, or the overall cap): the bytes the last attempt received
+ * (ticket #167). It is absent when the last attempt got none of the file: an earlier attempt's bytes are not carried
+ * beside a later attempt's status or reason.
  */
 export type Download =
   | { kind: "fetched"; bytes: Uint8Array }
@@ -447,7 +448,10 @@ async function attemptDownload(
     }, documents.stallMs);
   };
   // A server that trickles a byte now and then never stalls; the cap ends the attempt whatever comes.
-  const cap = AbortSignal.timeout(documents.capMs);
+  const cap = new AbortController();
+  const capTimer = setTimeout(() => {
+    cap.abort();
+  }, documents.capMs);
   const seconds = `${String(documents.stallMs / 1000)} seconds`;
   const capSeconds = `${String(documents.capMs / 1000)} seconds`;
   const path = url.pathname;
@@ -455,11 +459,11 @@ async function attemptDownload(
   try {
     let response: Response;
     try {
-      response = await options.fetch(url, { signal: AbortSignal.any([signal, stall.signal, cap]) });
+      response = await options.fetch(url, { signal: AbortSignal.any([signal, stall.signal, cap.signal]) });
     } catch (error) {
       if (signal.aborted) throw error;
       if (stall.signal.aborted) return { kind: "cut_off", reason: `did not answer ${path} within ${seconds}` };
-      if (cap.aborted) return { kind: "cut_off", reason: `did not answer ${path} within ${capSeconds}` };
+      if (cap.signal.aborted) return { kind: "cut_off", reason: `did not answer ${path} within ${capSeconds}` };
       return { kind: "cut_off", reason: `did not answer ${path}: ${messageOf(error)}` };
     }
     if (!response.ok) {
@@ -486,7 +490,7 @@ async function attemptDownload(
       if (stall.signal.aborted) {
         return { kind: "cut_off", reason: `sent no more of ${path} for ${seconds}, ${after}`, bytesReceived };
       }
-      if (cap.aborted) {
+      if (cap.signal.aborted) {
         return { kind: "cut_off", reason: `did not finish ${path} within ${capSeconds}, ${after}`, bytesReceived };
       }
       return { kind: "cut_off", reason: `broke off ${path} ${after}: ${messageOf(error)}`, bytesReceived };
@@ -500,6 +504,7 @@ async function attemptDownload(
     return { kind: "fetched", bytes };
   } finally {
     clearTimeout(timer);
+    clearTimeout(capTimer);
   }
 }
 
@@ -530,13 +535,15 @@ async function downloadFrom(
         return outcome;
       case "answered":
         status = outcome.status;
+        bytesReceived = undefined;
         reason = `${who} answered ${outcome.status} to ${url.pathname}`;
         if (!isTransientStatus(outcome.status)) return failed();
         break;
       case "cut_off":
         status = null;
         reason = `${who} ${outcome.reason}`;
-        if (outcome.bytesReceived !== undefined) bytesReceived = Math.max(bytesReceived ?? 0, outcome.bytesReceived);
+        // The bytes are the ending attempt's: an earlier attempt's would sit beside another attempt's status or reason.
+        bytesReceived = outcome.bytesReceived;
         break;
       default:
         return outcome satisfies never;

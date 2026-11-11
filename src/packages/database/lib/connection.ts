@@ -616,7 +616,7 @@ const linkAnnotationSchema = `
 
 /**
  * Step 7's text (ticket #168, ADR-0063). What the worker saw at its latest attempt to fetch a document the index holds no file
- * of: the cause (the build report's), its reason, and the most bytes an attempt received when a request that began to answer
+ * of: the cause (the build report's), its reason, and the bytes the ending attempt received when a request that began to answer
  * stopped (ADR-0062; null otherwise). A table of its own, keyed by the document, because `document` holds only stored files and
  * the documents this is about have no row there; the worker deletes the row in the transaction that stores the file. The cause
  * list is written out here and not built from a constant, so the step's text cannot change with the code. It adds no column to a

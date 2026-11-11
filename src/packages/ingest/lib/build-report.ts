@@ -114,8 +114,8 @@ export type NotFetchedCause = "empty_file" | "unreadable_file" | "request_failed
 
 /**
  * One document a pull did not store, and why. A `request_failed` entry has `bytes_received` when an attempt's file began
- * to arrive and stopped (a stall, or the overall cap; ticket #167): the most bytes any attempt received. It is absent
- * when no attempt got any of the file (no answer, or a status that is not a file).
+ * to arrive and stopped (a stall, or the overall cap; ticket #167): the bytes of the attempt that ended the download. It is
+ * absent when that attempt got none of the file (no answer, or a status that is not a file), even if an earlier one did.
  */
 export type NotFetchedEntry = { id: DocumentId; source_url: string; reason: string } & (
   { cause: Exclude<NotFetchedCause, "request_failed"> } | { cause: "request_failed"; bytes_received?: number }
