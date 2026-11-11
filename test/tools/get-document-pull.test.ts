@@ -1,11 +1,14 @@
 // Seam 1: what get_document shows depends on what the worker fetched, and how often. The worker's
 // requests are counted by the fake OLIS, and a test reads that count from the harness, never from the
 // database. Cases here build their own system because the feed, the clock or the failures the fake
-// gives are the thing under test; cases that only read are in get-document.test.ts.
+// gives are the thing under test; cases that only read are in get-document.test.ts. The describe of ticket #179 copies the
+// run's template of the fixture's pull (documents served), makes it look as one before the speaker-turn index with
+// `forgetSpeakerTurns` (test/support/old-database.ts, SQL that only arranges), and pulls again: that pull is the subject.
 import { readFileSync } from "node:fs";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient } from "../support/mcp-clients.ts";
-import { startSystem, type System, type SystemOptions } from "../support/system.ts";
+import { forgetSpeakerTurns } from "../support/old-database.ts";
+import { startCopiedSystem, startSystem, type System, type SystemOptions } from "../support/system.ts";
 import { madeUpTestimonyRow, testimonyDownloadPath } from "../support/testimony.ts";
 
 const started: System[] = [];
@@ -536,5 +539,35 @@ describe("a file OLIS serves empty or broken, and a request OLIS does not answer
     expect(outcome.text).toMatch(/listed .*holds no file/);
     expect(outcome.text).not.toContain("No document");
     expect(outcome.text).not.toContain("Give a document id such as");
+  });
+});
+
+// The build report's re-fetch list says why, as documents_not_fetched does since #116 (ticket #179). The log fetched again
+// is the fixture's real 288741 (HALNRW 2025-01-22); the bytes served in its place are MADE UP and labelled so.
+describe("a stored Recording Log fetched again that comes back empty or broken, or gets no answer (ticket #179)", () => {
+  const logPath = "/liz/2025R1/Downloads/CommitteeMeetingDocument/288741";
+  const logUrl = `https://olis.oregonlegislature.gov${logPath}`;
+
+  it.for([
+    ["a file of zero bytes is empty_file", "empty_file"],
+    ["bytes that are no PDF are unreadable_file", "unreadable_file"],
+    ["a request OLIS answers 404 is request_failed", "request_failed"],
+  ] as const)("the build report's re-fetch list says why: %s", async ([, cause]) => {
+    const system = await startCopiedSystem({ clockAt: everything, documents: true });
+    started.push(system);
+    forgetSpeakerTurns(system.database.path);
+    if (cause === "empty_file") system.olis.serveDocument(logPath, new Uint8Array(0));
+    // MADE UP: bytes that are no PDF at all.
+    if (cause === "unreadable_file") {
+      system.olis.serveDocument(logPath, new TextEncoder().encode("MADE UP: this is not a PDF file"));
+    }
+    if (cause === "request_failed") system.olis.failDocuments(logUrl, [404]);
+
+    await system.pullAgain();
+
+    const refetches = system.buildReport()["recording_log_refetches"] as { failed: unknown[] };
+    expect(refetches.failed).toEqual([
+      { id: "recording-log-2025r1-288741", source_url: logUrl, reason: expect.any(String) as unknown, cause },
+    ]);
   });
 });
