@@ -306,6 +306,13 @@ async function runQuestion(
   };
 }
 
+/** "1 step that needs the transcripts published was not run", or the plural of it. */
+function notRun(count: number): string {
+  return count === 1
+    ? "1 step that needs the transcripts published was not run"
+    : `${String(count)} steps that need the transcripts published were not run`;
+}
+
 /** The report as the command prints it: one line for each question, the reasons under a failed one, and a total. */
 export function formatReport(report: EvaluationReport): string {
   const lines = [
@@ -322,14 +329,11 @@ export function formatReport(report: EvaluationReport): string {
     const asked = result.since === undefined ? "" : `  [asked ${result.moment}, since ${result.since}]`;
     lines.push(`${result.passed ? "PASS" : "FAIL"} ${result.id}  ${result.title}${asked}`);
     for (const reason of result.reasons) lines.push(`       - ${reason}`);
-    if (result.skippedSteps > 0) {
-      const many = result.skippedSteps === 1;
-      lines.push(
-        `       (${String(result.skippedSteps)} step${many ? "" : "s"} that needs the transcripts published ${many ? "was" : "were"} not run: the gate is off)`,
-      );
-    }
+    if (result.skippedSteps > 0) lines.push(`       (${notRun(result.skippedSteps)}: the gate is off)`);
   }
   const passed = report.results.filter((result) => result.passed).length;
   lines.push("", `${passed} of ${report.results.length} questions passed`);
+  const skipped = report.results.reduce((total, result) => total + result.skippedSteps, 0);
+  if (skipped > 0) lines.push(`${notRun(skipped)} in all: run with --transcripts-published`);
   return lines.join("\n");
 }
