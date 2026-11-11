@@ -111,11 +111,18 @@ describe("the 2026R1 question set", () => {
       expect(gated).toHaveLength(1);
       const [step] = gated;
       expect(step?.tool).toBe("get_document");
-      const timecode = /turns\[timecode=([0-9:]+)\]/.exec(JSON.stringify(question?.steps[1]?.expect))?.[1];
+      const stageOne = question?.steps.find((one) => one.tool === "get_document" && one.requires === undefined);
+      const timecode = /turns\[timecode=([0-9:]+)\]/.exec(JSON.stringify(stageOne?.expect))?.[1];
       expect(timecode).toBeDefined();
       expect(step?.expect).toContainEqual({
         path: `speaker_turns.turns[timecode=${String(timecode)}].transcript[*].text`,
         includesText: expect.anything() as unknown,
+      });
+      // The `part` the step asks for rests on the stored log text: the part's own text must hold the log's line of the turn.
+      expect(step?.arguments["part"]).toEqual(expect.any(Number));
+      expect(step?.expect).toContainEqual({
+        path: "text",
+        includesText: [expect.stringMatching(new RegExp(`^${String(timecode)} \\S`)) as unknown],
       });
       expect(step?.expect).toContainEqual({
         path: "notice",

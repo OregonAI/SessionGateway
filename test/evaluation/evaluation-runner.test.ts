@@ -638,8 +638,37 @@ questions:
     expect(formatReport(report)).not.toContain("Machine transcripts are published");
   });
 
+  it("with the gate off says 'need' and 'were' for two steps, and totals the steps not run under the questions", async () => {
+    const system = await startCopiedSystem(withTranscript);
+    started.push(system);
+    const two = setWith("quokka").replace(
+      "  - id: made-up-quote",
+      `  - id: made-up-two
+    title: MADE UP, two steps that require the gate
+    steps:
+      - tool: get_document
+        requires: transcripts-published
+        arguments: { id: recording-log-2025r1-288741 }
+        expect:
+          - { path: notice, includesText: nothing }
+      - tool: get_document
+        requires: transcripts-published
+        arguments: { id: recording-log-2025r1-288741 }
+        expect:
+          - { path: notice, includesText: nothing }
+  - id: made-up-quote`,
+    );
+
+    const text = formatReport(await evaluate(system, { questions: writeSet(two) }));
+
+    expect(text).toContain("(2 steps that need the transcripts published were not run: the gate is off)");
+    expect(text).toContain(
+      "3 steps that need the transcripts published were not run in all: run with --transcripts-published",
+    );
+  });
+
   it("with the gate on runs the step: the words of the turn and the notice are found, and the report says the gate is on", async () => {
-    const system = await startCopiedSystem({ ...withTranscript, serverEnv: { ...augustOptions.serverEnv } });
+    const system = await startCopiedSystem(withTranscript);
     started.push(system);
 
     const report = await evaluate(system, {
