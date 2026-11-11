@@ -68,3 +68,40 @@ describe("a file that keeps sending past the stall limit as a total (ticket #167
     expect(notFetched(system).map((entry) => entry.id)).not.toContain(`testimony-2025r1-${String(slowId)}`);
   });
 });
+
+describe("a file whose bytes stop (ticket #167)", () => {
+  const stalledId = 900122;
+  const stalledUrl = `https://olis.oregonlegislature.gov${testimonyDownloadPath(stalledId)}`;
+  // MADE UP: the file the stalled Testimony links. Each of the three attempts sends its first 100 bytes and then nothing.
+  const stalledFile = madeUpPdf([["MADE UP: testimony whose download stops part of the way"]]);
+
+  it("is reported request_failed after three attempts, with the bytes received, and the pull goes on", async () => {
+    expect(stalledFile.length).toBeGreaterThan(100);
+    const stall = { stallAfter: 100 };
+    const system = await start({
+      clockAt,
+      documentTimeoutMs: 300,
+      olis: {
+        madeUpRows: {
+          CommitteePublicTestimonies: [stalledId, slowId].map((commTestId) => madeUpTestimonyRow({ commTestId })),
+        },
+        madeUpDocuments: {
+          [testimonyDownloadPath(stalledId)]: stalledFile,
+          [testimonyDownloadPath(slowId)]: slowFile,
+        },
+        documentFailures: { [stalledUrl]: [stall, stall, stall] },
+      },
+    });
+
+    expect(notFetched(system).find((entry) => entry.id === `testimony-2025r1-${String(stalledId)}`)).toEqual({
+      id: `testimony-2025r1-${String(stalledId)}`,
+      source_url: stalledUrl,
+      reason: expect.stringContaining("3 attempts") as unknown,
+      cause: "request_failed",
+      bytes_received: 100,
+    });
+    expect(system.olis.documentRequests().filter((path) => path === testimonyDownloadPath(stalledId))).toHaveLength(3);
+    expect((await getDocument(system, `testimony-2025r1-${String(stalledId)}`)).isError).toBe(true);
+    expect((await getDocument(system, `testimony-2025r1-${String(slowId)}`)).isError).toBe(false);
+  });
+});
