@@ -1,6 +1,12 @@
 import { readBlocks } from "./lib/blocks.ts";
 import { classify } from "./lib/classify.ts";
 import { eventIdsOf } from "./lib/event-id.ts";
+import {
+  headerNamesMeeting as namesMeeting,
+  headerOf,
+  type HeaderMeeting,
+  type RecordingLogHeader,
+} from "./lib/header.ts";
 import { offsetsOf } from "./lib/offsets.ts";
 import {
   legislatorOfSpeaker as legislatorOf,
@@ -57,7 +63,23 @@ export function entriesOfLogText(text: string, agendaItems: readonly FeedAgendaI
   return classify(blocks, offsetsOf(blocks, []), agendaItems).entries;
 }
 
-export type { CommitteeMemberName };
+export type { CommitteeMemberName, HeaderMeeting, RecordingLogHeader };
+
+/**
+ * The log's own header (ticket #177): the committee lines of its first page, joined by a space, and the time under its date
+ * line, as printed and on a 24-hour clock. Null when the first page has no committee, date and time lines in that order. Pure.
+ */
+export function recordingLogHeaderOf(text: string): RecordingLogHeader | null {
+  return headerOf(text);
+}
+
+/**
+ * Whether a log's header names the Meeting it is filed under: the chamber the committee's code begins with, the committee's
+ * name at the end of its committee lines ("... ON BEHAVIORAL HEALTH"), and the Meeting's start time. Pure.
+ */
+export function headerNamesMeeting(header: RecordingLogHeader, meeting: HeaderMeeting): boolean {
+  return namesMeeting(header, meeting);
+}
 
 /** Where a stretch of a log's text is: `text.slice(start, end)`, in UTF-16 code units. */
 export type TextSpan = { start: number; end: number };

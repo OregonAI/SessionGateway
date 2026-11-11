@@ -201,8 +201,11 @@ export type RecordingLogReadingNotes = {
   gaps: {
     id: DocumentId;
     sourceUrl: string;
-    /** `not_read`: the log is stored and its links have not been read (its file could not be fetched again, or came back changed). */
-    kind: "no_event_id" | "conflicting_event_ids" | "not_read";
+    /**
+     * `not_read`: the log is stored and its links have not been read (its file could not be fetched again, or came back changed).
+     * `log_of_another_meeting`: the same file is filed under another Meeting and this log's header does not name its own (#177).
+     */
+    kind: "no_event_id" | "conflicting_event_ids" | "not_read" | "log_of_another_meeting";
     eventIds: string[];
   }[];
   readByTimecode: { id: DocumentId; sourceUrl: string; pages: number[] }[];
@@ -210,11 +213,41 @@ export type RecordingLogReadingNotes = {
   turnsWithoutPassage: { id: DocumentId; sourceUrl: string; turns: number }[];
 };
 
+/**
+ * A stored Recording Log whose file (its `content_hash`) the store holds under another document too (ticket #177): the Meeting it
+ * is filed under, with that Meeting's committee and start, and its text, which the log's header is read from.
+ */
+export type RecordingLogCopy = {
+  id: DocumentId;
+  sourceUrl: string;
+  contentHash: string;
+  meetingId: MeetingId;
+  committeeCode: string;
+  committeeName: string;
+  /** When the Meeting starts, in Pacific time with its offset. */
+  at: string;
+  text: string;
+  /** What reading the log came to, or null when no reading of it is stored. */
+  outcome: SpeakerTurnIndexOutcome["kind"] | null;
+};
+
+const recordingLogCopyRow = z.object({
+  id: z.string(),
+  source_url: z.string(),
+  content_hash: z.string(),
+  meeting_id: z.string(),
+  committee_code: z.string(),
+  committee_name: z.string(),
+  at: z.string(),
+  text: z.string(),
+  outcome: z.enum(["indexed", "no_event_id", "conflicting_event_ids", "log_of_another_meeting"]).nullable(),
+});
+
 /** A stored Recording Log with its reading: the outcome and what goes with it are null for a log no reading of is stored. */
 const readingNoteRow = z.object({
   id: z.string(),
   source_url: z.string(),
-  outcome: z.enum(["indexed", "no_event_id", "conflicting_event_ids"]).nullable(),
+  outcome: z.enum(["indexed", "no_event_id", "conflicting_event_ids", "log_of_another_meeting"]).nullable(),
   event_ids: z.string().nullable(),
   pages_read_by_timecode: z.string().nullable(),
   turns_without_passage: z.number().nullable(),
@@ -425,6 +458,11 @@ export type IndexWriter = {
    * ID, or conflicting ones) and the logs some of whose pages were read by timecode, each with its source URL.
    */
   recordingLogReadingNotes(session: SessionKey): RecordingLogReadingNotes;
+  /**
+   * The Session's stored Recording Logs whose file is stored under another Recording Log of the Session too (the same
+   * `content_hash`; ticket #177), each with the Meeting it is filed under: by file, then by id.
+   */
+  recordingLogCopies(session: SessionKey): RecordingLogCopy[];
   /** The Measures the store holds for the Session, as the ids of the Measures: what a turn's Agenda item may name. */
   heldMeasureIds(session: SessionKey): Set<MeasureId>;
   /**
@@ -1271,6 +1309,38 @@ export function openIndexWriter(path: string): IndexWriter {
         }
       }
       return notes;
+    },
+    recordingLogCopies(session) {
+      return database
+        .prepare(
+          `SELECT d.id, d.source_url, d.content_hash, md.meeting_id, m.committee_code, c.name AS committee_name, m.at, d.text,
+                  i.outcome
+           FROM document d
+             JOIN meeting_document md ON md.document_id = d.id
+             JOIN meeting m ON m.id = md.meeting_id
+             JOIN committee c ON c.id = m.committee_id
+             LEFT JOIN speaker_turn_index i ON i.document_id = d.id
+           WHERE d.session_key = ?1 AND d.kind = 'recording_log'
+             AND d.content_hash IN (
+               SELECT content_hash FROM document WHERE session_key = ?1 AND kind = 'recording_log'
+               GROUP BY content_hash HAVING COUNT(*) > 1)
+           ORDER BY d.content_hash, d.id, md.meeting_id`,
+        )
+        .all(session)
+        .map((row) => {
+          const copy = recordingLogCopyRow.parse(row);
+          return {
+            id: copy.id as DocumentId,
+            sourceUrl: copy.source_url,
+            contentHash: copy.content_hash,
+            meetingId: copy.meeting_id as MeetingId,
+            committeeCode: copy.committee_code,
+            committeeName: copy.committee_name,
+            at: copy.at,
+            text: copy.text,
+            outcome: copy.outcome,
+          };
+        });
     },
     heldMeasureIds(session) {
       const rows = database.prepare("SELECT prefix, number FROM measure WHERE session_key = ?").all(session);

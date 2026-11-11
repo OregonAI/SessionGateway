@@ -67,13 +67,14 @@ import { splitAroundTurns, splitPassages } from "#/packages/search/passages.ts";
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, pacificTimestampOf, type Timestamp } from "#/packages/time/pacific.ts";
-import { readSpeakerTurnIndex } from "./lib/speaker-turns.ts";
+import { copyGapsOf, readSpeakerTurnIndex, setAsideCopiesOfOtherMeetings } from "./lib/speaker-turns.ts";
 import { ingestTranscripts, transcriptsReportOf, type TranscriptsRun } from "./lib/transcripts.ts";
 import {
   buildReportPath,
   writeBuildReport,
   type BuildReport,
   type NotFetchedCause,
+  type RecordingLogGap,
   type SetReport,
 } from "./lib/build-report.ts";
 import {
@@ -283,17 +284,38 @@ function committeeMembersReportOf(
 /** What the build report says of how the Recording Logs were read: the logs left with no index, and the pages read by timecode. */
 function recordingLogNotesOf(
   notes: ReturnType<IndexWriter["recordingLogReadingNotes"]>,
+  copies: ReturnType<IndexWriter["recordingLogCopies"]>,
 ): Pick<
   BuildReport,
   "recording_log_gaps" | "recording_log_pages_read_by_timecode" | "recording_log_turns_without_passage"
 > {
+  const copyGaps = copyGapsOf(copies);
   return {
-    recording_log_gaps: notes.gaps.map((gap) => ({
-      id: gap.id,
-      source_url: gap.sourceUrl,
-      kind: gap.kind,
-      event_ids: gap.eventIds,
-    })),
+    recording_log_gaps: notes.gaps.map((gap): RecordingLogGap => {
+      if (gap.kind !== "log_of_another_meeting") {
+        return { id: gap.id, source_url: gap.sourceUrl, kind: gap.kind, event_ids: gap.eventIds };
+      }
+      const copy = copyGaps.get(gap.id);
+      if (copy === undefined) {
+        // The outcome is stored only for a log whose file is under another one too, and nothing removes a stored log.
+        throw new Error(
+          `${gap.id} is set aside as another Meeting's log and the store holds no other copy of its file`,
+        );
+      }
+      return {
+        id: gap.id,
+        source_url: gap.sourceUrl,
+        kind: gap.kind,
+        event_ids: [],
+        meeting_id: copy.meetingId,
+        header: copy.header,
+        same_file_as: copy.sameFileAs.map((other) => ({
+          id: other.id,
+          source_url: other.sourceUrl,
+          meeting_id: other.meetingId,
+        })),
+      };
+    }),
     recording_log_pages_read_by_timecode: notes.readByTimecode.map((note) => ({
       id: note.id,
       source_url: note.sourceUrl,
@@ -425,6 +447,9 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
     stored.add(link.id);
     documentsFetched += 1;
   }
+  // A file OLIS filed under more than one Meeting is indexed only under the Meeting its header names (ticket #177): the other
+  // copies lose the turns they were just given, before any is cut around them or a transcript is attached.
+  setAsideCopiesOfOtherMeetings(writer, config.session);
   // A Recording Log whose turns are stored and that has not been cut around them is cut from the text and the turns the store
   // holds (ticket #127, ADR-0053): a log just read, one stored before the passages were linked, one whose index was stored
   // again. Nothing is fetched, and every line of the text stays in one passage. A turn the text cannot place, or that is longer
@@ -730,7 +755,10 @@ async function pullEverything(config: IngestConfig, deps: IngestDeps): Promise<F
         source_url: document.sourceUrl,
       })),
       documents_not_fetched: notFetched,
-      ...recordingLogNotesOf(writer.recordingLogReadingNotes(config.session)),
+      ...recordingLogNotesOf(
+        writer.recordingLogReadingNotes(config.session),
+        writer.recordingLogCopies(config.session),
+      ),
       recording_log_refetches: refetches,
       search_index: {
         model: deps.embedder.modelId,

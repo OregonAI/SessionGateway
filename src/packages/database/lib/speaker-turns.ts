@@ -11,8 +11,8 @@ import type { MeetingId } from "#/packages/domain/documents.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { SpeakerTurn, SpeakerTurnIndexOutcome, TurnHearing } from "#/packages/domain/speaker-turns.ts";
 
-/** The text that tells the three outcomes apart in `speaker_turn_index.outcome`. */
-const outcomes = ["indexed", "no_event_id", "conflicting_event_ids"] as const;
+/** The text that tells the four outcomes apart in `speaker_turn_index.outcome`. */
+const outcomes = ["indexed", "no_event_id", "conflicting_event_ids", "log_of_another_meeting"] as const;
 
 /** Replaces the log's index with this outcome, in one transaction: the turns of an earlier reading are never mixed with these. */
 export function storeSpeakerTurnIndex(
@@ -185,6 +185,8 @@ export function readSpeakerTurnIndex(
   switch (row.outcome) {
     case "no_event_id":
       return { kind: "no_event_id" };
+    case "log_of_another_meeting":
+      return { kind: "log_of_another_meeting" };
     case "conflicting_event_ids":
       return { kind: "conflicting_event_ids", eventIds: texts.parse(JSON.parse(row.event_ids ?? "[]")) };
     case "indexed": {

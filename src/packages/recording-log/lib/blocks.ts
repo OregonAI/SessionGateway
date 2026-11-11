@@ -21,7 +21,7 @@ export type Block = {
 const TIMECODE_LINE = /^(\d{2}:\d{2}:\d{2})(?:\s+(.*))?$/;
 
 /** The lines the log prints at the head of every page, which interrupt a block and do not end it. */
-const COMPLIANCE_LINE = /^This recording log is in compliance with /;
+export const COMPLIANCE_LINE = /^This recording log is in compliance with /;
 const DATE_LINE = /^\d{2}\/\d{2}\/\d{4}$/;
 const PAGE_LINE = /^Page \d+ of \d+$/;
 const COMMITTEE_CODE_LINE = /^[A-Z]+$/;
