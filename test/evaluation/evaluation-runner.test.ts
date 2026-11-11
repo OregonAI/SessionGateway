@@ -33,6 +33,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatReport, runEvaluation, type EvaluationReport } from "../../scripts/eval/runner.ts";
+import { halnrwEventId, halnrwSegments, madeUpTranscript } from "../support/made-up-transcript.ts";
 import { createFakeEmbedder } from "../support/fake-embedder.ts";
 import { modelPath } from "../support/real-embedder.ts";
 import { openIndexWriter } from "#/packages/database/writer.ts";
@@ -65,7 +66,13 @@ async function start(clockAt: string): Promise<System> {
 /** No `session` unless a case gives one: the runner then runs the Session the database holds (ticket #82). */
 async function evaluate(
   system: System,
-  extra: { session?: string; since?: string; questions?: string; questionsFolder?: string } = {},
+  extra: {
+    session?: string;
+    since?: string;
+    questions?: string;
+    questionsFolder?: string;
+    transcriptsPublished?: boolean;
+  } = {},
 ): Promise<EvaluationReport> {
   return runEvaluation({
     databasePath: system.database.path,
@@ -580,5 +587,127 @@ describe("the command", () => {
     expect(unreadable.status).toBe(2);
     expect(unreadable.stderr).toContain('"yesterday" is not a time');
     expect(unreadable.stdout).toBe("");
+  });
+});
+
+// Ticket #136: the evaluation with the publication gate on (ADR-0055). The runner builds the server's configuration itself, so
+// it takes the gate as an option (`transcriptsPublished`, the command's `--transcripts-published`), and a step of a question
+// may say `requires: transcripts-published`: it runs only with the gate on, and with the gate off it is not run and the
+// report says how many were not. The gate is the server's setting and not part of the template's key, so one database
+// serves both runs.
+//
+// Database: a copy of the template for the 2026-08-05 clock, documents on, and one MADE UP transcript file (never said at any
+// hearing, timed to the real turns of HALNRW 2025-01-22's log 288741, test/support/made-up-transcript.ts). The words of the
+// expectations are those made-up words: "Good morning members the quokka laboratory tests samples", from 169.5 s, in the turn
+// at 00:02:49 (Kurt Williams). The notice is ADR-0055's sentence.
+describe("the evaluation with the transcripts published (ticket #136)", () => {
+  const withTranscript = {
+    ...augustOptions,
+    transcripts: {
+      [`${halnrwEventId}.transcript.json`]: madeUpTranscript({ eventId: halnrwEventId, segments: halnrwSegments }),
+    },
+  };
+  const NOTICE = "This result includes a machine transcript of the official recording, not an official record.";
+  const setWith = (words: string): string => `
+session: 2025R1
+questions:
+  - id: made-up-quote
+    title: MADE UP, a turn's words with the notice
+    steps:
+      - tool: get_document
+        arguments: { id: recording-log-2025r1-288741 }
+        expect:
+          - { path: kind, equals: recording_log }
+      - tool: get_document
+        requires: transcripts-published
+        arguments: { id: recording-log-2025r1-288741 }
+        expect:
+          - { path: "speaker_turns.turns[timecode=00:02:49].transcript[*].text", includesText: ${JSON.stringify(words)} }
+          - { path: notice, includesText: ${JSON.stringify(NOTICE)} }
+`;
+
+  it("with the gate off runs no step that requires it, passes, and says how many it did not run", async () => {
+    const system = await startCopiedSystem(withTranscript);
+    started.push(system);
+
+    // With the gate off the words are not in the answer, so a step that ran would fail: the question passes only if it did not.
+    const report = await evaluate(system, { questions: writeSet(setWith("quokka laboratory tests samples")) });
+
+    expect(resultOf(report, "made-up-quote")).toMatchObject({ passed: true, reasons: [], skippedSteps: 1 });
+    expect(formatReport(report)).toContain("1 step that needs the transcripts published was not run");
+    expect(formatReport(report)).not.toContain("Machine transcripts are published");
+  });
+
+  it("with the gate off says 'need' and 'were' for two steps, and totals the steps not run under the questions", async () => {
+    const system = await startCopiedSystem(withTranscript);
+    started.push(system);
+    const two = setWith("quokka").replace(
+      "  - id: made-up-quote",
+      `  - id: made-up-two
+    title: MADE UP, two steps that require the gate
+    steps:
+      - tool: get_document
+        requires: transcripts-published
+        arguments: { id: recording-log-2025r1-288741 }
+        expect:
+          - { path: notice, includesText: nothing }
+      - tool: get_document
+        requires: transcripts-published
+        arguments: { id: recording-log-2025r1-288741 }
+        expect:
+          - { path: notice, includesText: nothing }
+  - id: made-up-quote`,
+    );
+
+    const text = formatReport(await evaluate(system, { questions: writeSet(two) }));
+
+    expect(text).toContain("(2 steps that need the transcripts published were not run: the gate is off)");
+    expect(text).toContain(
+      "3 steps that need the transcripts published were not run in all: run with --transcripts-published",
+    );
+  });
+
+  it("with the gate on runs the step: the words of the turn and the notice are found, and the report says the gate is on", async () => {
+    const system = await startCopiedSystem(withTranscript);
+    started.push(system);
+
+    const report = await evaluate(system, {
+      questions: writeSet(setWith("quokka laboratory tests samples")),
+      transcriptsPublished: true,
+    });
+
+    expect(resultOf(report, "made-up-quote")).toMatchObject({ passed: true, reasons: [], skippedSteps: 0 });
+    expect(formatReport(report)).toContain("Machine transcripts are published (the gate is on)");
+  });
+
+  it("with the gate on fails a quote the transcript does not hold, and says what the turn's words are", async () => {
+    const system = await startCopiedSystem(withTranscript);
+    started.push(system);
+
+    const report = await evaluate(system, {
+      questions: writeSet(setWith("an unheard-of sentence")),
+      transcriptsPublished: true,
+    });
+
+    expect(resultOf(report, "made-up-quote").passed).toBe(false);
+    expect(resultOf(report, "made-up-quote").reasons).toEqual([
+      expect.stringContaining('transcript[*].text should have a text that includes "an unheard-of sentence"'),
+    ]);
+  });
+
+  it("the command takes --transcripts-published", async () => {
+    const system = await startCopiedSystem(withTranscript);
+    started.push(system);
+    const script = join(import.meta.dirname, "..", "..", "scripts", "eval", "run.ts");
+
+    const result = spawnSync("node", [script, "--database", system.database.path, "--transcripts-published"], {
+      encoding: "utf8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("Machine transcripts are published (the gate is on)");
+    expect(result.stdout).toContain("7 of 7 questions passed");
   });
 });

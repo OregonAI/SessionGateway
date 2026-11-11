@@ -97,4 +97,42 @@ describe("the 2026R1 question set", () => {
       expect(each.clock, each.id).toMatch(/^2026-/);
     }
   });
+
+  // Ticket #136: each hearing question gains the words spoken at its moment, a step that runs only with the gate on
+  // (`requires: transcripts-published`), asking the log again and expecting a distinctive part of the quote in its turn's
+  // transcript and the machine-transcript notice. The quote's own words are the transcript file's (the hand-check list names
+  // the file and the segments); this file asserts only the shape, because a literal copied here would be a copy of the set.
+  describe("the hearing questions' quotes (ticket #136)", () => {
+    const hearing = set.questions.filter((each) => each.id.startsWith("h-"));
+
+    it.for(hearing.map((each) => each.id))("%s has one gate-on step that expects the quote and the notice", (id) => {
+      const question = hearing.find((each) => each.id === id);
+      const gated = question?.steps.filter((one) => one.requires === "transcripts-published") ?? [];
+      expect(gated).toHaveLength(1);
+      const [step] = gated;
+      expect(step?.tool).toBe("get_document");
+      const stageOne = question?.steps.find((one) => one.tool === "get_document" && one.requires === undefined);
+      const timecode = /turns\[timecode=([0-9:]+)\]/.exec(JSON.stringify(stageOne?.expect))?.[1];
+      expect(timecode).toBeDefined();
+      expect(step?.expect).toContainEqual({
+        path: `speaker_turns.turns[timecode=${String(timecode)}].transcript[*].text`,
+        includesText: expect.anything() as unknown,
+      });
+      // The `part` the step asks for rests on the stored log text: the part's own text must hold the log's line of the turn.
+      expect(step?.arguments["part"]).toEqual(expect.any(Number));
+      expect(step?.expect).toContainEqual({
+        path: "text",
+        includesText: [expect.stringMatching(new RegExp(`^${String(timecode)} \\S`)) as unknown],
+      });
+      expect(step?.expect).toContainEqual({
+        path: "notice",
+        includesText: "This result includes a machine transcript of the official recording, not an official record.",
+      });
+    });
+
+    it("leaves every step of the other questions, and the stage-1 steps of the hearing questions, needing no gate", () => {
+      const gated = set.questions.flatMap((each) => each.steps.filter((one) => one.requires !== undefined));
+      expect(gated).toHaveLength(5);
+    });
+  });
 });

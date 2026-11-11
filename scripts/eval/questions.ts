@@ -10,6 +10,11 @@ import { checkSchema } from "./paths.ts";
 const step = z.strictObject({
   /** The MCP tool to call. */
   tool: z.string().min(1),
+  /**
+   * What the step needs of the server. `transcripts-published`: the machine-transcript gate is on (`npm run eval
+   * --transcripts-published`, ADR-0055); with the gate off the step is not run and the report says so (ticket #136).
+   */
+  requires: z.literal("transcripts-published").optional(),
   /** Its arguments. The text "$since" stands for the Pacific day before the question's clock (see `runEvaluation`). */
   arguments: z.record(z.string(), z.json()),
   /** What must hold in the tool's structured result. */

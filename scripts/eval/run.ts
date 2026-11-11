@@ -6,6 +6,8 @@
 //   --database  the SQLite file the ingest worker wrote (required)
 //   --session   the Session whose questions to run, such as 2025R1. Not given, the Session the database holds (it must
 //               hold exactly one, or name one). A Session needs its question set: scripts/eval/questions/<session>.yml.
+//   --transcripts-published  run with the server's transcript gate on (TRANSCRIPTS_PUBLISHED=true, ADR-0055): the steps
+//               a question marks `requires: transcripts-published` run. Not given, the gate is off and those steps are not run.
 //   --since     what "since yesterday" means to every question that says so: an ISO 8601 date or time. Not given, each
 //               question's own: the Pacific day before the moment it is asked at (its `clock`), so no flag is needed.
 // MODEL_PATH names the embedding model's directory as for the server; unset, it is the one `npm run model:fetch` fills.
@@ -17,7 +19,8 @@ import { loadOnnxEmbedder } from "#/packages/embedder/onnx.ts";
 import { modelDirectory } from "../model/files.ts";
 import { formatReport, runEvaluation } from "./runner.ts";
 
-const usage = "usage: node scripts/eval/run.ts --database <path> [--session <key>] [--since <iso>]";
+const usage =
+  "usage: node scripts/eval/run.ts --database <path> [--session <key>] [--since <iso>] [--transcripts-published]";
 
 try {
   const { values } = parseArgs({
@@ -26,6 +29,7 @@ try {
       database: { type: "string" },
       session: { type: "string" },
       since: { type: "string" },
+      "transcripts-published": { type: "boolean" },
     },
     strict: true,
   });
@@ -44,6 +48,7 @@ try {
     databasePath: values.database,
     ...(values.session === undefined ? {} : { session: values.session }),
     ...(values.since === undefined ? {} : { since: values.since }),
+    ...(values["transcripts-published"] === true ? { transcriptsPublished: true } : {}),
     embedder,
     modelPath,
   });
