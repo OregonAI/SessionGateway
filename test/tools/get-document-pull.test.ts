@@ -508,9 +508,7 @@ describe("a file OLIS serves empty or broken, and a request OLIS does not answer
 
     expect(outcome.isError).toBe(true);
     expect(outcome.text).toContain(`testimony-2025r1-${String(emptyId)}`);
-    expect(outcome.text).toContain(
-      "This index does not hold its file: OLIS may serve it empty or broken, a request for it may have failed, or a pull has not reached it yet.",
-    );
+    expect(outcome.text).toContain("This index does not hold its file: the file OLIS serves for it is empty.");
     expect(outcome.text).not.toMatch(/next pull fetches|last pull|build report/i);
   });
 
