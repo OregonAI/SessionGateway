@@ -4,8 +4,10 @@
 // gives are the thing under test; cases that only read are in get-document.test.ts. The describe of ticket #179 copies the
 // run's template of the fixture's pull (documents served), makes it look as one before the speaker-turn index with
 // `forgetSpeakerTurns` (test/support/old-database.ts, SQL that only arranges), and pulls again: that pull is the subject.
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { madeUpPdf } from "../support/made-up-pdf.ts";
 import { callTool, connectClient } from "../support/mcp-clients.ts";
 import { forgetSpeakerTurns } from "../support/old-database.ts";
 import { startCopiedSystem, startSystem, type System, type SystemOptions } from "../support/system.ts";
@@ -539,6 +541,49 @@ describe("a file OLIS serves empty or broken, and a request OLIS does not answer
     expect(outcome.text).toMatch(/listed .*holds no file/);
     expect(outcome.text).not.toContain("No document");
     expect(outcome.text).not.toContain("Give a document id such as");
+  });
+});
+
+// A file that needs a password is a property of the file OLIS serves, like bytes that are not a PDF, so the pull leaves
+// it out and goes on (ticket #178, ADR-0011). Both rows and both files are MADE UP and labelled so: the encrypted file is
+// test/fixtures/made-up/password-protected.pdf (one blank page, AES-128, a user password; its README says how it was made).
+describe("a file OLIS serves that needs a password (ticket #178)", () => {
+  const lockedId = 900111;
+  const readableId = 900112;
+  const lockedUrl = `https://olis.oregonlegislature.gov${testimonyDownloadPath(lockedId)}`;
+
+  it("is left out as unreadable_file with a reason naming the password, and the pull finishes", async () => {
+    const locked = new Uint8Array(readFileSync(new URL("../fixtures/made-up/password-protected.pdf", import.meta.url)));
+    expect(createHash("sha256").update(locked).digest("hex")).toBe(
+      "7a709222def642ea331a9515755d6f4648ec3222a86996b886783d00b4fda30e",
+    );
+    const pulled = start({
+      clockAt: "2025-07-15T17:00:00Z",
+      documents: false,
+      olis: {
+        madeUpRows: {
+          // MADE UP: two Testimony rows, filed under SB 983 as the other made-up rows are.
+          CommitteePublicTestimonies: [lockedId, readableId].map((commTestId) => madeUpTestimonyRow({ commTestId })),
+        },
+        madeUpDocuments: {
+          [testimonyDownloadPath(lockedId)]: locked,
+          // MADE UP: a plain one-page PDF, fetched after the locked one, so the pull is seen to go on past it.
+          [testimonyDownloadPath(readableId)]: madeUpPdf([["MADE UP: testimony that opens without a password"]]),
+        },
+      },
+    });
+
+    // The pull finishes: before #178 the extractor's PasswordException stopped it here.
+    await expect(pulled).resolves.toBeDefined();
+    const system = await pulled;
+    const entries = system.buildReport()["documents_not_fetched"] as { id: string }[];
+    expect(entries.find((entry) => entry.id === `testimony-2025r1-${String(lockedId)}`)).toEqual({
+      id: `testimony-2025r1-${String(lockedId)}`,
+      source_url: lockedUrl,
+      reason: expect.stringMatching(/password/i) as unknown,
+      cause: "unreadable_file",
+    });
+    expect((await getDocument(system, `testimony-2025r1-${String(readableId)}`)).isError).toBe(false);
   });
 });
 
