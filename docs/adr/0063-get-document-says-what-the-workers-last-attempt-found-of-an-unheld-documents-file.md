@@ -1,10 +1,10 @@
 ---
-status: accepted (owner decision of 2026-11-11, ticket #168: schema step 7 approved and built now); amends ADR-0059 (its decision "wording only, no schema step" and the general answer for every cause); extends ADR-0048 (the seventh numbered step) and ADR-0056 (the clock's views)
+status: accepted (owner decision of 2026-11-10, ticket #168: schema step 7 approved and built now); amends ADR-0059 (its decision "wording only, no schema step" and the general answer for every cause); extends ADR-0048 (the seventh numbered step) and ADR-0056 (the clock's views)
 ---
 
 # get_document says what the worker's last attempt found of an unheld document's file
 
-ADR-0059 had `get_document` answer an unheld Testimony with one general sentence ("OLIS may serve it empty or broken, a request for it may have failed, or a pull has not reached it yet"), because the cause of a document left out (`empty_file`, `unreadable_file`, `request_failed`, ticket #116) was only in the build report, which the server does not read. 56 of 2026R1's Testimony files are zero bytes and 1 is not a readable PDF (ADR-0059's correction), and for those the general sentence leaves out the one thing that is known. ADR-0059 named the schema step that would let the server say it as ticket #168, for the owner to approve. The owner approved it on 2026-11-11, to build at once and not to wait for the worker to be turned back on.
+ADR-0059 had `get_document` answer an unheld Testimony with one general sentence ("OLIS may serve it empty or broken, a request for it may have failed, or a pull has not reached it yet"), because the cause of a document left out (`empty_file`, `unreadable_file`, `request_failed`, ticket #116) was only in the build report, which the server does not read. 56 of 2026R1's Testimony files are zero bytes and 1 is not a readable PDF (ADR-0059's correction), and for those the general sentence leaves out the one thing that is known. ADR-0059 named the schema step that would let the server say it as ticket #168, for the owner to approve. The owner approved it on 2026-11-10, to build at once and not to wait for the worker to be turned back on.
 
 ## Decision
 

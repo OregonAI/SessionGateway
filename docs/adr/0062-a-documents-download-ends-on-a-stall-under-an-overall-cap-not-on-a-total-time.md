@@ -1,5 +1,5 @@
 ---
-status: accepted (owner decision of 2026-11-11, ticket #167); replaces the 60-second total limit on one attempt to fetch a document, which the code set in ticket #5 (`DEFAULT_DOCUMENT_TIMEOUT_MS`, citing olis-odata.md gotcha 15) and no ADR recorded
+status: accepted (owner decision of 2026-11-10, ticket #167); replaces the 60-second total limit on one attempt to fetch a document, which the code set in ticket #5 (`DEFAULT_DOCUMENT_TIMEOUT_MS`, citing olis-odata.md gotcha 15) and no ADR recorded
 ---
 
 # A document's download ends on a stall, under an overall cap, not on a total time
@@ -8,7 +8,7 @@ The worker gave each document three attempts, and each attempt 60 seconds in all
 
 ## Decision
 
-The owner decided on 2026-11-11 to build option B of ticket #167 now, without first measuring the 32 files:
+The owner decided on 2026-11-10 to build option B of ticket #167 now, without first measuring the 32 files:
 
 - **An attempt ends on a stall.** The OLIS client reads a document's body as it comes. An attempt is given up when no answer, or no further byte of the body, arrives for the stall limit: `OLIS_DOCUMENT_STALL_MS`, 60 seconds unless set (the old total, now the longest silence). A file that keeps sending is read to its end however long it takes, up to the cap.
 - **An overall cap bounds an attempt.** `OLIS_DOCUMENT_CAP_MS`, 10 minutes unless set, ends an attempt whatever is still coming, so a server that sends a byte now and then (never a stall) cannot hold a pull for ever. Why 10 minutes: the slowest download olis-odata.md measured, the session-bill HTML list, took 66 s for 7.6 MB (gotcha 15, about 115 KB/s), and at that rate 10 minutes carries about 69 MB (inferred: the 32 files' sizes are not known, so the cap is a bound on a hang and not a measured fit). A document that trickles to the cap costs 30 minutes (three attempts) of the full pull's six-hour window; a pull still running at 6 am is stopped there and stores nothing more, as before (ADR-0039), and the next pull fetches the rest.
