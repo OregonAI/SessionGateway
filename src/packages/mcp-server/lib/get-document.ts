@@ -89,6 +89,8 @@ export type GetDocumentFault =
   | { kind: "no_longer_listed_not_held"; id: string; session: SessionKey; lastListedAt: Timestamp }
   | { kind: "no_such_part"; id: string; part: number; partCount: number }
   /** A timecode was given for a document that is not a Recording Log (ticket #174): only a log has speaker turns. */
+  /** Both a part and a timecode were given (ticket #174): they can name different parts, so neither is taken over the other. */
+  | { kind: "part_and_timecode"; id: string }
   | { kind: "timecode_not_a_log"; id: string; documentKind: DocumentKind }
   /**
    * A timecode no speaker turn of the log has (ticket #174): the turns that begin just before it and just after it, either of
@@ -111,6 +113,9 @@ export function getDocument(
   if (id === undefined) return { kind: "fault", fault: { kind: "unknown", id: input.id, session } };
   const found = reader.findDocument(id);
   if (found === undefined) return { kind: "fault", fault: { kind: "unknown", id: input.id, session } };
+  if (input.part !== undefined && input.timecode !== undefined) {
+    return { kind: "fault", fault: { kind: "part_and_timecode", id } };
+  }
   switch (found.held) {
     case true:
       break;
@@ -259,6 +264,8 @@ export function getDocumentFaultMessage(fault: GetDocumentFault): string {
       return noLongerListedNotHeldMessage(fault.id, fault.session, fault.lastListedAt);
     case "no_such_part":
       return noSuchPartMessage(fault.id, fault.part, fault.partCount);
+    case "part_and_timecode":
+      return `Give part or timecode, not both: a timecode asks for the part of "${fault.id}" that holds that turn, which may not be the part given. Ask with the timecode alone, then for the parts after it by number.`;
     case "timecode_not_a_log":
       return timecodeNotALogMessage(fault.id, fault.documentKind);
     case "no_such_turn":
