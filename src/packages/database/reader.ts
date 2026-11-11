@@ -91,6 +91,7 @@ import type { SpeakerTurnIndexOutcome, TurnHearing } from "#/packages/domain/spe
 import type { TranscriptOfLog } from "#/packages/domain/transcripts.ts";
 import { meetingHasTranscript, readTranscriptOfLog, readTurnTextOffsets } from "./lib/transcripts.ts";
 import { openReadConnection } from "./lib/connection.ts";
+import { readLastFetchFailure } from "./lib/last-fetch-failure.ts";
 import { agencyLinkListings, openListingReader, type ListingRead } from "./lib/listing.ts";
 import {
   readAsOf,
@@ -1366,8 +1367,8 @@ export function openIndexReader(path: string, clock: Clock): IndexReader {
     linkAnnotationsOf(document) {
       return inOneSnapshot(() => readLinkAnnotations(database, document));
     },
-    lastFetchFailureOf() {
-      return undefined;
+    lastFetchFailureOf(document) {
+      return readLastFetchFailure(database, document);
     },
     speakerTurnIndexOf(document) {
       return inOneSnapshot(() => readSpeakerTurnIndex(database, document));

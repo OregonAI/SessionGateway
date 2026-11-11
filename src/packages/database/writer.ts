@@ -51,6 +51,7 @@ import {
   storeTranscript,
 } from "./lib/transcripts.ts";
 import { openWriteConnection } from "./lib/connection.ts";
+import { clearFetchFailure, recordFetchFailure } from "./lib/last-fetch-failure.ts";
 import {
   readAsOf,
   readFullPullAsOf,
@@ -1109,6 +1110,8 @@ export function openIndexWriter(path: string): IndexWriter {
         deleteFor("DELETE FROM agenda_revision WHERE document_id = ?");
         deleteFor("DELETE FROM document WHERE id = ?");
       }
+      // The file is held now, so what an earlier attempt failed on is no longer the document's (ticket #168, ADR-0063).
+      clearFetchFailure(database, document.id);
       insertDocument.run(
         document.id,
         document.nodeId,
@@ -1234,8 +1237,8 @@ export function openIndexWriter(path: string): IndexWriter {
     storeLinkAnnotations(document, annotations) {
       storeLinkAnnotations(database, document, annotations);
     },
-    recordFetchFailure() {
-      // Red (ticket #168): step 7 and the record follow.
+    recordFetchFailure(document, failure) {
+      recordFetchFailure(database, document, failure);
     },
     storeSpeakerTurnIndex(record) {
       storeSpeakerTurnIndex(database, record.documentId, record.outcome);
