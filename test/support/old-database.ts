@@ -36,6 +36,26 @@ export function readAgencyLinksWithOnlyTheStamp(databasePath: string, commit: st
 }
 
 /**
+ * Makes a database look as one that an older Statute Link parser read (ticket #183, ADR-0064): every reading is stamped with
+ * parser version 0, and the links of the Version `documentId` are gone, as a parser that did not yet make them left them. The
+ * snapshot commit is as it was. It only arranges, like `forgetListing`.
+ */
+export function readWithAnOlderParser(databasePath: string, documentId: string): void {
+  const database = new DatabaseSync(databasePath, { timeout: 5000 });
+  try {
+    database.exec("UPDATE statute_read SET parser_version = 0");
+    database
+      .prepare(
+        `DELETE FROM statute_link WHERE (content_hash, parsed_as) IN
+           (SELECT content_hash, kind FROM document WHERE id = ?)`,
+      )
+      .run(documentId);
+  } finally {
+    database.close();
+  }
+}
+
+/**
  * Makes a database look as one a worker before ticket #160 left: no Recording Log has its link annotations stored (the file
  * has the table, which step 6 makes, and it is empty). It only arranges, like `forgetListing`.
  */
@@ -94,6 +114,7 @@ export function leaveTurnsUnlinkedFromPassages(databasePath: string): void {
     database.exec("ALTER TABLE speaker_turn_index DROP COLUMN turns_without_passage");
     database.exec("ALTER TABLE speaker_turn_index DROP COLUMN item_measures_read");
     for (const table of tablesGivenCreatedAtByStepFive) database.exec(`ALTER TABLE ${table} DROP COLUMN created_at`);
+    database.exec("ALTER TABLE statute_read DROP COLUMN parser_version");
     for (const log of logs) {
       const hash = createHash("sha256").update(log.text, "utf8").digest("hex");
       const id = run(
@@ -135,6 +156,7 @@ export function leaveAsVersionFour(databasePath: string): void {
   const database = new DatabaseSync(databasePath, { timeout: 5000 });
   try {
     for (const table of tablesGivenCreatedAtByStepFive) database.exec(`ALTER TABLE ${table} DROP COLUMN created_at`);
+    database.exec("ALTER TABLE statute_read DROP COLUMN parser_version");
     database.exec("PRAGMA user_version = 4");
   } finally {
     database.close();

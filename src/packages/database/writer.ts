@@ -104,6 +104,8 @@ export type StatuteParseRecord = {
   amendedVersionHeader: AmendmentHeader | null;
   links: readonly StatuteLink[];
   relatingClauseEdits: readonly RelatingClauseEdit[];
+  /** The version of the parser that made this reading (ADR-0064), stored beside the snapshot commit. */
+  parserVersion: number;
 };
 
 /** The Statutes Affected Table as the worker read it, ready to store: the copy, kept like a document, and its entries. */
@@ -512,10 +514,11 @@ export type IndexWriter = {
   /**
    * The files of the Session's stored Versions and postings of Proposed Amendments that have not been read
    * for Statute Links with this snapshot, each once however many documents share it: a file never read, and every
-   * file read with another commit, because a range is expanded against the snapshot's section list (ADR-0035).
+   * file read with another commit, because a range is expanded against the snapshot's section list (ADR-0035), and every
+   * file read by a parser of another version than `parserVersion` (ADR-0064; a reading from before schema step 8 is version 0).
    * Read from the stored text; nothing is fetched.
    */
-  unreadStatuteFiles(session: SessionKey, snapshot: SnapshotVersion): UnreadStatuteFile[];
+  unreadStatuteFiles(session: SessionKey, snapshot: SnapshotVersion, parserVersion: number): UnreadStatuteFile[];
   /** The stored text of one document, and whether the file had a text layer. */
   storedText(id: DocumentId): { text: string; hasTextLayer: boolean };
   /**
@@ -1521,16 +1524,16 @@ export function openIndexWriter(path: string): IndexWriter {
         }),
       );
     },
-    unreadStatuteFiles(session, snapshot) {
+    unreadStatuteFiles(session, snapshot, parserVersion) {
       const rows = database
         .prepare(
           `SELECT MIN(d.id) AS id, d.kind, d.content_hash FROM document d
            WHERE d.session_key = ? AND d.kind IN ('version', 'proposed_amendment')
              AND NOT EXISTS (SELECT 1 FROM statute_read r WHERE r.content_hash = d.content_hash AND r.parsed_as = d.kind
-                               AND r.snapshot_commit = ?)
+                               AND r.snapshot_commit = ? AND r.parser_version = ?)
            GROUP BY d.content_hash, d.kind ORDER BY MIN(d.id)`,
         )
-        .all(session, snapshot.commit);
+        .all(session, snapshot.commit, parserVersion);
       return rows.map((row) => {
         const unread = unreadFileRow.parse(row);
         return { documentId: unread.id as DocumentId, readAs: unread.kind, contentHash: unread.content_hash };
@@ -1546,8 +1549,9 @@ export function openIndexWriter(path: string): IndexWriter {
       const deleteParse = database.prepare("DELETE FROM statute_parse WHERE content_hash = ? AND parsed_as = ?");
       const deleteLinks = database.prepare("DELETE FROM statute_link WHERE content_hash = ? AND parsed_as = ?");
       const insertRead = database.prepare(
-        `INSERT INTO statute_read (content_hash, parsed_as, snapshot_commit) VALUES (?, ?, ?)
-         ON CONFLICT (content_hash, parsed_as) DO UPDATE SET snapshot_commit = excluded.snapshot_commit`,
+        `INSERT INTO statute_read (content_hash, parsed_as, snapshot_commit, parser_version) VALUES (?, ?, ?, ?)
+         ON CONFLICT (content_hash, parsed_as) DO UPDATE SET snapshot_commit = excluded.snapshot_commit,
+                                                         parser_version = excluded.parser_version`,
       );
       const insertParse = database.prepare(
         `INSERT INTO statute_parse (content_hash, parsed_as, text_read, amended_version_header,
@@ -1567,7 +1571,7 @@ export function openIndexWriter(path: string): IndexWriter {
         unreadAgency.run(record.contentHash, record.readAs);
         deleteParse.run(record.contentHash, record.readAs);
         deleteLinks.run(record.contentHash, record.readAs);
-        insertRead.run(record.contentHash, record.readAs, snapshot.commit);
+        insertRead.run(record.contentHash, record.readAs, snapshot.commit, record.parserVersion);
         insertParse.run(
           record.contentHash,
           record.readAs,

@@ -18,6 +18,7 @@ import type { FullPullRecord, IndexWriter } from "#/packages/database/writer.ts"
 import type { DocumentId, DocumentLink, StoredDocument } from "#/packages/domain/documents.ts";
 import { parseAgencyId, parseOrsChapterId, parseOrsSectionId } from "#/packages/domain/oregonai.ts";
 import type { Snapshot } from "#/packages/oregonai-snapshot/index.ts";
+import { STATUTE_LINK_PARSER_VERSION } from "#/packages/statute-links/index.ts";
 import {
   beginFullPullSnapshotRead,
   beginIncrementSnapshotRead,
@@ -179,6 +180,59 @@ describe("a Full pull with a new Snapshot", () => {
     expect(sectionsAddedToIn345(rig.reader, version)).toContain("ors-345.250");
     expect(linksInChapterOfHeccLink(rig.reader, version)).toBe(23);
     expect(rig.reader.snapshotVersion(session)?.commit).toBe(madeUpCommit);
+  });
+});
+
+// Ticket #183 (ADR-0064): a parser change reaches a stored database. A file is read again when its reading's parser version
+// is not the current one, as when its snapshot commit is not, so a Snapshot that has not changed does not stop a fix landing.
+describe("a Full pull with the Snapshot the Index reports", () => {
+  test("reads again a file read with an older parser version, and its Statute Links change", async () => {
+    const rig = await indexAfterFullPull(committedSnapshot(), introducedVersion());
+    const version = introducedVersion();
+    expect(sectionsAddedToIn345(rig.reader, version.id)).toHaveLength(22);
+    // The reading an older parser left: the same Snapshot, no links, and its parser's version.
+    rig.writer.storeStatuteParse(
+      {
+        contentHash: version.contentHash,
+        readAs: "version",
+        textRead: true,
+        amendedVersionHeader: null,
+        links: [],
+        relatingClauseEdits: [],
+        parserVersion: STATUTE_LINK_PARSER_VERSION - 1,
+      },
+      committedSnapshot().version,
+    );
+    expect(sectionsAddedToIn345(rig.reader, version.id)).toHaveLength(0);
+    const log: string[] = [];
+
+    await runPull({
+      rig,
+      snapshot: committedSnapshot(),
+      pull: "full_pull",
+      fetched: [],
+      through: loggedWriter(rig.writer, log),
+    });
+
+    expect(log).toContain("statute-links of a version");
+    expect(sectionsAddedToIn345(rig.reader, version.id)).toHaveLength(22);
+    // The Agency Links made from the links are read again with them.
+    expect(log).toContain(`agency-links of ${version.id}`);
+  });
+
+  test("does not read again a file read with the current parser version", async () => {
+    const rig = await indexAfterFullPull(committedSnapshot(), introducedVersion(), postedAmendment());
+    const log: string[] = [];
+
+    await runPull({
+      rig,
+      snapshot: committedSnapshot(),
+      pull: "full_pull",
+      fetched: [],
+      through: loggedWriter(rig.writer, log),
+    });
+
+    expect(log).toEqual([`snapshot ${committedCommit}`]);
   });
 });
 

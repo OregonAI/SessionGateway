@@ -3,7 +3,11 @@
 import type { StatuteParseRecord, UnreadStatuteFile } from "#/packages/database/writer.ts";
 import type { OrsSectionId } from "#/packages/domain/oregonai.ts";
 import { unreadStatuteParse } from "#/packages/domain/statute-links.ts";
-import { parseStatuteLinks, readAmendedVersionHeader } from "#/packages/statute-links/index.ts";
+import {
+  parseStatuteLinks,
+  readAmendedVersionHeader,
+  STATUTE_LINK_PARSER_VERSION,
+} from "#/packages/statute-links/index.ts";
 
 /**
  * What reading one stored file for Statute Links comes to (ADR-0015): the links of a Version, or of a
@@ -15,7 +19,11 @@ export function statuteParseOf(
   stored: { text: string; hasTextLayer: boolean },
   orsSections: readonly OrsSectionId[],
 ): StatuteParseRecord {
-  const common = { contentHash: file.contentHash, readAs: file.readAs };
+  const common = {
+    contentHash: file.contentHash,
+    readAs: file.readAs,
+    parserVersion: STATUTE_LINK_PARSER_VERSION,
+  };
   if (!stored.hasTextLayer) {
     return { ...common, ...unreadStatuteParse() };
   }

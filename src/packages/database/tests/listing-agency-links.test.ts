@@ -189,6 +189,7 @@ describe("a Statute Link's node", () => {
         amendedVersionHeader: null,
         links: [{ kind: "amends", target: orsSection, measureSection: "1" }],
         relatingClauseEdits: [],
+        parserVersion: 1,
       },
       snapshot,
     );

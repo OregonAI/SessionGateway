@@ -14,11 +14,12 @@
 //
 // Each case's first pull is a copy of the run's template for the committed snapshot (test/CLAUDE.md, Database,
 // Templates); the pull after the snapshot changes is a real one. It covers the range, the Agency Links derived from
-// it, a pull of the same snapshot and what the overview reports, and a pull that stops part-way.
+// it, a pull of the same snapshot and what the overview reports, and a pull that stops part-way. The last case is ticket
+// #183 (ADR-0064): a file read by an older parser version is read again by a pull of the same snapshot.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { callTool, connectClient, eras, type Era } from "../support/mcp-clients.ts";
 import { createFakeEmbedder } from "../support/fake-embedder.ts";
-import { readAgencyLinksWithOnlyTheStamp } from "../support/old-database.ts";
+import { readAgencyLinksWithOnlyTheStamp, readWithAnOlderParser } from "../support/old-database.ts";
 import { createFixtureCopy, type FixtureCopy } from "../support/made-up-snapshot.ts";
 import { systemTemplate, type System, type SystemTemplate } from "../support/system.ts";
 
@@ -180,5 +181,20 @@ describe.for(eras)("the Statute Links after the snapshot changes, for a %s clien
     const after = await hb3027(system, era);
     expect(addsTo(after)).toContain(madeUpSection);
     expect(linksInChapter(after)).toBe(23);
+  });
+
+  it("reads a file again that an older parser read, though the snapshot has not changed: its links come back (ADR-0064)", async () => {
+    const snapshot = snapshotCopy();
+    const system = await startAt(snapshot.path);
+    expect(addsTo(await hb3027(system, era))).toHaveLength(22);
+
+    // The links an older parser left: none for HB 3027's Introduced Version, stamped with an older parser's version.
+    readWithAnOlderParser(system.database.path, introduced);
+    expect(addsTo(await hb3027(system, era))).toHaveLength(0);
+    await system.pullAgain();
+
+    const after = await hb3027(system, era);
+    expect(addsTo(after)).toHaveLength(22);
+    expect(linksInChapter(after)).toBe(22);
   });
 });
