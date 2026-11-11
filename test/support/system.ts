@@ -68,7 +68,10 @@ export type SystemOptions = {
    * default, as a deployment that does not load the table leaves it.
    */
   statutesAffectedTableUrl?: (olisOrigin: string) => string;
-  /** How long the worker waits for one attempt to fetch a document; a test that makes one hang sets it short. */
+  /**
+   * How long the worker waits for an answer, or for the next byte of one, before an attempt to fetch a document is given up
+   * as stalled (OLIS_DOCUMENT_STALL_MS, ticket #167); a test that makes one hang or stall sets it short.
+   */
   documentTimeoutMs?: number;
   /**
    * The overall cap on one attempt to fetch a document, however its bytes keep coming (OLIS_DOCUMENT_CAP_MS, ticket #167):
@@ -343,6 +346,7 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
     ...(options.ingest?.increments === undefined ? {} : { INGEST_INCREMENTS: options.ingest.increments }),
     ...(options.ingest?.fullPull === undefined ? {} : { INGEST_FULL_PULL: options.ingest.fullPull }),
     ...(options.ingest?.hashSampleSize === undefined ? {} : { INGEST_HASH_SAMPLE_SIZE: options.ingest.hashSampleSize }),
+    ...(options.documentTimeoutMs === undefined ? {} : { OLIS_DOCUMENT_STALL_MS: String(options.documentTimeoutMs) }),
     ...(options.documentCapMs === undefined ? {} : { OLIS_DOCUMENT_CAP_MS: String(options.documentCapMs) }),
     ...(options.statutesAffectedTableUrl === undefined
       ? {}
@@ -358,7 +362,6 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
       options.pauseLikeNode === true
         ? (milliseconds, signal) => nodePause(milliseconds, undefined, { signal })
         : () => Promise.resolve(),
-    ...(options.documentTimeoutMs === undefined ? {} : { documentTimeoutMs: options.documentTimeoutMs }),
     legislatorAliases: readLegislatorAliases(options.legislatorAliasesPath ?? committedAliasFilePath),
     embedder: workerEmbedder,
   });

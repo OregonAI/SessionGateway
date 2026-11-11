@@ -429,7 +429,8 @@ function messageOf(error: unknown): string {
 
 /**
  * Makes one request and reads its body as it comes (ticket #167). The attempt ends on a stall, when no answer or no bytes
- * arrive for `stallMs`, and not on a total time, so a large file that is still moving is not cut off. A shutdown throws.
+ * arrive for `stallMs`, and not on a total time, so a large file that is still moving is not cut off; `capMs` bounds it
+ * whatever comes, so a server that trickles cannot hold the pull. A shutdown throws.
  */
 async function attemptDownload(
   options: OlisClientOptions,
@@ -445,16 +446,20 @@ async function attemptDownload(
       stall.abort();
     }, documents.stallMs);
   };
+  // A server that trickles a byte now and then never stalls; the cap ends the attempt whatever comes.
+  const cap = AbortSignal.timeout(documents.capMs);
   const seconds = `${String(documents.stallMs / 1000)} seconds`;
+  const capSeconds = `${String(documents.capMs / 1000)} seconds`;
   const path = url.pathname;
   rearm();
   try {
     let response: Response;
     try {
-      response = await options.fetch(url, { signal: AbortSignal.any([signal, stall.signal]) });
+      response = await options.fetch(url, { signal: AbortSignal.any([signal, stall.signal, cap]) });
     } catch (error) {
       if (signal.aborted) throw error;
       if (stall.signal.aborted) return { kind: "cut_off", reason: `did not answer ${path} within ${seconds}` };
+      if (cap.aborted) return { kind: "cut_off", reason: `did not answer ${path} within ${capSeconds}` };
       return { kind: "cut_off", reason: `did not answer ${path}: ${messageOf(error)}` };
     }
     if (!response.ok) {
@@ -480,6 +485,9 @@ async function attemptDownload(
       const bytesReceived = received;
       if (stall.signal.aborted) {
         return { kind: "cut_off", reason: `sent no more of ${path} for ${seconds}, ${after}`, bytesReceived };
+      }
+      if (cap.aborted) {
+        return { kind: "cut_off", reason: `did not finish ${path} within ${capSeconds}, ${after}`, bytesReceived };
       }
       return { kind: "cut_off", reason: `broke off ${path} ${after}: ${messageOf(error)}`, bytesReceived };
     }

@@ -53,6 +53,8 @@ export type OlisClientOptions = {
      * attempt ends on this stall, not on a total time (ticket #167).
      */
     stallMs: number;
+    /** The most one attempt to fetch a document may take, its bytes still coming, in milliseconds (ticket #167). */
+    capMs: number;
     /** Waits between attempts. Passed in, so a test does not wait. */
     pause: (milliseconds: number, signal: AbortSignal) => Promise<void>;
   };

@@ -100,8 +100,6 @@ export type IngestDeps = {
   signal: AbortSignal;
   /** Waits between attempts to fetch a document. Created in the entry script, so a test need not wait. */
   pause: (milliseconds: number, signal: AbortSignal) => Promise<void>;
-  /** How long one attempt to fetch a document may go without an answer or a byte (a stall), in milliseconds. 60 seconds by default. */
-  documentTimeoutMs?: number;
   /** The alias file's entries: who the Legislator Codes it lists are, where the Legislators rows do not say. */
   legislatorAliases: readonly LegislatorAlias[];
   /** Counts the tokens that decide where a passage ends. Created in the entry script, like the clock. */
@@ -121,9 +119,6 @@ export type FullPullResult = {
    */
   unresolvedLegislatorCodes: UnresolvedLegislatorCode[];
 };
-
-/** A document that sends nothing for this long is stalled, not slow (olis-odata.md gotcha 15; ticket #167). */
-const DEFAULT_DOCUMENT_TIMEOUT_MS = 60_000;
 
 /** What a pull made of one linked document: its file and text, or why it is left out of the store. */
 type Fetched =
@@ -631,7 +626,7 @@ function feedRecordOf(
 }
 
 /**
- * The OLIS client every run of the worker is made with: the feed, and the documents' origin, timeout and pause. A Full
+ * The OLIS client every run of the worker is made with: the feed, and the documents' origin, stall limit, cap and pause. A Full
  * pull gives `onSetRead` to be told each set's counts, so a set that is short is reported and the pull refused whole; a run
  * that gives none throws on a short read (ADR-0005).
  */
@@ -642,7 +637,8 @@ function createWorkerClient(config: IngestConfig, deps: IngestDeps, onSetRead?: 
     ...(onSetRead === undefined ? {} : { onSetRead }),
     documents: {
       origin: config.olisDocumentOrigin,
-      stallMs: deps.documentTimeoutMs ?? DEFAULT_DOCUMENT_TIMEOUT_MS,
+      stallMs: config.documentStallMs,
+      capMs: config.documentCapMs,
       pause: deps.pause,
     },
   });
