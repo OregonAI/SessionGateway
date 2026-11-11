@@ -194,6 +194,14 @@ Later tickets add packages as their modules arrive (the document store, the Stat
 - `database` gains schema step 6 (`recording_log_link_annotation`); on `writer.ts` `storeLinkAnnotations`, and `recordingLogsWithoutIndex` also lists a log with no stored annotation; on `reader.ts` `linkAnnotationsOf`. The clock's views include the table.
 - `ingest` stores a log's annotations in `lib/speaker-turns.ts` when it reads the log, before the parser derives anything from the links, and gains `readSpeakerTurnIndex({ session, writer, resolver }, link, bytes, text)` and the type `SpeakerTurnContext` on its entry point, so that step is test seam 4: called with a real writer and reader and no pull.
 
+**Extended by tickets #167 and #168, a document's download and its last fetch failure (ADR-0062, ADR-0063).** No package is added.
+- `config` gains `OLIS_DOCUMENT_STALL_MS` (60 seconds) and `OLIS_DOCUMENT_CAP_MS` (10 minutes) for the worker, read as `documentStallMs` and `documentCapMs`; the older single total limit is gone, and so is `IngestDeps.documentTimeoutMs`: `ingest` hands the two limits to the OLIS client's document options (`stallMs`, `capMs`).
+- `olis-client` reads a document's body as it comes (`lib/documents.ts`): an attempt ends on a stall or the cap, and a failed `Download` carries `bytesReceived` of the ending attempt when it was cut off after its answer began.
+- `domain` gains `LastFetchFailure` in `documents.ts`: the cause (`empty_file`, `unreadable_file`, `request_failed`), the worker's reason, and `bytesReceived` for `request_failed`.
+- `database` gains schema step 7 (`last_fetch_failure`, `lib/last-fetch-failure.ts`); on `writer.ts` `recordFetchFailure`, and `storeDocument` and `replaceDocument` clear the row; on `reader.ts` `lastFetchFailureOf`. The clock's views include the table.
+- `ingest` records the failure of each document a pull leaves out, in `index.ts`, and the build report's `request_failed` entries carry `bytes_received`.
+- `mcp-server` reads it in `lib/get-document.ts` to say what the worker's last attempt found of an unheld document's file.
+
 ## Considered Options
 
 - **One package per spec module, all twelve now.** Most would be empty folders, and their interfaces would be guesses before any caller exists.
