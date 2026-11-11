@@ -410,6 +410,82 @@ function isTransientStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
 }
 
+/**
+ * What one attempt got: the file, an answer that is not one (its status), or no file because the answer never came or
+ * stopped. A cut-off's `reason` follows the server's name: "did not answer /liz/... within 60 seconds".
+ */
+type Attempt =
+  { kind: "fetched"; bytes: Uint8Array } | { kind: "answered"; status: number } | { kind: "cut_off"; reason: string };
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Makes one request and reads its body as it comes (ticket #167). The attempt ends on a stall, when no answer or no bytes
+ * arrive for `stallMs`, and not on a total time, so a large file that is still moving is not cut off. A shutdown throws.
+ */
+async function attemptDownload(
+  options: OlisClientOptions,
+  documents: NonNullable<OlisClientOptions["documents"]>,
+  url: URL,
+  signal: AbortSignal,
+): Promise<Attempt> {
+  const stall = new AbortController();
+  let timer: NodeJS.Timeout | undefined;
+  const rearm = (): void => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      stall.abort();
+    }, documents.stallMs);
+  };
+  const seconds = `${String(documents.stallMs / 1000)} seconds`;
+  const path = url.pathname;
+  rearm();
+  try {
+    let response: Response;
+    try {
+      response = await options.fetch(url, { signal: AbortSignal.any([signal, stall.signal]) });
+    } catch (error) {
+      if (signal.aborted) throw error;
+      if (stall.signal.aborted) return { kind: "cut_off", reason: `did not answer ${path} within ${seconds}` };
+      return { kind: "cut_off", reason: `did not answer ${path}: ${messageOf(error)}` };
+    }
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      return { kind: "answered", status: response.status };
+    }
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+    try {
+      // An answer with no body is a file of zero bytes. The stall timer is set again after every piece.
+      if (response.body !== null) {
+        const body: AsyncIterable<Uint8Array> = response.body;
+        rearm();
+        for await (const chunk of body) {
+          chunks.push(chunk);
+          received += chunk.length;
+          rearm();
+        }
+      }
+    } catch (error) {
+      if (signal.aborted) throw error;
+      const after = `after ${String(received)} bytes`;
+      if (stall.signal.aborted) return { kind: "cut_off", reason: `sent no more of ${path} for ${seconds}, ${after}` };
+      return { kind: "cut_off", reason: `broke off ${path} ${after}: ${messageOf(error)}` };
+    }
+    const bytes = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return { kind: "fetched", bytes };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Fetches one file, trying again after a transient failure. `who` names the server in a failure's reason. */
 async function downloadFrom(
   options: OlisClientOptions,
@@ -423,19 +499,22 @@ async function downloadFrom(
   for (let attempt = 0; attempt <= PAUSES_BEFORE_RETRY_MS.length; attempt += 1) {
     const pause = PAUSES_BEFORE_RETRY_MS[attempt - 1];
     if (pause !== undefined) await documents.pause(pause, signal);
-    try {
-      const response = await options.fetch(url, {
-        signal: AbortSignal.any([signal, AbortSignal.timeout(documents.timeoutMs)]),
-      });
-      if (response.ok) return { kind: "fetched", bytes: new Uint8Array(await response.arrayBuffer()) };
-      status = response.status;
-      reason = `${who} answered ${response.status} to ${url.pathname}`;
-      if (!isTransientStatus(response.status)) return { kind: "failed", reason, status };
-    } catch (error) {
-      // A shutdown ends the pull; a request that timed out or broke off is tried again.
-      if (signal.aborted) throw error;
-      status = null;
-      reason = `${who} did not answer ${url.pathname}: ${error instanceof Error ? error.message : String(error)}`;
+    // A shutdown ends the pull (the attempt throws); a request that stalled or broke off is tried again.
+    const outcome = await attemptDownload(options, documents, url, signal);
+    switch (outcome.kind) {
+      case "fetched":
+        return outcome;
+      case "answered":
+        status = outcome.status;
+        reason = `${who} answered ${outcome.status} to ${url.pathname}`;
+        if (!isTransientStatus(outcome.status)) return { kind: "failed", reason, status };
+        break;
+      case "cut_off":
+        status = null;
+        reason = `${who} ${outcome.reason}`;
+        break;
+      default:
+        return outcome satisfies never;
     }
   }
   return { kind: "failed", reason: `${reason} (${PAUSES_BEFORE_RETRY_MS.length + 1} attempts)`, status };

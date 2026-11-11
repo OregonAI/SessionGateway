@@ -100,7 +100,7 @@ export type IngestDeps = {
   signal: AbortSignal;
   /** Waits between attempts to fetch a document. Created in the entry script, so a test need not wait. */
   pause: (milliseconds: number, signal: AbortSignal) => Promise<void>;
-  /** How long one attempt to fetch a document may take, in milliseconds. 60 seconds by default. */
+  /** How long one attempt to fetch a document may go without an answer or a byte (a stall), in milliseconds. 60 seconds by default. */
   documentTimeoutMs?: number;
   /** The alias file's entries: who the Legislator Codes it lists are, where the Legislators rows do not say. */
   legislatorAliases: readonly LegislatorAlias[];
@@ -122,7 +122,7 @@ export type FullPullResult = {
   unresolvedLegislatorCodes: UnresolvedLegislatorCode[];
 };
 
-/** A document that takes longer than this is an outage, not a slow answer (olis-odata.md gotcha 15). */
+/** A document that sends nothing for this long is stalled, not slow (olis-odata.md gotcha 15; ticket #167). */
 const DEFAULT_DOCUMENT_TIMEOUT_MS = 60_000;
 
 /** What a pull made of one linked document: its file and text, or why it is left out of the store. */
@@ -625,7 +625,7 @@ function createWorkerClient(config: IngestConfig, deps: IngestDeps, onSetRead?: 
     ...(onSetRead === undefined ? {} : { onSetRead }),
     documents: {
       origin: config.olisDocumentOrigin,
-      timeoutMs: deps.documentTimeoutMs ?? DEFAULT_DOCUMENT_TIMEOUT_MS,
+      stallMs: deps.documentTimeoutMs ?? DEFAULT_DOCUMENT_TIMEOUT_MS,
       pause: deps.pause,
     },
   });

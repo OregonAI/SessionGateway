@@ -48,8 +48,11 @@ export type OlisClientOptions = {
   documents?: {
     /** The origin the documents are fetched from: OLIS's own, https://olis.oregonlegislature.gov, except in a test. */
     origin: string;
-    /** How long one attempt to fetch a document may take. */
-    timeoutMs: number;
+    /**
+     * How long one attempt to fetch a document may go without an answer or without a byte of its body, in milliseconds: the
+     * attempt ends on this stall, not on a total time (ticket #167).
+     */
+    stallMs: number;
     /** Waits between attempts. Passed in, so a test does not wait. */
     pause: (milliseconds: number, signal: AbortSignal) => Promise<void>;
   };
