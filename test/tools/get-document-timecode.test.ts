@@ -91,3 +91,13 @@ describe("get_document with a timecode, the gate on", () => {
     }
   });
 });
+
+describe("get_document with a timecode it cannot answer", () => {
+  it("refuses a timecode on a document that is not a Recording Log, and says what the document is", async () => {
+    const outcome = await callTool(on, "get_document", { id: "version-2025r1-sb69-introduced", timecode: "00:02:49" });
+
+    expect(outcome.isError).toBe(true);
+    expect(outcome.text).toContain("version-2025r1-sb69-introduced");
+    expect(outcome.text).toContain("is a Version, not a Recording Log");
+  });
+});
