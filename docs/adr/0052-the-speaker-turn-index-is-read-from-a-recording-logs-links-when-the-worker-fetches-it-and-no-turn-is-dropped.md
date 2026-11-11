@@ -1,5 +1,5 @@
 ---
-status: accepted; extends ADR-0009 (the recording-log package's "Extended by ticket #125" section, and amends its rule for Agenda items) and ADR-0048 (the second numbered step), and builds on ADR-0002 (documents are served as published) and ADR-0040 (a replaced file is reported and never stored); amended by ticket #179 (a failed re-fetch names its cause)
+status: accepted; extends ADR-0009 (the recording-log package's "Extended by ticket #125" section, and amends its rule for Agenda items) and ADR-0048 (the second numbered step), and builds on ADR-0002 (documents are served as published) and ADR-0040 (a replaced file is reported and never stored); amended by ticket #179 (a failed re-fetch names its cause); amended by ticket #177, ADR-0060 (a log OLIS filed under two Meetings is indexed only under the one its own header names: a fourth outcome, `log_of_another_meeting`, and a fourth kind of `recording_log_gaps`)
 ---
 
 # The speaker-turn index is read from a Recording Log's links when the worker fetches it, and no turn is dropped
