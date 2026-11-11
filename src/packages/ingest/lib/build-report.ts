@@ -112,6 +112,15 @@ export type TranscriptsReport = {
  */
 export type NotFetchedCause = "empty_file" | "unreadable_file" | "request_failed";
 
+/**
+ * One document a pull did not store, and why. A `request_failed` entry has `bytes_received` when an attempt's file began
+ * to arrive and stopped (a stall, or the overall cap; ticket #167): the most bytes any attempt received. It is absent
+ * when no attempt got any of the file (no answer, or a status that is not a file).
+ */
+export type NotFetchedEntry = { id: DocumentId; source_url: string; reason: string } & (
+  { cause: Exclude<NotFetchedCause, "request_failed"> } | { cause: "request_failed"; bytes_received?: number }
+);
+
 /** What the operator reads after a full pull (spec #1, story 54): the documents that are scans or photographs, whose text is empty, to chase by hand, and the documents this pull could not get. */
 export type BuildReport = {
   session: SessionKey;
@@ -134,7 +143,7 @@ export type BuildReport = {
   }[];
   documents_without_text_layer: { id: DocumentId; source_url: string }[];
   /** Documents the feed links that this pull did not store: the next pull tries them again. */
-  documents_not_fetched: { id: DocumentId; source_url: string; reason: string; cause: NotFetchedCause }[];
+  documents_not_fetched: NotFetchedEntry[];
   /**
    * The Recording Logs the index holds with no speaker-turn index, because the log has no player link with an event ID or
    * its links name more than one (ticket #126), or because it is a copy of another Meeting's log (ticket #177). The log's text
@@ -149,7 +158,7 @@ export type BuildReport = {
   recording_log_refetches: {
     attempted: number;
     /** Each with why, as in `documents_not_fetched` (ticket #179). */
-    failed: { id: DocumentId; source_url: string; reason: string; cause: NotFetchedCause }[];
+    failed: NotFetchedEntry[];
     bytes_changed: {
       id: DocumentId;
       source_url: string;

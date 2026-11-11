@@ -393,10 +393,13 @@ export async function readDocumentLinks(
 
 /**
  * The bytes of one file, or why they could not be had. `status` is the HTTP status of the last answer when the last
- * attempt got one (404 for a file that is not there), and null when it got none.
+ * attempt got one (404 for a file that is not there), and null when it got none. `bytesReceived` is there when an attempt's
+ * answer began and was cut off before the file ended (a stall, or the overall cap): the most bytes any attempt received
+ * (ticket #167). It is absent when no attempt's file began to arrive.
  */
 export type Download =
-  { kind: "fetched"; bytes: Uint8Array } | { kind: "failed"; reason: string; status: number | null };
+  | { kind: "fetched"; bytes: Uint8Array }
+  | { kind: "failed"; reason: string; status: number | null; bytesReceived?: number };
 
 /**
  * OLIS downloads are slow and occasionally time out; every one of the six that did in the research
@@ -415,7 +418,10 @@ function isTransientStatus(status: number): boolean {
  * stopped. A cut-off's `reason` follows the server's name: "did not answer /liz/... within 60 seconds".
  */
 type Attempt =
-  { kind: "fetched"; bytes: Uint8Array } | { kind: "answered"; status: number } | { kind: "cut_off"; reason: string };
+  | { kind: "fetched"; bytes: Uint8Array }
+  | { kind: "answered"; status: number }
+  /** `bytesReceived` is there when the answer began (a status of 200) and its body stopped: how many bytes came. */
+  | { kind: "cut_off"; reason: string; bytesReceived?: number };
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -471,8 +477,11 @@ async function attemptDownload(
     } catch (error) {
       if (signal.aborted) throw error;
       const after = `after ${String(received)} bytes`;
-      if (stall.signal.aborted) return { kind: "cut_off", reason: `sent no more of ${path} for ${seconds}, ${after}` };
-      return { kind: "cut_off", reason: `broke off ${path} ${after}: ${messageOf(error)}` };
+      const bytesReceived = received;
+      if (stall.signal.aborted) {
+        return { kind: "cut_off", reason: `sent no more of ${path} for ${seconds}, ${after}`, bytesReceived };
+      }
+      return { kind: "cut_off", reason: `broke off ${path} ${after}: ${messageOf(error)}`, bytesReceived };
     }
     const bytes = new Uint8Array(received);
     let offset = 0;
@@ -496,6 +505,13 @@ async function downloadFrom(
 ): Promise<Download> {
   let reason = "";
   let status: number | null = null;
+  let bytesReceived: number | undefined;
+  const failed = (): Download => ({
+    kind: "failed",
+    reason,
+    status,
+    ...(bytesReceived === undefined ? {} : { bytesReceived }),
+  });
   for (let attempt = 0; attempt <= PAUSES_BEFORE_RETRY_MS.length; attempt += 1) {
     const pause = PAUSES_BEFORE_RETRY_MS[attempt - 1];
     if (pause !== undefined) await documents.pause(pause, signal);
@@ -507,17 +523,19 @@ async function downloadFrom(
       case "answered":
         status = outcome.status;
         reason = `${who} answered ${outcome.status} to ${url.pathname}`;
-        if (!isTransientStatus(outcome.status)) return { kind: "failed", reason, status };
+        if (!isTransientStatus(outcome.status)) return failed();
         break;
       case "cut_off":
         status = null;
         reason = `${who} ${outcome.reason}`;
+        if (outcome.bytesReceived !== undefined) bytesReceived = Math.max(bytesReceived ?? 0, outcome.bytesReceived);
         break;
       default:
         return outcome satisfies never;
     }
   }
-  return { kind: "failed", reason: `${reason} (${PAUSES_BEFORE_RETRY_MS.length + 1} attempts)`, status };
+  reason = `${reason} (${PAUSES_BEFORE_RETRY_MS.length + 1} attempts)`;
+  return failed();
 }
 
 export async function downloadDocument(

@@ -73,7 +73,7 @@ import {
   buildReportPath,
   writeBuildReport,
   type BuildReport,
-  type NotFetchedCause,
+  type NotFetchedEntry,
   type RecordingLogGap,
   type SetReport,
 } from "./lib/build-report.ts";
@@ -128,7 +128,8 @@ const DEFAULT_DOCUMENT_TIMEOUT_MS = 60_000;
 /** What a pull made of one linked document: its file and text, or why it is left out of the store. */
 type Fetched =
   | { kind: "fetched"; bytes: Uint8Array; pdf: ExtractedPdf }
-  | { kind: "left_out"; reason: string; cause: NotFetchedCause };
+  | { kind: "left_out"; reason: string; cause: "empty_file" | "unreadable_file" }
+  | { kind: "left_out"; reason: string; cause: "request_failed"; bytesReceived?: number };
 
 /**
  * Fetches one document and reads its text. A document OLIS will not give, or a file that is not a PDF or needs a password
@@ -154,10 +155,26 @@ async function fetchAndRead(olis: OlisClient, link: DocumentLink, signal: AbortS
       }
     }
     case "failed":
-      return { kind: "left_out", reason: download.reason, cause: "request_failed" };
+      return {
+        kind: "left_out",
+        reason: download.reason,
+        cause: "request_failed",
+        ...(download.bytesReceived === undefined ? {} : { bytesReceived: download.bytesReceived }),
+      };
     default:
       return download satisfies never;
   }
+}
+
+/** The build report's entry for a document left out: its id, address, reason and cause, and the bytes a cut-off attempt received. */
+function notFetchedEntryOf(link: DocumentLink, left: Extract<Fetched, { kind: "left_out" }>): NotFetchedEntry {
+  const common = { id: link.id, source_url: link.sourceUrl, reason: left.reason };
+  if (left.cause !== "request_failed") return { ...common, cause: left.cause };
+  return {
+    ...common,
+    cause: left.cause,
+    ...(left.bytesReceived === undefined ? {} : { bytes_received: left.bytesReceived }),
+  };
 }
 
 async function readPdf(link: DocumentLink, bytes: Uint8Array): ReturnType<typeof extractPdfText> {
@@ -391,7 +408,7 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
       const again = await fetchAndRead(olis, link, deps.signal);
       if (again.kind === "left_out") {
         // The log has no index and the next pull tries it again: this pull says it did not read it.
-        refetches.failed.push({ id: link.id, source_url: link.sourceUrl, reason: again.reason, cause: again.cause });
+        refetches.failed.push(notFetchedEntryOf(link, again));
         continue;
       }
       const fetchedHash = createHash("sha256").update(again.bytes).digest("hex");
@@ -419,7 +436,7 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
       // A revised agenda that cannot be fetched stays as it was stored (ADR-0041): the index holds it, so it is not
       // a document the index lacks.
       if (!revised.has(link.id)) {
-        notFetched.push({ id: link.id, source_url: link.sourceUrl, reason: fetched.reason, cause: fetched.cause });
+        notFetched.push(notFetchedEntryOf(link, fetched));
       }
       continue;
     }
