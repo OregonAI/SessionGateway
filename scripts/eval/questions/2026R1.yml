@@ -260,6 +260,9 @@ questions:
   # worker's stored feed columns (meeting.committee_code SLB, meeting.at 2026-02-04T13:00:00-08:00, meeting_document row
   # CommitteeMeetingDocuments 313510). The log was created 2026-02-11T10:59:51-08:00 (document_created), so it is asked on
   # 2026-02-12. Player: the whole link, from the stored link annotations of recording-log-2026r1-313510, page 1 (position 26: https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID=2026021041&startStreamAt=708).
+  # Quote (machine transcript; owner's hand-check pending (#136)): "chair taylor vice chair hayden members of the committee my name is josh nasby and i'm with the"
+  # Source: the transcript file 2026021041.transcript.json, segment 80 (707.38-710.98 s), which covers second 708. Read with a script over the JSON, not from a tool
+  # (#83's rule). The gate-on step below runs only with `npm run eval -- --transcripts-published` (ADR-0055).
   - id: h-nasbe-sb1518
     title: When did Josh Nasbe of BOLI speak on SB 1518 at the Senate Committee On Labor and Business on 2026-02-04, and where is the recording?
     clock: "2026-02-12T12:00:00-08:00"
@@ -278,6 +281,14 @@ questions:
           - { path: "speaker_turns.turns[timecode=00:11:48].agenda_item", equals: ["SB 1518 - Public Hearing"] }
           - { path: "speaker_turns.turns[timecode=00:11:48].offset_seconds", equals: [708] }
           - { path: "speaker_turns.turns[timecode=00:11:48].player_link", equals: ["https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID=2026021041&startStreamAt=708"] }
+      # Gate-on only: the words said at the turn's moment, in the turn's transcript, and the machine-transcript notice. A log with a
+      # transcript pages with it (ADR-0055), so the turn's passages are in the part that holds them: `part` is that part (found by asking each part).
+      - tool: get_document
+        requires: transcripts-published
+        arguments: { id: recording-log-2026r1-313510, part: 1 }
+        expect:
+          - { path: "speaker_turns.turns[timecode=00:11:48].transcript[*].text", includesText: "my name is josh nasby" }
+          - { path: notice, includesText: "This result includes a machine transcript of the official recording, not an official record." }
 
   # (h2) A Legislator, on a non-first Agenda item (HB 4024 and HB 4025 Work Sessions come first).
   # Source: the stored text of recording-log-2026r1-314108, page 2, line "00:28:11 Rep. Reschke", under the line "00:04:37
@@ -286,6 +297,9 @@ questions:
   # 2026-01-09T16:56:56-08:00). Meeting: meeting.committee_code HCCP, meeting.at 2026-02-05T13:00:00-08:00, meeting_document
   # row CommitteeMeetingDocuments 314108. The log was created 2026-02-13T10:36:15-08:00, so it is asked on 2026-02-14.
   # Player: the whole link, from the stored link annotations of recording-log-2026r1-314108, page 2 (position 61: https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID=2026021072&startStreamAt=1691).
+  # Quote (machine transcript; owner's hand-check pending (#136)): "Thank you, Mr. Chair."
+  # Source: the transcript file 2026021072.transcript.json, segment 442 (1691.32-1692.36 s); no segment covers second 1691 (segment 441 ends at 1690.82 s), so it is the first segment that starts after it. Read with a script over the JSON, not from a tool
+  # (#83's rule). The gate-on step below runs only with `npm run eval -- --transcripts-published` (ADR-0055).
   - id: h-reschke-hb4098
     title: When did Rep. Reschke speak on HB 4098 at the House Committee On Commerce and Consumer Protection on 2026-02-05, and where is the recording?
     clock: "2026-02-14T12:00:00-08:00"
@@ -305,6 +319,14 @@ questions:
           - { path: "speaker_turns.turns[timecode=00:28:11].agenda_item", equals: ["HB 4098 - Public Hearing"] }
           - { path: "speaker_turns.turns[timecode=00:28:11].offset_seconds", equals: [1691] }
           - { path: "speaker_turns.turns[timecode=00:28:11].player_link", equals: ["https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID=2026021072&startStreamAt=1691"] }
+      # Gate-on only: the words said at the turn's moment, in the turn's transcript, and the machine-transcript notice. A log with a
+      # transcript pages with it (ADR-0055), so the turn's passages are in the part that holds them: `part` is that part (found by asking each part).
+      - tool: get_document
+        requires: transcripts-published
+        arguments: { id: recording-log-2026r1-314108, part: 2 }
+        expect:
+          - { path: "speaker_turns.turns[timecode=00:28:11].transcript[*].text", includesText: "Thank you, Mr. Chair." }
+          - { path: notice, includesText: "This result includes a machine transcript of the official recording, not an official record." }
 
   # (h3) A witness at a hearing with a recess, after it. The meeting is recessed at 00:55:48 and reconvenes at 00:56:10, and the
   # media clock goes on (SB 1507 is the third item on the log's MEASURES/ISSUES list, after
@@ -315,6 +337,9 @@ questions:
   # tests. Meeting: meeting.committee_code SFR, meeting.at 2026-02-04T08:00:00-08:00, meeting_document row
   # CommitteeMeetingDocuments 312657. The log was created 2026-02-06T12:55:17-08:00, so it is asked on 2026-02-07.
   # Player: the whole link, from the stored link annotations of recording-log-2026r1-312657, page 2 (position 102: https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID=2026021015&startStreamAt=3679).
+  # Quote (machine transcript; owner's hand-check pending (#136)): "Chair Brodman, Vice Chair McClain,"
+  # Source: the transcript file 2026021015.transcript.json, segment 737 (3679.92-3682.72 s); no segment covers second 3679 (segment 736 ends at 3673.28 s), so it is the first segment that starts after it. Read with a script over the JSON, not from a tool
+  # (#83's rule). The gate-on step below runs only with `npm run eval -- --transcripts-published` (ADR-0055).
   - id: h-hauser-sb1507
     title: When did Daniel Hauser speak on SB 1507 at the Senate Committee On Finance and Revenue on 2026-02-04, and where is the recording?
     clock: "2026-02-07T12:00:00-08:00"
@@ -333,6 +358,14 @@ questions:
           - { path: "speaker_turns.turns[timecode=01:01:19].agenda_item", equals: ["SB 1507 Public Hearing"] }
           - { path: "speaker_turns.turns[timecode=01:01:19].offset_seconds", equals: [3679] }
           - { path: "speaker_turns.turns[timecode=01:01:19].player_link", equals: ["https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID=2026021015&startStreamAt=3679"] }
+      # Gate-on only: the words said at the turn's moment, in the turn's transcript, and the machine-transcript notice. A log with a
+      # transcript pages with it (ADR-0055), so the turn's passages are in the part that holds them: `part` is that part (found by asking each part).
+      - tool: get_document
+        requires: transcripts-published
+        arguments: { id: recording-log-2026r1-312657, part: 3 }
+        expect:
+          - { path: "speaker_turns.turns[timecode=01:01:19].transcript[*].text", includesText: "Chair Brodman, Vice Chair McClain," }
+          - { path: notice, includesText: "This result includes a machine transcript of the official recording, not an official record." }
 
   # (h4) A Legislator who testifies (the log gives her name and district, and she is also a committee member), on the second
   # Agenda item (HB 4005 comes first). She is not a sponsor: HB 4004's feed sponsor row (sponsor.sponsor_id 155127, a
@@ -343,6 +376,9 @@ questions:
   # 2026-01-09T16:56:56-08:00). Meeting: meeting.committee_code HALNRW, meeting.at 2026-02-02T13:00:00-08:00, meeting_document
   # row CommitteeMeetingDocuments 312218. The log was created 2026-02-04T09:14:14-08:00, so it is asked on 2026-02-05.
   # Player: the whole link, from the stored link annotations of recording-log-2026r1-312218, page 2 (position 49: https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID=2026021029&startStreamAt=1241).
+  # Quote (machine transcript; owner's hand-check pending (#136)): "It's, you look good."
+  # Source: the transcript file 2026021029.transcript.json, segment 257 (1241.46-1242.84 s); no segment covers second 1241 (segment 256 ends at 1240.48 s), so it is the first segment that starts after it. Read with a script over the JSON, not from a tool
+  # (#83's rule). The gate-on step below runs only with `npm run eval -- --transcripts-published` (ADR-0055).
   - id: h-marsh-hb4004
     title: When did Rep. Pam Marsh speak on HB 4004 at the House Committee On Agriculture, Land Use, Natural Resources, and Water on 2026-02-02, and where is the recording?
     clock: "2026-02-05T12:00:00-08:00"
@@ -362,6 +398,14 @@ questions:
           - { path: "speaker_turns.turns[timecode=00:20:41].agenda_item", equals: ["HB 4004 - Public Hearing"] }
           - { path: "speaker_turns.turns[timecode=00:20:41].offset_seconds", equals: [1241] }
           - { path: "speaker_turns.turns[timecode=00:20:41].player_link", equals: ["https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID=2026021029&startStreamAt=1241"] }
+      # Gate-on only: the words said at the turn's moment, in the turn's transcript, and the machine-transcript notice. A log with a
+      # transcript pages with it (ADR-0055), so the turn's passages are in the part that holds them: `part` is that part (found by asking each part).
+      - tool: get_document
+        requires: transcripts-published
+        arguments: { id: recording-log-2026r1-312218, part: 1 }
+        expect:
+          - { path: "speaker_turns.turns[timecode=00:20:41].transcript[*].text", includesText: "you look good" }
+          - { path: notice, includesText: "This result includes a machine transcript of the official recording, not an official record." }
 
   # (h5) A witness who speaks where the log returns to an Agenda item: the log's lines read "00:19:21 HB 4004 - Public
   # Hearing", then "00:52:52 HB 4034 - Public Hearing" with one turn, then "00:53:12 HB 4004 - Public Hearing" again, so the
@@ -370,6 +414,9 @@ questions:
   # Source: the stored text of recording-log-2026r1-312218, page 2, lines "00:53:12 HB 4004 - Public Hearing" and "00:53:39
   # Kimberley Priestley, Senior Policy Analyst, WaterWatch of Oregon". 00:53:39 is 3219 seconds. Meeting: as h4. Asked on
   # 2026-02-05, the day after the log was created. Player: the whole link, from the stored link annotations of recording-log-2026r1-312218, page 2 (position 78: https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID=2026021029&startStreamAt=3219).
+  # Quote (machine transcript; owner's hand-check pending (#136)): "Good afternoon."
+  # Source: the transcript file 2026021029.transcript.json, segment 568 (3219.42-3220.32 s); no segment covers second 3219 (segment 567 ends at 3218.66 s), so it is the first segment that starts after it. Read with a script over the JSON, not from a tool
+  # (#83's rule). The gate-on step below runs only with `npm run eval -- --transcripts-published` (ADR-0055).
   - id: h-priestley-hb4004
     title: When did Kimberley Priestley speak on HB 4004 at the House Committee On Agriculture, Land Use, Natural Resources, and Water on 2026-02-02, and where is the recording?
     clock: "2026-02-05T12:00:00-08:00"
@@ -388,3 +435,11 @@ questions:
           - { path: "speaker_turns.turns[timecode=00:53:39].agenda_item", equals: ["HB 4004 - Public Hearing"] }
           - { path: "speaker_turns.turns[timecode=00:53:39].offset_seconds", equals: [3219] }
           - { path: "speaker_turns.turns[timecode=00:53:39].player_link", equals: ["https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID=2026021029&startStreamAt=3219"] }
+      # Gate-on only: the words said at the turn's moment, in the turn's transcript, and the machine-transcript notice. A log with a
+      # transcript pages with it (ADR-0055), so the turn's passages are in the part that holds them: `part` is that part (found by asking each part).
+      - tool: get_document
+        requires: transcripts-published
+        arguments: { id: recording-log-2026r1-312218, part: 3 }
+        expect:
+          - { path: "speaker_turns.turns[timecode=00:53:39].transcript[*].text", includesText: "Good afternoon." }
+          - { path: notice, includesText: "This result includes a machine transcript of the official recording, not an official record." }
