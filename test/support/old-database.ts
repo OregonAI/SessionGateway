@@ -94,6 +94,7 @@ export function leaveTurnsUnlinkedFromPassages(databasePath: string): void {
     database.exec("ALTER TABLE speaker_turn_index DROP COLUMN turns_without_passage");
     database.exec("ALTER TABLE speaker_turn_index DROP COLUMN item_measures_read");
     for (const table of tablesGivenCreatedAtByStepFive) database.exec(`ALTER TABLE ${table} DROP COLUMN created_at`);
+    database.exec("ALTER TABLE statute_read DROP COLUMN parser_version");
     for (const log of logs) {
       const hash = createHash("sha256").update(log.text, "utf8").digest("hex");
       const id = run(
@@ -135,6 +136,7 @@ export function leaveAsVersionFour(databasePath: string): void {
   const database = new DatabaseSync(databasePath, { timeout: 5000 });
   try {
     for (const table of tablesGivenCreatedAtByStepFive) database.exec(`ALTER TABLE ${table} DROP COLUMN created_at`);
+    database.exec("ALTER TABLE statute_read DROP COLUMN parser_version");
     database.exec("PRAGMA user_version = 4");
   } finally {
     database.close();

@@ -24,6 +24,7 @@ import type { DocumentLink, TestimonyDetails } from "#/packages/domain/documents
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { Download } from "#/packages/olis-client/index.ts";
 import type { Snapshot } from "#/packages/oregonai-snapshot/index.ts";
+import { STATUTE_LINK_PARSER_VERSION } from "#/packages/statute-links/index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 import { agencyReadOf } from "./lib/agency-links.ts";
 import { statuteParseOf } from "./lib/statute-parse.ts";
@@ -153,9 +154,10 @@ async function readIndexWithSnapshot(
 ): Promise<StatutesAffectedTableReport | undefined> {
   // The Statute Links of every stored Version and posting not yet read with this Snapshot, from the text the store
   // holds. Postings that share a file are read once (ADR-0015). A Snapshot that has changed since a file was read
-  // makes it unread, because its ranges are expanded against the Snapshot's section list (ADR-0035). This comes
+  // makes it unread, because its ranges are expanded against the Snapshot's section list (ADR-0035), and so does a
+  // parser of another version than the one that read it (ADR-0064). This comes
   // before the Agency Links, which are made from these links.
-  for (const file of writer.unreadStatuteFiles(session, snapshot.version)) {
+  for (const file of writer.unreadStatuteFiles(session, snapshot.version, STATUTE_LINK_PARSER_VERSION)) {
     writer.storeStatuteParse(
       statuteParseOf(file, writer.storedText(file.documentId), snapshot.orsSections),
       snapshot.version,
