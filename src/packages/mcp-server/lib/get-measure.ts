@@ -355,7 +355,7 @@ function liveStatusOf(
         source: "cache",
         lookup_failed: true,
         as_of: top.asOf,
-        notice: `The live lookup of OLIS failed: ${live.reason}. The location, history and votes come from the cache, as of ${top.asOf}, the index's as-of time, and may be out of date; they are the top level's, so this block repeats none of them and marks each unchanged. The cache holds no schedule, so schedule is null.`,
+        notice: `The live lookup of OLIS failed: ${live.reason}. The location, history and votes come from the cache, as of ${top.asOf}, the index's as-of time; changes the Legislature has made since then are not in them. They are the top level's, so this block repeats none of them and marks each unchanged. The cache holds no schedule, so schedule is null.`,
         location: { status: "unchanged" },
         history: { status: "unchanged" },
         schedule: null,
