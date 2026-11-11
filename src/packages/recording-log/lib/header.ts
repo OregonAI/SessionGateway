@@ -19,6 +19,8 @@ export type RecordingLogHeader = {
   time: string;
   /** The time on a 24-hour clock, "13:00". */
   startsAt: string;
+  /** The date line's day as an ISO date, "2026-02-03". */
+  date: string;
 };
 
 /** The Meeting a log is filed under, as the store holds it: its committee's code and name, and when it starts. */
@@ -30,8 +32,21 @@ export type HeaderMeeting = {
 };
 
 const CHAMBER_LINE = /^(?:HOUSE|SENATE|JOINT)\b/;
-const DATE_LINE =
-  /^(?:January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4}\b/;
+const MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+const DATE_LINE = new RegExp(`^(${MONTHS.join("|")}) (\\d{1,2}), (\\d{4})\\b`);
 const TIME_LINE = /^(\d{1,2}):(\d{2})\s*([AP])\.?M\.?$/i;
 
 /** The header of a log's text, or null when its first page has no committee, date and time lines in that order. Pure. */
@@ -42,7 +57,8 @@ export function headerOf(text: string): RecordingLogHeader | null {
   const committee: string[] = [];
   for (let index = first; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
-    if (DATE_LINE.test(line)) {
+    const day = DATE_LINE.exec(line);
+    if (day !== null) {
       const time = lines[index + 1] ?? "";
       const read = TIME_LINE.exec(time);
       if (read === null || committee.length === 0) return null;
@@ -51,6 +67,7 @@ export function headerOf(text: string): RecordingLogHeader | null {
         committee: committee.join(" "),
         time,
         startsAt: `${String(hours).padStart(2, "0")}:${read[2] ?? ""}`,
+        date: `${day[3] ?? ""}-${String(MONTHS.indexOf(day[1] ?? "") + 1).padStart(2, "0")}-${String(Number(day[2])).padStart(2, "0")}`,
       };
     }
     if (line === "" || COMPLIANCE_LINE.test(line)) return null;
@@ -72,7 +89,7 @@ function normalized(text: string): string {
 /**
  * Whether a header names the Meeting: its first word is the chamber the committee's code begins with ("HBH" is a House
  * committee, "SECBH" a Senate one, "JWMGG" a joint one), its committee lines end with "ON " and the committee's name, and its
- * time is the Meeting's start. Pure.
+ * date and time are the Meeting's start. Pure.
  */
 export function headerNamesMeeting(header: RecordingLogHeader, meeting: HeaderMeeting): boolean {
   const chamber = CHAMBER_OF_CODE[meeting.committeeCode.charAt(0)];
@@ -81,6 +98,7 @@ export function headerNamesMeeting(header: RecordingLogHeader, meeting: HeaderMe
     chamber !== undefined &&
     committee.startsWith(`${chamber} `) &&
     committee.endsWith(` ON ${normalized(meeting.committeeName)}`) &&
+    meeting.at.slice(0, 10) === header.date &&
     meeting.at.slice(11, 16) === header.startsAt
   );
 }
