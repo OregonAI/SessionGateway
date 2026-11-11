@@ -78,7 +78,7 @@ export const speakerTurnsOutput = z
             .array(transcriptPassageOutput)
             .optional()
             .describe(
-              "Present only while the machine transcripts are published, this log has one, and the turn is listed in this part of the text: the words of the machine transcript that fall in this turn and come in this part, in order. The transcript is paged with the text: a turn's words are in the part its lines are in, and a turn with more words than fit continues in the parts after it. Empty when no words fall in the turn.",
+              "Present only while the machine transcripts are published, this log has one, and the turn is listed in this part of the text: the words of the machine transcript that fall in this turn and come in this part, in order. The transcript is paged with the text: a turn's words are in the part its lines are in, and a turn with more words than fit continues in the parts after it. get_document with this turn's timecode returns the part that holds its line and its first words. Empty when no words fall in the turn.",
             ),
         }),
       )
