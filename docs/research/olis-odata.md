@@ -471,6 +471,8 @@ What this says: on 2026-11-03 and again on 2026-11-07, OLIS did not serve a read
 
 The decision this led to, on how `get_document` answers a Testimony whose file is not held (wording only, no schema step; the cause per document is ticket #168), is ADR-0059.
 
+**Correction, 2026-11-10 (ticket #176).** One of the 58 was not OLIS's. `version-2026r1-hb4116-minority-report-2-to-a-engrossed` is linked as `.../MeasureDocument/HB4116/Minority Report #2 to A-Engrossed`, with a bare `#`. The worker parsed that link as a URL, so the `#` began a fragment and the request went to `.../MeasureDocument/HB4116/Minority%20Report%20`, another resource; its "Invalid PDF structure" was that resource's answer, and the `source_url` cited was wrong too. This is **local measurement**: reproduced with the worker's own `sourceUrlOf` and `downloadUrlOf`, no request made to OLIS. The worker now encodes the `#` as `%23` (and a `?` as `%3F`). So OLIS's own empty or broken files in runs 2 and 4 are 57: the 56 empty Testimony files and `testimony-2026r1-238733`. Whether OLIS serves HB 4116's Minority Report #2 at the `%23` path is **not known**; the next full pull settles it. The table above is left as it was written.
+
 ## Open questions
 
 1. **AUA acceptance.** How do you "electronically accept" the AUA when the service has no sign-up or credentials? Does caching and **public mirroring** of the feed data and the linked OLIS PDFs need any further permission? The AUA has no license or redistribution clause. Contact: Leg.Helpdesk@oregonlegislature.gov, listed on the data page.
