@@ -4,7 +4,11 @@ import type { SessionKey } from "#/packages/domain/index.ts";
 import type { OrsSectionId } from "#/packages/domain/oregonai.ts";
 import type { Download } from "#/packages/olis-client/index.ts";
 import { extractPdfText } from "#/packages/pdf-text/index.ts";
-import { parseStatutesAffectedTable, type StatutesAffectedTableParse } from "#/packages/statute-links/index.ts";
+import {
+  parseStatutesAffectedTable,
+  STATUTES_AFFECTED_TABLE_PARSER_VERSION,
+  type StatutesAffectedTableParse,
+} from "#/packages/statute-links/index.ts";
 import { tallyLoneEEntries } from "#/packages/statute-links/table.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 
@@ -78,7 +82,10 @@ type ReadArguments = {
 export async function readStatutesAffectedTable(read: ReadArguments): Promise<StatutesAffectedTableReport> {
   const heldTable = read.writer.heldStatutesAffectedTable(read.session);
   const held = heldTable !== undefined;
-  const readWithThisSnapshot = heldTable?.snapshotCommit === read.snapshotCommit;
+  // Read with this snapshot and by the current table parser (ADR-0044, ADR-0065). The name keeps the branches below as they were.
+  const readWithThisSnapshot =
+    heldTable?.snapshotCommit === read.snapshotCommit &&
+    heldTable.parserVersion === STATUTES_AFFECTED_TABLE_PARSER_VERSION;
   const report = { source_url: read.url };
   // The series follow the snapshot: the held bytes are read again from the stored text with the new section list, and
   // the copy (its bytes, hash, address and retrieval time) stays as it was (ADR-0044).
@@ -87,6 +94,7 @@ export async function readStatutesAffectedTable(read: ReadArguments): Promise<St
     read.writer.rereadStatutesAffectedTable(read.session, {
       entries: parsed.entries,
       snapshotCommit: read.snapshotCommit,
+      parserVersion: STATUTES_AFFECTED_TABLE_PARSER_VERSION,
     });
     return parsed;
   };
@@ -134,6 +142,7 @@ export async function readStatutesAffectedTable(read: ReadArguments): Promise<St
     text: extraction.pdf.text,
     entries: parsed.entries,
     snapshotCommit: read.snapshotCommit,
+    parserVersion: STATUTES_AFFECTED_TABLE_PARSER_VERSION,
   });
   return { ...report, outcome: "loaded", held: true, ...countsOf(read, parsed) };
 }

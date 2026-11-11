@@ -121,6 +121,8 @@ export type StatutesAffectedTableRecord = {
   entries: readonly StatutesAffectedEntry[];
   /** The commit of the snapshot whose ORS section list the table's series were expanded against (ADR-0044). */
   snapshotCommit: string;
+  /** The version of the table parser that made the entries (ADR-0065), stored beside the snapshot commit. */
+  parserVersion: number;
 };
 
 /** The Statutes Affected Table the index holds, as the next pull compares it with what it fetches and its snapshot. */
@@ -132,6 +134,8 @@ export type HeldStatutesAffectedTable = {
    * (ADR-0044).
    */
   snapshotCommit: string | undefined;
+  /** The version of the table parser that made the entries (ADR-0065); 0 for a reading from before schema step 9, or none. */
+  parserVersion: number;
   /** The copy's extracted text, which a new snapshot reads again when the table cannot be fetched (ADR-0044). */
   text: string;
 };
@@ -545,7 +549,7 @@ export type IndexWriter = {
    */
   rereadStatutesAffectedTable(
     session: SessionKey,
-    reading: { entries: readonly StatutesAffectedEntry[]; snapshotCommit: string },
+    reading: { entries: readonly StatutesAffectedEntry[]; snapshotCommit: string; parserVersion: number },
   ): void;
   /** The bytes the worker last refused as no table, by their sha256, and why; undefined if it refused none since it last stored a table. */
   refusedStatutesAffectedTable(session: SessionKey): { contentHash: string; reason: string } | undefined;
@@ -579,7 +583,12 @@ const unreadFileRow = z.object({
   content_hash: z.string(),
 });
 const storedTextRow = z.object({ text: z.string(), has_text_layer: z.number() });
-const heldTableRow = z.object({ content_hash: z.string(), text: z.string(), snapshot_commit: z.string().nullable() });
+const heldTableRow = z.object({
+  content_hash: z.string(),
+  text: z.string(),
+  snapshot_commit: z.string().nullable(),
+  parser_version: z.number().nullable(),
+});
 const measureIdRow = z.object({ measure_id: z.string() });
 const refusalRow = z.object({ content_hash: z.string(), reason: z.string() });
 const unreadAgencyRow = z.object({ id: z.string(), kind: z.enum(["version", "proposed_amendment", "analysis"]) });
@@ -634,7 +643,7 @@ export function openIndexWriter(path: string): IndexWriter {
    */
   function replaceTableEntries(
     session: SessionKey,
-    reading: { entries: readonly StatutesAffectedEntry[]; snapshotCommit: string },
+    reading: { entries: readonly StatutesAffectedEntry[]; snapshotCommit: string; parserVersion: number },
   ): void {
     const insertEntry = database.prepare(
       `INSERT INTO statutes_affected_entry (session_key, ordinal, prefix, number, level, action, target_type,
@@ -659,10 +668,11 @@ export function openIndexWriter(path: string): IndexWriter {
     });
     database
       .prepare(
-        `INSERT INTO statutes_affected_read (session_key, snapshot_commit) VALUES (?, ?)
-         ON CONFLICT (session_key) DO UPDATE SET snapshot_commit = excluded.snapshot_commit`,
+        `INSERT INTO statutes_affected_read (session_key, snapshot_commit, parser_version) VALUES (?, ?, ?)
+         ON CONFLICT (session_key) DO UPDATE SET snapshot_commit = excluded.snapshot_commit,
+                                                 parser_version = excluded.parser_version`,
       )
-      .run(session, reading.snapshotCommit);
+      .run(session, reading.snapshotCommit, reading.parserVersion);
   }
   /** The upserts a full pull and an increment share; a full pull also lists what it read and replaces the Versions' listing. */
   function recordRows(
@@ -1601,13 +1611,18 @@ export function openIndexWriter(path: string): IndexWriter {
     heldStatutesAffectedTable(session) {
       const row = database
         .prepare(
-          `SELECT t.content_hash, t.text, r.snapshot_commit FROM statutes_affected_table t
+          `SELECT t.content_hash, t.text, r.snapshot_commit, r.parser_version FROM statutes_affected_table t
            LEFT JOIN statutes_affected_read r ON r.session_key = t.session_key WHERE t.session_key = ?`,
         )
         .get(session);
       if (row === undefined) return undefined;
       const held = heldTableRow.parse(row);
-      return { contentHash: held.content_hash, snapshotCommit: held.snapshot_commit ?? undefined, text: held.text };
+      return {
+        contentHash: held.content_hash,
+        snapshotCommit: held.snapshot_commit ?? undefined,
+        parserVersion: held.parser_version ?? 0,
+        text: held.text,
+      };
     },
     measuresListingVersion(session, description) {
       const rows = database

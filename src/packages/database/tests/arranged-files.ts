@@ -66,10 +66,13 @@ export function leaveAsBeforeVersions(path: string): void {
      ${dropCreatedTimeColumns}
      ${dropLinkAnnotationTable}
      ${dropLastFetchFailureTable}
-     ${dropParserVersionColumn}
+     ${dropParserVersionColumn} ${dropTableParserVersionColumn}
      PRAGMA user_version = 0`,
   );
 }
+
+/** What step 9 (ticket #184) adds: the version of the table parser that read the held table, a column of `statutes_affected_read`. */
+const dropTableParserVersionColumn = `ALTER TABLE statutes_affected_read DROP COLUMN parser_version;`;
 
 /** What step 8 (ticket #183) adds: the version of the parser that read each file, a column of `statute_read`. */
 const dropParserVersionColumn = `ALTER TABLE statute_read DROP COLUMN parser_version;`;
@@ -95,7 +98,7 @@ const dropTranscriptTables = `DROP TABLE transcript_passage_fts; DROP TABLE tran
 export function leaveAsVersionThree(path: string): void {
   withSql(
     path,
-    `${dropTranscriptTables} ${dropCreatedTimeColumns} ${dropLinkAnnotationTable} ${dropLastFetchFailureTable} ${dropParserVersionColumn} PRAGMA user_version = 3`,
+    `${dropTranscriptTables} ${dropCreatedTimeColumns} ${dropLinkAnnotationTable} ${dropLastFetchFailureTable} ${dropParserVersionColumn} ${dropTableParserVersionColumn} PRAGMA user_version = 3`,
   );
 }
 
@@ -106,7 +109,7 @@ export function leaveAsVersionThree(path: string): void {
 export function leaveAsVersionFour(path: string): void {
   withSql(
     path,
-    `${dropCreatedTimeColumns} ${dropLinkAnnotationTable} ${dropLastFetchFailureTable} ${dropParserVersionColumn} PRAGMA user_version = 4`,
+    `${dropCreatedTimeColumns} ${dropLinkAnnotationTable} ${dropLastFetchFailureTable} ${dropParserVersionColumn} ${dropTableParserVersionColumn} PRAGMA user_version = 4`,
   );
 }
 
@@ -117,7 +120,7 @@ export function leaveAsVersionFour(path: string): void {
 export function leaveAsVersionFive(path: string): void {
   withSql(
     path,
-    `${dropLinkAnnotationTable} ${dropLastFetchFailureTable} ${dropParserVersionColumn} PRAGMA user_version = 5`,
+    `${dropLinkAnnotationTable} ${dropLastFetchFailureTable} ${dropParserVersionColumn} ${dropTableParserVersionColumn} PRAGMA user_version = 5`,
   );
 }
 
@@ -126,7 +129,10 @@ export function leaveAsVersionFive(path: string): void {
  * and it is stamped 6. The next worker to open it runs step 7, which makes the table, empty. Close the writer first.
  */
 export function leaveAsVersionSix(path: string): void {
-  withSql(path, `${dropLastFetchFailureTable} ${dropParserVersionColumn} PRAGMA user_version = 6`);
+  withSql(
+    path,
+    `${dropLastFetchFailureTable} ${dropParserVersionColumn} ${dropTableParserVersionColumn} PRAGMA user_version = 6`,
+  );
 }
 
 /**
@@ -135,7 +141,16 @@ export function leaveAsVersionSix(path: string): void {
  * Close the writer first.
  */
 export function leaveAsVersionSeven(path: string): void {
-  withSql(path, `${dropParserVersionColumn} PRAGMA user_version = 7`);
+  withSql(path, `${dropParserVersionColumn} ${dropTableParserVersionColumn} PRAGMA user_version = 7`);
+}
+
+/**
+ * Makes a file look as a release left it after step 8 and before step 9 (ticket #184): `statutes_affected_read` has no
+ * parser-version column and the file is stamped 8. The next worker to open it runs step 9, which adds the column, 0 on the
+ * row it holds. Close the writer first.
+ */
+export function leaveAsVersionEight(path: string): void {
+  withSql(path, `${dropTableParserVersionColumn} PRAGMA user_version = 8`);
 }
 
 /** Arranges a stored speaker-turn index whose `turn_count` is not the number of its turn rows, so a test can tell which one is read. */

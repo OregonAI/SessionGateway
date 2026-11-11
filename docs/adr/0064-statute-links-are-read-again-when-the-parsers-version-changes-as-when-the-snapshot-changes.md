@@ -1,5 +1,5 @@
 ---
-status: accepted (owner decision of 2026-11-11, ticket #183: schema step 8 approved); amends the last Consequence of ADR-0035; extends ADR-0048 (the eighth numbered step)
+status: accepted (owner decision of 2026-11-11, ticket #183: schema step 8 approved); amends the last Consequence of ADR-0035; extends ADR-0048 (the eighth numbered step); ADR-0065 resolves its last Consequence (the Statutes Affected Table)
 ---
 
 # Statute Links are read again when the parser's version changes, as when the snapshot changes
@@ -24,4 +24,4 @@ ADR-0035 reads a stored file's Statute Links again when the OregonAI snapshot's 
 - The first pull after any bump reads every stored Version and posting again from its stored text, without fetching, and so clears their Agency Links' reading, which the same pull makes again. This costs one parse of every stored file, as a snapshot change does (ADR-0035).
 - Schema step 8 moves the image's version to 8. The box's schema gate (platform-deploy#45, ADR-0048) holds the merged image until a v8 database is swapped in; the server refuses a v7 file until the worker has opened it.
 - A parser change that forgets to bump the constant does not reach a stored database, as before this ADR.
-- The Statutes Affected Table's reading (`statutes_affected_read`, ADR-0044) is keyed by the snapshot's commit alone and has the same flaw for `parseStatutesAffectedTable`. It is not changed here (ticketed as #184).
+- The Statutes Affected Table's reading (`statutes_affected_read`, ADR-0044) was keyed by the snapshot's commit alone and had the same flaw for `parseStatutesAffectedTable`. ADR-0065 (#184) resolves it with a parser version of its own, in schema step 9.

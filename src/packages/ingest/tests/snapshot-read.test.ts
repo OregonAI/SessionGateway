@@ -18,7 +18,7 @@ import type { FullPullRecord, IndexWriter } from "#/packages/database/writer.ts"
 import type { DocumentId, DocumentLink, StoredDocument } from "#/packages/domain/documents.ts";
 import { parseAgencyId, parseOrsChapterId, parseOrsSectionId } from "#/packages/domain/oregonai.ts";
 import type { Snapshot } from "#/packages/oregonai-snapshot/index.ts";
-import { STATUTE_LINK_PARSER_VERSION } from "#/packages/statute-links/index.ts";
+import { STATUTE_LINK_PARSER_VERSION, STATUTES_AFFECTED_TABLE_PARSER_VERSION } from "#/packages/statute-links/index.ts";
 import {
   beginFullPullSnapshotRead,
   beginIncrementSnapshotRead,
@@ -233,6 +233,99 @@ describe("a Full pull with the Snapshot the Index reports", () => {
     });
 
     expect(log).toEqual([`snapshot ${committedCommit}`]);
+  });
+});
+
+// Ticket #184 (ADR-0065): the held table has a parser version of its own, beside its snapshot commit, apart from the Statute
+// Links' (ADR-0064). The held copy is read again when its version is not the current one, as when its commit is not.
+const tableUnavailable = () => tableNotFetched(503, "MADE UP: the server answered 503 three times");
+
+describe("the Statutes Affected Table's parser version", () => {
+  test("a table read with an older table parser is read again from the held copy, though the Snapshot has not changed", async () => {
+    const rig = await indexHoldingTable({
+      parserVersion: STATUTES_AFFECTED_TABLE_PARSER_VERSION - 1,
+      entriesLeftOut: true,
+    });
+    const log: string[] = [];
+
+    const read = await runPull({
+      rig,
+      snapshot: committedSnapshot(),
+      pull: "full_pull",
+      fetched: [],
+      table: tableUnavailable(),
+      through: loggedWriter(rig.writer, log),
+    });
+
+    expect(read).toMatchObject({ statutesAffectedTable: { outcome: "read_again_from_held_copy", entries: 22 } });
+    expect(log).toContain("table entries");
+    expect(heldTableOf(rig.reader)).toMatchObject({ entries: 22 });
+  });
+
+  test("a table read with the current table parser is not read again", async () => {
+    const rig = await indexHoldingTable();
+    const log: string[] = [];
+
+    const read = await runPull({
+      rig,
+      snapshot: committedSnapshot(),
+      pull: "full_pull",
+      fetched: [],
+      table: tableUnavailable(),
+      through: loggedWriter(rig.writer, log),
+    });
+
+    expect(read).toMatchObject({ statutesAffectedTable: { outcome: "not_fetched" } });
+    expect(log).toEqual([`snapshot ${committedCommit}`]);
+  });
+
+  test("a Statute Link parser bump reads the Statute Links again and not the table", async () => {
+    const rig = await indexHoldingTable();
+    const version = introducedVersion();
+    await runPull({ rig, snapshot: committedSnapshot(), pull: "full_pull", fetched: [version] });
+    rig.writer.storeStatuteParse(
+      {
+        contentHash: version.contentHash,
+        readAs: "version",
+        textRead: true,
+        amendedVersionHeader: null,
+        links: [],
+        relatingClauseEdits: [],
+        parserVersion: STATUTE_LINK_PARSER_VERSION - 1,
+      },
+      committedSnapshot().version,
+    );
+    const log: string[] = [];
+
+    await runPull({
+      rig,
+      snapshot: committedSnapshot(),
+      pull: "full_pull",
+      fetched: [],
+      table: tableUnavailable(),
+      through: loggedWriter(rig.writer, log),
+    });
+
+    expect(log).toContain("statute-links of a version");
+    expect(log).not.toContain("table entries");
+  });
+
+  test("a table parser bump reads the table again and not the Statute Links", async () => {
+    const rig = await indexHoldingTable({ parserVersion: STATUTES_AFFECTED_TABLE_PARSER_VERSION - 1 });
+    await runPull({ rig, snapshot: committedSnapshot(), pull: "full_pull", fetched: [introducedVersion()] });
+    const log: string[] = [];
+
+    await runPull({
+      rig,
+      snapshot: committedSnapshot(),
+      pull: "full_pull",
+      fetched: [],
+      table: tableUnavailable(),
+      through: loggedWriter(rig.writer, log),
+    });
+
+    expect(log).toContain("table entries");
+    expect(log.filter((entry) => entry.startsWith("statute-links"))).toEqual([]);
   });
 });
 
@@ -470,11 +563,15 @@ function heldTableOf(reader: IndexReader): { entries: number; sourceUrl: string;
 }
 
 /** An Index that holds the made-up table, read with the committed Snapshot: its series gives 22 entries. */
-async function indexHoldingTable(): Promise<IndexRig> {
+async function indexHoldingTable(reading: Parameters<typeof storeHeldTable>[2] = {}): Promise<IndexRig> {
   const rig = newIndex();
   await runPull({ rig, snapshot: committedSnapshot(), pull: "full_pull", fetched: [] });
-  storeHeldTable(rig.writer, committedSnapshot());
-  expect(heldTableOf(rig.reader)).toEqual({ entries: 22, sourceUrl: tableUrl, retrievedAt: heldTableRetrievedAt });
+  storeHeldTable(rig.writer, committedSnapshot(), reading);
+  expect(heldTableOf(rig.reader)).toEqual({
+    entries: reading.entriesLeftOut === true ? 0 : 22,
+    sourceUrl: tableUrl,
+    retrievedAt: heldTableRetrievedAt,
+  });
   return rig;
 }
 

@@ -43,6 +43,20 @@ export function parseStatuteLinks(input: ParseStatuteLinksInput): StatuteLinkPar
   return readDocument(input.documentKind, input.text, input.orsSections);
 }
 
+/**
+ * The version of the Statutes Affected Table parser's reading (ADR-0065), apart from `STATUTE_LINK_PARSER_VERSION` so that a
+ * change to one parser does not read the other's results again. The worker records it with the held table and reads the held
+ * table again when its bytes, its snapshot commit or this version differ. BUMP IT BY HAND in any change that would change what
+ * the table reading stores for the same bytes: a change to `parseStatutesAffectedTable` (`lib/statutes-affected-table.ts`),
+ * and also one to a file it imports: `lib/ranges.ts`; in `domain/oregonai.ts`, `compareOrsChapterIds`,
+ * `compareOrsSectionIds`, `orsChapterCitationSource`, `orsChapterIdOf`, `orsChapterOf`, `orsSectionCitationSource` and
+ * `orsSectionIdOf`; and in `domain/statute-links.ts`, `chapterTarget`, `sectionTarget` and `tableActions`. Also the
+ * worker's storing of the entries (`replaceTableEntries` in `database/writer.ts`). Without the bump a stored database keeps the
+ * old entries. A change that leaves every stored result as it was needs none. A reading made before schema step 9 counts as
+ * version 0, so this starts at 1.
+ */
+export const STATUTES_AFFECTED_TABLE_PARSER_VERSION = 1;
+
 export type ParseStatutesAffectedTableInput = {
   /**
    * The table's extracted text: as the pdf-text package extracts it with PDF.js, which is the text the store holds, or as

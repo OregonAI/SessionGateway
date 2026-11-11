@@ -1,5 +1,5 @@
 ---
-status: accepted; supersedes ADR-0034's "read again only when its bytes change" and the Consequence that a new snapshot reads the table again only after the copy is deleted or the file changes (the rest of ADR-0034 stands); extends ADR-0035 to the table
+status: accepted; supersedes ADR-0034's "read again only when its bytes change" and the Consequence that a new snapshot reads the table again only after the copy is deleted or the file changes (the rest of ADR-0034 stands); extends ADR-0035 to the table; ADR-0065 adds the table parser's version to what reads the held table again (bytes, snapshot commit or parser version)
 ---
 
 # The held Statutes Affected Table is read again when the snapshot changes, from the held copy when it cannot be fetched

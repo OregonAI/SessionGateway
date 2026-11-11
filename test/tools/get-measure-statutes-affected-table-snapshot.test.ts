@@ -21,6 +21,7 @@
 // HB 3027's Introduced Version cites none of them, so every entry is listed in `only_in_table`, which cuts a list at a
 // count and says how many it left out.
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readTableWithAnOlderParser } from "../support/old-database.ts";
 import { createFixtureCopy, type FixtureCopy } from "../support/made-up-snapshot.ts";
 import { callTool, connectClient, eras, type ConnectedClient } from "../support/mcp-clients.ts";
 import { madeUpTable, publishedTableUrl, tablePath, tableUrlOn } from "../support/statutes-affected-table.ts";
@@ -145,6 +146,21 @@ describe("the Statutes Affected Table after the snapshot changes", () => {
 
     expect(rig.report()).toEqual({ source_url: tableUrlOn(rig.system.olis.origin), outcome: "unchanged", held: true });
     expect(await rig.seen()).toMatchObject({ count: 23, retrievedAt: secondPullPacific });
+  });
+
+  // Ticket #184 (ADR-0065): a table read by an older table parser is read again by a pull of the same snapshot and the same
+  // bytes, as a file read by an older Statute Link parser is (ADR-0064).
+  it("reads the table again that an older table parser read, though the snapshot and the bytes are the same: its entries come back", async () => {
+    const rig = await openRig();
+
+    // The entries an older parser left: none, stamped with an older parser's version. The snapshot commit is as it was.
+    readTableWithAnOlderParser(rig.system.database.path);
+    expect(await rig.seen()).toMatchObject({ count: 0 });
+    rig.system.clock.set(thirdPull);
+    await rig.system.pullAgain();
+
+    expect(rig.report()).toMatchObject({ outcome: "loaded", held: true, entries: 22 });
+    expect(await rig.seen()).toMatchObject({ count: 22, retrievedAt: secondPullPacific });
   });
 
   describe.for([
