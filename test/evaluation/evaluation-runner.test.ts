@@ -603,7 +603,9 @@ describe("the command", () => {
 describe("the evaluation with the transcripts published (ticket #136)", () => {
   const withTranscript = {
     ...augustOptions,
-    transcripts: { [`${halnrwEventId}.transcript.json`]: madeUpTranscript({ eventId: halnrwEventId, segments: halnrwSegments }) },
+    transcripts: {
+      [`${halnrwEventId}.transcript.json`]: madeUpTranscript({ eventId: halnrwEventId, segments: halnrwSegments }),
+    },
   };
   const NOTICE = "This result includes a machine transcript of the official recording, not an official record.";
   const setWith = (words: string): string => `

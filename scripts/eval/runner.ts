@@ -239,7 +239,15 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
   const results: QuestionResult[] = [];
   try {
     for (const question of set.questions) {
-      results.push(await runQuestion(question, new Date(question.clock ?? asOf), connection, options.since, options.transcriptsPublished === true));
+      results.push(
+        await runQuestion(
+          question,
+          new Date(question.clock ?? asOf),
+          connection,
+          options.since,
+          options.transcriptsPublished === true,
+        ),
+      );
     }
   } finally {
     shutdown.abort();
@@ -305,7 +313,9 @@ export function formatReport(report: EvaluationReport): string {
     report.since === undefined
       ? `The database is as of ${report.asOf}. Each question is asked at its own moment, and "since yesterday" is the day before it.`
       : `The database is as of ${report.asOf}. "Since yesterday" is ${report.since} for every question that asks for it.`,
-    ...(report.transcriptsPublished ? ["Machine transcripts are published (the gate is on): the steps that require it ran."] : []),
+    ...(report.transcriptsPublished
+      ? ["Machine transcripts are published (the gate is on): the steps that require it ran."]
+      : []),
     "",
   ];
   for (const result of report.results) {

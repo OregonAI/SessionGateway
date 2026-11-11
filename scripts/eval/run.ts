@@ -19,7 +19,8 @@ import { loadOnnxEmbedder } from "#/packages/embedder/onnx.ts";
 import { modelDirectory } from "../model/files.ts";
 import { formatReport, runEvaluation } from "./runner.ts";
 
-const usage = "usage: node scripts/eval/run.ts --database <path> [--session <key>] [--since <iso>] [--transcripts-published]";
+const usage =
+  "usage: node scripts/eval/run.ts --database <path> [--session <key>] [--since <iso>] [--transcripts-published]";
 
 try {
   const { values } = parseArgs({
