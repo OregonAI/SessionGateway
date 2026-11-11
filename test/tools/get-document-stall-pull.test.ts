@@ -1,6 +1,6 @@
 // Seam 1: a document whose bytes keep coming is fetched however long it takes, and one whose bytes stop is given up on
 // (ticket #167). 32 2026R1 documents got no file within three attempts of a 60-second total limit at every full pull
-// (docs/research/olis-odata.md, section 9); the owner decided on 2026-11-11 that a document's download ends on a stall (no
+// (docs/research/olis-odata.md, section 9); the owner decided on 2026-11-10 that a document's download ends on a stall (no
 // bytes for the stall limit) and not on a total time, under a generous overall cap. Each case builds its own system, because
 // the pull and the fake's pacing are the subject. Every row and file is MADE UP and labelled so; no real document is sent
 // slowly. The limits are small (a second or less) so a case takes a few seconds of real time: the worker's timers are real.
@@ -103,6 +103,32 @@ describe("a file whose bytes stop (ticket #167)", () => {
     expect(system.olis.documentRequests().filter((path) => path === testimonyDownloadPath(stalledId))).toHaveLength(3);
     expect((await getDocument(system, `testimony-2025r1-${String(stalledId)}`)).isError).toBe(true);
     expect((await getDocument(system, `testimony-2025r1-${String(slowId)}`)).isError).toBe(false);
+  });
+});
+
+describe("a report entry names the attempt that ended the download (ticket #167)", () => {
+  const mixedId = 900123;
+  const mixedUrl = `https://olis.oregonlegislature.gov${testimonyDownloadPath(mixedId)}`;
+  const mixedFile = madeUpPdf([["MADE UP: testimony whose first attempt stalls and whose later one is refused"]]);
+
+  it.each([
+    ["a 404 after a stall", [{ stallAfter: 100 }, 404]],
+    ["a 503 at the last attempt after two stalls", [{ stallAfter: 100 }, { stallAfter: 100 }, 503]],
+  ])("carries no bytes_received of an earlier attempt: %s", async (_name, failures) => {
+    const system = await start({
+      clockAt,
+      documentTimeoutMs: 300,
+      olis: {
+        madeUpRows: { CommitteePublicTestimonies: [madeUpTestimonyRow({ commTestId: mixedId })] },
+        madeUpDocuments: { [testimonyDownloadPath(mixedId)]: mixedFile },
+        documentFailures: { [mixedUrl]: failures },
+      },
+    });
+
+    const entry = notFetched(system).find((found) => found.id === `testimony-2025r1-${String(mixedId)}`);
+    expect(entry).toMatchObject({ source_url: mixedUrl, cause: "request_failed" });
+    expect(entry?.reason).toMatch(/answered (404|503)/);
+    expect(entry).not.toHaveProperty("bytes_received");
   });
 });
 
