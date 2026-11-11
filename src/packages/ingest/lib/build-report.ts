@@ -125,7 +125,8 @@ export type BuildReport = {
    */
   recording_log_refetches: {
     attempted: number;
-    failed: { id: DocumentId; source_url: string; reason: string }[];
+    /** Each with why, as in `documents_not_fetched` (ticket #179). */
+    failed: { id: DocumentId; source_url: string; reason: string; cause: NotFetchedCause }[];
     bytes_changed: {
       id: DocumentId;
       source_url: string;

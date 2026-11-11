@@ -369,7 +369,7 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
       const again = await fetchAndRead(olis, link, deps.signal);
       if (again.kind === "left_out") {
         // The log has no index and the next pull tries it again: this pull says it did not read it.
-        refetches.failed.push({ id: link.id, source_url: link.sourceUrl, reason: again.reason });
+        refetches.failed.push({ id: link.id, source_url: link.sourceUrl, reason: again.reason, cause: again.cause });
         continue;
       }
       const fetchedHash = createHash("sha256").update(again.bytes).digest("hex");

@@ -322,7 +322,12 @@ describe("fetching a stored Recording Log again to read its links", () => {
       expect(report["recording_log_refetches"]).toEqual({
         attempted: 34,
         failed: [
-          { id: "recording-log-2025r1-288741", source_url: log288741, reason: expect.stringMatching(/404/) as unknown },
+          {
+            id: "recording-log-2025r1-288741",
+            source_url: log288741,
+            reason: expect.stringMatching(/404/) as unknown,
+            cause: "request_failed",
+          },
         ],
         bytes_changed: [],
       });
