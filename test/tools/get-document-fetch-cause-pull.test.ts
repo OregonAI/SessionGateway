@@ -102,9 +102,12 @@ describe("an unheld Testimony, by what the worker last saw of its file (ticket #
 
     expect(outcome.isError).toBe(true);
     expect(outcome.text).toContain(
-      `Testimony "${testimonyId(brokenId)}" is listed in the 2025R1 Session. This index does not hold its file: the file OLIS serves for it is not a readable PDF (${reason}).`,
+      `Testimony "${testimonyId(brokenId)}" is listed in the 2025R1 Session. This index does not hold its file: the file OLIS serves for it is not a readable PDF. The worker's reason: "${reason}"`,
     );
     expect(reason).toContain("The file is not a PDF the extractor can read");
+    // No parenthesis inside a parenthesis, and no capital letter run on mid-sentence.
+    expect(outcome.text).not.toMatch(/\([^)]*\(/);
+    expect(outcome.text).not.toMatch(/ \(The /);
   });
 
   it("whose requests time out, is given the general answer: the request got no file, so nothing is known of the file", async () => {
@@ -167,7 +170,7 @@ describe("a listed Version with no file, by what the worker last saw of its file
     [
       "served as no PDF",
       notAPdf,
-      "the file OLIS serves for it is not a readable PDF (The file is not a PDF the extractor",
+      "the file OLIS serves for it is not a readable PDF. The worker's reason: \"The file is not a PDF the extractor",
     ],
   ] as const)("%s, is answered as a listed row with what is known of its file", async ([, bytes, said]) => {
     const system = await start({
