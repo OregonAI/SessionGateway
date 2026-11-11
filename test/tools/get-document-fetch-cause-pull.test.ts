@@ -4,7 +4,8 @@
 // Each case builds its own system, because the pull and the files the fake serves are the subject; the cases that pull twice
 // change the fake between the pulls. Every row and file is MADE UP and labelled so; no real 2026R1 document is reproduced
 // (the real cases are docs/research/olis-odata.md, section 9). The fixture's own documents are off, as in the #116 cases of
-// get-document-pull.test.ts, so a request for any other document is answered 404.
+// get-document-pull.test.ts, so a request for any other document is answered 404, except in the case whose second pull stores a
+// file OLIS serves from then on (the fake's `serveDocument` serves only with the documents on).
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { madeUpPdf } from "../support/made-up-pdf.ts";
 import { callTool, connectClient } from "../support/mcp-clients.ts";
@@ -129,7 +130,8 @@ describe("an unheld Testimony, by what the worker last saw of its file (ticket #
   });
 
   it("that OLIS later serves a readable file for is stored at the next pull and served, with no word of the old failure", async () => {
-    const system = await start(arranged());
+    // With the fixture's documents on, so that `serveDocument` replaces the made-up empty file at the second pull.
+    const system = await start({ ...arranged(), documents: true });
     expect((await getDocument(system, testimonyId(emptyId))).text).toContain("the file OLIS serves for it is empty");
 
     // MADE UP: the file OLIS serves for the row from then on.

@@ -242,9 +242,10 @@ export type IndexReader = {
   linkAnnotationsOf(document: DocumentId): StoredLinkAnnotation[];
   /**
    * What the worker saw at its latest attempt to fetch a document the index holds no file of (ticket #168, ADR-0063): undefined
-   * when it has recorded none (no attempt yet, a file it stored, or a database from before step 7 that no pull has tried since).
+   * when it has recorded none (no attempt yet, a file it stored, or a database from before step 7 that no pull has tried since), and
+   * for a Proposed Amendment's own id, which names no file of its own (its postings do).
    */
-  lastFetchFailureOf(document: DocumentId): LastFetchFailure | undefined;
+  lastFetchFailureOf(document: DocumentId | AmendmentId): LastFetchFailure | undefined;
   /**
    * The Recording Log's machine transcript (ticket #134, ADR-0055): the passages of each of its turns, in the order of
    * `speakerTurnIndexOf`'s turns, and the passages of the log that are no turn's; or undefined when the log has none. The

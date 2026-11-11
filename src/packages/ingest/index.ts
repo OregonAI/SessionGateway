@@ -37,6 +37,7 @@ import type {
   CommitteeMember,
   Convening,
   DocumentLink,
+  LastFetchFailure,
   Meeting,
   PulledEntitySet,
   SessionDates,
@@ -159,6 +160,16 @@ async function fetchAndRead(olis: OlisClient, link: DocumentLink, signal: AbortS
     default:
       return download satisfies never;
   }
+}
+
+/** What the store keeps of a document left out (ticket #168, ADR-0063): the cause, its reason, and the bytes a cut-off attempt received. */
+function lastFetchFailureOf(left: Extract<Fetched, { kind: "left_out" }>): LastFetchFailure {
+  if (left.cause !== "request_failed") return { cause: left.cause, reason: left.reason };
+  return {
+    cause: left.cause,
+    reason: left.reason,
+    ...(left.bytesReceived === undefined ? {} : { bytesReceived: left.bytesReceived }),
+  };
 }
 
 /** The build report's entry for a document left out: its id, address, reason and cause, and the bytes a cut-off attempt received. */
@@ -429,9 +440,11 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
     const fetched = await fetchAndRead(olis, link, deps.signal);
     if (fetched.kind === "left_out") {
       // A revised agenda that cannot be fetched stays as it was stored (ADR-0041): the index holds it, so it is not
-      // a document the index lacks.
+      // a document the index lacks. Any other is, and what this attempt saw replaces what the last one did (ticket #168,
+      // ADR-0063), so get_document can say it; storing the file clears it.
       if (!revised.has(link.id)) {
         notFetched.push(notFetchedEntryOf(link, fetched));
+        writer.recordFetchFailure(link.id, lastFetchFailureOf(fetched));
       }
       continue;
     }

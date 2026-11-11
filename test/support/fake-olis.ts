@@ -143,8 +143,8 @@ export type FakeOlis = {
    */
   documentRequests(): readonly string[];
   /**
-   * From now on, serves these bytes at this path (`/AutoPubs/artables2025R1.pdf`) in place of the fixture's file, or
-   * where the fixture has none: a made-up document that a test builds. Served only when `documents` is on.
+   * From now on, serves these bytes at this path (`/AutoPubs/artables2025R1.pdf`) in place of the fixture's file or a
+   * `madeUpDocuments` file, or where neither is: a made-up document that a test builds. Served only when `documents` is on.
    */
   serveDocument(path: string, bytes: Uint8Array): void;
   /**
@@ -442,13 +442,18 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
     return [...rows, ...(options.strayRows?.[entitySet] ?? [])];
   }
 
-  /** The bytes the path serves: a made-up document's, or, with `documents` on, a served or fixture file's. */
+  /**
+   * The bytes the path serves: with `documents` on, what `serveDocument` serves there from then on, over everything else (a
+   * made-up file OLIS replaces, ticket #168); else a made-up document's; else, with `documents` on, the fixture's file.
+   */
   function bytesAt(path: string): Uint8Array | undefined {
+    const served = servesDocuments ? servedBytes.get(path) : undefined;
+    if (served !== undefined) return served;
     const madeUp = madeUpDocuments.get(path);
     if (madeUp !== undefined) return madeUp;
     if (!servesDocuments) return undefined;
     const file = documentPaths.get(path);
-    return servedBytes.get(path) ?? (file === undefined ? undefined : readFileSync(file));
+    return file === undefined ? undefined : readFileSync(file);
   }
 
   /** A document, as OLIS serves one: the bytes of a PDF at the path of its `source_url`. */
