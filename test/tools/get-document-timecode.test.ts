@@ -139,3 +139,24 @@ describe("get_document with a timecode it cannot answer", () => {
     expect(outcome.text).toContain("Give part or timecode, not both");
   });
 });
+
+describe("get_document with a timecode that is not a time of day", () => {
+  it.for(["00:19:74", "00:00:99", "00:60:00", "01:20:60"])(
+    "refuses %s: minutes and seconds are below 60, and a timecode is not converted into another",
+    async (timecode) => {
+      // 00:19:74 would read as 00:20:14, the second of a real turn ("00:20:14 Robert Greenway, resident, Dallas"), and 00:60:00 as
+      // 01:00:00: neither is a timecode a log can have written.
+      const outcome = await callTool(on, "get_document", { id: LOG, timecode });
+
+      expect(outcome.isError).toBe(true);
+      expect(outcome.text).toContain("timecode");
+      expect(outcome.structured?.["part"]).toBeUndefined();
+    },
+  );
+
+  it("still takes a timecode with the hour written with one digit", async () => {
+    const outcome = await callTool(on, "get_document", { id: LOG, timecode: "0:20:14" });
+
+    expect(outcome.isError).toBe(false);
+  });
+});
