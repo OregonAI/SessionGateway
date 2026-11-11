@@ -36,6 +36,12 @@ export type EvaluationOptions = {
   questions?: string;
   /** The folder of question sets named for their Sessions, instead of scripts/eval/questions/. */
   questionsFolder?: string;
+  /**
+   * The server's publication gate for machine transcripts (TRANSCRIPTS_PUBLISHED, ADR-0055, ticket #136). Off unless given.
+   * A step that says `requires: transcripts-published` runs only with it on; with it off the step is not run and the
+   * report counts it.
+   */
+  transcriptsPublished?: boolean;
   /** Embeds the questions that `search` is asked; the 2025R1 set asks none. */
   embedder: Embedder;
   /** The directory of the embedding model, which the server's configuration names. */
@@ -50,6 +56,8 @@ export type QuestionResult = {
   /** What "since yesterday" meant to it; undefined when the question does not say `$since`. */
   since?: string;
   passed: boolean;
+  /** How many of its steps were not run because they require the transcripts to be published and the gate is off. */
+  skippedSteps: number;
   /** Why it failed, one line for each check or call that did not hold; empty when it passed. */
   reasons: string[];
 };
@@ -61,6 +69,8 @@ export type EvaluationReport = {
   asOf: string;
   /** The `since` the run was given, which overrides each question's own "since yesterday"; undefined when none was. */
   since?: string;
+  /** Whether the run had the server's transcript gate on. */
+  transcriptsPublished: boolean;
   results: QuestionResult[];
   /** True when every question passed. */
   passed: boolean;
@@ -201,6 +211,7 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
       MODEL_PATH: options.modelPath,
       // The clock stands still, so the window never ends: the limit must not be reached by the questions.
       MCP_RATE_LIMIT: "1000000",
+      TRANSCRIPTS_PUBLISHED: options.transcriptsPublished === true ? "true" : "false",
     });
   const shutdown = new AbortController();
   const connections = new Map<number, Connection>();
@@ -228,7 +239,7 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
   const results: QuestionResult[] = [];
   try {
     for (const question of set.questions) {
-      results.push(await runQuestion(question, new Date(question.clock ?? asOf), connection, options.since));
+      results.push(await runQuestion(question, new Date(question.clock ?? asOf), connection, options.since, options.transcriptsPublished === true));
     }
   } finally {
     shutdown.abort();
@@ -248,6 +259,7 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
     databasePath: options.databasePath,
     asOf,
     ...(options.since === undefined ? {} : { since: options.since }),
+    transcriptsPublished: options.transcriptsPublished === true,
     results,
     passed: results.every((result) => result.passed),
   };
@@ -258,12 +270,20 @@ async function runQuestion(
   moment: Date,
   connection: (moment: Date) => Promise<Client>,
   given: string | undefined,
+  transcriptsPublished: boolean,
 ): Promise<QuestionResult> {
   const reasons: string[] = [];
+  let skippedSteps = 0;
   const since = questionAsksSince(question) ? (given ?? dayBefore(moment)) : undefined;
   try {
     const client = await connection(moment);
-    for (const step of question.steps) reasons.push(...(await runStep(client, step, since ?? "")));
+    for (const step of question.steps) {
+      if (step.requires === "transcripts-published" && !transcriptsPublished) {
+        skippedSteps += 1;
+        continue;
+      }
+      reasons.push(...(await runStep(client, step, since ?? "")));
+    }
   } catch (error) {
     reasons.push(`the question could not be asked: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -273,6 +293,7 @@ async function runQuestion(
     moment: pacificTimestampOf(Temporal.Instant.fromEpochMilliseconds(moment.getTime())),
     ...(since === undefined ? {} : { since }),
     passed: reasons.length === 0,
+    skippedSteps,
     reasons,
   };
 }
@@ -284,12 +305,19 @@ export function formatReport(report: EvaluationReport): string {
     report.since === undefined
       ? `The database is as of ${report.asOf}. Each question is asked at its own moment, and "since yesterday" is the day before it.`
       : `The database is as of ${report.asOf}. "Since yesterday" is ${report.since} for every question that asks for it.`,
+    ...(report.transcriptsPublished ? ["Machine transcripts are published (the gate is on): the steps that require it ran."] : []),
     "",
   ];
   for (const result of report.results) {
     const asked = result.since === undefined ? "" : `  [asked ${result.moment}, since ${result.since}]`;
     lines.push(`${result.passed ? "PASS" : "FAIL"} ${result.id}  ${result.title}${asked}`);
     for (const reason of result.reasons) lines.push(`       - ${reason}`);
+    if (result.skippedSteps > 0) {
+      const many = result.skippedSteps === 1;
+      lines.push(
+        `       (${String(result.skippedSteps)} step${many ? "" : "s"} that needs the transcripts published ${many ? "was" : "were"} not run: the gate is off)`,
+      );
+    }
   }
   const passed = report.results.filter((result) => result.passed).length;
   lines.push("", `${passed} of ${report.results.length} questions passed`);
