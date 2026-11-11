@@ -118,4 +118,11 @@ describe("get_document with a timecode it cannot answer", () => {
     expect(after.isError).toBe(true);
     expect(after.text).toContain("after the last turn, 01:21:19");
   });
+
+  it("refuses part and timecode together: the two ask for different parts, and neither is taken over the other", async () => {
+    const outcome = await callTool(on, "get_document", { id: LOG, part: 1, timecode: "01:21:19" });
+
+    expect(outcome.isError).toBe(true);
+    expect(outcome.text).toContain("Give part or timecode, not both");
+  });
 });
