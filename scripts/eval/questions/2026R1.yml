@@ -287,12 +287,13 @@ questions:
           - { path: "speaker_turns.turns[timecode=00:11:48].offset_seconds", equals: [708] }
           - { path: "speaker_turns.turns[timecode=00:11:48].player_link", equals: ["https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID=2026021041&startStreamAt=708"] }
       # Gate-on only: the words said at the turn's moment, in the turn's transcript, and the machine-transcript notice. A log
-      # with a transcript pages with it (ADR-0055), so the turn's passages are in the part that holds them: `part` 1 is the part whose
-      # own text holds the stored log's line "00:11:48 Josh Nasbe" (document.text holds it once, checked by SQL, read-only), and the
-      # first check says so, so the part rests on the stored text and not on a tool's output.
+      # with a transcript pages with it (ADR-0055), so the turn's passages may be in a later part: the call gives the turn's
+      # `timecode` and get_document answers with the part that holds the turn (ADR-0061, ticket #174), with no part pinned. The
+      # first check is that the part's own text holds the stored log's line "00:11:48 Josh Nasbe" (document.text holds it once,
+      # checked by SQL, read-only), so the part rests on the stored text and not on a tool's output.
       - tool: get_document
         requires: transcripts-published
-        arguments: { id: recording-log-2026r1-313510, part: 1 }
+        arguments: { id: recording-log-2026r1-313510, timecode: "00:11:48" }
         expect:
           - { path: text, includesText: ["00:11:48 Josh Nasbe"] }
           - { path: "speaker_turns.turns[timecode=00:11:48].transcript[*].text", includesText: "my name is josh nasby" }
@@ -328,12 +329,13 @@ questions:
           - { path: "speaker_turns.turns[timecode=00:28:11].offset_seconds", equals: [1691] }
           - { path: "speaker_turns.turns[timecode=00:28:11].player_link", equals: ["https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID=2026021072&startStreamAt=1691"] }
       # Gate-on only: the words said at the turn's moment, in the turn's transcript, and the machine-transcript notice. A log
-      # with a transcript pages with it (ADR-0055), so the turn's passages are in the part that holds them: `part` 2 is the part whose
-      # own text holds the stored log's line "00:28:11 Rep. Reschke" (document.text holds it once, checked by SQL, read-only), and the
-      # first check says so, so the part rests on the stored text and not on a tool's output.
+      # with a transcript pages with it (ADR-0055), so the turn's passages may be in a later part: the call gives the turn's
+      # `timecode` and get_document answers with the part that holds the turn (ADR-0061, ticket #174), with no part pinned. The
+      # first check is that the part's own text holds the stored log's line "00:28:11 Rep. Reschke" (document.text holds it once,
+      # checked by SQL, read-only), so the part rests on the stored text and not on a tool's output.
       - tool: get_document
         requires: transcripts-published
-        arguments: { id: recording-log-2026r1-314108, part: 2 }
+        arguments: { id: recording-log-2026r1-314108, timecode: "00:28:11" }
         expect:
           - { path: text, includesText: ["00:28:11 Rep. Reschke"] }
           - { path: "speaker_turns.turns[timecode=00:28:11].transcript[*].text", includesText: "this question is for Mr. Kenton" }
@@ -370,12 +372,13 @@ questions:
           - { path: "speaker_turns.turns[timecode=01:01:19].offset_seconds", equals: [3679] }
           - { path: "speaker_turns.turns[timecode=01:01:19].player_link", equals: ["https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID=2026021015&startStreamAt=3679"] }
       # Gate-on only: the words said at the turn's moment, in the turn's transcript, and the machine-transcript notice. A log
-      # with a transcript pages with it (ADR-0055), so the turn's passages are in the part that holds them: `part` 3 is the part whose
-      # own text holds the stored log's line "01:01:19 Daniel Hauser" (document.text holds it once, checked by SQL, read-only), and the
-      # first check says so, so the part rests on the stored text and not on a tool's output.
+      # with a transcript pages with it (ADR-0055), so the turn's passages may be in a later part: the call gives the turn's
+      # `timecode` and get_document answers with the part that holds the turn (ADR-0061, ticket #174), with no part pinned. The
+      # first check is that the part's own text holds the stored log's line "01:01:19 Daniel Hauser" (document.text holds it once,
+      # checked by SQL, read-only), so the part rests on the stored text and not on a tool's output.
       - tool: get_document
         requires: transcripts-published
-        arguments: { id: recording-log-2026r1-312657, part: 3 }
+        arguments: { id: recording-log-2026r1-312657, timecode: "01:01:19" }
         expect:
           - { path: text, includesText: ["01:01:19 Daniel Hauser"] }
           - { path: "speaker_turns.turns[timecode=01:01:19].transcript[*].text", includesText: "Chair Brodman, Vice Chair McClain," }
@@ -413,12 +416,13 @@ questions:
           - { path: "speaker_turns.turns[timecode=00:20:41].offset_seconds", equals: [1241] }
           - { path: "speaker_turns.turns[timecode=00:20:41].player_link", equals: ["https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID=2026021029&startStreamAt=1241"] }
       # Gate-on only: the words said at the turn's moment, in the turn's transcript, and the machine-transcript notice. A log
-      # with a transcript pages with it (ADR-0055), so the turn's passages are in the part that holds them: `part` 1 is the part whose
-      # own text holds the stored log's line "00:20:41 Rep. Pam Marsh" (document.text holds it once, checked by SQL, read-only), and the
-      # first check says so, so the part rests on the stored text and not on a tool's output.
+      # with a transcript pages with it (ADR-0055), so the turn's passages may be in a later part: the call gives the turn's
+      # `timecode` and get_document answers with the part that holds the turn (ADR-0061, ticket #174), with no part pinned. The
+      # first check is that the part's own text holds the stored log's line "00:20:41 Rep. Pam Marsh" (document.text holds it once,
+      # checked by SQL, read-only), so the part rests on the stored text and not on a tool's output.
       - tool: get_document
         requires: transcripts-published
-        arguments: { id: recording-log-2026r1-312218, part: 1 }
+        arguments: { id: recording-log-2026r1-312218, timecode: "00:20:41" }
         expect:
           - { path: text, includesText: ["00:20:41 Rep. Pam Marsh"] }
           - { path: "speaker_turns.turns[timecode=00:20:41].transcript[*].text", includesText: "I'm Pam Marsh" }
@@ -453,12 +457,13 @@ questions:
           - { path: "speaker_turns.turns[timecode=00:53:39].offset_seconds", equals: [3219] }
           - { path: "speaker_turns.turns[timecode=00:53:39].player_link", equals: ["https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486&eventID=2026021029&startStreamAt=3219"] }
       # Gate-on only: the words said at the turn's moment, in the turn's transcript, and the machine-transcript notice. A log
-      # with a transcript pages with it (ADR-0055), so the turn's passages are in the part that holds them: `part` 3 is the part whose
-      # own text holds the stored log's line "00:53:39 Kimberley Priestley" (document.text holds it once, checked by SQL, read-only), and the
-      # first check says so, so the part rests on the stored text and not on a tool's output.
+      # with a transcript pages with it (ADR-0055), so the turn's passages may be in a later part: the call gives the turn's
+      # `timecode` and get_document answers with the part that holds the turn (ADR-0061, ticket #174), with no part pinned. The
+      # first check is that the part's own text holds the stored log's line "00:53:39 Kimberley Priestley" (document.text holds it once,
+      # checked by SQL, read-only), so the part rests on the stored text and not on a tool's output.
       - tool: get_document
         requires: transcripts-published
-        arguments: { id: recording-log-2026r1-312218, part: 3 }
+        arguments: { id: recording-log-2026r1-312218, timecode: "00:53:39" }
         expect:
           - { path: text, includesText: ["00:53:39 Kimberley Priestley"] }
           - { path: "speaker_turns.turns[timecode=00:53:39].transcript[*].text", includesText: "my name is Kimberly Priestley" }

@@ -11,8 +11,53 @@ import type { MeetingId } from "#/packages/domain/documents.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { SpeakerTurn, SpeakerTurnIndexOutcome, TurnHearing } from "#/packages/domain/speaker-turns.ts";
 
-/** The text that tells the three outcomes apart in `speaker_turn_index.outcome`. */
-const outcomes = ["indexed", "no_event_id", "conflicting_event_ids"] as const;
+/** The text that tells the four outcomes apart in `speaker_turn_index.outcome`. */
+const outcomes = ["indexed", "no_event_id", "conflicting_event_ids", "log_of_another_meeting"] as const;
+
+/**
+ * Removes the transcript a Recording Log's Meeting holds for the event the log's stored index names, when no other indexed log of
+ * that Meeting names the event: its row, its passages and their keyword entries, as `storeTranscript` replaces them. Runs inside
+ * the caller's transaction, before the log's index is replaced, and deletes the log's index row, so the caller's INSERT is a new
+ * row.
+ */
+function forgetTranscriptOfCopy(database: DatabaseSync, documentId: DocumentId): void {
+  const orphaned = database
+    .prepare(
+      `SELECT md.meeting_id, i.event_id
+       FROM speaker_turn_index i JOIN meeting_document md ON md.document_id = i.document_id
+       WHERE i.document_id = ?1 AND i.outcome = 'indexed'
+         AND NOT EXISTS (
+           SELECT 1 FROM speaker_turn_index other JOIN meeting_document omd ON omd.document_id = other.document_id
+           WHERE omd.meeting_id = md.meeting_id AND other.event_id = i.event_id AND other.outcome = 'indexed'
+             AND other.document_id <> i.document_id)`,
+    )
+    .all(documentId)
+    .map((row) => transcriptKeyRow.parse(row));
+  for (const key of orphaned) {
+    // Each statement reads its result as BigInt, as `storeTranscript`'s do: deleting from the contentless FTS5 table leaves the
+    // connection's last rowid beyond what a JavaScript number holds, which `run` would refuse to convert for the next statement.
+    for (const sql of [
+      "DELETE FROM transcript_passage_fts WHERE rowid IN (SELECT id FROM transcript_passage WHERE meeting_id = ?1 AND event_id = ?2)",
+      "DELETE FROM transcript_passage WHERE meeting_id = ?1 AND event_id = ?2",
+      "DELETE FROM transcript WHERE meeting_id = ?1 AND event_id = ?2",
+    ]) {
+      const statement = database.prepare(sql);
+      statement.setReadBigInts(true);
+      statement.run(key.meeting_id, key.event_id);
+    }
+  }
+  if (orphaned.length > 0) {
+    const generation = database.prepare("UPDATE search_generation SET generation = generation + 1");
+    generation.setReadBigInts(true);
+    generation.run();
+  }
+  // The caller's INSERT of the log's index is then a new row, not an update of this one, so it sets the last rowid again.
+  const index = database.prepare("DELETE FROM speaker_turn_index WHERE document_id = ?");
+  index.setReadBigInts(true);
+  index.run(documentId);
+}
+
+const transcriptKeyRow = z.object({ meeting_id: z.string(), event_id: z.string() });
 
 /** Replaces the log's index with this outcome, in one transaction: the turns of an earlier reading are never mixed with these. */
 export function storeSpeakerTurnIndex(
@@ -43,6 +88,11 @@ export function storeSpeakerTurnIndex(
       )
       .run(documentId);
     if (Number(marked.changes) > 0) database.prepare("UPDATE search_generation SET generation = generation + 1").run();
+    // A log set aside as another Meeting's (ticket #177) takes its Meeting's transcript for the event it named with it, unless
+    // another log of the Meeting still names that event: the transcript is the other Meeting's, which its own log is read against.
+    // Its index row is then inserted afresh, which also moves the connection's last rowid off the keyword table's (see
+    // `forgetTranscriptOfCopy`).
+    if (outcome.kind === "log_of_another_meeting") forgetTranscriptOfCopy(database, documentId);
     database
       .prepare(
         `INSERT INTO speaker_turn_index (document_id, outcome, event_id, event_ids, pages_read_by_timecode, turn_count)
@@ -185,6 +235,8 @@ export function readSpeakerTurnIndex(
   switch (row.outcome) {
     case "no_event_id":
       return { kind: "no_event_id" };
+    case "log_of_another_meeting":
+      return { kind: "log_of_another_meeting" };
     case "conflicting_event_ids":
       return { kind: "conflicting_event_ids", eventIds: texts.parse(JSON.parse(row.event_ids ?? "[]")) };
     case "indexed": {

@@ -39,26 +39,32 @@ function splitIntoSections(body: string): MeasureSection[] {
 }
 
 const addedTo = /(?:is|are) added to and made a part of\s*$/;
-// Legislative Counsel's history of a section, in whichever form: "as amended by section 8, chapter 20, Oregon Laws
-// 2024," or "as amended by section 5 of this 2025 Act," (#6 F2).
-const asAmendedBy = String.raw`(?:,?\s*as amended by [^.;:]{1,400}?)?`;
-const amendedAfter = new RegExp(String.raw`^${asAmendedBy},?\s*(?:is|are) amended\b`);
 // A repeal list can end with sections of an earlier session's law: "ORS 247.016 and 247.018 and section 9, chapter 492,
 // Oregon Laws 2023, are repealed". The list's ORS sections are repealed whatever citation follows them (#55).
 const sessionLawSectionNumbers = String.raw`\d+[a-z]?(?:,\s*\d+[a-z]?)*(?:,?\s*(?:and|or)\s+\d+[a-z]?)?`;
-// The citation may carry its own history: "section 6, chapter 248, Oregon Laws 2023, as amended by section 7,
-// chapter 292, Oregon Laws 2025, are repealed" (#111; SB 1583 Introduced, 2026R1). The history names only session-law
-// sections, so a clause after the citation ("apply to a member, and section 2 of this 2026 Act") ends the list.
-const sessionLawHistoryItem = String.raw`sections?\s+${sessionLawSectionNumbers}(?:,\s*chapter\s+\d+[a-z]?,\s*Oregon Laws\s+\d{4}(?:\s*\([^()]{1,60}\))?|\s+of this\s+\d{4}\s+Act)`;
+// Legislative Counsel's history of a section names only sections of session laws: "as amended by section 8, chapter 20,
+// Oregon Laws 2024," or "as amended by section 5 of this 2025 Act," (#6 F2), after an ORS section (#169) or after a
+// repeal list's session-law citation ("section 6, chapter 248, Oregon Laws 2023, as amended by section 7, chapter 292,
+// Oregon Laws 2025, are repealed"; #111, SB 1583 Introduced, 2026R1). So a clause after the history ("applies to a
+// member, and section 9, chapter 492, Oregon Laws 2023, is amended") ends it. 2026R1 shows three more forms of an item:
+// a section named with its subsections, "section 18 (6)(e)" and "section 18 (6)(a) to (e)" (HB 4063 Introduced); an
+// Enrolled bill with no chapter number yet, "section 22, chapter , Oregon Laws 2026 (Enrolled House Bill 4066)" (HB 4060
+// A-Engrossed), or "chapter ___" (HB 3038-A9, 2025R1); and a history of 27 items, over 1,000 characters (HB 4040
+// A-Engrossed SECTION 30), which is why the history is read to its end and not within a window.
+const historySectionNumber = String.raw`\d+[a-z]?(?:\s*\([0-9a-zA-Z]{1,5}\))*(?:\s+to\s+\([0-9a-zA-Z]{1,5}\))?`;
+const historySectionNumbers = String.raw`${historySectionNumber}(?:,\s*${historySectionNumber})*(?:,?\s*(?:and|or)\s+${historySectionNumber})?`;
+const sessionLawHistoryItem = String.raw`sections?\s+${historySectionNumbers}(?:,\s*chapter(?:\s+(?:\d+[a-z]?|_+))?\s*,\s*Oregon Laws\s+\d{4}(?:\s*\([^()]{1,60}\))?|\s+of this\s+\d{4}\s+Act)`;
 const sessionLawHistory = String.raw`(?:,?\s*as amended by ${sessionLawHistoryItem}(?:(?:,\s*(?:and\s+|or\s+)?|\s+(?:and|or)\s+)${sessionLawHistoryItem})*)?`;
+// Sticky: it is tried at the end of a reference, over the rest of the section's text.
+const amendedAfter = new RegExp(String.raw`${sessionLawHistory},?\s*(?:is|are) amended\b`, "y");
 const sessionLawCitation = String.raw`,?\s*(?:and\s+|or\s+)?sections?\s+${sessionLawSectionNumbers},\s*chapter\s+\d+[a-z]?,\s*Oregon Laws\s+\d{4}${sessionLawHistory}`;
 const repealedAfter = new RegExp(String.raw`^(?:${sessionLawCitation})*,?\s*(?:is|are) repealed\b`);
 
 function kindOf(text: string, reference: OrsReference): StatuteLinkKind {
   if (addedTo.test(text.slice(Math.max(0, reference.start - 60), reference.start))) return "adds-to";
-  const after = text.slice(reference.end, reference.end + 700);
-  if (amendedAfter.test(after)) return "amends";
-  if (repealedAfter.test(after)) return "repeals";
+  amendedAfter.lastIndex = reference.end;
+  if (amendedAfter.test(text)) return "amends";
+  if (repealedAfter.test(text.slice(reference.end, reference.end + 700))) return "repeals";
   return "cites";
 }
 

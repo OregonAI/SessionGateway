@@ -1,11 +1,16 @@
 // Seam 1: what get_document shows depends on what the worker fetched, and how often. The worker's
 // requests are counted by the fake OLIS, and a test reads that count from the harness, never from the
 // database. Cases here build their own system because the feed, the clock or the failures the fake
-// gives are the thing under test; cases that only read are in get-document.test.ts.
+// gives are the thing under test; cases that only read are in get-document.test.ts. The describe of ticket #179 copies the
+// run's template of the fixture's pull (documents served), makes it look as one before the speaker-turn index with
+// `forgetSpeakerTurns` (test/support/old-database.ts, SQL that only arranges), and pulls again: that pull is the subject.
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { madeUpPdf } from "../support/made-up-pdf.ts";
 import { callTool, connectClient } from "../support/mcp-clients.ts";
-import { startSystem, type System, type SystemOptions } from "../support/system.ts";
+import { forgetSpeakerTurns } from "../support/old-database.ts";
+import { startCopiedSystem, startSystem, type System, type SystemOptions } from "../support/system.ts";
 import { madeUpTestimonyRow, testimonyDownloadPath } from "../support/testimony.ts";
 
 const started: System[] = [];
@@ -536,5 +541,78 @@ describe("a file OLIS serves empty or broken, and a request OLIS does not answer
     expect(outcome.text).toMatch(/listed .*holds no file/);
     expect(outcome.text).not.toContain("No document");
     expect(outcome.text).not.toContain("Give a document id such as");
+  });
+});
+
+// A file that needs a password is a property of the file OLIS serves, like bytes that are not a PDF, so the pull leaves
+// it out and goes on (ticket #178, ADR-0011). Both rows and both files are MADE UP and labelled so: the encrypted file is
+// test/fixtures/made-up/password-protected.pdf (one blank page, AES-128, a user password; its README says how it was made).
+describe("a file OLIS serves that needs a password (ticket #178)", () => {
+  const lockedId = 900111;
+  const readableId = 900112;
+  const lockedUrl = `https://olis.oregonlegislature.gov${testimonyDownloadPath(lockedId)}`;
+
+  it("is left out as unreadable_file with a reason naming the password, and the pull finishes", async () => {
+    const locked = new Uint8Array(readFileSync(new URL("../fixtures/made-up/password-protected.pdf", import.meta.url)));
+    expect(createHash("sha256").update(locked).digest("hex")).toBe(
+      "7a709222def642ea331a9515755d6f4648ec3222a86996b886783d00b4fda30e",
+    );
+    const pulled = start({
+      clockAt: "2025-07-15T17:00:00Z",
+      documents: false,
+      olis: {
+        madeUpRows: {
+          // MADE UP: two Testimony rows, filed under SB 983 as the other made-up rows are.
+          CommitteePublicTestimonies: [lockedId, readableId].map((commTestId) => madeUpTestimonyRow({ commTestId })),
+        },
+        madeUpDocuments: {
+          [testimonyDownloadPath(lockedId)]: locked,
+          // MADE UP: a plain one-page PDF, fetched after the locked one, so the pull is seen to go on past it.
+          [testimonyDownloadPath(readableId)]: madeUpPdf([["MADE UP: testimony that opens without a password"]]),
+        },
+      },
+    });
+
+    // The pull finishes: before #178 the extractor's PasswordException stopped it here.
+    await expect(pulled).resolves.toBeDefined();
+    const system = await pulled;
+    const entries = system.buildReport()["documents_not_fetched"] as { id: string }[];
+    expect(entries.find((entry) => entry.id === `testimony-2025r1-${String(lockedId)}`)).toEqual({
+      id: `testimony-2025r1-${String(lockedId)}`,
+      source_url: lockedUrl,
+      reason: expect.stringMatching(/password/i) as unknown,
+      cause: "unreadable_file",
+    });
+    expect((await getDocument(system, `testimony-2025r1-${String(readableId)}`)).isError).toBe(false);
+  });
+});
+
+// The build report's re-fetch list says why, as documents_not_fetched does since #116 (ticket #179). The log fetched again
+// is the fixture's real 288741 (HALNRW 2025-01-22); the bytes served in its place are MADE UP and labelled so.
+describe("a stored Recording Log fetched again that comes back empty or broken, or gets no answer (ticket #179)", () => {
+  const logPath = "/liz/2025R1/Downloads/CommitteeMeetingDocument/288741";
+  const logUrl = `https://olis.oregonlegislature.gov${logPath}`;
+
+  it.for([
+    ["a file of zero bytes is empty_file", "empty_file"],
+    ["bytes that are no PDF are unreadable_file", "unreadable_file"],
+    ["a request OLIS answers 404 is request_failed", "request_failed"],
+  ] as const)("the build report's re-fetch list says why: %s", async ([, cause]) => {
+    const system = await startCopiedSystem({ clockAt: everything, documents: true });
+    started.push(system);
+    forgetSpeakerTurns(system.database.path);
+    if (cause === "empty_file") system.olis.serveDocument(logPath, new Uint8Array(0));
+    // MADE UP: bytes that are no PDF at all.
+    if (cause === "unreadable_file") {
+      system.olis.serveDocument(logPath, new TextEncoder().encode("MADE UP: this is not a PDF file"));
+    }
+    if (cause === "request_failed") system.olis.failDocuments(logUrl, [404]);
+
+    await system.pullAgain();
+
+    const refetches = system.buildReport()["recording_log_refetches"] as { failed: unknown[] };
+    expect(refetches.failed).toEqual([
+      { id: "recording-log-2025r1-288741", source_url: logUrl, reason: expect.any(String) as unknown, cause },
+    ]);
   });
 });

@@ -11,3 +11,7 @@ A trimmed slice of the 2025R1 Session, committed so CI can replay it (ticket #3)
 ## The OregonAI snapshot fixture
 
 `oregonai-snapshot/` is the OregonAI snapshot (ADR-0012) cut down to what the 2025R1 fixture touches, made by `scripts/snapshot/build.ts` from a local checkout of OregonAI's repository, and never edited by hand. Its README says what it kept, how the list was taken and how to rebuild it. `scripts/snapshot/verify.ts` checks it in `npm run check` without the checkout (`snapshot:verify`, a step of its own, so a failure of `fixture:verify` does not hide it), and fails when a Measure added above cites a chapter it lacks: rebuild it then.
+
+## Made-up files
+
+`made-up/` holds the few MADE UP files a test needs that no helper in `test/support/` can write and no real document has (a PDF that needs a password, ticket #178). They are not public records, so they are never in the 2025R1 manifest and `fixture:verify` does not read them; the folder's README says how each was made and gives its sha256, and the test that reads a file checks that hash first.

@@ -416,20 +416,7 @@ export function readTranscriptOfLog(database: DatabaseSync, log: DocumentId): Tr
       const stored = transcriptPassageRow.parse(row);
       return { position: stored.turn_position, passage: shownPassageOf(database, stored) };
     });
-  const positions = database
-    .prepare("SELECT position FROM speaker_turn WHERE document_id = ? ORDER BY offset_seconds, position")
-    .all(log)
-    .map((row) => positionRow.parse(row).position);
-  // Where each turn's lines start in the log's text: the start of the passage the worker cut around the turn (ADR-0053).
-  const startsOf = new Map(
-    database
-      .prepare("SELECT turn_position, start_offset FROM passage WHERE document_id = ? AND turn_position IS NOT NULL")
-      .all(log)
-      .map((row) => {
-        const start = turnStartRow.parse(row);
-        return [start.turn_position, start.start_offset] as const;
-      }),
-  );
+  const positions = turnPositionsOf(database, log);
   return {
     meetingId: transcript.meeting_id as MeetingId,
     eventId: transcript.event_id,
@@ -439,6 +426,32 @@ export function readTranscriptOfLog(database: DatabaseSync, log: DocumentId): Tr
       shown.filter((entry) => entry.position === position).map((entry) => entry.passage),
     ),
     other: shown.filter((entry) => entry.position === null).map((entry) => entry.passage),
-    turnTextOffsets: positions.map((position) => startsOf.get(position) ?? null),
+    turnTextOffsets: readTurnTextOffsets(database, log),
   };
+}
+
+/** The positions of a log's turns in the order `readSpeakerTurnIndex` gives them. */
+function turnPositionsOf(database: DatabaseSync, log: DocumentId): number[] {
+  return database
+    .prepare("SELECT position FROM speaker_turn WHERE document_id = ? ORDER BY offset_seconds, position")
+    .all(log)
+    .map((row) => positionRow.parse(row).position);
+}
+
+/**
+ * Where each of a Recording Log's turns starts in the log's text (`text.slice(offset)`), in the order `readSpeakerTurnIndex` gives
+ * the turns: the start of the passage the worker cut around the turn (ADR-0053), or null for a turn it could not place. It reads
+ * the speaker-turn index and the log's own passages, and nothing of a transcript, so it is read whatever the publication gate is.
+ */
+export function readTurnTextOffsets(database: DatabaseSync, log: DocumentId): (number | null)[] {
+  const startsOf = new Map(
+    database
+      .prepare("SELECT turn_position, start_offset FROM passage WHERE document_id = ? AND turn_position IS NOT NULL")
+      .all(log)
+      .map((row) => {
+        const start = turnStartRow.parse(row);
+        return [start.turn_position, start.start_offset] as const;
+      }),
+  );
+  return turnPositionsOf(database, log).map((position) => startsOf.get(position) ?? null);
 }

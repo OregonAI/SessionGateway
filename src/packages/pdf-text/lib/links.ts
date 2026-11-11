@@ -1,5 +1,6 @@
 import { getDocumentProxy, getResolvedPDFJS } from "unpdf";
 import { z } from "zod";
+import { unreadableReason } from "./extract.ts";
 
 /** One link annotation of a PDF: the page it is on (from 1), where it points and the rectangle it covers. */
 export type PdfLink = {
@@ -74,9 +75,8 @@ export async function extractPdfLinks(bytes: Uint8Array): Promise<PdfLinkExtract
   try {
     return { kind: "read", links: await readLinks(bytes) };
   } catch (error) {
-    if (error instanceof Error && error instanceof pdfjs.InvalidPDFException) {
-      return { kind: "unreadable", reason: `The file is not a PDF the extractor can read (${error.message})` };
-    }
+    const reason = unreadableReason(pdfjs, error);
+    if (reason !== undefined) return { kind: "unreadable", reason };
     throw error;
   }
 }

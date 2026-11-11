@@ -1,5 +1,5 @@
 ---
-status: accepted; amends ADR-0017 (its sentence that `get_document` says "the next pull fetches it again"); reworded by the owner on 2026-11-07 after review
+status: accepted; amends ADR-0017 (its sentence that `get_document` says "the next pull fetches it again"); reworded by the owner on 2026-11-07 after review; amended 2026-11-10 by a correction of its count (ticket #176, see the end)
 ---
 
 # An unheld Testimony, and every listed row with no file, are answered without naming a pull or promising a fix
@@ -21,3 +21,7 @@ The owner decided on 2026-11-07: **wording only, no schema step.**
 ## Consequences
 
 The exact answer for each cause (the file OLIS serves is empty; it is not a readable PDF; the request got no answer) needs the cause stored per document, which is a schema step (ADR-0048) that the owner approves. That is ticket #168, for when the worker is running again.
+
+## Correction (2026-11-10, ticket #176)
+
+The count above is one too high. Of the 58 documents found empty or broken, `version-2026r1-hb4116-minority-report-2-to-a-engrossed` failed because of our request, not OLIS's file: its link holds a literal `#` ("Minority Report #2 to A-Engrossed"), which the worker parsed as the start of a fragment, so it asked for `.../HB4116/Minority%20Report%20` instead (`docs/research/olis-odata.md`, section 9, correction). The worker now encodes the `#`. The files OLIS itself served empty or broken are 57: 56 empty Testimony files and 1 that is not a readable PDF. Whether OLIS serves the Minority Report at its `%23` path is settled by the next pull. The decision does not change: an empty or broken file is still possible, and the answer still names no pull and promises no fix.

@@ -14,8 +14,8 @@ export { linkAnnotationsOf };
 export type { ExtractedPdf, LinkAnnotation, PdfExtraction, PdfLink, PdfLinkExtraction };
 
 /**
- * Reads the text layer of a PDF. A file that is not a PDF the extractor can open comes back as
- * `unreadable`; a failure of the extractor itself (a broken install, a bug) throws.
+ * Reads the text layer of a PDF. A file that is not a PDF the extractor can open, or that needs a password to open, comes
+ * back as `unreadable`; a failure of the extractor itself (a broken install, a bug) throws.
  */
 export function extractPdfText(bytes: Uint8Array): Promise<PdfExtraction> {
   return extract(bytes);

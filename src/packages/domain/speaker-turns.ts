@@ -39,7 +39,12 @@ export type SpeakerTurnIndexOutcome =
   /** The log has no player link with an event ID: it has no index, and the turns are not guessed. */
   | { kind: "no_event_id" }
   /** The log's links carry more than one event ID. */
-  | { kind: "conflicting_event_ids"; eventIds: string[] };
+  | { kind: "conflicting_event_ids"; eventIds: string[] }
+  /**
+   * The same file is filed under another Meeting too, and this log's own header does not name the Meeting it is filed under
+   * (ticket #177): it is that other Meeting's log, or no Meeting's when none of the copies matches. It has no turns.
+   */
+  | { kind: "log_of_another_meeting" };
 
 /** What the index says of a Recording Log in the listing of its Meeting. */
 export type SpeakerTurnIndexSummary = { eventId: string; turnCount: number };

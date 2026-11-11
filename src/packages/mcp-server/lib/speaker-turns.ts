@@ -16,7 +16,7 @@ export const speakerTurnsOutput = z
     indexed: z
       .boolean()
       .describe(
-        "True when the log has a speaker-turn index. False when the log has no player link with an event ID, or its links name more than one: see gap.",
+        "True when the log has a speaker-turn index. False when the log has no player link with an event ID, or its links name more than one, or it is another Meeting's log: see gap.",
       ),
     event_id: z
       .string()
@@ -25,9 +25,11 @@ export const speakerTurnsOutput = z
         "The Invintus event ID of the meeting's recording, from the log's own player links. Null when the log is not indexed.",
       ),
     gap: z
-      .enum(["no_event_id", "conflicting_event_ids"])
+      .enum(["no_event_id", "conflicting_event_ids", "log_of_another_meeting"])
       .nullable()
-      .describe("Why the log is not indexed: its links have no event ID, or more than one. Null when it is indexed."),
+      .describe(
+        "Why the log is not indexed: its links have no event ID, or more than one, or (log_of_another_meeting) OLIS filed the same file under another Meeting too and the log's own header names that Meeting's committee and time, or neither, and not this one's. Null when it is indexed.",
+      ),
     conflicting_event_ids: z
       .array(z.string())
       .describe("The event IDs a log with conflicting ones names. Empty otherwise."),
@@ -76,7 +78,7 @@ export const speakerTurnsOutput = z
             .array(transcriptPassageOutput)
             .optional()
             .describe(
-              "Present only while the machine transcripts are published, this log has one, and the turn is listed in this part of the text: the words of the machine transcript that fall in this turn and come in this part, in order. The transcript is paged with the text: a turn's words are in the part its lines are in, and a turn with more words than fit continues in the parts after it. Empty when no words fall in the turn.",
+              "Present only while the machine transcripts are published, this log has one, and the turn is listed in this part of the text: the words of the machine transcript that fall in this turn and come in this part, in order. The transcript is paged with the text: a turn's words are in the part its lines are in, and a turn with more words than fit continues in the parts after it. get_document with this turn's timecode returns the part that holds its line and its first words. Empty when no words fall in the turn.",
             ),
         }),
       )
@@ -162,6 +164,16 @@ export function speakerTurnsShown(
         indexed: false,
         event_id: null,
         gap: "no_event_id",
+        conflicting_event_ids: [],
+        turn_count: 0,
+        pages_read_by_timecode: [],
+        turns: [],
+      };
+    case "log_of_another_meeting":
+      return {
+        indexed: false,
+        event_id: null,
+        gap: "log_of_another_meeting",
         conflicting_event_ids: [],
         turn_count: 0,
         pages_read_by_timecode: [],

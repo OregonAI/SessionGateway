@@ -27,6 +27,38 @@ type ListedSetReport = SetReport & {
   no_longer_listed: number;
 };
 
+/** A Recording Log the index holds with no speaker-turn index, and why (`recording_log_gaps`). */
+export type RecordingLogGap =
+  | {
+      id: DocumentId;
+      source_url: string;
+      /**
+       * `no_event_id` and `conflicting_event_ids`: the log's links say so. `not_read`: the log is stored and its links have not
+       * been read, because the file could not be fetched again or came back changed (see `recording_log_refetches`).
+       */
+      kind: "no_event_id" | "conflicting_event_ids" | "not_read";
+      /** The event IDs the links name: empty for a log with none. */
+      event_ids: string[];
+    }
+  | {
+      id: DocumentId;
+      source_url: string;
+      /**
+       * OLIS filed the same file (its SHA-256) under another Meeting too, and this log's own header does not name the Meeting it
+       * is filed under: its committee and start time are another Meeting's, or no Meeting's (ticket #177). It has no turns and
+       * no transcript; the copy whose header names its Meeting, if any, has them.
+       */
+      kind: "log_of_another_meeting";
+      /** Always empty: the log has no index. */
+      event_ids: string[];
+      /** The Meeting OLIS filed this copy under. */
+      meeting_id: MeetingId;
+      /** The log's header as printed, its committee lines and its time joined by spaces, or null when it has none. */
+      header: string | null;
+      /** The other Recording Logs of the same file, each with the Meeting it is filed under, by id. */
+      same_file_as: { id: DocumentId; source_url: string; meeting_id: MeetingId }[];
+    };
+
 /**
  * What a full pull says of the transcript folder: the files it read this time, the files it refused (unknown version, an event ID
  * that is not the Meeting's, not valid), the files of events no Meeting's log names, and the Meetings whose turns are far from the
@@ -105,19 +137,10 @@ export type BuildReport = {
   documents_not_fetched: { id: DocumentId; source_url: string; reason: string; cause: NotFetchedCause }[];
   /**
    * The Recording Logs the index holds with no speaker-turn index, because the log has no player link with an event ID or
-   * its links name more than one (ticket #126). The log's text is stored and searchable; its turns are not guessed.
+   * its links name more than one (ticket #126), or because it is a copy of another Meeting's log (ticket #177). The log's text
+   * is stored and searchable; its turns are not guessed.
    */
-  recording_log_gaps: {
-    id: DocumentId;
-    source_url: string;
-    /**
-     * `no_event_id` and `conflicting_event_ids`: the log's links say so. `not_read`: the log is stored and its links have not
-     * been read, because the file could not be fetched again or came back changed (see `recording_log_refetches`).
-     */
-    kind: "no_event_id" | "conflicting_event_ids" | "not_read";
-    /** The event IDs the links name: empty for a log with none. */
-    event_ids: string[];
-  }[];
+  recording_log_gaps: RecordingLogGap[];
   /**
    * The stored Recording Logs this pull fetched again to read their links, which the store keeps only as the speaker-turn
    * index and the link annotations (ADR-0052, ADR-0058): how many, those whose fetch failed, and those whose file is no longer
@@ -125,7 +148,8 @@ export type BuildReport = {
    */
   recording_log_refetches: {
     attempted: number;
-    failed: { id: DocumentId; source_url: string; reason: string }[];
+    /** Each with why, as in `documents_not_fetched` (ticket #179). */
+    failed: { id: DocumentId; source_url: string; reason: string; cause: NotFetchedCause }[];
     bytes_changed: {
       id: DocumentId;
       source_url: string;

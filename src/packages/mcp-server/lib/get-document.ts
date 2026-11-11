@@ -11,7 +11,7 @@ import type { Outcome } from "./outcome.ts";
 import { floorLetterDocumentOutput, floorLetterDocumentShown } from "./floor-letters.ts";
 import { documentListingOutput, documentListingShown } from "./listing.ts";
 import { splitIntoParts } from "./parts.ts";
-import { splitLogWithTranscript } from "./transcript-parts.ts";
+import { splitLogWithTranscript, type LogPart } from "./transcript-parts.ts";
 import { speakerTurnsOutput, speakerTurnsShown } from "./speaker-turns.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
@@ -19,6 +19,16 @@ import type { Timestamp } from "#/packages/time/pacific.ts";
 export const getDocumentInput = z.object({
   id: z.string().describe('A document\'s id, such as "version-2025r1-sb69-a-engrossed" or "testimony-2025r1-117165".'),
   part: z.number().int().min(1).optional().describe("Which part of the text to return, from 1. The first by default."),
+  timecode: z
+    .string()
+    .regex(
+      /^\d{1,2}:[0-5]\d:[0-5]\d$/,
+      "A timecode is hh:mm:ss or h:mm:ss with minutes and seconds below 60, such as 00:20:41.",
+    )
+    .optional()
+    .describe(
+      'For a Recording Log: the timecode of one of its speaker turns, as logged, such as "00:20:41". The answer is then the part that holds that turn\'s line and the start of its words (while machine transcripts are published), instead of part 1. Give it or part, not both.',
+    ),
 });
 
 const related = z.object({
@@ -80,7 +90,18 @@ export type GetDocumentFault =
    * fetch the file now.
    */
   | { kind: "no_longer_listed_not_held"; id: string; session: SessionKey; lastListedAt: Timestamp }
-  | { kind: "no_such_part"; id: string; part: number; partCount: number };
+  | { kind: "no_such_part"; id: string; part: number; partCount: number }
+  /** Both a part and a timecode were given (ticket #174): they can name different parts, so neither is taken over the other. */
+  | { kind: "part_and_timecode"; id: string }
+  /** A timecode was given for a document that is not a Recording Log (ticket #174): only a log has speaker turns. */
+  | { kind: "timecode_not_a_log"; id: string; documentKind: DocumentKind }
+  /**
+   * A timecode no speaker turn of the log has (ticket #174): the turns that begin just before it and just after it, either of
+   * which may be missing, and none when the log has no speaker-turn index.
+   */
+  | { kind: "no_such_turn"; id: string; timecode: string; before: NamedTurn | null; after: NamedTurn | null };
+
+type NamedTurn = { timecode: string; speaker: string };
 
 export type GetDocumentOutcome = Outcome<GetDocumentOutput, GetDocumentFault>;
 
@@ -95,6 +116,9 @@ export function getDocument(
   if (id === undefined) return { kind: "fault", fault: { kind: "unknown", id: input.id, session } };
   const found = reader.findDocument(id);
   if (found === undefined) return { kind: "fault", fault: { kind: "unknown", id: input.id, session } };
+  if (input.part !== undefined && input.timecode !== undefined) {
+    return { kind: "fault", fault: { kind: "part_and_timecode", id } };
+  }
   switch (found.held) {
     case true:
       break;
@@ -104,6 +128,9 @@ export function getDocument(
       return found satisfies never;
   }
   const stored = found.document;
+  if (input.timecode !== undefined && stored.kind !== "recording_log") {
+    return { kind: "fault", fault: { kind: "timecode_not_a_log", id, documentKind: stored.kind } };
+  }
   const floorLetter = stored.kind === "floor_letter" ? reader.floorLetterDetails(stored.id) : undefined;
   const speakerTurns = stored.kind === "recording_log" ? reader.speakerTurnIndexOf(stored.id) : undefined;
   // Read only while the gate is on, so that with it off nothing of a transcript is read, let alone shown.
@@ -125,7 +152,25 @@ export function getDocument(
       ? splitLogWithTranscript(stored.text, speakerTurns.turns, transcript)
       : undefined;
   const parts = paged === undefined ? splitIntoParts(stored.text) : paged.map((each) => each.text);
-  const part = input.part ?? 1;
+  let part = input.part ?? 1;
+  if (input.timecode !== undefined) {
+    const turns = speakerTurns?.kind === "indexed" ? speakerTurns.turns : [];
+    const turn = turnAtTimecode(turns, input.timecode);
+    if (turn === -1) {
+      return {
+        kind: "fault",
+        fault: { kind: "no_such_turn", id, timecode: input.timecode, ...turnsAround(turns, input.timecode) },
+      };
+    }
+    // Paged with its transcript, the log lists the turn first in the part its line is in; cut as its text alone (the gate off, or
+    // no transcript), the part is the one that holds where the worker placed the turn's line, read only when there are two parts.
+    part =
+      paged !== undefined
+        ? partOfTurn(paged, turn)
+        : parts.length === 1
+          ? 1
+          : partOfOffset(parts, placedOffset(reader.turnTextOffsetsOf(stored.id), turn));
+  }
   if (part > parts.length) return { kind: "fault", fault: { kind: "no_such_part", id, part, partCount: parts.length } };
   return {
     kind: "answer",
@@ -155,6 +200,65 @@ export function getDocument(
       ...documentListingShown(found.listing),
     },
   };
+}
+
+/** The seconds a timecode "hh:mm:ss" (or "h:mm:ss") names, or NaN, which no second equals, for one that is not a time of day. */
+function secondsOfTimecode(timecode: string): number {
+  if (!/^\d{1,2}:[0-5]\d:[0-5]\d$/.test(timecode)) return Number.NaN;
+  const [hours, minutes, seconds] = timecode.split(":").map(Number);
+  return (hours ?? 0) * 3600 + (minutes ?? 0) * 60 + (seconds ?? 0);
+}
+
+/**
+ * The position of the first turn whose logged timecode names the same second as `timecode`, or -1 when no turn's does. Where two
+ * turns of a log share a timecode, the second is not reachable by timecode (ADR-0061).
+ */
+function turnAtTimecode(turns: readonly { timecode: string }[], timecode: string): number {
+  const asked = secondsOfTimecode(timecode);
+  return turns.findIndex((turn) => secondsOfTimecode(turn.timecode) === asked);
+}
+
+/** The turns that begin last before `timecode` and first after it, by their logged timecodes. */
+function turnsAround(
+  turns: readonly NamedTurn[],
+  timecode: string,
+): { before: NamedTurn | null; after: NamedTurn | null } {
+  const asked = secondsOfTimecode(timecode);
+  let before: NamedTurn | null = null;
+  let after: NamedTurn | null = null;
+  for (const turn of turns) {
+    const second = secondsOfTimecode(turn.timecode);
+    if (second < asked && (before === null || second >= secondsOfTimecode(before.timecode))) before = turn;
+    if (second > asked && (after === null || second < secondsOfTimecode(after.timecode))) after = turn;
+  }
+  return {
+    before: before === null ? null : { timecode: before.timecode, speaker: before.speaker },
+    after: after === null ? null : { timecode: after.timecode, speaker: after.speaker },
+  };
+}
+
+/** Where turn `turn`'s line starts: its own place, or for a turn the worker could not place the place of the turn before it. */
+function placedOffset(offsets: readonly (number | null)[], turn: number): number {
+  for (let index = turn; index >= 0; index -= 1) {
+    const offset = offsets[index];
+    if (offset !== null && offset !== undefined) return offset;
+  }
+  return 0;
+}
+
+/** The part (from 1) of a text cut into `parts`, which joined are the text, that holds the character at `offset`. */
+function partOfOffset(parts: readonly string[], offset: number): number {
+  let end = 0;
+  for (const [index, each] of parts.entries()) {
+    end += each.length;
+    if (offset < end) return index + 1;
+  }
+  return parts.length;
+}
+
+/** The part (from 1) of a log paged with its transcript that first lists turn `turn`: the part its line is in (ADR-0055). */
+function partOfTurn(paged: readonly LogPart[], turn: number): number {
+  return paged.findIndex((each) => each.transcript.turns[turn] !== undefined) + 1;
 }
 
 /**
@@ -193,6 +297,12 @@ export function getDocumentFaultMessage(fault: GetDocumentFault): string {
       return noLongerListedNotHeldMessage(fault.id, fault.session, fault.lastListedAt);
     case "no_such_part":
       return noSuchPartMessage(fault.id, fault.part, fault.partCount);
+    case "part_and_timecode":
+      return `Give part or timecode, not both: a timecode asks for the part of "${fault.id}" that holds that turn, which may not be the part given. Ask with the timecode alone, then for the parts after it by number.`;
+    case "timecode_not_a_log":
+      return timecodeNotALogMessage(fault.id, fault.documentKind);
+    case "no_such_turn":
+      return noSuchTurnMessage(fault.id, fault.timecode, fault.before, fault.after);
     default:
       return fault satisfies never;
   }
@@ -237,6 +347,25 @@ function listedNotHeldMessage(id: string, session: SessionKey, kind: DocumentKin
  */
 function noLongerListedNotHeldMessage(id: string, session: SessionKey, lastListedAt: string): string {
   return `The document "${id}" was listed in the ${session} Session and is not any more (the feed last listed it ${lastListedAt}). This index never fetched its file, and no later pull will fetch it, because the Legislature's feed no longer lists it, so the index holds no text for it.`;
+}
+
+/** What an agent is told when it gives a timecode for a document that is not a Recording Log (ticket #174). */
+function timecodeNotALogMessage(id: string, kind: DocumentKind): string {
+  const name = kindNames[kind];
+  const article = /^[aeiou]/i.test(name) ? "an" : "a";
+  return `Document "${id}" is ${article} ${name}, not a Recording Log, so it has no speaker turns and no timecode. Leave timecode out, or give it with a Recording Log's id.`;
+}
+
+/** What an agent is told when no speaker turn of the log has the timecode it gave (ticket #174). */
+function noSuchTurnMessage(id: string, timecode: string, before: NamedTurn | null, after: NamedTurn | null): string {
+  const named = (turn: NamedTurn): string => `${turn.timecode} (${turn.speaker})`;
+  const start = `No speaker turn of "${id}" has the timecode ${timecode}`;
+  if (before !== null && after !== null) {
+    return `${start}. The turn before it begins at ${named(before)} and the next at ${named(after)}; ask for one of those timecodes, or search for the words.`;
+  }
+  if (after !== null) return `${start}: it is before the first turn, ${named(after)}.`;
+  if (before !== null) return `${start}: it is after the last turn, ${named(before)}.`;
+  return `${start}: the log has no speaker-turn index, so no turn has a timecode.`;
 }
 
 /** What an agent is told when it asks for a part past the last one. */

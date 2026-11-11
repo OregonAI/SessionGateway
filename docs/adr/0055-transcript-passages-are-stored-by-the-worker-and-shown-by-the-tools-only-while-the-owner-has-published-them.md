@@ -1,5 +1,5 @@
 ---
-status: accepted; amended 2026-11-05 by the owner's decisions and the review (see "Amended"); extends ADR-0054 (the transcript file and the read, whose "Consequences" defer storing and the gate to ticket #134), ADR-0048 (the fourth numbered step), ADR-0052 and ADR-0053 (the speaker-turn index and its Passages) and ADR-0025 (search is Passages); builds on ADR-0051 (the audio and the tool that transcribes it)
+status: accepted; amended 2026-11-05 by the owner's decisions and the review (see "Amended"); extends ADR-0054 (the transcript file and the read, whose "Consequences" defer storing and the gate to ticket #134), ADR-0048 (the fourth numbered step), ADR-0052 and ADR-0053 (the speaker-turn index and its Passages) and ADR-0025 (search is Passages); builds on ADR-0051 (the audio and the tool that transcribes it); amended 2026-11-10 by ADR-0060 (ticket #177: a Recording Log set aside as another Meeting's takes its Meeting's transcript with it); amended 2026-11-10 by ADR-0061 (ticket #174: `get_document` takes a turn's timecode and answers with the part that holds it)
 ---
 
 # Transcript passages are stored by the worker and shown by the tools only while the owner has published them

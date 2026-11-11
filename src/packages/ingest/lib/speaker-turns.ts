@@ -2,17 +2,19 @@
 // the text, the links and the Meeting's Agenda items to the Recording Log parser, and resolves each turn's speaker
 // among the Meeting's committee members and then among all the Session's Legislators. A turn is never dropped: a speaker
 // nobody resolves keeps its text, and a turn's Measure is kept only when the index holds it.
-import type { IndexWriter } from "#/packages/database/writer.ts";
-import { committeeIdOf, type DocumentLink, type MeetingId } from "#/packages/domain/documents.ts";
+import type { IndexWriter, RecordingLogCopy } from "#/packages/database/writer.ts";
+import { committeeIdOf, type DocumentId, type DocumentLink, type MeetingId } from "#/packages/domain/documents.ts";
 import { measureIdOf, type SessionKey } from "#/packages/domain/index.ts";
 import type { SpeakerTurn, SpeakerTurnIndexOutcome } from "#/packages/domain/speaker-turns.ts";
 import type { LegislatorResolver } from "#/packages/legislators/resolver.ts";
 import { extractPdfLinks, linkAnnotationsOf } from "#/packages/pdf-text/index.ts";
 import {
+  headerNamesMeeting,
   legislatorOfSpeaker,
   measureOfAgendaItem,
   parseRecordingLog,
   playerLinkOf,
+  recordingLogHeaderOf,
 } from "#/packages/recording-log/index.ts";
 
 /** What reading a Recording Log needs besides its file: the store (the Meeting's Agenda items and committee) and who the codes are. */
@@ -94,4 +96,40 @@ export async function readSpeakerTurnIndex(
     default:
       return parsed satisfies never;
   }
+}
+
+/**
+ * Sets aside the Recording Logs that are another Meeting's (ticket #177, owner decision of 2026-11-10): where OLIS filed one file
+ * (the same `content_hash`) under more than one Meeting, a copy is indexed only under the Meeting its own header names, its
+ * committee and its start time (`headerNamesMeeting`). Every other copy gets the `log_of_another_meeting` outcome, which has no
+ * turns, so it gives no hearing and no transcript; when no copy's header names its Meeting, none is indexed. A file filed under
+ * one Meeting only is read as before, whatever its header says. It runs after the run's logs are read, so the order the copies
+ * arrive in does not matter, and it fetches nothing.
+ */
+export function setAsideCopiesOfOtherMeetings(writer: IndexWriter, session: SessionKey): void {
+  for (const copy of writer.recordingLogCopies(session)) {
+    if (copy.outcome === "log_of_another_meeting") continue;
+    const header = recordingLogHeaderOf(copy.text);
+    if (header !== null && headerNamesMeeting(header, copy)) continue;
+    writer.storeSpeakerTurnIndex({ documentId: copy.id, outcome: { kind: "log_of_another_meeting" } });
+  }
+}
+
+/** The build report's entry for a log set aside as another Meeting's: where it is filed, its header and the other copies. */
+export function copyGapsOf(
+  copies: readonly RecordingLogCopy[],
+): Map<DocumentId, { meetingId: MeetingId; header: string | null; sameFileAs: RecordingLogCopy[] }> {
+  return new Map(
+    copies.map((copy) => {
+      const header = recordingLogHeaderOf(copy.text);
+      return [
+        copy.id,
+        {
+          meetingId: copy.meetingId,
+          header: header === null ? null : `${header.committee} ${header.time}`,
+          sameFileAs: copies.filter((other) => other.contentHash === copy.contentHash && other.id !== copy.id),
+        },
+      ];
+    }),
+  );
 }
