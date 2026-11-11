@@ -576,6 +576,16 @@ export type UnheldDocument = {
   listing: Listing;
 };
 
+/**
+ * What the worker saw at its latest attempt to fetch a document the index holds no file of (ticket #168, ADR-0063): OLIS served
+ * a file with no bytes (`empty_file`), a file the extractor cannot read as a PDF (`unreadable_file`), or the request got no file
+ * (`request_failed`: a status, no answer, or an answer that stopped, with the most bytes an attempt received when one received
+ * any, ADR-0062). The reason is the worker's, as the build report gives it. Storing the document's file clears it.
+ */
+export type LastFetchFailure =
+  | { cause: "empty_file" | "unreadable_file"; reason: string }
+  | { cause: "request_failed"; reason: string; bytesReceived?: number };
+
 /** What the reader makes of an id `get_document` is given: the document it holds, or the row it lacks the file of. */
 export type DocumentLookup = DocumentView | UnheldDocument;
 
