@@ -11,7 +11,7 @@ import type { Outcome } from "./outcome.ts";
 import { floorLetterDocumentOutput, floorLetterDocumentShown } from "./floor-letters.ts";
 import { documentListingOutput, documentListingShown } from "./listing.ts";
 import { splitIntoParts } from "./parts.ts";
-import { splitLogWithTranscript } from "./transcript-parts.ts";
+import { splitLogWithTranscript, type LogPart } from "./transcript-parts.ts";
 import { speakerTurnsOutput, speakerTurnsShown } from "./speaker-turns.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
@@ -19,6 +19,13 @@ import type { Timestamp } from "#/packages/time/pacific.ts";
 export const getDocumentInput = z.object({
   id: z.string().describe('A document\'s id, such as "version-2025r1-sb69-a-engrossed" or "testimony-2025r1-117165".'),
   part: z.number().int().min(1).optional().describe("Which part of the text to return, from 1. The first by default."),
+  timecode: z
+    .string()
+    .regex(/^\d{1,2}:\d{2}:\d{2}$/)
+    .optional()
+    .describe(
+      'For a Recording Log: the timecode of one of its speaker turns, as logged, such as "00:20:41". The answer is then the part that holds that turn\'s line and the start of its words (while machine transcripts are published), instead of part 1. Give it or part, not both.',
+    ),
 });
 
 const related = z.object({
@@ -125,7 +132,10 @@ export function getDocument(
       ? splitLogWithTranscript(stored.text, speakerTurns.turns, transcript)
       : undefined;
   const parts = paged === undefined ? splitIntoParts(stored.text) : paged.map((each) => each.text);
-  const part = input.part ?? 1;
+  const part =
+    input.timecode !== undefined && speakerTurns?.kind === "indexed" && paged !== undefined
+      ? partOfTurn(paged, turnAtTimecode(speakerTurns.turns, input.timecode))
+      : (input.part ?? 1);
   if (part > parts.length) return { kind: "fault", fault: { kind: "no_such_part", id, part, partCount: parts.length } };
   return {
     kind: "answer",
@@ -155,6 +165,23 @@ export function getDocument(
       ...documentListingShown(found.listing),
     },
   };
+}
+
+/** The seconds a timecode "hh:mm:ss" (or "h:mm:ss") names. */
+function secondsOfTimecode(timecode: string): number {
+  const [hours, minutes, seconds] = timecode.split(":").map(Number);
+  return (hours ?? 0) * 3600 + (minutes ?? 0) * 60 + (seconds ?? 0);
+}
+
+/** The position of the first turn whose logged timecode names the same second as `timecode`, or -1 when no turn's does. */
+function turnAtTimecode(turns: readonly { timecode: string }[], timecode: string): number {
+  const asked = secondsOfTimecode(timecode);
+  return turns.findIndex((turn) => secondsOfTimecode(turn.timecode) === asked);
+}
+
+/** The part (from 1) of a log paged with its transcript that first lists turn `turn`: the part its line is in (ADR-0055). */
+function partOfTurn(paged: readonly LogPart[], turn: number): number {
+  return paged.findIndex((each) => each.transcript.turns[turn] !== undefined) + 1;
 }
 
 /**
