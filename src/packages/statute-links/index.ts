@@ -12,9 +12,11 @@ export type { StatutesAffectedTableParse } from "./lib/statutes-affected-table.t
 
 /**
  * The version of the Statute Link parser's reading (ADR-0064). The worker records it with each file it reads and reads a file
- * again when the recorded version is not this one. BUMP IT BY HAND in any change to this package that would change what
- * `parseStatuteLinks` or `readAmendedVersionHeader` returns for some text (a new pattern, a fixed kind, a changed range
- * rule): without the bump a stored database keeps the old links. A change that leaves every output as it was needs none.
+ * again when the recorded version is not this one. BUMP IT BY HAND in any change that would change what the worker's
+ * `statuteParseOf` (`ingest/lib/statute-parse.ts`) stores for some stored text: a change to this package (a new pattern, a
+ * fixed kind, a changed range rule) and also one outside it that the reading uses, such as `domain/oregonai.ts`
+ * (`orsSectionIdOf`, `compareOrsSectionIds`), `domain/statute-links.ts` or `ingest/lib/statute-parse.ts` itself. Without the
+ * bump a stored database keeps the old links. A change that leaves every stored result as it was needs none.
  * A reading made before schema step 8 counts as version 0, so this starts at 1.
  */
 export const STATUTE_LINK_PARSER_VERSION = 1;
