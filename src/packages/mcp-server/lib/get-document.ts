@@ -159,7 +159,14 @@ export function getDocument(
         fault: { kind: "no_such_turn", id, timecode: input.timecode, ...turnsAround(turns, input.timecode) },
       };
     }
-    part = paged === undefined ? 1 : partOfTurn(paged, turn);
+    // Paged with its transcript, the log lists the turn first in the part its line is in; cut as its text alone (the gate off, or
+    // no transcript), the part is the one that holds where the worker placed the turn's line, read only when there are two parts.
+    part =
+      paged !== undefined
+        ? partOfTurn(paged, turn)
+        : parts.length === 1
+          ? 1
+          : partOfOffset(parts, placedOffset(reader.turnTextOffsetsOf(stored.id), turn));
   }
   if (part > parts.length) return { kind: "fault", fault: { kind: "no_such_part", id, part, partCount: parts.length } };
   return {
@@ -221,6 +228,25 @@ function turnsAround(
     before: before === null ? null : { timecode: before.timecode, speaker: before.speaker },
     after: after === null ? null : { timecode: after.timecode, speaker: after.speaker },
   };
+}
+
+/** Where turn `turn`'s line starts: its own place, or for a turn the worker could not place the place of the turn before it. */
+function placedOffset(offsets: readonly (number | null)[], turn: number): number {
+  for (let index = turn; index >= 0; index -= 1) {
+    const offset = offsets[index];
+    if (offset !== null && offset !== undefined) return offset;
+  }
+  return 0;
+}
+
+/** The part (from 1) of a text cut into `parts`, which joined are the text, that holds the character at `offset`. */
+function partOfOffset(parts: readonly string[], offset: number): number {
+  let end = 0;
+  for (const [index, each] of parts.entries()) {
+    end += each.length;
+    if (offset < end) return index + 1;
+  }
+  return parts.length;
 }
 
 /** The part (from 1) of a log paged with its transcript that first lists turn `turn`: the part its line is in (ADR-0055). */

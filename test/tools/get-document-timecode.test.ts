@@ -92,6 +92,19 @@ describe("get_document with a timecode, the gate on", () => {
   });
 });
 
+describe("get_document with a timecode, the gate off", () => {
+  it("gives the part that holds the turn's line, the log cut as its text alone, and no word of the transcript", async () => {
+    const found = await atTimecode(off, "01:21:19");
+
+    // With the gate off the log is one part (3,620 characters), as before.
+    expect(found).toMatchObject({ part: 1, part_count: 1 });
+    expect(found.text).toContain("\n01:21:19 ");
+    expect(turnAt(found, "01:21:19")).toBeDefined();
+    expect(found.speaker_turns.turns.every((turn) => !("transcript" in turn))).toBe(true);
+    expect(found.speaker_turns).not.toHaveProperty("transcript");
+  });
+});
+
 describe("get_document with a timecode it cannot answer", () => {
   it("refuses a timecode on a document that is not a Recording Log, and says what the document is", async () => {
     const outcome = await callTool(on, "get_document", { id: "version-2025r1-sb69-introduced", timecode: "00:02:49" });

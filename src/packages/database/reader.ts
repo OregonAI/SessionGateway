@@ -88,7 +88,7 @@ import {
 } from "./lib/speaker-turns.ts";
 import type { SpeakerTurnIndexOutcome, TurnHearing } from "#/packages/domain/speaker-turns.ts";
 import type { TranscriptOfLog } from "#/packages/domain/transcripts.ts";
-import { meetingHasTranscript, readTranscriptOfLog } from "./lib/transcripts.ts";
+import { meetingHasTranscript, readTranscriptOfLog, readTurnTextOffsets } from "./lib/transcripts.ts";
 import { openReadConnection } from "./lib/connection.ts";
 import { agencyLinkListings, openListingReader, type ListingRead } from "./lib/listing.ts";
 import {
@@ -244,6 +244,12 @@ export type IndexReader = {
    * caller decides whether to show it: the publication gate is the server's, and the reader returns what is stored.
    */
   transcriptOfLog(document: DocumentId): TranscriptOfLog | undefined;
+  /**
+   * Where each of a Recording Log's speaker turns starts in its text, in the order of `speakerTurnIndexOf`'s turns, or null for a
+   * turn the worker could not place (ADR-0053); empty for a log with no turns. It reads nothing of a transcript, so `get_document`
+   * finds the part of a turn's line with it while the publication gate is off (ticket #174).
+   */
+  turnTextOffsetsOf(document: DocumentId): (number | null)[];
   /** Whether the Meeting has a stored machine transcript. */
   meetingHasTranscript(meeting: MeetingId): boolean;
   /**
@@ -1359,6 +1365,9 @@ export function openIndexReader(path: string, clock: Clock): IndexReader {
     },
     transcriptOfLog(document) {
       return inOneSnapshot(() => readTranscriptOfLog(database, document));
+    },
+    turnTextOffsetsOf(document) {
+      return inOneSnapshot(() => readTurnTextOffsets(database, document));
     },
     meetingHasTranscript(meeting) {
       return inOneSnapshot(() => meetingHasTranscript(database, meeting));
