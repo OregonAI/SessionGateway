@@ -105,3 +105,31 @@ describe("a file whose bytes stop (ticket #167)", () => {
     expect((await getDocument(system, `testimony-2025r1-${String(slowId)}`)).isError).toBe(false);
   });
 });
+
+describe("a file that keeps sending past the overall cap (ticket #167)", () => {
+  // The same 12 pieces 150 ms apart (about 1.65 s), under a cap of 0.6 s: no gap stalls, and every attempt is cut off.
+  it("is reported request_failed after three attempts, with the bytes received before the cap", async () => {
+    const system = await start({
+      clockAt,
+      documentTimeoutMs: 1_000,
+      documentCapMs: 600,
+      olis: {
+        madeUpRows: { CommitteePublicTestimonies: [madeUpTestimonyRow({ commTestId: slowId })] },
+        madeUpDocuments: { [testimonyDownloadPath(slowId)]: slowFile },
+        documentPacing: { [testimonyDownloadPath(slowId)]: { pieces: 12, everyMs: 150 } },
+      },
+    });
+
+    const entry = notFetched(system).find((found) => found.id === `testimony-2025r1-${String(slowId)}`);
+    expect(entry).toMatchObject({
+      source_url: slowUrl,
+      reason: expect.stringContaining("3 attempts") as unknown,
+      cause: "request_failed",
+    });
+    // Some of the file came before each cut, and not all of it: how much depends on the machine's timers.
+    expect(entry?.bytes_received).toBeGreaterThan(0);
+    expect(entry?.bytes_received).toBeLessThan(slowFile.length);
+    expect(system.olis.documentRequests().filter((path) => path === testimonyDownloadPath(slowId))).toHaveLength(3);
+    expect((await getDocument(system, `testimony-2025r1-${String(slowId)}`)).isError).toBe(true);
+  });
+});

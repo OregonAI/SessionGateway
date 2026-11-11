@@ -571,6 +571,43 @@ describe("the entry scripts", () => {
     ["src/bin/server.ts", "MCP_RATE_WINDOW_SECONDS", "never"],
   ];
 
+  // Ticket #167: the document download's stall limit and overall cap are the worker's settings, whole milliseconds that a
+  // Node timer can count (1 to 2^31 - 1). `--once`, so a worker that took the value would pull once and exit 0.
+  it.for([
+    ["OLIS_DOCUMENT_STALL_MS", "soon"],
+    ["OLIS_DOCUMENT_STALL_MS", "3000000000"],
+    ["OLIS_DOCUMENT_CAP_MS", "later"],
+    ["OLIS_DOCUMENT_CAP_MS", "3000000000"],
+  ] as const)(
+    "src/bin/ingest.ts fails at start-up on %s=%s, naming the variable and never its value",
+    async ([variable, value]) => {
+      const { olis, database } = await fakeOlisAndDatabase();
+      const env = { ...workerEnvironment(olis, database.path), [variable]: value };
+
+      const finished = await run("src/bin/ingest.ts --once", env);
+
+      expect(finished.code).not.toBe(0);
+      expect(finished.code).not.toBeNull();
+      expect(finished.stderr).toContain(variable);
+      expect(finished.stderr).not.toContain(value);
+    },
+  );
+
+  // A limit of 0 would end every attempt at once. The digit is in any stack trace, so this case checks the variable alone.
+  it.for(["OLIS_DOCUMENT_STALL_MS", "OLIS_DOCUMENT_CAP_MS"])(
+    "src/bin/ingest.ts fails at start-up on %s=0, naming the variable",
+    async (variable) => {
+      const { olis, database } = await fakeOlisAndDatabase();
+      const env = { ...workerEnvironment(olis, database.path), [variable]: "0" };
+
+      const finished = await run("src/bin/ingest.ts --once", env);
+
+      expect(finished.code).not.toBe(0);
+      expect(finished.code).not.toBeNull();
+      expect(finished.stderr).toContain(variable);
+    },
+  );
+
   it("src/bin/server.ts fails at start-up when OLIS_BASE_URL is missing, naming the variable", async () => {
     // The server reads OLIS for the live status of get_measure, so a deployment without it would answer
     // every call from the cache. It is refused at start-up instead (src/CLAUDE.md, "Configuration").

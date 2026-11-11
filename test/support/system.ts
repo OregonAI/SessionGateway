@@ -71,6 +71,11 @@ export type SystemOptions = {
   /** How long the worker waits for one attempt to fetch a document; a test that makes one hang sets it short. */
   documentTimeoutMs?: number;
   /**
+   * The overall cap on one attempt to fetch a document, however its bytes keep coming (OLIS_DOCUMENT_CAP_MS, ticket #167):
+   * a test of a file that trickles past it sets it short.
+   */
+  documentCapMs?: number;
+  /**
    * Makes the worker's pause between attempts to fetch a document the real one: `timers/promises` `setTimeout`, which
    * waits the real time and, when the signal aborts, rejects with an `AbortError` whose `cause` is the signal's reason
    * (ticket #113). Off by default, so the worker never pauses and a test reads how many attempts there were.
@@ -194,6 +199,7 @@ function templateKey(options: SystemOptions): string | undefined {
     olis: options.olis,
     statutesAffectedTableUrl: options.statutesAffectedTableUrl?.(origin),
     documentTimeoutMs: options.documentTimeoutMs,
+    documentCapMs: options.documentCapMs,
     olisBaseUrl: options.olisBaseUrl?.(`${origin}/`),
     transcripts: options.transcripts,
     legislatorAliasesPath:
@@ -337,6 +343,7 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
     ...(options.ingest?.increments === undefined ? {} : { INGEST_INCREMENTS: options.ingest.increments }),
     ...(options.ingest?.fullPull === undefined ? {} : { INGEST_FULL_PULL: options.ingest.fullPull }),
     ...(options.ingest?.hashSampleSize === undefined ? {} : { INGEST_HASH_SAMPLE_SIZE: options.ingest.hashSampleSize }),
+    ...(options.documentCapMs === undefined ? {} : { OLIS_DOCUMENT_CAP_MS: String(options.documentCapMs) }),
     ...(options.statutesAffectedTableUrl === undefined
       ? {}
       : { STATUTES_AFFECTED_TABLE_URL: options.statutesAffectedTableUrl(olis.origin) }),
