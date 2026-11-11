@@ -4,7 +4,10 @@
 // pull at a simulated clock, the fake embedder), moves the simulated clock without running the worker and reads what an
 // agent reads: the text of a tool's answer. The setting is the server's (`serverEnv`); the worker is not given it.
 // Times are Pacific (UTC-8 in January). The existing staleness cases, with the setting absent, are in staleness.test.ts.
+// The last describe is get_measure's notice when its live lookup fails, with the setting off and on (ticket #180): the fake
+// OLIS answers 503 after the pull, so the lookup fails and the notice says the values are the cache's.
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { liveStatusOf } from "../support/live-status.ts";
 import { callTool, connectClient } from "../support/mcp-clients.ts";
 import { startSystem, type System, type SystemOptions } from "../support/system.ts";
 
@@ -139,5 +142,31 @@ describe("INGEST_WORKER=off: the index is a static copy", () => {
     );
     expect(String(error)).toContain("INGEST_WORKER");
     expect(String(error)).not.toContain("nope");
+  });
+});
+
+// Ticket #180: when get_measure's live lookup fails, its notice says plainly that the location, history and votes are the
+// cache's as of the index's as-of time and that later changes are not in them, which is true whether a worker runs or not.
+describe("get_measure's notice when the live lookup fails (ticket #180)", () => {
+  const CACHE_SENTENCE = `The location, history and votes come from the cache, as of ${pulledAtPacific}, the index's as-of time; changes the Legislature has made since then are not in them.`;
+
+  it.for([
+    ["INGEST_WORKER=off", worker.off],
+    ["INGEST_WORKER=on", { INGEST_WORKER: "on" }],
+  ] as const)("says where the values come from, with %s, and does not hedge", async ([, serverEnv]) => {
+    const system = await start({ clockAt: pulledAt, serverEnv });
+    system.clock.set("2025-03-05T20:00:00Z");
+    system.olis.behave({ kind: "fail", status: 503 });
+    const connected = await connectClient("2026-07-28", system.handler);
+    try {
+      const outcome = await callTool(connected, "get_measure", { measure: "SB 69" });
+      const live = liveStatusOf(outcome);
+
+      expect(live).toMatchObject({ source: "cache", lookup_failed: true, as_of: pulledAtPacific });
+      expect(live?.notice).toContain(CACHE_SENTENCE);
+      expect(live?.notice).not.toContain("may be out of date");
+    } finally {
+      await connected.close();
+    }
   });
 });
