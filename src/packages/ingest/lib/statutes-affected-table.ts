@@ -4,7 +4,11 @@ import type { SessionKey } from "#/packages/domain/index.ts";
 import type { OrsSectionId } from "#/packages/domain/oregonai.ts";
 import type { Download } from "#/packages/olis-client/index.ts";
 import { extractPdfText } from "#/packages/pdf-text/index.ts";
-import { parseStatutesAffectedTable, type StatutesAffectedTableParse } from "#/packages/statute-links/index.ts";
+import {
+  parseStatutesAffectedTable,
+  STATUTES_AFFECTED_TABLE_PARSER_VERSION,
+  type StatutesAffectedTableParse,
+} from "#/packages/statute-links/index.ts";
 import { tallyLoneEEntries } from "#/packages/statute-links/table.ts";
 import type { Timestamp } from "#/packages/time/pacific.ts";
 
@@ -16,9 +20,9 @@ import type { Timestamp } from "#/packages/time/pacific.ts";
 export type StatutesAffectedTableReport = {
   source_url: string;
   outcome:
-    | "loaded" // new bytes were read and stored, or the held bytes again with another snapshot (ADR-0044)
-    | "unchanged" // the bytes and the snapshot are the ones the index holds the table with, so nothing was read again
-    | "read_again_from_held_copy" // the table could not be fetched and the snapshot changed: the held text was read again
+    | "loaded" // new bytes were read and stored, or the held bytes again after the snapshot or the table parser's version changed (ADR-0044, ADR-0065)
+    | "unchanged" // the bytes, the snapshot and the table parser's version are the ones the index holds the table with, so nothing was read again
+    | "read_again_from_held_copy" // the table could not be fetched and the snapshot or the table parser's version changed: the held text was read again
     | "not_published" // the server answered 404: the table does not exist yet, or no longer
     | "not_fetched" // any other failure to get the bytes
     | "not_read" // got bytes that are not a table the parser reads
@@ -26,7 +30,7 @@ export type StatutesAffectedTableReport = {
   held: boolean;
   /**
    * For "loaded" and "read_again_from_held_copy", and for "not_read" and "refused_unchanged" when a table is held and
-   * the snapshot changed, so that the held copy was read again (ADR-0044): the entries read, the rows of a previous Session's Measures (repassed
+   * the snapshot or the table parser's version changed, so that the held copy was read again (ADR-0044, ADR-0065): the entries read, the rows of a previous Session's Measures (repassed
    * over the Governor's veto, “OVP”) kept apart from them, and the lines of the ORS table the parser could not read.
    */
   entries?: number;
@@ -61,24 +65,27 @@ type ReadArguments = {
   /** The snapshot's ORS section list, which a series in the table is expanded against. */
   orsSections: readonly OrsSectionId[];
   /**
-   * The commit of that snapshot: a held table read with another commit is read again, though its bytes are the same
-   * (ADR-0044).
+   * The commit of that snapshot: a held table read with another commit, or by another version of the table parser, is read
+   * again, though its bytes are the same (ADR-0044, ADR-0065).
    */
   snapshotCommit: string;
 };
 
 /**
  * Reads the Statutes Affected Table the pull fetched and, when its bytes differ from the copy the index holds or the copy
- * was read with another snapshot, reads and stores it (ADR-0034, ADR-0044). Nothing that goes wrong with the table stops
+ * was read with another snapshot or by another version of the table parser, reads and stores it (ADR-0034, ADR-0044, ADR-0065). Nothing that goes wrong with the table stops
  * the pull or changes the copy the index holds: a table that is not published yet, a failed fetch and a file that is not a
- * table all leave it as it was. When the fetch fails, or gives bytes refused as no table, and the snapshot changed, the held
- * copy's text is read again with the new section list (ADR-0044). A failure of the PDF extractor itself is a bug and throws,
+ * table all leave it as it was. When the fetch fails, or gives bytes refused as no table, and the snapshot or the table parser's
+ * version changed, the held copy's text is read again with the new section list (ADR-0044). A failure of the PDF extractor itself is a bug and throws,
  * as it does for a document.
  */
 export async function readStatutesAffectedTable(read: ReadArguments): Promise<StatutesAffectedTableReport> {
   const heldTable = read.writer.heldStatutesAffectedTable(read.session);
   const held = heldTable !== undefined;
-  const readWithThisSnapshot = heldTable?.snapshotCommit === read.snapshotCommit;
+  // Read with this snapshot and by the current table parser (ADR-0044, ADR-0065). The name keeps the branches below as they were.
+  const readWithThisSnapshot =
+    heldTable?.snapshotCommit === read.snapshotCommit &&
+    heldTable.parserVersion === STATUTES_AFFECTED_TABLE_PARSER_VERSION;
   const report = { source_url: read.url };
   // The series follow the snapshot: the held bytes are read again from the stored text with the new section list, and
   // the copy (its bytes, hash, address and retrieval time) stays as it was (ADR-0044).
@@ -87,6 +94,7 @@ export async function readStatutesAffectedTable(read: ReadArguments): Promise<St
     read.writer.rereadStatutesAffectedTable(read.session, {
       entries: parsed.entries,
       snapshotCommit: read.snapshotCommit,
+      parserVersion: STATUTES_AFFECTED_TABLE_PARSER_VERSION,
     });
     return parsed;
   };
@@ -104,10 +112,10 @@ export async function readStatutesAffectedTable(read: ReadArguments): Promise<St
   const contentHash = createHash("sha256").update(download.bytes).digest("hex");
   if (contentHash === heldTable?.contentHash) {
     if (readWithThisSnapshot) return { ...report, outcome: "unchanged", held: true };
-    // The same bytes with another snapshot: their stored text is what extracting them again would give.
+    // The same bytes with another snapshot or table parser version: their stored text is what extracting them again would give.
     return { ...report, outcome: "loaded", held: true, ...countsOf(read, readHeldAgain(heldTable.text)) };
   }
-  // Refused bytes replace nothing, so the refusal is reported as ever; with another snapshot, the held copy is read
+  // Refused bytes replace nothing, so the refusal is reported as ever; with another snapshot or table parser version, the held copy is read
   // again from its stored text, as when the fetch fails, and its counts are given beside the refusal (ADR-0044).
   const heldReadAgain = () =>
     heldTable !== undefined && !readWithThisSnapshot ? countsOf(read, readHeldAgain(heldTable.text)) : {};
@@ -134,6 +142,7 @@ export async function readStatutesAffectedTable(read: ReadArguments): Promise<St
     text: extraction.pdf.text,
     entries: parsed.entries,
     snapshotCommit: read.snapshotCommit,
+    parserVersion: STATUTES_AFFECTED_TABLE_PARSER_VERSION,
   });
   return { ...report, outcome: "loaded", held: true, ...countsOf(read, parsed) };
 }

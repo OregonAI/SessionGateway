@@ -56,6 +56,20 @@ export function readWithAnOlderParser(databasePath: string, documentId: string):
 }
 
 /**
+ * Makes a database look as one that an older Statutes Affected Table parser read (ticket #184, ADR-0065): the held table's
+ * reading is stamped with parser version 0 and its entries are gone, as a parser that did not yet make them left them. The
+ * copy of the table, its hash and the snapshot commit are as they were. It only arranges, like `forgetListing`.
+ */
+export function readTableWithAnOlderParser(databasePath: string): void {
+  const database = new DatabaseSync(databasePath, { timeout: 5000 });
+  try {
+    database.exec("UPDATE statutes_affected_read SET parser_version = 0; DELETE FROM statutes_affected_entry");
+  } finally {
+    database.close();
+  }
+}
+
+/**
  * Makes a database look as one a worker before ticket #160 left: no Recording Log has its link annotations stored (the file
  * has the table, which step 6 makes, and it is empty). It only arranges, like `forgetListing`.
  */
@@ -115,6 +129,7 @@ export function leaveTurnsUnlinkedFromPassages(databasePath: string): void {
     database.exec("ALTER TABLE speaker_turn_index DROP COLUMN item_measures_read");
     for (const table of tablesGivenCreatedAtByStepFive) database.exec(`ALTER TABLE ${table} DROP COLUMN created_at`);
     database.exec("ALTER TABLE statute_read DROP COLUMN parser_version");
+    database.exec("ALTER TABLE statutes_affected_read DROP COLUMN parser_version");
     for (const log of logs) {
       const hash = createHash("sha256").update(log.text, "utf8").digest("hex");
       const id = run(
@@ -157,6 +172,7 @@ export function leaveAsVersionFour(databasePath: string): void {
   try {
     for (const table of tablesGivenCreatedAtByStepFive) database.exec(`ALTER TABLE ${table} DROP COLUMN created_at`);
     database.exec("ALTER TABLE statute_read DROP COLUMN parser_version");
+    database.exec("ALTER TABLE statutes_affected_read DROP COLUMN parser_version");
     database.exec("PRAGMA user_version = 4");
   } finally {
     database.close();

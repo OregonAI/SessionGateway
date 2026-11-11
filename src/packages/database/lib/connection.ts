@@ -687,6 +687,12 @@ const upgradeSteps: readonly ((database: DatabaseSync) => void)[] = [
   (database) => {
     database.exec("ALTER TABLE statute_read ADD COLUMN parser_version INTEGER NOT NULL DEFAULT 0");
   },
+  // Step 9 (ticket #184, ADR-0065): the version of the Statutes Affected Table parser that read the held table, beside its
+  // snapshot commit. A reading stored before it has no version, which the default makes 0, older than any parser the code
+  // carries (the first is 1), so the held table is read again once at the next pull.
+  (database) => {
+    database.exec("ALTER TABLE statutes_affected_read ADD COLUMN parser_version INTEGER NOT NULL DEFAULT 0");
+  },
 ];
 
 /** The version the newest step leaves a file at. The server opens a file at this version only. */

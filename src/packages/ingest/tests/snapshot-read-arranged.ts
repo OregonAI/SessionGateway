@@ -34,7 +34,7 @@ import {
 import { measureIdOf, parseSessionKey, type MeasureKey } from "#/packages/domain/index.ts";
 import { parseSnapshot, type Snapshot } from "#/packages/oregonai-snapshot/index.ts";
 import { searchEntryOf } from "#/packages/search/documents.ts";
-import { parseStatutesAffectedTable } from "#/packages/statute-links/index.ts";
+import { parseStatutesAffectedTable, STATUTES_AFFECTED_TABLE_PARSER_VERSION } from "#/packages/statute-links/index.ts";
 import { readTimestamp } from "#/packages/time/pacific.ts";
 import type { StatutesAffectedTableFetch } from "../snapshot-read.ts";
 
@@ -331,17 +331,26 @@ export const heldTableRetrievedAt =
 
 /**
  * Stores the made-up table as a Pull with this Snapshot leaves it: its series expanded against the Snapshot's section
- * list, which the committed one holds 22 sections of, and the Snapshot's commit beside it (ADR-0044).
+ * list, which the committed one holds 22 sections of, and the Snapshot's commit beside it (ADR-0044). `reading` arranges
+ * what an older table parser left (ADR-0065): its version, and no entries.
  */
-export function storeHeldTable(writer: IndexWriter, snapshot: Snapshot): void {
+export function storeHeldTable(
+  writer: IndexWriter,
+  snapshot: Snapshot,
+  reading: { parserVersion?: number; entriesLeftOut?: boolean } = {},
+): void {
   writer.storeStatutesAffectedTable(session, {
     sourceUrl: tableUrl,
     retrievedAt: heldTableRetrievedAt,
     contentHash: createHash("sha256").update("MADE UP: the bytes of the held table").digest("hex"),
     pageCount: 1,
     text: madeUpTableText,
-    entries: parseStatutesAffectedTable({ text: madeUpTableText, orsSections: snapshot.orsSections }).entries,
+    entries:
+      reading.entriesLeftOut === true
+        ? []
+        : parseStatutesAffectedTable({ text: madeUpTableText, orsSections: snapshot.orsSections }).entries,
     snapshotCommit: snapshot.version.commit,
+    parserVersion: reading.parserVersion ?? STATUTES_AFFECTED_TABLE_PARSER_VERSION,
   });
 }
 
