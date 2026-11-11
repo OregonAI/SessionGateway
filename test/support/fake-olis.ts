@@ -92,6 +92,12 @@ export type FakeOlisOptions = {
    * (`madeUpPdf`), served from the start whether or not `documents` is on, since the test asked for them by name.
    */
   madeUpDocuments?: Record<string, Uint8Array>;
+  /**
+   * Documents sent slowly, by their path on the fake: every answer at the path is sent in `pieces` parts, `everyMs` of
+   * real time apart, so the whole file takes longer than the worker's stall limit would allow as a total and no gap is as
+   * long as it (ticket #167). The bytes are the ones the path serves otherwise (a made-up, served or fixture file).
+   */
+  documentPacing?: Record<string, DocumentPacing>;
   /** Called at the start of every request, feed or document: how a test makes OLIS take time on the simulated clock. */
   onRequest?: () => void;
 };
@@ -118,6 +124,9 @@ export type FakeOlisBehavior =
 
 /** How a document request fails once: no answer until the client gives up, or an HTTP status. */
 export type DocumentFailure = "hang" | number;
+
+/** How a document is sent slowly (see `documentPacing`): in `pieces` parts, `everyMs` milliseconds of real time apart. */
+export type DocumentPacing = { pieces: number; everyMs: number };
 
 export type FakeOlis = {
   /** The service root with a trailing slash, for the OLIS client's base URL. */
@@ -260,6 +269,28 @@ function sendText(response: ServerResponse, status: number, contentType: string,
   response.end(body);
 }
 
+/** Sends `bytes` in `pacing.pieces` parts, `pacing.everyMs` apart, and stops when the client goes away. */
+function sendPaced(response: ServerResponse, bytes: Uint8Array, pacing: DocumentPacing): void {
+  const size = Math.ceil(bytes.length / pacing.pieces);
+  let sent = 0;
+  let timer: NodeJS.Timeout | undefined;
+  response.on("close", () => {
+    clearTimeout(timer);
+  });
+  const next = (): void => {
+    if (response.destroyed) return;
+    const piece = bytes.subarray(sent, sent + size);
+    sent += piece.length;
+    if (sent >= bytes.length) {
+      response.end(piece);
+      return;
+    }
+    response.write(piece);
+    timer = setTimeout(next, pacing.everyMs);
+  };
+  next();
+}
+
 function sendError(response: ServerResponse, status: number, message: string): void {
   sendText(
     response,
@@ -376,6 +407,7 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
   );
   const servedBytes = new Map<string, Uint8Array>();
   const madeUpDocuments = new Map(Object.entries(options.madeUpDocuments ?? {}));
+  const pacing = new Map(Object.entries(options.documentPacing ?? {}));
   const servesDocuments = options.documents === true;
   const pageSize = options.pageSize ?? 5000;
   let withheldRows = options.withholdLastRows ?? 0;
@@ -418,19 +450,18 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
       return;
     }
     const madeUp = madeUpDocuments.get(path);
-    if (madeUp !== undefined) {
-      response.writeHead(200, { "content-type": "application/pdf", "cache-control": "private" });
-      response.end(madeUp);
-      return;
-    }
     const file = documentPaths.get(path);
     const made = servedBytes.get(path);
-    if (!servesDocuments || (file === undefined && made === undefined)) {
+    const bytes =
+      madeUp ?? (servesDocuments ? (made ?? (file === undefined ? undefined : readFileSync(file))) : undefined);
+    if (bytes === undefined) {
       sendText(response, 404, "text/plain", "Not Found");
       return;
     }
     response.writeHead(200, { "content-type": "application/pdf", "cache-control": "private" });
-    response.end(made ?? (file === undefined ? undefined : readFileSync(file)));
+    const paced = pacing.get(path);
+    if (paced === undefined) response.end(bytes);
+    else sendPaced(response, bytes, paced);
   }
 
   function handle(request: IncomingMessage, response: ServerResponse): void {
