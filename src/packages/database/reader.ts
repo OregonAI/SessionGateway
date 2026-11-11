@@ -37,6 +37,7 @@ import {
   type SessionSpan,
   type StoredMeasure,
   type UnheldDocument,
+  type LastFetchFailure,
   type StoredLinkAnnotation,
 } from "#/packages/domain/documents.ts";
 import {
@@ -90,6 +91,7 @@ import type { SpeakerTurnIndexOutcome, TurnHearing } from "#/packages/domain/spe
 import type { TranscriptOfLog } from "#/packages/domain/transcripts.ts";
 import { meetingHasTranscript, readTranscriptOfLog, readTurnTextOffsets } from "./lib/transcripts.ts";
 import { openReadConnection } from "./lib/connection.ts";
+import { readLastFetchFailure } from "./lib/last-fetch-failure.ts";
 import { agencyLinkListings, openListingReader, type ListingRead } from "./lib/listing.ts";
 import {
   readAsOf,
@@ -238,6 +240,12 @@ export type IndexReader = {
    * of each, in the file's order. Empty when none are stored (a log stored before step 6 and not fetched since). No tool shows them.
    */
   linkAnnotationsOf(document: DocumentId): StoredLinkAnnotation[];
+  /**
+   * What the worker saw at its latest attempt to fetch a document the index holds no file of (ticket #168, ADR-0063): undefined
+   * when it has recorded none (no attempt yet, a file it stored, or a database from before step 7 that no pull has tried since), and
+   * for a Proposed Amendment's own id, which names no file of its own (its postings do).
+   */
+  lastFetchFailureOf(document: DocumentId | AmendmentId): LastFetchFailure | undefined;
   /**
    * The Recording Log's machine transcript (ticket #134, ADR-0055): the passages of each of its turns, in the order of
    * `speakerTurnIndexOf`'s turns, and the passages of the log that are no turn's; or undefined when the log has none. The
@@ -1359,6 +1367,9 @@ export function openIndexReader(path: string, clock: Clock): IndexReader {
     },
     linkAnnotationsOf(document) {
       return inOneSnapshot(() => readLinkAnnotations(database, document));
+    },
+    lastFetchFailureOf(document) {
+      return readLastFetchFailure(database, document);
     },
     speakerTurnIndexOf(document) {
       return inOneSnapshot(() => readSpeakerTurnIndex(database, document));

@@ -615,6 +615,23 @@ const linkAnnotationSchema = `
 `;
 
 /**
+ * Step 7's text (ticket #168, ADR-0063). What the worker saw at its latest attempt to fetch a document the index holds no file
+ * of: the cause (the build report's), its reason, and the bytes the ending attempt received when a request that began to answer
+ * stopped (ADR-0062; null otherwise). A table of its own, keyed by the document, because `document` holds only stored files and
+ * the documents this is about have no row there; the worker deletes the row in the transaction that stores the file. The cause
+ * list is written out here and not built from a constant, so the step's text cannot change with the code. It adds no column to a
+ * table that exists, so a file with the table already there upgrades as a new one does.
+ */
+const lastFetchFailureSchema = `
+  CREATE TABLE IF NOT EXISTS last_fetch_failure (
+    document_id TEXT NOT NULL PRIMARY KEY,
+    cause TEXT NOT NULL CHECK (cause IN ('empty_file', 'unreadable_file', 'request_failed')),
+    reason TEXT NOT NULL,
+    bytes_received INTEGER
+  ) STRICT;
+`;
+
+/**
  * The numbered upgrade steps (ADR-0048): step N takes a file from version N - 1 to version N, and the file's version
  * is the number of steps there are. The worker applies the ones a file lacks, in order, in one transaction when it opens
  * the file, so a file is never left half upgraded. Step 1 is today's schema: its pass of `CREATE ... IF NOT EXISTS`
@@ -658,6 +675,11 @@ const upgradeSteps: readonly ((database: DatabaseSync) => void)[] = [
   // one: a log stored before it has none until the worker fetches the log again.
   (database) => {
     database.exec(linkAnnotationSchema);
+  },
+  // Step 7 (ticket #168, ADR-0063): the last fetch failure of each document the index holds no file of. A new table and no change
+  // to an old one: a document left out before it has none until the worker tries it again.
+  (database) => {
+    database.exec(lastFetchFailureSchema);
   },
 ];
 

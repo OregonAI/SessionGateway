@@ -10,6 +10,7 @@ import {
   type MeetingId,
   type SessionSpan,
   type StoredDocument,
+  type LastFetchFailure,
   type StoredLinkAnnotation,
 } from "#/packages/domain/documents.ts";
 import { measureIdOf, type MeasureId, type SessionKey } from "#/packages/domain/index.ts";
@@ -50,6 +51,7 @@ import {
   storeTranscript,
 } from "./lib/transcripts.ts";
 import { openWriteConnection } from "./lib/connection.ts";
+import { clearFetchFailure, recordFetchFailure } from "./lib/last-fetch-failure.ts";
 import {
   readAsOf,
   readFullPullAsOf,
@@ -418,6 +420,11 @@ export type IndexWriter = {
    * each in the file's order, replacing whatever the log had. They are source data and independent of the speaker-turn index.
    */
   storeLinkAnnotations(document: DocumentId, annotations: readonly StoredLinkAnnotation[]): void;
+  /**
+   * Keeps what the worker saw at an attempt to fetch a document the index holds no file of (ticket #168, ADR-0063), replacing
+   * whatever an earlier attempt left. Storing the document's file (`storeDocument`, `replaceDocument`) clears it.
+   */
+  recordFetchFailure(document: DocumentId, failure: LastFetchFailure): void;
   /**
    * The stored Recording Logs of the Session to fetch again to read their links (ADR-0052, ADR-0058): those with no speaker-turn
    * index yet (a gap counts as one) and those with no stored link annotation. A log whose read finds no link has no annotation
@@ -1103,6 +1110,8 @@ export function openIndexWriter(path: string): IndexWriter {
         deleteFor("DELETE FROM agenda_revision WHERE document_id = ?");
         deleteFor("DELETE FROM document WHERE id = ?");
       }
+      // The file is held now, so what an earlier attempt failed on is no longer the document's (ticket #168, ADR-0063).
+      clearFetchFailure(database, document.id);
       insertDocument.run(
         document.id,
         document.nodeId,
@@ -1227,6 +1236,9 @@ export function openIndexWriter(path: string): IndexWriter {
     },
     storeLinkAnnotations(document, annotations) {
       storeLinkAnnotations(database, document, annotations);
+    },
+    recordFetchFailure(document, failure) {
+      recordFetchFailure(database, document, failure);
     },
     storeSpeakerTurnIndex(record) {
       storeSpeakerTurnIndex(database, record.documentId, record.outcome);

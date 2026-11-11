@@ -30,6 +30,13 @@ export type IngestConfig = {
   olisBaseUrl: string;
   /** The origin documents are fetched from: OLIS's own, unless a test points the worker elsewhere. */
   olisDocumentOrigin: string;
+  /**
+   * How long one attempt to fetch a document may go without an answer or a byte before it is given up as stalled:
+   * OLIS_DOCUMENT_STALL_MS, 60 seconds unless set (ticket #167, ADR-0062).
+   */
+  documentStallMs: number;
+  /** The most one attempt to fetch a document may take, its bytes still coming: OLIS_DOCUMENT_CAP_MS, 10 minutes unless set (ADR-0062). */
+  documentCapMs: number;
   databasePath: string;
   /** The OregonAI snapshot file the worker copies into the build (scripts/snapshot/build.ts writes it). */
   snapshotPath: string;
@@ -114,6 +121,23 @@ const fullPullSetting = z
 // ADR-0057: the server's one way to know that no worker runs. Only the server reads it. The message names the variable and the values.
 const workerSetting = z.enum(workerSettings, { error: `must be one of ${workerSettings.join(", ")}` }).default("on");
 
+// What a Node timer can count, in milliseconds: a longer delay is taken as 1 ms.
+const MAX_TIMER_MS = 2_147_483_647;
+
+/** A limit in whole milliseconds, from 1 to what a Node timer can count. The message names the bounds, never the value. */
+const timerMilliseconds = (fallback: number) =>
+  z
+    .string()
+    .regex(/^\d+$/, "must be a whole number of milliseconds")
+    .transform(Number)
+    .pipe(
+      z
+        .number()
+        .min(1, "must be at least 1")
+        .max(MAX_TIMER_MS, `must be at most ${String(MAX_TIMER_MS)} (milliseconds)`),
+    )
+    .default(fallback);
+
 const ingestSchema = z.object({
   INGEST_INCREMENTS: incrementsSetting,
   INGEST_FULL_PULL: fullPullSetting,
@@ -131,6 +155,9 @@ const ingestSchema = z.object({
     .url()
     .default("https://olis.oregonlegislature.gov")
     .transform((text) => new URL(text).origin),
+  // A document's download ends when no byte comes for this long, not on a total time, under an overall cap (ADR-0062).
+  OLIS_DOCUMENT_STALL_MS: timerMilliseconds(60_000),
+  OLIS_DOCUMENT_CAP_MS: timerMilliseconds(600_000),
   DATABASE_PATH: z.string().min(1),
   SNAPSHOT_PATH: z.string().min(1),
   MODEL_PATH: z.string().min(1),
@@ -238,6 +265,8 @@ export function loadIngestConfig(env: Environment): IngestConfig {
     session: parsed.SESSION_KEY,
     olisBaseUrl: parsed.OLIS_BASE_URL,
     olisDocumentOrigin: parsed.OLIS_DOCUMENT_ORIGIN,
+    documentStallMs: parsed.OLIS_DOCUMENT_STALL_MS,
+    documentCapMs: parsed.OLIS_DOCUMENT_CAP_MS,
     databasePath: parsed.DATABASE_PATH,
     snapshotPath: parsed.SNAPSHOT_PATH,
     modelPath: parsed.MODEL_PATH,

@@ -37,6 +37,7 @@ import type {
   CommitteeMember,
   Convening,
   DocumentLink,
+  LastFetchFailure,
   Meeting,
   PulledEntitySet,
   SessionDates,
@@ -73,7 +74,7 @@ import {
   buildReportPath,
   writeBuildReport,
   type BuildReport,
-  type NotFetchedCause,
+  type NotFetchedEntry,
   type RecordingLogGap,
   type SetReport,
 } from "./lib/build-report.ts";
@@ -100,8 +101,6 @@ export type IngestDeps = {
   signal: AbortSignal;
   /** Waits between attempts to fetch a document. Created in the entry script, so a test need not wait. */
   pause: (milliseconds: number, signal: AbortSignal) => Promise<void>;
-  /** How long one attempt to fetch a document may take, in milliseconds. 60 seconds by default. */
-  documentTimeoutMs?: number;
   /** The alias file's entries: who the Legislator Codes it lists are, where the Legislators rows do not say. */
   legislatorAliases: readonly LegislatorAlias[];
   /** Counts the tokens that decide where a passage ends. Created in the entry script, like the clock. */
@@ -122,13 +121,11 @@ export type FullPullResult = {
   unresolvedLegislatorCodes: UnresolvedLegislatorCode[];
 };
 
-/** A document that takes longer than this is an outage, not a slow answer (olis-odata.md gotcha 15). */
-const DEFAULT_DOCUMENT_TIMEOUT_MS = 60_000;
-
 /** What a pull made of one linked document: its file and text, or why it is left out of the store. */
 type Fetched =
   | { kind: "fetched"; bytes: Uint8Array; pdf: ExtractedPdf }
-  | { kind: "left_out"; reason: string; cause: NotFetchedCause };
+  | { kind: "left_out"; reason: string; cause: "empty_file" | "unreadable_file" }
+  | { kind: "left_out"; reason: string; cause: "request_failed"; bytesReceived?: number };
 
 /**
  * Fetches one document and reads its text. A document OLIS will not give, or a file that is not a PDF or needs a password
@@ -154,10 +151,36 @@ async function fetchAndRead(olis: OlisClient, link: DocumentLink, signal: AbortS
       }
     }
     case "failed":
-      return { kind: "left_out", reason: download.reason, cause: "request_failed" };
+      return {
+        kind: "left_out",
+        reason: download.reason,
+        cause: "request_failed",
+        ...(download.bytesReceived === undefined ? {} : { bytesReceived: download.bytesReceived }),
+      };
     default:
       return download satisfies never;
   }
+}
+
+/** What the store keeps of a document left out (ticket #168, ADR-0063): the cause, its reason, and the bytes a cut-off attempt received. */
+function lastFetchFailureOf(left: Extract<Fetched, { kind: "left_out" }>): LastFetchFailure {
+  if (left.cause !== "request_failed") return { cause: left.cause, reason: left.reason };
+  return {
+    cause: left.cause,
+    reason: left.reason,
+    ...(left.bytesReceived === undefined ? {} : { bytesReceived: left.bytesReceived }),
+  };
+}
+
+/** The build report's entry for a document left out: its id, address, reason and cause, and the bytes a cut-off attempt received. */
+function notFetchedEntryOf(link: DocumentLink, left: Extract<Fetched, { kind: "left_out" }>): NotFetchedEntry {
+  const common = { id: link.id, source_url: link.sourceUrl, reason: left.reason };
+  if (left.cause !== "request_failed") return { ...common, cause: left.cause };
+  return {
+    ...common,
+    cause: left.cause,
+    ...(left.bytesReceived === undefined ? {} : { bytes_received: left.bytesReceived }),
+  };
 }
 
 async function readPdf(link: DocumentLink, bytes: Uint8Array): ReturnType<typeof extractPdfText> {
@@ -391,7 +414,7 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
       const again = await fetchAndRead(olis, link, deps.signal);
       if (again.kind === "left_out") {
         // The log has no index and the next pull tries it again: this pull says it did not read it.
-        refetches.failed.push({ id: link.id, source_url: link.sourceUrl, reason: again.reason, cause: again.cause });
+        refetches.failed.push(notFetchedEntryOf(link, again));
         continue;
       }
       const fetchedHash = createHash("sha256").update(again.bytes).digest("hex");
@@ -417,9 +440,11 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
     const fetched = await fetchAndRead(olis, link, deps.signal);
     if (fetched.kind === "left_out") {
       // A revised agenda that cannot be fetched stays as it was stored (ADR-0041): the index holds it, so it is not
-      // a document the index lacks.
+      // a document the index lacks. Any other is, and what this attempt saw replaces what the last one did (ticket #168,
+      // ADR-0063), so get_document can say it; storing the file clears it.
       if (!revised.has(link.id)) {
-        notFetched.push({ id: link.id, source_url: link.sourceUrl, reason: fetched.reason, cause: fetched.cause });
+        notFetched.push(notFetchedEntryOf(link, fetched));
+        writer.recordFetchFailure(link.id, lastFetchFailureOf(fetched));
       }
       continue;
     }
@@ -614,7 +639,7 @@ function feedRecordOf(
 }
 
 /**
- * The OLIS client every run of the worker is made with: the feed, and the documents' origin, timeout and pause. A Full
+ * The OLIS client every run of the worker is made with: the feed, and the documents' origin, stall limit, cap and pause. A Full
  * pull gives `onSetRead` to be told each set's counts, so a set that is short is reported and the pull refused whole; a run
  * that gives none throws on a short read (ADR-0005).
  */
@@ -625,7 +650,8 @@ function createWorkerClient(config: IngestConfig, deps: IngestDeps, onSetRead?: 
     ...(onSetRead === undefined ? {} : { onSetRead }),
     documents: {
       origin: config.olisDocumentOrigin,
-      timeoutMs: deps.documentTimeoutMs ?? DEFAULT_DOCUMENT_TIMEOUT_MS,
+      stallMs: config.documentStallMs,
+      capMs: config.documentCapMs,
       pause: deps.pause,
     },
   });

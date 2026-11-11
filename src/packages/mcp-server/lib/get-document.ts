@@ -4,7 +4,10 @@ import {
   documentKinds,
   parseDocumentReference,
   relations,
+  type AmendmentId,
+  type DocumentId,
   type DocumentKind,
+  type LastFetchFailure,
   type UnheldDocument,
 } from "#/packages/domain/documents.ts";
 import type { Outcome } from "./outcome.ts";
@@ -78,13 +81,22 @@ export type GetDocumentOutput = z.infer<typeof getDocumentOutput>;
 /** Why a call cannot be met. These are expected outcomes, so they are values; the envelope tells the agent they are tool errors. */
 export type GetDocumentFault =
   | { kind: "unknown"; id: string; session: SessionKey }
-  /** A Testimony the feed lists and the store has not fetched: a fact about the index, not a wrong id. */
-  | { kind: "not_held"; id: string; session: SessionKey }
+  /**
+   * A Testimony the feed lists and the store has not fetched: a fact about the index, not a wrong id. `lastFetch` is what the
+   * worker saw at its latest attempt on the file (ticket #168, ADR-0063), when it recorded one.
+   */
+  | { kind: "not_held"; id: string; session: SessionKey; lastFetch: LastFetchFailure | undefined }
   /**
    * A Version the feed lists and the store holds no file of (ticket #116): the id is right, and nothing is known of
    * whether a later pull will fetch the file, so the answer says only that the row is listed and has no file.
    */
-  | { kind: "listed_not_held"; id: string; session: SessionKey; documentKind: DocumentKind }
+  | {
+      kind: "listed_not_held";
+      id: string;
+      session: SessionKey;
+      documentKind: DocumentKind;
+      lastFetch: LastFetchFailure | undefined;
+    }
   /**
    * A row the feed no longer lists and the store never fetched the file of: the id is right, and no pull will
    * fetch the file now.
@@ -123,7 +135,7 @@ export function getDocument(
     case true:
       break;
     case false:
-      return unheldResult(found, id, input.id, session);
+      return unheldResult(reader, found, id, input.id, session);
     default:
       return found satisfies never;
   }
@@ -266,19 +278,28 @@ function partOfTurn(paged: readonly LogPart[], turn: number): number {
  * listed Testimony has its own answer (ADR-0059); every other kind the feed lists before its file is fetched is a listed row
  * with no file (ADR-0017, ADR-0059); a row of no kind the index can name is no id this index serves.
  */
-function unheldResult(found: UnheldDocument, id: string, asked: string, session: SessionKey): GetDocumentOutcome {
+function unheldResult(
+  reader: IndexReader,
+  found: UnheldDocument,
+  id: DocumentId | AmendmentId,
+  asked: string,
+  session: SessionKey,
+): GetDocumentOutcome {
   switch (found.listing.listed) {
     case false:
       return {
         kind: "fault",
         fault: { kind: "no_longer_listed_not_held", id, session, lastListedAt: found.listing.lastListedAt },
       };
-    case true:
-      if (found.kind === "testimony") return { kind: "fault", fault: { kind: "not_held", id, session } };
+    case true: {
+      // What the worker last saw of the file, which the answer says when it is known (ticket #168, ADR-0063).
+      const lastFetch = reader.lastFetchFailureOf(id);
+      if (found.kind === "testimony") return { kind: "fault", fault: { kind: "not_held", id, session, lastFetch } };
       // The row's kind, which the reader knows, says what the listed row is; the id is not read for it.
       return found.kind === undefined
         ? { kind: "fault", fault: { kind: "unknown", id: asked, session } }
-        : { kind: "fault", fault: { kind: "listed_not_held", id, session, documentKind: found.kind } };
+        : { kind: "fault", fault: { kind: "listed_not_held", id, session, documentKind: found.kind, lastFetch } };
+    }
     default:
       return found.listing satisfies never;
   }
@@ -290,9 +311,9 @@ export function getDocumentFaultMessage(fault: GetDocumentFault): string {
     case "unknown":
       return unknownDocumentMessage(fault.id, fault.session);
     case "not_held":
-      return testimonyNotHeldMessage(fault.id, fault.session);
+      return testimonyNotHeldMessage(fault.id, fault.session, fault.lastFetch);
     case "listed_not_held":
-      return listedNotHeldMessage(fault.id, fault.session, fault.documentKind);
+      return listedNotHeldMessage(fault.id, fault.session, fault.documentKind, fault.lastFetch);
     case "no_longer_listed_not_held":
       return noLongerListedNotHeldMessage(fault.id, fault.session, fault.lastListedAt);
     case "no_such_part":
@@ -314,12 +335,37 @@ function unknownDocumentMessage(id: string, session: SessionKey): string {
 }
 
 /**
- * What an agent is told when the id is a Testimony that `testimony` lists but whose file the worker has not stored
- * (ADR-0059). The id is right. The cause is not stored where the server reads, and a full pull may be running or may have
- * stopped, so the answer names no last pull and no build report (a caller cannot read it) and promises no later pull.
+ * What is known of the file of a listed row the index holds no file of, from the worker's latest attempt on it (ticket #168,
+ * ADR-0063): that the file OLIS serves for it is empty, or that it is not a readable PDF and why. A request that got no file
+ * says nothing of the file, and neither does a row no attempt has reached, so both are undefined and the answer stays general.
  */
-function testimonyNotHeldMessage(id: string, session: SessionKey): string {
-  return `Testimony "${id}" is listed in the ${session} Session. This index does not hold its file: OLIS may serve it empty or broken, a request for it may have failed, or a pull has not reached it yet.`;
+function knownOfFile(lastFetch: LastFetchFailure | undefined): string | undefined {
+  if (lastFetch === undefined) return undefined;
+  switch (lastFetch.cause) {
+    case "empty_file":
+      return "the file OLIS serves for it is empty.";
+    case "unreadable_file":
+      // The reason is the worker's own sentence (a capital, its own parenthesis), so it is quoted after a full stop.
+      return `the file OLIS serves for it is not a readable PDF. The worker's reason: "${lastFetch.reason}"`;
+    case "request_failed":
+      return undefined;
+    default:
+      return lastFetch satisfies never;
+  }
+}
+
+/**
+ * What an agent is told when the id is a Testimony that `testimony` lists but whose file the worker has not stored
+ * (ADR-0059, ADR-0063). The id is right. When the worker's latest attempt found the file empty or not a readable PDF, the
+ * answer says so; otherwise nothing is known of the file, and the answer is ADR-0059's general one. Either way it names no
+ * last pull and no build report (a caller cannot read it) and promises no later pull.
+ */
+function testimonyNotHeldMessage(id: string, session: SessionKey, lastFetch: LastFetchFailure | undefined): string {
+  const known = knownOfFile(lastFetch);
+  const listed = `Testimony "${id}" is listed in the ${session} Session.`;
+  return known === undefined
+    ? `${listed} This index does not hold its file: OLIS may serve it empty or broken, a request for it may have failed, or a pull has not reached it yet.`
+    : `${listed} This index does not hold its file: ${known}`;
 }
 
 /** The words an agent reads a kind of listed row by. */
@@ -335,9 +381,19 @@ const kindNames: Readonly<Record<DocumentKind, string>> = {
   floor_letter: "Floor Letter",
 };
 
-/** What an agent is told when the id is a row the feed lists and the index holds no file of, whatever its kind: the id is right. */
-function listedNotHeldMessage(id: string, session: SessionKey, kind: DocumentKind): string {
-  return `The ${kindNames[kind]} "${id}" is listed in the ${session} Session, and this index holds no file for it, so it holds no text for it.`;
+/**
+ * What an agent is told when the id is a row the feed lists and the index holds no file of, whatever its kind: the id is right.
+ * When the worker's latest attempt found the file empty or not a readable PDF, the answer says so (ADR-0063).
+ */
+function listedNotHeldMessage(
+  id: string,
+  session: SessionKey,
+  kind: DocumentKind,
+  lastFetch: LastFetchFailure | undefined,
+): string {
+  const known = knownOfFile(lastFetch);
+  const listed = `The ${kindNames[kind]} "${id}" is listed in the ${session} Session, and this index holds no file for it`;
+  return known === undefined ? `${listed}, so it holds no text for it.` : `${listed}: ${known}`;
 }
 
 /**

@@ -65,9 +65,13 @@ export function leaveAsBeforeVersions(path: string): void {
      ${dropTranscriptTables}
      ${dropCreatedTimeColumns}
      ${dropLinkAnnotationTable}
+     ${dropLastFetchFailureTable}
      PRAGMA user_version = 0`,
   );
 }
+
+/** What step 7 (ticket #168) adds: the table of the last fetch failure of each document the index holds no file of. */
+const dropLastFetchFailureTable = `DROP TABLE IF EXISTS last_fetch_failure;`;
 
 /** What step 6 (ticket #160) adds: the table of a Recording Log's link annotations. */
 const dropLinkAnnotationTable = `DROP TABLE IF EXISTS recording_log_link_annotation;`;
@@ -85,7 +89,10 @@ const dropTranscriptTables = `DROP TABLE transcript_passage_fts; DROP TABLE tran
  * is stamped 3. The next worker to open it runs step 4. Close the writer first.
  */
 export function leaveAsVersionThree(path: string): void {
-  withSql(path, `${dropTranscriptTables} ${dropCreatedTimeColumns} ${dropLinkAnnotationTable} PRAGMA user_version = 3`);
+  withSql(
+    path,
+    `${dropTranscriptTables} ${dropCreatedTimeColumns} ${dropLinkAnnotationTable} ${dropLastFetchFailureTable} PRAGMA user_version = 3`,
+  );
 }
 
 /**
@@ -93,7 +100,10 @@ export function leaveAsVersionThree(path: string): void {
  * it is stamped 4. The next worker to open it runs step 5, which makes the columns, empty. Close the writer first.
  */
 export function leaveAsVersionFour(path: string): void {
-  withSql(path, `${dropCreatedTimeColumns} ${dropLinkAnnotationTable} PRAGMA user_version = 4`);
+  withSql(
+    path,
+    `${dropCreatedTimeColumns} ${dropLinkAnnotationTable} ${dropLastFetchFailureTable} PRAGMA user_version = 4`,
+  );
 }
 
 /**
@@ -101,7 +111,15 @@ export function leaveAsVersionFour(path: string): void {
  * it is stamped 5. The next worker to open it runs step 6, which makes the table, empty. Close the writer first.
  */
 export function leaveAsVersionFive(path: string): void {
-  withSql(path, `${dropLinkAnnotationTable} PRAGMA user_version = 5`);
+  withSql(path, `${dropLinkAnnotationTable} ${dropLastFetchFailureTable} PRAGMA user_version = 5`);
+}
+
+/**
+ * Makes a file look as a release left it after step 6 and before step 7 (ticket #168): the table of last fetch failures is gone
+ * and it is stamped 6. The next worker to open it runs step 7, which makes the table, empty. Close the writer first.
+ */
+export function leaveAsVersionSix(path: string): void {
+  withSql(path, `${dropLastFetchFailureTable} PRAGMA user_version = 6`);
 }
 
 /** Arranges a stored speaker-turn index whose `turn_count` is not the number of its turn rows, so a test can tell which one is read. */

@@ -68,8 +68,16 @@ export type SystemOptions = {
    * default, as a deployment that does not load the table leaves it.
    */
   statutesAffectedTableUrl?: (olisOrigin: string) => string;
-  /** How long the worker waits for one attempt to fetch a document; a test that makes one hang sets it short. */
+  /**
+   * How long the worker waits for an answer, or for the next byte of one, before an attempt to fetch a document is given up
+   * as stalled (OLIS_DOCUMENT_STALL_MS, ticket #167); a test that makes one hang or stall sets it short.
+   */
   documentTimeoutMs?: number;
+  /**
+   * The overall cap on one attempt to fetch a document, however its bytes keep coming (OLIS_DOCUMENT_CAP_MS, ticket #167):
+   * a test of a file that trickles past it sets it short.
+   */
+  documentCapMs?: number;
   /**
    * Makes the worker's pause between attempts to fetch a document the real one: `timers/promises` `setTimeout`, which
    * waits the real time and, when the signal aborts, rejects with an `AbortError` whose `cause` is the signal's reason
@@ -194,6 +202,7 @@ function templateKey(options: SystemOptions): string | undefined {
     olis: options.olis,
     statutesAffectedTableUrl: options.statutesAffectedTableUrl?.(origin),
     documentTimeoutMs: options.documentTimeoutMs,
+    documentCapMs: options.documentCapMs,
     olisBaseUrl: options.olisBaseUrl?.(`${origin}/`),
     transcripts: options.transcripts,
     legislatorAliasesPath:
@@ -337,6 +346,8 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
     ...(options.ingest?.increments === undefined ? {} : { INGEST_INCREMENTS: options.ingest.increments }),
     ...(options.ingest?.fullPull === undefined ? {} : { INGEST_FULL_PULL: options.ingest.fullPull }),
     ...(options.ingest?.hashSampleSize === undefined ? {} : { INGEST_HASH_SAMPLE_SIZE: options.ingest.hashSampleSize }),
+    ...(options.documentTimeoutMs === undefined ? {} : { OLIS_DOCUMENT_STALL_MS: String(options.documentTimeoutMs) }),
+    ...(options.documentCapMs === undefined ? {} : { OLIS_DOCUMENT_CAP_MS: String(options.documentCapMs) }),
     ...(options.statutesAffectedTableUrl === undefined
       ? {}
       : { STATUTES_AFFECTED_TABLE_URL: options.statutesAffectedTableUrl(olis.origin) }),
@@ -351,7 +362,6 @@ export async function startSystem(options: SystemOptions, copyOf?: string): Prom
       options.pauseLikeNode === true
         ? (milliseconds, signal) => nodePause(milliseconds, undefined, { signal })
         : () => Promise.resolve(),
-    ...(options.documentTimeoutMs === undefined ? {} : { documentTimeoutMs: options.documentTimeoutMs }),
     legislatorAliases: readLegislatorAliases(options.legislatorAliasesPath ?? committedAliasFilePath),
     embedder: workerEmbedder,
   });

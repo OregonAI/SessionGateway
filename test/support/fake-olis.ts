@@ -25,7 +25,8 @@
 // file in the fixture's manifest, at the path of the manifest's `source_url` (/liz/2025R1/Downloads/...),
 // on the same port. It counts every document request, so a test can read how often the worker fetched
 // a file from the harness and never from the database, and it can fail a chosen document once (a hang
-// that outlasts the client's timeout, or an HTTP status) to show that a transient failure is retried.
+// that outlasts the client's stall limit, an HTTP status, or an answer that stops part of the way) to show that a
+// transient failure is retried, and send a file slowly (`documentPacing`, ticket #167).
 //
 // The Statutes Affected Table is not a feed document: no row links it, and Legislative Counsel publishes it on
 // www.oregonlegislature.gov, not on OLIS. The fixture's manifest holds it at its own path (/AutoPubs/artables2025R1.pdf),
@@ -92,6 +93,12 @@ export type FakeOlisOptions = {
    * (`madeUpPdf`), served from the start whether or not `documents` is on, since the test asked for them by name.
    */
   madeUpDocuments?: Record<string, Uint8Array>;
+  /**
+   * Documents sent slowly, by their path on the fake: every answer at the path is sent in `pieces` parts, `everyMs` of
+   * real time apart, so the whole file takes longer than the worker's stall limit would allow as a total and no gap is as
+   * long as it (ticket #167). The bytes are the ones the path serves otherwise (a made-up, served or fixture file).
+   */
+  documentPacing?: Record<string, DocumentPacing>;
   /** Called at the start of every request, feed or document: how a test makes OLIS take time on the simulated clock. */
   onRequest?: () => void;
 };
@@ -116,8 +123,14 @@ export type FakeOlisBehavior =
   /** Closes the connection without a response. */
   | { kind: "drop-connection" };
 
-/** How a document request fails once: no answer until the client gives up, or an HTTP status. */
-export type DocumentFailure = "hang" | number;
+/**
+ * How a document request fails once: no answer until the client gives up, an HTTP status, or a stall (ticket #167): an
+ * answer of 200 that sends the first `stallAfter` bytes of the file the path serves and then nothing until the client gives up.
+ */
+export type DocumentFailure = "hang" | number | { stallAfter: number };
+
+/** How a document is sent slowly (see `documentPacing`): in `pieces` parts, `everyMs` milliseconds of real time apart. */
+export type DocumentPacing = { pieces: number; everyMs: number };
 
 export type FakeOlis = {
   /** The service root with a trailing slash, for the OLIS client's base URL. */
@@ -130,8 +143,8 @@ export type FakeOlis = {
    */
   documentRequests(): readonly string[];
   /**
-   * From now on, serves these bytes at this path (`/AutoPubs/artables2025R1.pdf`) in place of the fixture's file, or
-   * where the fixture has none: a made-up document that a test builds. Served only when `documents` is on.
+   * From now on, serves these bytes at this path (`/AutoPubs/artables2025R1.pdf`) in place of the fixture's file or a
+   * `madeUpDocuments` file, or where neither is: a made-up document that a test builds. Served only when `documents` is on.
    */
   serveDocument(path: string, bytes: Uint8Array): void;
   /**
@@ -260,6 +273,28 @@ function sendText(response: ServerResponse, status: number, contentType: string,
   response.end(body);
 }
 
+/** Sends `bytes` in `pacing.pieces` parts, `pacing.everyMs` apart, and stops when the client goes away. */
+function sendPaced(response: ServerResponse, bytes: Uint8Array, pacing: DocumentPacing): void {
+  const size = Math.ceil(bytes.length / pacing.pieces);
+  let sent = 0;
+  let timer: NodeJS.Timeout | undefined;
+  response.on("close", () => {
+    clearTimeout(timer);
+  });
+  const next = (): void => {
+    if (response.destroyed) return;
+    const piece = bytes.subarray(sent, sent + size);
+    sent += piece.length;
+    if (sent >= bytes.length) {
+      response.end(piece);
+      return;
+    }
+    response.write(piece);
+    timer = setTimeout(next, pacing.everyMs);
+  };
+  next();
+}
+
 function sendError(response: ServerResponse, status: number, message: string): void {
   sendText(
     response,
@@ -376,6 +411,7 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
   );
   const servedBytes = new Map<string, Uint8Array>();
   const madeUpDocuments = new Map(Object.entries(options.madeUpDocuments ?? {}));
+  const pacing = new Map(Object.entries(options.documentPacing ?? {}));
   const servesDocuments = options.documents === true;
   const pageSize = options.pageSize ?? 5000;
   let withheldRows = options.withholdLastRows ?? 0;
@@ -406,6 +442,20 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
     return [...rows, ...(options.strayRows?.[entitySet] ?? [])];
   }
 
+  /**
+   * The bytes the path serves: with `documents` on, what `serveDocument` serves there from then on, over everything else (a
+   * made-up file OLIS replaces, ticket #168); else a made-up document's; else, with `documents` on, the fixture's file.
+   */
+  function bytesAt(path: string): Uint8Array | undefined {
+    const served = servesDocuments ? servedBytes.get(path) : undefined;
+    if (served !== undefined) return served;
+    const madeUp = madeUpDocuments.get(path);
+    if (madeUp !== undefined) return madeUp;
+    if (!servesDocuments) return undefined;
+    const file = documentPaths.get(path);
+    return file === undefined ? undefined : readFileSync(file);
+  }
+
   /** A document, as OLIS serves one: the bytes of a PDF at the path of its `source_url`. */
   function handleDocument(url: URL, response: ServerResponse): void {
     // The pathname as the manifest writes it: percent-encoded, as the worker must have sent it.
@@ -414,23 +464,24 @@ export async function startFakeOlis(options: FakeOlisOptions): Promise<FakeOlis>
     const failure = failures.get(path)?.shift();
     if (failure !== undefined) {
       if (failure === "hang") return; // no answer: the client's timeout ends the request
-      sendText(response, failure, "text/plain", `The fake OLIS fails this document with ${failure}.`);
-      return;
-    }
-    const madeUp = madeUpDocuments.get(path);
-    if (madeUp !== undefined) {
+      if (typeof failure === "number") {
+        sendText(response, failure, "text/plain", `The fake OLIS fails this document with ${failure}.`);
+        return;
+      }
+      // A stall: the answer begins and stops. The bytes are the file's, or MADE UP zeros where the path serves none.
       response.writeHead(200, { "content-type": "application/pdf", "cache-control": "private" });
-      response.end(madeUp);
+      response.write((bytesAt(path) ?? new Uint8Array(failure.stallAfter)).subarray(0, failure.stallAfter));
       return;
     }
-    const file = documentPaths.get(path);
-    const made = servedBytes.get(path);
-    if (!servesDocuments || (file === undefined && made === undefined)) {
+    const bytes = bytesAt(path);
+    if (bytes === undefined) {
       sendText(response, 404, "text/plain", "Not Found");
       return;
     }
     response.writeHead(200, { "content-type": "application/pdf", "cache-control": "private" });
-    response.end(made ?? (file === undefined ? undefined : readFileSync(file)));
+    const paced = pacing.get(path);
+    if (paced === undefined) response.end(bytes);
+    else sendPaced(response, bytes, paced);
   }
 
   function handle(request: IncomingMessage, response: ServerResponse): void {

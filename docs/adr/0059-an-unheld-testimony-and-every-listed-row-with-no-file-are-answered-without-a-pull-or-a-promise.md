@@ -1,5 +1,5 @@
 ---
-status: accepted; amends ADR-0017 (its sentence that `get_document` says "the next pull fetches it again"); reworded by the owner on 2026-11-07 after review; amended 2026-11-10 by a correction of its count (ticket #176, see the end)
+status: accepted; amends ADR-0017 (its sentence that `get_document` says "the next pull fetches it again"); reworded by the owner on 2026-11-07 after review; amended 2026-11-10 by a correction of its count (ticket #176, see the end); amended 2026-11-10 by ADR-0063 (ticket #168: the owner approved schema step 7, so an empty or unreadable file is now named in the answer; the general wording stays for a failed request and for no record)
 ---
 
 # An unheld Testimony, and every listed row with no file, are answered without naming a pull or promising a fix
