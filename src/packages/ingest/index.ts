@@ -130,8 +130,8 @@ type Fetched =
   | { kind: "left_out"; reason: string; cause: NotFetchedCause };
 
 /**
- * Fetches one document and reads its text. A document OLIS will not give, or a file that is not a PDF,
- * is an expected outcome and is left out with its reason. A failure of the extractor is not: it throws,
+ * Fetches one document and reads its text. A document OLIS will not give, or a file that is not a PDF or needs a password
+ * (ticket #178), is an expected outcome and is left out with its reason. A failure of the extractor is not: it throws,
  * naming the document, so a broken install stops the pull instead of filling the report.
  */
 async function fetchAndRead(olis: OlisClient, link: DocumentLink, signal: AbortSignal): Promise<Fetched> {

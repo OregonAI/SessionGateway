@@ -10,8 +10,8 @@ export type ExtractedPdf = {
 };
 
 /**
- * What reading a file came to. A file that is not a PDF is an expected outcome, so it is a value; a
- * failure of the extractor itself is not, and throws.
+ * What reading a file came to. A file that is not a PDF, or that needs a password, is an expected outcome, so it is a
+ * value; a failure of the extractor itself is not, and throws.
  */
 export type PdfExtraction = { kind: "read"; pdf: ExtractedPdf } | { kind: "unreadable"; reason: string };
 
@@ -69,17 +69,33 @@ async function readDocument(bytes: Uint8Array): Promise<ExtractedPdf> {
   }
 }
 
+type PdfJs = Awaited<ReturnType<typeof getResolvedPDFJS>>;
+
+/**
+ * Why a file cannot be read, when what pdf.js threw is a property of the file and not of the extractor (ADR-0011): it
+ * throws InvalidPDFException when the bytes are not a PDF it can open (empty, truncated, random), and PasswordException
+ * when the file needs a password to open (ticket #178; one with only an owner password opens). Anything else is a bug or a
+ * failure of the machine, is not told apart per document, and gives undefined. Both extractors read errors with this.
+ */
+export function unreadableReason(pdfjs: PdfJs, error: unknown): string | undefined {
+  if (!(error instanceof Error)) return undefined;
+  if (error instanceof pdfjs.InvalidPDFException) {
+    return `The file is not a PDF the extractor can read (${error.message})`;
+  }
+  if (error instanceof pdfjs.PasswordException) {
+    return `The file needs a password to open, which OLIS does not give (${error.message})`;
+  }
+  return undefined;
+}
+
 export async function extractPdfText(bytes: Uint8Array): Promise<PdfExtraction> {
   // Loaded first and outside the try: a bundle that cannot be resolved is a broken install, not a file.
   const pdfjs = await getResolvedPDFJS();
   try {
     return { kind: "read", pdf: await readDocument(bytes) };
   } catch (error) {
-    // pdf.js throws InvalidPDFException when the bytes are not a PDF it can open (empty, truncated,
-    // random). Anything else is a bug or a failure of the machine, and is not told apart per document.
-    if (error instanceof Error && error instanceof pdfjs.InvalidPDFException) {
-      return { kind: "unreadable", reason: `The file is not a PDF the extractor can read (${error.message})` };
-    }
+    const reason = unreadableReason(pdfjs, error);
+    if (reason !== undefined) return { kind: "unreadable", reason };
     throw error;
   }
 }
