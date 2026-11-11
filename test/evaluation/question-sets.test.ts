@@ -118,8 +118,10 @@ describe("the 2026R1 question set", () => {
         path: `speaker_turns.turns[timecode=${String(timecode)}].transcript[*].text`,
         includesText: expect.anything() as unknown,
       });
-      // The `part` the step asks for rests on the stored log text: the part's own text must hold the log's line of the turn.
-      expect(step?.arguments["part"]).toEqual(expect.any(Number));
+      // The step asks for the turn by its timecode, not a pinned part (ticket #174, ADR-0061), and the part it is given rests
+      // on the stored log text: the part's own text must hold the log's line of the turn.
+      expect(step?.arguments["timecode"]).toBe(timecode);
+      expect(step?.arguments).not.toHaveProperty("part");
       expect(step?.expect).toContainEqual({
         path: "text",
         includesText: [expect.stringMatching(new RegExp(`^${String(timecode)} \\S`)) as unknown],
