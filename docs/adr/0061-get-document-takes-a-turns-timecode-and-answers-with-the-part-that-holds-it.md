@@ -17,6 +17,9 @@ The owner chose option (b) of ticket #174 on 2026-11-10:
 - **`part` and `timecode` together are refused.** They can name different parts, and taking one over the other would answer a question the agent did not ask. The refusal says to ask with the timecode alone and then for the parts after it by number.
 - **Without a timecode nothing changes**: the answer is word for word what it was, with the gate on or off.
 
+- **A timecode is a time of day.** Its minutes and seconds are below 60: "00:20:99" is refused as malformed, never read as 00:21:39, which could name another turn.
+- **The second of two turns with one timecode cannot be reached by timecode.** Two turns of a log sometimes share a timecode (2026R1's log 314932 has "00:01:02 Alexandra Kihn-Stang, LPRO Analyst" and "00:01:02 Chair Nosse", and log 315743 has "00:41:16 Alan Dale" twice), and the timecode names the first. This is a known limit, chosen as the smallest honest option: the two turns are lines of the log one after the other, so the answer's part almost always holds both; if the second ever lies in the next part, the agent reads on by `part`. An argument to pick the nth turn of a timecode would add to the tool for two logs of 279. `turnAtTimecode` is pinned to this by a test.
+
 ## Considered Options
 
 - **(a) Each turn in every part carries the `part` that holds its transcript.** Not chosen. Against it: it adds a field to every turn of every part, so an answer is larger with the gate on in every part, and an agent still makes two calls (part 1, then the part named). It also needs a decision on what the field says with the gate off.
@@ -27,4 +30,4 @@ The owner chose option (b) of ticket #174 on 2026-11-10:
 ## Consequences
 
 - #136's five hearing questions (`scripts/eval/questions/2026R1.yml`, `h-*`) ask `get_document` with the turn's timecode instead of a pinned part. Each still checks that the part's text holds the stored log's line of that turn, so the answer rests on the stored text and not on a tool's output.
-- No fixture log, and no 2026R1 log (the longest is 11,270 characters), is more than one part with the gate off, so the gate-off branch that picks among two or more parts is not reached by a seam-1 test; the seam-1 cases are in `test/tools/get-document-timecode.test.ts`, over the made-up transcript of `transcripts-paged.test.ts`.
+- No fixture log, and no 2026R1 log (the longest is 11,270 characters), is more than one part with the gate off, so the gate-off branch that picks among two or more parts is reached only by a made-up log of over 20,000 characters (`test/tools/get-document-timecode-long-log.test.ts`); the other seam-1 cases are in `test/tools/get-document-timecode.test.ts`, over the made-up transcript of `transcripts-paged.test.ts`.
