@@ -21,7 +21,10 @@ export const getDocumentInput = z.object({
   part: z.number().int().min(1).optional().describe("Which part of the text to return, from 1. The first by default."),
   timecode: z
     .string()
-    .regex(/^\d{1,2}:\d{2}:\d{2}$/)
+    .regex(
+      /^\d{1,2}:[0-5]\d:[0-5]\d$/,
+      "A timecode is hh:mm:ss or h:mm:ss with minutes and seconds below 60, such as 00:20:41.",
+    )
     .optional()
     .describe(
       'For a Recording Log: the timecode of one of its speaker turns, as logged, such as "00:20:41". The answer is then the part that holds that turn\'s line and the start of its words (while machine transcripts are published), instead of part 1. Give it or part, not both.',
@@ -88,9 +91,9 @@ export type GetDocumentFault =
    */
   | { kind: "no_longer_listed_not_held"; id: string; session: SessionKey; lastListedAt: Timestamp }
   | { kind: "no_such_part"; id: string; part: number; partCount: number }
-  /** A timecode was given for a document that is not a Recording Log (ticket #174): only a log has speaker turns. */
   /** Both a part and a timecode were given (ticket #174): they can name different parts, so neither is taken over the other. */
   | { kind: "part_and_timecode"; id: string }
+  /** A timecode was given for a document that is not a Recording Log (ticket #174): only a log has speaker turns. */
   | { kind: "timecode_not_a_log"; id: string; documentKind: DocumentKind }
   /**
    * A timecode no speaker turn of the log has (ticket #174): the turns that begin just before it and just after it, either of
@@ -199,14 +202,18 @@ export function getDocument(
   };
 }
 
-/** The seconds a timecode "hh:mm:ss" (or "h:mm:ss") names. */
+/** The seconds a timecode "hh:mm:ss" (or "h:mm:ss") names, or NaN, which no second equals, for one that is not a time of day. */
 function secondsOfTimecode(timecode: string): number {
+  if (!/^\d{1,2}:[0-5]\d:[0-5]\d$/.test(timecode)) return Number.NaN;
   const [hours, minutes, seconds] = timecode.split(":").map(Number);
   return (hours ?? 0) * 3600 + (minutes ?? 0) * 60 + (seconds ?? 0);
 }
 
-/** The position of the first turn whose logged timecode names the same second as `timecode`, or -1 when no turn's does. */
-function turnAtTimecode(turns: readonly { timecode: string }[], timecode: string): number {
+/**
+ * The position of the first turn whose logged timecode names the same second as `timecode`, or -1 when no turn's does. Where two
+ * turns of a log share a timecode, the second is not reachable by timecode (ADR-0061).
+ */
+export function turnAtTimecode(turns: readonly { timecode: string }[], timecode: string): number {
   const asked = secondsOfTimecode(timecode);
   return turns.findIndex((turn) => secondsOfTimecode(turn.timecode) === asked);
 }
