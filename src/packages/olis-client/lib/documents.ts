@@ -32,9 +32,15 @@ const OLIS_LINK_ORIGIN = "https://olis.oregonlegislature.gov";
  * The link as OLIS gives it, made safe to use: raw spaces in a MeasureDocuments URL are
  * percent-encoded (olis-odata.md gotcha 10), and a link to any other origin is refused, so the worker
  * only ever fetches from OLIS.
+ *
+ * A literal "#" or "?" is encoded before the link is parsed (ticket #176). A MeasureDocuments link ends
+ * in the Version's description, written raw ("Minority Report #2 to A-Engrossed", 2026R1 HB 4116), so
+ * either character is part of the path: parsed bare, "#" would begin a fragment and "?" a query, and
+ * the worker would ask for another resource. No link OLIS gives carries a query or a fragment
+ * (olis-odata.md section 4), so neither character is ever one.
  */
 export function sourceUrlOf(link: string): string {
-  const url = new URL(link);
+  const url = new URL(link.replaceAll("#", "%23").replaceAll("?", "%3F"));
   if (url.origin !== OLIS_LINK_ORIGIN) {
     throw new Error(`OLIS linked a document outside ${OLIS_LINK_ORIGIN}: ${url.origin}`);
   }
