@@ -161,6 +161,12 @@ describe("the Statutes Affected Table after the snapshot changes", () => {
 
     expect(rig.report()).toMatchObject({ outcome: "loaded", held: true, entries: 22 });
     expect(await rig.seen()).toMatchObject({ count: 22, retrievedAt: secondPullPacific });
+
+    // The reading is now stamped with the current parser, so the next pull of the same bytes reads nothing.
+    rig.system.clock.set(fourthPull);
+    await rig.system.pullAgain();
+    expect(rig.report()).toEqual({ source_url: tableUrlOn(rig.system.olis.origin), outcome: "unchanged", held: true });
+    expect(await rig.seen()).toMatchObject({ count: 22, retrievedAt: secondPullPacific });
   });
 
   describe.for([

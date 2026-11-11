@@ -543,8 +543,8 @@ export type IndexWriter = {
    */
   storeStatutesAffectedTable(session: SessionKey, record: StatutesAffectedTableRecord): void;
   /**
-   * Replaces the entries of the table the Session's index holds with these, read again from its stored text with
-   * another snapshot, in one transaction; the copy (its bytes, hash, address and retrieval time) is left as it was, and
+   * Replaces the entries of the table the Session's index holds with these, read again from its stored text after
+   * the snapshot or the table parser's version changed, in one transaction; the copy (its bytes, hash, address and retrieval time) is left as it was, and
    * so are the bytes last refused (ADR-0044).
    */
   rereadStatutesAffectedTable(

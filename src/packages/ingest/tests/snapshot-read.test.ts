@@ -260,6 +260,23 @@ describe("the Statutes Affected Table's parser version", () => {
     expect(read).toMatchObject({ statutesAffectedTable: { outcome: "read_again_from_held_copy", entries: 22 } });
     expect(log).toContain("table entries");
     expect(heldTableOf(rig.reader)).toMatchObject({ entries: 22 });
+    expect(
+      rig.writer.heldStatutesAffectedTable(session)?.parserVersion,
+      "the reading is stamped with the current parser",
+    ).toBe(STATUTES_AFFECTED_TABLE_PARSER_VERSION);
+
+    // A second pull of the same snapshot finds the reading current, and reads the table no further.
+    const second: string[] = [];
+    const again = await runPull({
+      rig,
+      snapshot: committedSnapshot(),
+      pull: "full_pull",
+      fetched: [],
+      table: tableUnavailable(),
+      through: loggedWriter(rig.writer, second),
+    });
+    expect(again).toMatchObject({ statutesAffectedTable: { outcome: "not_fetched" } });
+    expect(second).toEqual([`snapshot ${committedCommit}`]);
   });
 
   test("a table read with the current table parser is not read again", async () => {
