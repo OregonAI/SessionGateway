@@ -100,4 +100,22 @@ describe("get_document with a timecode it cannot answer", () => {
     expect(outcome.text).toContain("version-2025r1-sb69-introduced");
     expect(outcome.text).toContain("is a Version, not a Recording Log");
   });
+
+  it("refuses a timecode no turn of the log has, and names the turns either side of it", async () => {
+    // The log's lines "00:20:14 Robert Greenway, resident, Dallas" and "00:21:43 Vice-Chair Finger McDonald": no line between.
+    const between = await callTool(on, "get_document", { id: LOG, timecode: "00:20:41" });
+    // The first turn is "00:00:04 Co-Chair Helm", and the last "01:21:19", before "Meeting Adjourned" at 01:29:10.
+    const before = await callTool(off, "get_document", { id: LOG, timecode: "00:00:01" });
+    const after = await callTool(on, "get_document", { id: LOG, timecode: "01:29:10" });
+
+    expect(between.isError).toBe(true);
+    expect(between.text).toContain("No speaker turn of");
+    expect(between.text).toContain("00:20:41");
+    expect(between.text).toContain("00:20:14 (Robert Greenway, resident, Dallas)");
+    expect(between.text).toContain("00:21:43 (Vice-Chair Finger McDonald)");
+    expect(before.isError).toBe(true);
+    expect(before.text).toContain("before the first turn, 00:00:04 (Co-Chair Helm)");
+    expect(after.isError).toBe(true);
+    expect(after.text).toContain("after the last turn, 01:21:19");
+  });
 });
