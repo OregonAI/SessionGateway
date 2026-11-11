@@ -25,7 +25,8 @@
 // file in the fixture's manifest, at the path of the manifest's `source_url` (/liz/2025R1/Downloads/...),
 // on the same port. It counts every document request, so a test can read how often the worker fetched
 // a file from the harness and never from the database, and it can fail a chosen document once (a hang
-// that outlasts the client's timeout, or an HTTP status) to show that a transient failure is retried.
+// that outlasts the client's stall limit, an HTTP status, or an answer that stops part of the way) to show that a
+// transient failure is retried, and send a file slowly (`documentPacing`, ticket #167).
 //
 // The Statutes Affected Table is not a feed document: no row links it, and Legislative Counsel publishes it on
 // www.oregonlegislature.gov, not on OLIS. The fixture's manifest holds it at its own path (/AutoPubs/artables2025R1.pdf),
