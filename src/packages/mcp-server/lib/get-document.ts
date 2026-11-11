@@ -213,7 +213,7 @@ function secondsOfTimecode(timecode: string): number {
  * The position of the first turn whose logged timecode names the same second as `timecode`, or -1 when no turn's does. Where two
  * turns of a log share a timecode, the second is not reachable by timecode (ADR-0061).
  */
-export function turnAtTimecode(turns: readonly { timecode: string }[], timecode: string): number {
+function turnAtTimecode(turns: readonly { timecode: string }[], timecode: string): number {
   const asked = secondsOfTimecode(timecode);
   return turns.findIndex((turn) => secondsOfTimecode(turn.timecode) === asked);
 }

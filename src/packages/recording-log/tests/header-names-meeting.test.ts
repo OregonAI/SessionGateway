@@ -15,7 +15,9 @@ const COMPLIANCE =
   "This recording log is in compliance with Senate and House Rules. For complete contents, refer to the digital audio recording.";
 
 function headerOfLog(lines: string[]) {
-  const header = recordingLogHeaderOf([COMPLIANCE, ...lines, "STAFF PRESENT: A. Person, Committee Assistant"].join("\n"));
+  const header = recordingLogHeaderOf(
+    [COMPLIANCE, ...lines, "STAFF PRESENT: A. Person, Committee Assistant"].join("\n"),
+  );
   if (header === null) throw new Error("the quoted header was not read");
   return header;
 }
@@ -41,9 +43,9 @@ describe("headerNamesMeeting", () => {
   });
 
   test("the same day and time under another committee is not named (MADE UP: a House Human Services Meeting at 13:00)", () => {
-    expect(
-      headerNamesMeeting(hbh, { committeeCode: "HHS", committeeName: "Human Services", at: hbhMeeting.at }),
-    ).toBe(false);
+    expect(headerNamesMeeting(hbh, { committeeCode: "HHS", committeeName: "Human Services", at: hbhMeeting.at })).toBe(
+      false,
+    );
   });
 
   test("a committee whose name only ends the header's committee is not named (MADE UP: a Health committee)", () => {

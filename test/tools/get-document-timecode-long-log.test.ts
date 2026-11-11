@@ -8,6 +8,9 @@
 // Filler Words" (about 60 characters a line), 60 lines to a page, so its text is over 20,000 characters, two or three parts. Its first
 // page's lines carry player links to a made-up event; the lines after it are placed by their timecodes.
 //
+// A second made-up log, row 999202, has the same 700 turns logged with three timecodes between them (two turns, or more, share a
+// timecode, as 2026R1's logs 314932 and 315743 do): a timecode names the first of its turns (ADR-0061).
+//
 // Expected values are the log's own lines: the part a turn is in is found by reading the parts by number and looking for the
 // turn's line, never from the tool's answer to the timecode.
 //
@@ -21,6 +24,26 @@ import { startCopiedSystem, type System } from "../support/system.ts";
 const root = "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/CommitteeMeetingDocument";
 const PLAYER = "https://olis.oregonlegislature.gov/liz/mediaplayer?clientID=4879615486";
 const LOG = "recording-log-2025r1-999201";
+const SHARED = "recording-log-2025r1-999202";
+
+/** A MADE UP CommitteeMeetingDocuments row for a Recording Log of HALNRW's meeting of 2025-01-22. */
+function logRow(id: number): Record<string, unknown> {
+  return {
+    CommitteeMeetingDocumentId: id,
+    SessionKey: "2025R1",
+    CommitteeCode: "HALNRW",
+    MeetingDate: "2025-01-22T08:00:00",
+    ExhibitReference: null,
+    ExhibitTitle: "MADE UP long recording log",
+    Submitter: "staff",
+    DocumentType: "Recording Log",
+    MeasurePrefix: null,
+    MeasureNumber: null,
+    DocumentUrl: `${root}/${id}`,
+    CreatedDate: "2025-01-29T13:13:06.5416935",
+    ModifiedDate: null,
+  };
+}
 const LINES_PER_PAGE = 60;
 
 const timecodeOf = (second: number): string =>
@@ -28,15 +51,20 @@ const timecodeOf = (second: number): string =>
     .map((unit) => String(unit).padStart(2, "0"))
     .join(":");
 
-const turnLines = Array.from(
-  { length: 700 },
-  (_, index) =>
-    `${timecodeOf(10 + index)} Pat Poe ${String(index + 1).padStart(3, "0")}, MADE UP Association of Filler Words`,
-);
+/** 700 turns, each with the second `secondOf` gives for its position, named by its number. */
+const turnsAt = (secondOf: (index: number) => number): string[] =>
+  Array.from(
+    { length: 700 },
+    (_, index) =>
+      `${timecodeOf(secondOf(index))} Pat Poe ${String(index + 1).padStart(3, "0")}, MADE UP Association of Filler Words`,
+  );
+const turnLines = turnsAt((index) => 10 + index);
+// The second log: its turns share three timecodes, 233 or 234 turns to each, so a timecode's turns run over a part's end.
+const sharedLines = turnsAt((index) => 10 + Math.floor(index / 233));
 
-function longLogBytes(): Uint8Array {
+function longLogBytes(turns: readonly string[]): Uint8Array {
   const pages: string[][] = [];
-  const all = ["MADE UP RECORDING LOG", ...turnLines];
+  const all = ["MADE UP RECORDING LOG", ...turns];
   for (let start = 0; start < all.length; start += LINES_PER_PAGE) pages.push(all.slice(start, start + LINES_PER_PAGE));
   const links: MadeUpLink[] = [];
   (pages[0] ?? []).forEach((line, index) => {
@@ -61,24 +89,9 @@ let connected: ConnectedClient;
 
 beforeAll(async () => {
   system = await startCopiedSystem({ clockAt: "2026-08-05T17:00:00Z", documents: true });
-  system.olis.addRows("CommitteeMeetingDocuments", [
-    {
-      CommitteeMeetingDocumentId: 999201,
-      SessionKey: "2025R1",
-      CommitteeCode: "HALNRW",
-      MeetingDate: "2025-01-22T08:00:00",
-      ExhibitReference: null,
-      ExhibitTitle: "MADE UP long recording log",
-      Submitter: "staff",
-      DocumentType: "Recording Log",
-      MeasurePrefix: null,
-      MeasureNumber: null,
-      DocumentUrl: `${root}/999201`,
-      CreatedDate: "2025-01-29T13:13:06.5416935",
-      ModifiedDate: null,
-    },
-  ]);
-  system.olis.serveDocument("/liz/2025R1/Downloads/CommitteeMeetingDocument/999201", longLogBytes());
+  system.olis.addRows("CommitteeMeetingDocuments", [logRow(999201), logRow(999202)]);
+  system.olis.serveDocument("/liz/2025R1/Downloads/CommitteeMeetingDocument/999201", longLogBytes(turnLines));
+  system.olis.serveDocument("/liz/2025R1/Downloads/CommitteeMeetingDocument/999202", longLogBytes(sharedLines));
   await system.pullAgain();
   connected = await connectClient("2026-07-28", system.handler);
 }, 120_000);
@@ -88,8 +101,8 @@ afterAll(async () => {
   await system.stop();
 });
 
-async function partNumbered(part: number): Promise<Part> {
-  const outcome = await callTool(connected, "get_document", { id: LOG, part });
+async function partNumbered(part: number, id = LOG): Promise<Part> {
+  const outcome = await callTool(connected, "get_document", { id, part });
   expect(outcome.isError, outcome.text).toBe(false);
   return outcome.structured as unknown as Part;
 }
@@ -121,5 +134,26 @@ describe("get_document with a timecode on a made-up log of several parts, the ga
     }
     // The turns are in every part, so a tool that always answered part 1 (or the last) is wrong somewhere.
     expect(seen.size).toBe(first.part_count);
+  });
+});
+
+describe("get_document with a timecode two turns of a long log share", () => {
+  it("names the first of the turns that have it, though the others are in a later part", async () => {
+    // Turns 1 to 233 are logged 00:00:10, 234 to 466 00:00:11 and 467 to 700 00:00:12. The first line of the second block is
+    // about 14,000 characters in and the last about 28,000, so the first part ends inside the block: the first turn's part
+    // and the last turn's are not the same.
+    const first = await partNumbered(1, SHARED);
+    const parts: Part[] = [];
+    for (let number = 1; number <= first.part_count; number += 1) parts.push(await partNumbered(number, SHARED));
+    const partWith = (line: string) =>
+      parts.filter((part) => `\n${part.text}`.includes(`\n${line}`)).map((part) => part.part);
+    const firstOfBlock = sharedLines[233] ?? "";
+    const lastOfBlock = sharedLines[466] ?? "";
+    expect(partWith(firstOfBlock)).not.toEqual(partWith(lastOfBlock));
+
+    const outcome = await callTool(connected, "get_document", { id: SHARED, timecode: "00:00:11" });
+
+    expect(outcome.isError, outcome.text).toBe(false);
+    expect([(outcome.structured as unknown as Part).part]).toEqual(partWith(firstOfBlock));
   });
 });
