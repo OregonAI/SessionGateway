@@ -87,7 +87,9 @@ export type GetDocumentFault =
    * fetch the file now.
    */
   | { kind: "no_longer_listed_not_held"; id: string; session: SessionKey; lastListedAt: Timestamp }
-  | { kind: "no_such_part"; id: string; part: number; partCount: number };
+  | { kind: "no_such_part"; id: string; part: number; partCount: number }
+  /** A timecode was given for a document that is not a Recording Log (ticket #174): only a log has speaker turns. */
+  | { kind: "timecode_not_a_log"; id: string; documentKind: DocumentKind };
 
 export type GetDocumentOutcome = Outcome<GetDocumentOutput, GetDocumentFault>;
 
@@ -111,6 +113,9 @@ export function getDocument(
       return found satisfies never;
   }
   const stored = found.document;
+  if (input.timecode !== undefined && stored.kind !== "recording_log") {
+    return { kind: "fault", fault: { kind: "timecode_not_a_log", id, documentKind: stored.kind } };
+  }
   const floorLetter = stored.kind === "floor_letter" ? reader.floorLetterDetails(stored.id) : undefined;
   const speakerTurns = stored.kind === "recording_log" ? reader.speakerTurnIndexOf(stored.id) : undefined;
   // Read only while the gate is on, so that with it off nothing of a transcript is read, let alone shown.
@@ -220,6 +225,8 @@ export function getDocumentFaultMessage(fault: GetDocumentFault): string {
       return noLongerListedNotHeldMessage(fault.id, fault.session, fault.lastListedAt);
     case "no_such_part":
       return noSuchPartMessage(fault.id, fault.part, fault.partCount);
+    case "timecode_not_a_log":
+      return timecodeNotALogMessage(fault.id, fault.documentKind);
     default:
       return fault satisfies never;
   }
@@ -264,6 +271,13 @@ function listedNotHeldMessage(id: string, session: SessionKey, kind: DocumentKin
  */
 function noLongerListedNotHeldMessage(id: string, session: SessionKey, lastListedAt: string): string {
   return `The document "${id}" was listed in the ${session} Session and is not any more (the feed last listed it ${lastListedAt}). This index never fetched its file, and no later pull will fetch it, because the Legislature's feed no longer lists it, so the index holds no text for it.`;
+}
+
+/** What an agent is told when it gives a timecode for a document that is not a Recording Log (ticket #174). */
+function timecodeNotALogMessage(id: string, kind: DocumentKind): string {
+  const name = kindNames[kind];
+  const article = /^[aeiou]/i.test(name) ? "an" : "a";
+  return `Document "${id}" is ${article} ${name}, not a Recording Log, so it has no speaker turns and no timecode. Leave timecode out, or give it with a Recording Log's id.`;
 }
 
 /** What an agent is told when it asks for a part past the last one. */
