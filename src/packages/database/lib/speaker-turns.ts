@@ -64,6 +64,7 @@ export function storeSpeakerTurnIndex(
   database: DatabaseSync,
   documentId: DocumentId,
   outcome: SpeakerTurnIndexOutcome,
+  readerVersion: number,
 ): void {
   database.exec("BEGIN IMMEDIATE");
   try {
@@ -95,12 +96,14 @@ export function storeSpeakerTurnIndex(
     if (outcome.kind === "log_of_another_meeting") forgetTranscriptOfCopy(database, documentId);
     database
       .prepare(
-        `INSERT INTO speaker_turn_index (document_id, outcome, event_id, event_ids, pages_read_by_timecode, turn_count)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO speaker_turn_index (document_id, outcome, event_id, event_ids, pages_read_by_timecode, turn_count,
+           index_reader_version)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (document_id) DO UPDATE SET outcome = excluded.outcome, event_id = excluded.event_id,
            event_ids = excluded.event_ids, pages_read_by_timecode = excluded.pages_read_by_timecode,
            turn_count = excluded.turn_count, turns_without_passage = NULL, item_measures_read = 0,
-           turn_passages_reader_version = 0, item_measures_reader_version = 0`,
+           turn_passages_reader_version = 0, item_measures_reader_version = 0,
+           index_reader_version = excluded.index_reader_version`,
       )
       .run(
         documentId,
@@ -109,6 +112,7 @@ export function storeSpeakerTurnIndex(
         outcome.kind === "conflicting_event_ids" ? JSON.stringify(outcome.eventIds) : null,
         outcome.kind === "indexed" ? JSON.stringify(outcome.pagesReadByTimecode) : "[]",
         outcome.kind === "indexed" ? outcome.turns.length : 0,
+        readerVersion,
       );
     if (outcome.kind === "indexed") {
       const insert = database.prepare(
@@ -509,6 +513,26 @@ export function readLogsWithStaleAnnotations(
     .prepare(
       `SELECT d.id FROM document d JOIN recording_log_annotation_read a ON a.document_id = d.id
        WHERE d.session_key = ? AND d.kind = 'recording_log' AND a.reader_version <> ? ORDER BY d.id`,
+    )
+    .all(session, readerVersion)
+    .map((row) => z.object({ id: z.string() }).parse(row).id as DocumentId);
+}
+
+/**
+ * The stored Recording Logs of the Session whose speaker-turn index was read by a reader of another version than `readerVersion`
+ * (ticket #187, ADR-0066), in the order of their ids. A log with no index is not here (it is a log without an index), and nor is
+ * one set aside as another Meeting's: that outcome is made from the stored texts of the copies, whatever the file says.
+ */
+export function readLogsWithStaleIndex(
+  database: DatabaseSync,
+  session: SessionKey,
+  readerVersion: number,
+): DocumentId[] {
+  return database
+    .prepare(
+      `SELECT d.id FROM document d JOIN speaker_turn_index i ON i.document_id = d.id
+       WHERE d.session_key = ? AND d.kind = 'recording_log' AND i.outcome <> 'log_of_another_meeting'
+         AND i.index_reader_version <> ? ORDER BY d.id`,
     )
     .all(session, readerVersion)
     .map((row) => z.object({ id: z.string() }).parse(row).id as DocumentId);

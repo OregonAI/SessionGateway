@@ -66,6 +66,7 @@ import { searchEntryOf } from "#/packages/search/documents.ts";
 import {
   ITEM_MEASURES_READER_VERSION,
   measuresOfAgendaItem,
+  SPEAKER_TURN_INDEX_READER_VERSION,
   speakerTurnSpans,
 } from "#/packages/recording-log/index.ts";
 import { splitAroundTurns, splitPassages, TURN_PASSAGES_READER_VERSION } from "#/packages/search/passages.ts";
@@ -416,14 +417,20 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
   // annotation (ticket #160, ADR-0058), is fetched once more to read its links, which the store keeps only as the index and the
   // annotations (ticket #126, ADR-0052). Its stored text and search entry stay as they are.
   const unindexed = writer.recordingLogsWithoutIndex(config.session);
-  // A log whose annotations a reader of another version read is fetched again too, for them alone (ticket #187, ADR-0066): at
-  // most RECORDING_LOG_REREAD_LIMIT logs a pull, the first by id among those the feed still lists, and the rest on the pulls
-  // after. A log in `unindexed` is fetched for everything anyway and is not counted.
+  // A log whose annotations or index a reader of another version made is fetched again too, for the readings that are stale
+  // (ticket #187, ADR-0066): at most RECORDING_LOG_REREAD_LIMIT logs a pull, the first by id among those the feed still lists, and
+  // the rest on the pulls after. A log in `unindexed` is fetched for everything anyway and is not counted. The fetch is OLIS's, and
+  // OLIS keeps a file only for a window, so a log the feed no longer lists is left as it is.
   const listed = new Set(links.map((link) => link.id));
   const staleAnnotations = new Set(
-    writer
-      .recordingLogsWithStaleAnnotations(config.session, LINK_ANNOTATIONS_READER_VERSION)
+    writer.recordingLogsWithStaleAnnotations(config.session, LINK_ANNOTATIONS_READER_VERSION),
+  );
+  const staleIndex = new Set(writer.recordingLogsWithStaleIndex(config.session, SPEAKER_TURN_INDEX_READER_VERSION));
+  // One cap for both readings: a log stale in both is one fetch, and the first by id are fetched.
+  const rereadForVersion = new Set(
+    [...new Set([...staleAnnotations, ...staleIndex])]
       .filter((id) => listed.has(id) && !unindexed.has(id) && !revised.has(id))
+      .toSorted()
       .slice(0, RECORDING_LOG_REREAD_LIMIT),
   );
   const speakerTurns = { session: config.session, writer, resolver };
@@ -452,10 +459,11 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
       writer.storeSpeakerTurnIndex({
         documentId: link.id,
         outcome: await readSpeakerTurnIndex(speakerTurns, link, again.bytes, again.pdf.text),
+        readerVersion: SPEAKER_TURN_INDEX_READER_VERSION,
       });
       continue;
     }
-    if (stored.has(link.id) && staleAnnotations.has(link.id) && link.kind === "recording_log") {
+    if (stored.has(link.id) && rereadForVersion.has(link.id) && link.kind === "recording_log") {
       refetches.attempted += 1;
       const again = await fetchAndRead(olis, link, deps.signal);
       if (again.kind === "left_out") {
@@ -473,7 +481,19 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
         });
         continue;
       }
-      await rereadLinkAnnotations(speakerTurns, link, again.bytes);
+      // Only what a stale version asks is stored (ADR-0066): an index read again also stores the annotations when theirs are stale,
+      // and annotations read again store no index, which would make the log's turn Passages and transcripts again.
+      if (staleIndex.has(link.id)) {
+        writer.storeSpeakerTurnIndex({
+          documentId: link.id,
+          outcome: await readSpeakerTurnIndex(speakerTurns, link, again.bytes, again.pdf.text, {
+            annotations: staleAnnotations.has(link.id),
+          }),
+          readerVersion: SPEAKER_TURN_INDEX_READER_VERSION,
+        });
+      } else {
+        await rereadLinkAnnotations(speakerTurns, link, again.bytes);
+      }
       continue;
     }
     if (stored.has(link.id) && !revised.has(link.id)) continue;
@@ -507,6 +527,7 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
       writer.storeSpeakerTurnIndex({
         documentId: link.id,
         outcome: await readSpeakerTurnIndex(speakerTurns, link, fetched.bytes, fetched.pdf.text),
+        readerVersion: SPEAKER_TURN_INDEX_READER_VERSION,
       });
     }
     stored.add(link.id);

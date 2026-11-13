@@ -75,6 +75,7 @@ function storeLog(): void {
   );
   index.writer.storeDocument(session, storedOf(log, text), searchRecordOf(log, text, true));
   index.writer.storeSpeakerTurnIndex({
+    readerVersion: 1,
     documentId: logId,
     outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns },
   });
@@ -106,6 +107,7 @@ describe("the hearings of a Measure", () => {
     // The item texts sort as "Public Hearing" before "Work Session"; the recording takes the work session first.
     storeLog();
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: logId,
       outcome: {
         kind: "indexed",
@@ -185,6 +187,7 @@ describe("the hearings of a Measure", () => {
     storeItemMeasures();
 
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: logId,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: turns.slice(0, 2) },
     });

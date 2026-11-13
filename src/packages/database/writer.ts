@@ -39,6 +39,7 @@ import {
   readLogsWithoutItemMeasures,
   readLogsWithoutTurnPassages,
   readLogsWithStaleAnnotations,
+  readLogsWithStaleIndex,
   storeItemMeasuresOf,
   storeLinkAnnotations,
   storeSpeakerTurnIndex,
@@ -205,7 +206,12 @@ function testimonyAgencyValues(
 }
 
 /** What the store keeps of a Recording Log's speaker turns: the log, and what reading it came to. */
-export type SpeakerTurnIndexRecord = { documentId: DocumentId; outcome: SpeakerTurnIndexOutcome };
+export type SpeakerTurnIndexRecord = {
+  documentId: DocumentId;
+  outcome: SpeakerTurnIndexOutcome;
+  /** The version of the reader that made the outcome (`SPEAKER_TURN_INDEX_READER_VERSION`, ADR-0066). */
+  readerVersion: number;
+};
 
 /** What the build report says of how the Recording Logs were read. */
 export type RecordingLogReadingNotes = {
@@ -430,6 +436,12 @@ export type IndexWriter = {
    * or not the file held a link. They are source data and independent of the speaker-turn index.
    */
   storeLinkAnnotations(document: DocumentId, annotations: readonly StoredLinkAnnotation[], readerVersion: number): void;
+  /**
+   * The stored Recording Logs of the Session whose speaker-turn index was read by a reader of another version than
+   * `readerVersion` (ticket #187, ADR-0066), in the order of their ids: the logs the worker fetches again for it, a few a pull.
+   * A log with no index is not here; it is in `recordingLogsWithoutIndex`. Nor is a log set aside as another Meeting's.
+   */
+  recordingLogsWithStaleIndex(session: SessionKey, readerVersion: number): DocumentId[];
   /**
    * The stored Recording Logs of the Session whose link annotations were read by a reader of another version than
    * `readerVersion` (ticket #187, ADR-0066), in the order of their ids: the logs the worker fetches again for them, a few a pull.
@@ -1275,6 +1287,9 @@ export function openIndexWriter(path: string): IndexWriter {
     storeLinkAnnotations(document, annotations, readerVersion) {
       storeLinkAnnotations(database, document, annotations, readerVersion);
     },
+    recordingLogsWithStaleIndex(session, readerVersion) {
+      return readLogsWithStaleIndex(database, session, readerVersion);
+    },
     recordingLogsWithStaleAnnotations(session, readerVersion) {
       return readLogsWithStaleAnnotations(database, session, readerVersion);
     },
@@ -1282,7 +1297,7 @@ export function openIndexWriter(path: string): IndexWriter {
       recordFetchFailure(database, document, failure);
     },
     storeSpeakerTurnIndex(record) {
-      storeSpeakerTurnIndex(database, record.documentId, record.outcome);
+      storeSpeakerTurnIndex(database, record.documentId, record.outcome, record.readerVersion);
     },
     transcriptTargets(session) {
       return readTranscriptTargets(database, session);

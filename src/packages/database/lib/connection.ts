@@ -714,6 +714,7 @@ const upgradeSteps: readonly ((database: DatabaseSync) => void)[] = [
     database.exec("ALTER TABLE speaker_turn_index ADD COLUMN turn_passages_reader_version INTEGER NOT NULL DEFAULT 0");
     database.exec("ALTER TABLE speaker_turn_index ADD COLUMN item_measures_reader_version INTEGER NOT NULL DEFAULT 0");
     database.exec("ALTER TABLE transcript ADD COLUMN reader_version INTEGER NOT NULL DEFAULT 0");
+    database.exec("ALTER TABLE speaker_turn_index ADD COLUMN index_reader_version INTEGER NOT NULL DEFAULT 0");
     database.exec(annotationReadSchema);
     // A log with stored annotations was read by a reader before versions: version 0, so it is fetched again, within the cap.
     database.exec(

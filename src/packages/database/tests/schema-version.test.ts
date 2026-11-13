@@ -383,6 +383,7 @@ describe("the writer", () => {
     );
     first.storeDocument(madeUpSession, storedOf(log, logText), searchRecordOf(log, logText, true));
     first.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: log.id,
       outcome: {
         kind: "indexed",
@@ -491,6 +492,38 @@ describe("the writer", () => {
     expect(upgraded.storedTranscripts(madeUpSession)).toMatchObject([
       { eventId: "2099010001", fileSha256: "1".repeat(64), readerVersion: 0 },
     ]);
+  });
+
+  test("upgrades a file at version 9 with step 10: a log's speaker-turn index counts as read by reader version 0, so the log is fetched again, and its turns stay", () => {
+    const file = newFile();
+    const log = recordingLogLink();
+    const logText = "MADE UP COMMITTEE\n";
+    const first = writerOn(file.path);
+    first.recordFullPull(
+      madeUpSession,
+      asOf(1),
+      pullOf({ Committees: [committee], CommitteeMeetings: [meetingOn(10)], CommitteeMeetingDocuments: [log] }),
+    );
+    first.storeDocument(madeUpSession, storedOf(log, logText), searchRecordOf(log, logText, true));
+    first.storeSpeakerTurnIndex({
+      documentId: log.id,
+      outcome: { kind: "conflicting_event_ids", eventIds: ["2099010001", "2099010002"] },
+      readerVersion: currentParser,
+    });
+    expect(first.recordingLogsWithStaleIndex(madeUpSession, currentParser), "read by the current reader").toEqual([]);
+    closed(first);
+    leaveAsVersionNine(file.path);
+
+    const upgraded = writerOn(file.path);
+
+    expect(upgraded.recordingLogsWithStaleIndex(madeUpSession, currentParser)).toEqual([log.id]);
+    expect(upgraded.recordingLogsWithStaleIndex(madeUpSession, 0), "it counts as version 0").toEqual([]);
+    const reader = openIndexReader(file.path, afterEverythingMadeUp);
+    connections.push(reader);
+    expect(reader.speakerTurnIndexOf(log.id)).toEqual({
+      kind: "conflicting_event_ids",
+      eventIds: ["2099010001", "2099010002"],
+    });
   });
 
   test("refuses a file at a newer version than it knows, naming both, and leaves it at that version", () => {

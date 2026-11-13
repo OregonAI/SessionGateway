@@ -95,6 +95,7 @@ function storeLogWithIndex(): void {
     vectors: { modelId: "made-up-model", rows: [] },
   });
   index.writer.storeSpeakerTurnIndex({
+    readerVersion: 1,
     documentId: logId,
     outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns },
   });
@@ -185,6 +186,7 @@ describe("the Passages of a log's turns", () => {
     index.writer.replacePassages(logId, cut(), 0, currentReader);
 
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: logId,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: [turns[1] as SpeakerTurn] },
     });
@@ -199,12 +201,13 @@ describe("the Passages of a log's turns", () => {
   test("a log with no turns, or no index, is not listed", () => {
     storeLogWithIndex();
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: logId,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: [] },
     });
     expect(index.writer.recordingLogsWithoutTurnPassages(session, currentReader)).toEqual([]);
 
-    index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" } });
+    index.writer.storeSpeakerTurnIndex({ readerVersion: 1, documentId: logId, outcome: { kind: "no_event_id" } });
     expect(index.writer.recordingLogsWithoutTurnPassages(session, currentReader)).toEqual([]);
   });
 
@@ -224,6 +227,7 @@ describe("the Passages of a log's turns", () => {
     index.writer.replacePassages(logId, [passageOf(0, text.length)], 2, currentReader);
 
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: logId,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns },
     });

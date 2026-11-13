@@ -120,6 +120,7 @@ function storeLogWithIndex(): void {
     vectors: { modelId, rows: [] },
   });
   index.writer.storeSpeakerTurnIndex({
+    readerVersion: 1,
     documentId: logId,
     outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns },
   });
@@ -370,6 +371,7 @@ describe("a log whose index is stored again", () => {
   const turnsAgain = [turn(2, "00:00:02", "Clerk Added"), ...turns];
   const reindexed = (): void => {
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: logId,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: turnsAgain },
     });

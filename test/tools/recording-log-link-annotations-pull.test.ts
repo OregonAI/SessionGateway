@@ -13,6 +13,7 @@ import {
   forgetLinkAnnotations,
   forgetSpeakerTurns,
   readAnnotationsWithAnOlderReader,
+  readIndexWithAnOlderReader,
 } from "../support/old-database.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";
 
@@ -65,6 +66,46 @@ describe("which Recording Logs a pull fetches again for an older annotation read
     system = await startCopiedSystem({ clockAt, documents: true });
     readAnnotationsWithAnOlderReader(system.database.path);
     expect(RECORDING_LOG_REREAD_LIMIT).toBeLessThan(34);
+
+    await system.pullAgain();
+    expect(system.buildReport()["recording_log_refetches"]).toEqual({ ...none, attempted: RECORDING_LOG_REREAD_LIMIT });
+
+    await system.pullAgain();
+    expect(system.buildReport()["recording_log_refetches"]).toEqual({
+      ...none,
+      attempted: 34 - RECORDING_LOG_REREAD_LIMIT,
+    });
+
+    await system.pullAgain();
+    expect(system.buildReport()["recording_log_refetches"]).toEqual(none);
+  });
+});
+
+// Ticket #187 (ADR-0066): the speaker-turn index has its own version. A log whose index an older reader made is fetched again,
+// and the cap is one for both readings: a log stale in both is one fetch, and the two together never ask OLIS for more than the
+// limit in a pull.
+describe("which Recording Logs a pull fetches again for an older index reader", () => {
+  it("fetches at most the limit in one pull and the rest on the next, then none", async () => {
+    system = await startCopiedSystem({ clockAt, documents: true });
+    readIndexWithAnOlderReader(system.database.path);
+
+    await system.pullAgain();
+    expect(system.buildReport()["recording_log_refetches"]).toEqual({ ...none, attempted: RECORDING_LOG_REREAD_LIMIT });
+
+    await system.pullAgain();
+    expect(system.buildReport()["recording_log_refetches"]).toEqual({
+      ...none,
+      attempted: 34 - RECORDING_LOG_REREAD_LIMIT,
+    });
+
+    await system.pullAgain();
+    expect(system.buildReport()["recording_log_refetches"]).toEqual(none);
+  });
+
+  it("counts a log whose annotations and index are both stale once, and fetches no more than the limit", async () => {
+    system = await startCopiedSystem({ clockAt, documents: true });
+    readIndexWithAnOlderReader(system.database.path);
+    readAnnotationsWithAnOlderReader(system.database.path);
 
     await system.pullAgain();
     expect(system.buildReport()["recording_log_refetches"]).toEqual({ ...none, attempted: RECORDING_LOG_REREAD_LIMIT });

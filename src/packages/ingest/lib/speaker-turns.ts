@@ -15,6 +15,7 @@ import {
   parseRecordingLog,
   playerLinkOf,
   recordingLogHeaderOf,
+  SPEAKER_TURN_INDEX_READER_VERSION,
 } from "#/packages/recording-log/index.ts";
 
 /** What reading a Recording Log needs besides its file: the store (the Meeting's Agenda items and committee) and who the codes are. */
@@ -35,6 +36,11 @@ export async function readSpeakerTurnIndex(
   link: DocumentLink,
   bytes: Uint8Array,
   text: string,
+  /**
+   * What else to store from the file. The annotations are stored unless `annotations` is false: a log fetched again only for its
+   * index, whose annotations the current reader made already, keeps them (ticket #187, ADR-0066).
+   */
+  reading: { annotations: boolean } = { annotations: true },
 ): Promise<SpeakerTurnIndexOutcome> {
   const extraction = await extractPdfLinks(bytes);
   if (extraction.kind === "unreadable") {
@@ -46,7 +52,9 @@ export async function readSpeakerTurnIndex(
   const { links } = extraction;
   // The annotations are stored as the file's read gave them, before the parser derives anything from them (ticket #160,
   // ADR-0058): they are a source the index is not, so a question's expected value can name them and not the index under test.
-  context.writer.storeLinkAnnotations(link.id, linkAnnotationsOf(links), LINK_ANNOTATIONS_READER_VERSION);
+  if (reading.annotations) {
+    context.writer.storeLinkAnnotations(link.id, linkAnnotationsOf(links), LINK_ANNOTATIONS_READER_VERSION);
+  }
   const meeting = link.relations.find((relation) => relation.relation === "meeting")?.to;
   const committee = link.relations.find((relation) => relation.relation === "committee")?.to;
   const agendaItems = meeting === undefined ? [] : context.writer.agendaItemsOfMeeting(meeting as MeetingId);
@@ -131,7 +139,11 @@ export function setAsideCopiesOfOtherMeetings(writer: IndexWriter, session: Sess
     if (copy.outcome === "log_of_another_meeting") continue;
     const header = recordingLogHeaderOf(copy.text);
     if (header !== null && headerNamesMeeting(header, copy)) continue;
-    writer.storeSpeakerTurnIndex({ documentId: copy.id, outcome: { kind: "log_of_another_meeting" } });
+    writer.storeSpeakerTurnIndex({
+      documentId: copy.id,
+      outcome: { kind: "log_of_another_meeting" },
+      readerVersion: SPEAKER_TURN_INDEX_READER_VERSION,
+    });
   }
 }
 

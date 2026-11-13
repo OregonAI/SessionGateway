@@ -86,6 +86,7 @@ describe("the speaker-turn index of a stored Recording Log", () => {
     const second = turn(30);
     const third = turn(30, { speaker: "MADE UP second turn at the same second" });
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: logId,
       outcome: {
         kind: "indexed",
@@ -105,10 +106,11 @@ describe("the speaker-turn index of a stored Recording Log", () => {
 
   test("a log OLIS gave no event ID, or two, is stored as that gap, with no turns", () => {
     pulledWithLog();
-    index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" } });
+    index.writer.storeSpeakerTurnIndex({ readerVersion: 1, documentId: logId, outcome: { kind: "no_event_id" } });
     expect(index.reader.speakerTurnIndexOf(logId)).toEqual({ kind: "no_event_id" });
 
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: logId,
       outcome: { kind: "conflicting_event_ids", eventIds: ["2099010001", "2099010002"] },
     });
@@ -122,10 +124,12 @@ describe("the speaker-turn index of a stored Recording Log", () => {
     pulledWithLog();
     expect(index.reader.speakerTurnIndexOf(logId)).toBeUndefined();
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: logId,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: [turn(1), turn(2)] },
     });
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: logId,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: [turn(5)] },
     });
@@ -143,7 +147,7 @@ describe("the speaker-turn index of a stored Recording Log", () => {
     storeMadeUpDocument(index, exhibitLink(), "MADE UP exhibit text");
     expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set([logId]));
 
-    index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" } });
+    index.writer.storeSpeakerTurnIndex({ readerVersion: 1, documentId: logId, outcome: { kind: "no_event_id" } });
     index.writer.storeLinkAnnotations(
       logId,
       [{ page: 1, url: "https://made-up.example/mediaplayer?clientID=1&eventID=2099010001&startStreamAt=5" }],
@@ -155,7 +159,7 @@ describe("the speaker-turn index of a stored Recording Log", () => {
 
   test("a log with an index and no stored link annotations is still listed, for the fetch that stores them (ADR-0058)", () => {
     pulledWithLog();
-    index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" } });
+    index.writer.storeSpeakerTurnIndex({ readerVersion: 1, documentId: logId, outcome: { kind: "no_event_id" } });
 
     expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set([logId]));
 
@@ -179,11 +183,12 @@ describe("the speaker-turn index of a stored Recording Log", () => {
     pulledWithLog();
     const before = index.reader.meetingContents(meeting.id).recordingLogs;
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: logId,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: [turn(1), turn(2), turn(3)] },
     });
     const indexed = index.reader.meetingContents(meeting.id).recordingLogs;
-    index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" } });
+    index.writer.storeSpeakerTurnIndex({ readerVersion: 1, documentId: logId, outcome: { kind: "no_event_id" } });
     const gap = index.reader.meetingContents(meeting.id).recordingLogs;
 
     expect(before.map((entry) => entry.speakerTurnIndex)).toEqual([null]);
@@ -194,6 +199,7 @@ describe("the speaker-turn index of a stored Recording Log", () => {
   test("the writer reports for the build report the logs with a gap and the pages read by timecode, each with its source URL", () => {
     pulledWithLog();
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: logId,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [2, 3], turns: [turn(1)] },
     });
@@ -204,6 +210,7 @@ describe("the speaker-turn index of a stored Recording Log", () => {
     });
 
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: logId,
       outcome: { kind: "conflicting_event_ids", eventIds: ["2099010001", "2099010002"] },
     });
@@ -215,7 +222,7 @@ describe("the speaker-turn index of a stored Recording Log", () => {
       turnsWithoutPassage: [],
     });
 
-    index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" } });
+    index.writer.storeSpeakerTurnIndex({ readerVersion: 1, documentId: logId, outcome: { kind: "no_event_id" } });
     expect(index.writer.recordingLogReadingNotes(session).gaps).toEqual([
       { id: logId, sourceUrl: log.sourceUrl, kind: "no_event_id", eventIds: [] },
     ]);
@@ -231,6 +238,7 @@ describe("the speaker-turn index of a stored Recording Log", () => {
     });
 
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: logId,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: [turn(1)] },
     });
@@ -244,6 +252,7 @@ describe("the speaker-turn index of a stored Recording Log", () => {
   test("the meeting's listing gives the stored turn count and does not read the turns to count them", () => {
     pulledWithLog();
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: logId,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: [turn(1), turn(2)] },
     });
@@ -259,6 +268,7 @@ describe("the speaker-turn index of a stored Recording Log", () => {
   test("a stored index that says it is indexed and has no event ID throws an error that carries the stored row as its cause", () => {
     pulledWithLog();
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: logId,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: [turn(1)] },
     });
@@ -311,6 +321,7 @@ describe("the second schema step", () => {
         pullOf({ Committees: [committee], CommitteeMeetings: [meeting], CommitteeMeetingDocuments: [log] }),
       );
       writer.storeSpeakerTurnIndex({
+        readerVersion: 1,
         documentId: logId,
         outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: [turn(4)] },
       });
@@ -336,5 +347,56 @@ describe("the second schema step", () => {
     buildFrozenVersionOne(file.path);
 
     expect(() => openIndexReader(file.path, afterEverythingMadeUp)).toThrow(/version 1\b.*version 10\b/);
+  });
+});
+
+// Ticket #187 (ADR-0066): the index has a reader version of its own, recorded with each log it was read from. A log's index
+// read by an older reader is listed so that the worker fetches the file again (a few logs a pull), a gap among them.
+describe("the reader version of a log's speaker-turn index", () => {
+  afterEach(() => {
+    index.close();
+  });
+
+  test("a log read by the current reader is not listed, and one read by an older reader is, in the order of the ids", () => {
+    pulledWithLog();
+    index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" }, readerVersion: 1 });
+    expect(index.writer.recordingLogsWithStaleIndex(session, 1)).toEqual([]);
+
+    index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" }, readerVersion: 0 });
+
+    expect(index.writer.recordingLogsWithStaleIndex(session, 1)).toEqual([logId]);
+  });
+
+  test("the version written is the one given: the next version finds the log stale", () => {
+    pulledWithLog();
+    index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" }, readerVersion: 1 });
+
+    expect(index.writer.recordingLogsWithStaleIndex(session, 2)).toEqual([logId]);
+  });
+
+  test("a log with no index is not stale: it is a log without an index, which the pull fetches for the first time", () => {
+    pulledWithLog();
+
+    expect(index.writer.recordingLogsWithStaleIndex(session, 1)).toEqual([]);
+  });
+
+  test("a log set aside as another Meeting's is not listed: the worker derives that outcome from the stored texts, not from the file", () => {
+    pulledWithLog();
+    index.writer.storeSpeakerTurnIndex({
+      documentId: logId,
+      outcome: { kind: "log_of_another_meeting" },
+      readerVersion: 0,
+    });
+
+    expect(index.writer.recordingLogsWithStaleIndex(session, 1)).toEqual([]);
+  });
+
+  test("a bump of the index's version lists no log for its annotations", () => {
+    pulledWithLog();
+    index.writer.storeLinkAnnotations(logId, [], 1);
+    index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" }, readerVersion: 0 });
+
+    expect(index.writer.recordingLogsWithStaleIndex(session, 1)).toEqual([logId]);
+    expect(index.writer.recordingLogsWithStaleAnnotations(session, 1)).toEqual([]);
   });
 });

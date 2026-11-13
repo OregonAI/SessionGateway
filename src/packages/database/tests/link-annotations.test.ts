@@ -110,7 +110,7 @@ describe("the link annotations of a stored Recording Log", () => {
       { kind: "no_event_id" as const },
       { kind: "conflicting_event_ids" as const, eventIds: ["2099010001", "2099010002"] },
     ]) {
-      index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome });
+      index.writer.storeSpeakerTurnIndex({ readerVersion: 1, documentId: logId, outcome });
       expect(index.reader.linkAnnotationsOf(logId)).toEqual(annotations);
     }
   });
@@ -149,7 +149,7 @@ describe("the reader version of a log's link annotations", () => {
 
   test("a log whose file holds no link is marked read, and is no longer listed as without annotations", () => {
     pulledWithLog();
-    index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" } });
+    index.writer.storeSpeakerTurnIndex({ readerVersion: 1, documentId: logId, outcome: { kind: "no_event_id" } });
     expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set([logId]));
 
     index.writer.storeLinkAnnotations(logId, [], 1);
@@ -162,7 +162,7 @@ describe("the reader version of a log's link annotations", () => {
     pulledWithLog();
     index.writer.storeLinkAnnotations(logId, [made(1, 5)], 1);
 
-    index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" } });
+    index.writer.storeSpeakerTurnIndex({ readerVersion: 1, documentId: logId, outcome: { kind: "no_event_id" } });
 
     expect(index.writer.recordingLogsWithStaleAnnotations(session, 1)).toEqual([]);
   });

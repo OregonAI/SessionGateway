@@ -73,13 +73,14 @@ export function leaveAsBeforeVersions(path: string): void {
 
 /**
  * What step 10 (ticket #187) adds, one reading at a time: the version of the reader that made each stored reading no snapshot
- * change reaches: the Agency Links', a column of `agency_read`, and the turn Passages' and the Agenda items' Measures', two columns of
+ * change reaches: the Agency Links', a column of `agency_read`, and the turn Passages' and the Agenda items' Measures', the speaker-turn index's, three columns of
  * `speaker_turn_index`, and the annotations', a table of its own (`recording_log_annotation_read`).
  */
 const dropStepTenColumnsOfOlderTables = `DROP TABLE IF EXISTS recording_log_annotation_read;
    ALTER TABLE agency_read DROP COLUMN reader_version;
    ALTER TABLE speaker_turn_index DROP COLUMN turn_passages_reader_version;
-   ALTER TABLE speaker_turn_index DROP COLUMN item_measures_reader_version;`;
+   ALTER TABLE speaker_turn_index DROP COLUMN item_measures_reader_version;
+   ALTER TABLE speaker_turn_index DROP COLUMN index_reader_version;`;
 
 /** The transcripts' reader version, a column of `transcript`, which a file below version 4 does not have. */
 const dropTranscriptReaderVersionColumn = `ALTER TABLE transcript DROP COLUMN reader_version;`;

@@ -253,6 +253,7 @@ describe("a Recording Log created after the clock", () => {
     const logText = "MADE UP COMMITTEE\n00:17:25 Pat Poe\n";
     index.writer.storeDocument(session, storedOf(log, logText), searchRecordOf(log, logText, true));
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: log.id,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: [turn] },
     });

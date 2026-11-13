@@ -131,6 +131,7 @@ export function leaveTurnsUnlinkedFromPassages(databasePath: string): void {
     database.exec("ALTER TABLE statute_read DROP COLUMN parser_version");
     database.exec("ALTER TABLE statutes_affected_read DROP COLUMN parser_version");
     database.exec("ALTER TABLE transcript DROP COLUMN reader_version");
+    database.exec("ALTER TABLE speaker_turn_index DROP COLUMN index_reader_version");
     database.exec("DROP TABLE IF EXISTS recording_log_annotation_read");
     database.exec("ALTER TABLE agency_read DROP COLUMN reader_version");
     database.exec("ALTER TABLE speaker_turn_index DROP COLUMN turn_passages_reader_version");
@@ -246,6 +247,20 @@ export function readTranscriptsWithAnOlderReader(databasePath: string): void {
   const database = new DatabaseSync(databasePath, { timeout: 5000 });
   try {
     database.exec("UPDATE transcript SET reader_version = 0");
+  } finally {
+    database.close();
+  }
+}
+
+/**
+ * Makes a database look as one that an older speaker-turn index reader left (ticket #187, ADR-0066): each Recording Log's index
+ * is stamped with reader version 0, and its turns are as they were (a log set aside as another Meeting's keeps the current
+ * version, as the worker stamps it). It only arranges, like `forgetListing`.
+ */
+export function readIndexWithAnOlderReader(databasePath: string): void {
+  const database = new DatabaseSync(databasePath, { timeout: 5000 });
+  try {
+    database.exec("UPDATE speaker_turn_index SET index_reader_version = 0 WHERE outcome <> 'log_of_another_meeting'");
   } finally {
     database.close();
   }
