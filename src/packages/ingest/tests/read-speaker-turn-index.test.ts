@@ -17,7 +17,7 @@ import { openIndexWriter, type IndexWriter } from "#/packages/database/writer.ts
 import type { DocumentId, DocumentLink, StoredLinkAnnotation } from "#/packages/domain/documents.ts";
 import { parseSessionKey } from "#/packages/domain/index.ts";
 import { createLegislatorResolver } from "#/packages/legislators/resolver.ts";
-import { LINK_ANNOTATIONS_READER_VERSION, extractPdfText } from "#/packages/pdf-text/index.ts";
+import { extractPdfText } from "#/packages/pdf-text/index.ts";
 import { readSpeakerTurnIndex, rereadLinkAnnotations } from "../index.ts";
 import { madeUpPdf } from "./made-up-pdf.ts";
 
