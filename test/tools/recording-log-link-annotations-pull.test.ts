@@ -7,6 +7,7 @@
 // arranges, where it needs an older database, with SQL that only arranges (`forgetLinkAnnotations`, `forgetSpeakerTurns`,
 // test/support/old-database.ts). The fixture holds 34 stored Recording Logs (get-document-speaker-turns-pull.test.ts counts
 // the same 34), and each has links.
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { RECORDING_LOG_REREAD_LIMIT } from "#/packages/ingest/index.ts";
 import {
@@ -78,6 +79,31 @@ describe("which Recording Logs a pull fetches again for an older annotation read
 
     await system.pullAgain();
     expect(system.buildReport()["recording_log_refetches"]).toEqual(none);
+  });
+});
+
+// Ticket #187 (ADR-0066): a bump of the annotation reader's version makes no other reading again. Storing a log's index deletes and
+// inserts its turns again, resets its turn Passages and item Measures and marks the Meeting's transcripts for attaching again, so an
+// annotation re-read that stored the index would show in the turns' row ids.
+describe("an older annotation reader makes no other reading again", () => {
+  it("leaves each log's stored turns as they were while it reads their annotations again", async () => {
+    system = await startCopiedSystem({ clockAt, documents: true });
+    readAnnotationsWithAnOlderReader(system.database.path);
+    const turnRows = (): unknown[] => {
+      const database = new DatabaseSync(system.database.path, { readOnly: true, timeout: 5000 });
+      try {
+        return database.prepare("SELECT rowid, document_id, position FROM speaker_turn ORDER BY rowid").all();
+      } finally {
+        database.close();
+      }
+    };
+    const before = turnRows();
+    expect(before.length).toBeGreaterThan(0);
+
+    await system.pullAgain();
+
+    expect(system.buildReport()["recording_log_refetches"]).toEqual({ ...none, attempted: RECORDING_LOG_REREAD_LIMIT });
+    expect(turnRows()).toEqual(before);
   });
 });
 
