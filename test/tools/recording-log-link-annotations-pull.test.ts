@@ -11,6 +11,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { RECORDING_LOG_REREAD_LIMIT } from "#/packages/ingest/index.ts";
 import {
+  forgetIndexOfTheFirstLogs,
   forgetLinkAnnotations,
   forgetSpeakerTurns,
   readAnnotationsWithAnOlderReader,
@@ -104,6 +105,42 @@ describe("an older annotation reader makes no other reading again", () => {
 
     expect(system.buildReport()["recording_log_refetches"]).toEqual({ ...none, attempted: RECORDING_LOG_REREAD_LIMIT });
     expect(turnRows()).toEqual(before);
+  });
+});
+
+// Ticket #187 (ADR-0066): the logs a pull fetches again for a version are the first RECORDING_LOG_REREAD_LIMIT by id among those that
+// need it and that this pull can fetch: listed by the pull's rows (an increment lists only the rows it read), and not a log the pull
+// fetches anyway for its missing index. A log that is neither takes no slot.
+describe("which stale logs take the limit's slots", () => {
+  const logPath = (id: number): string => `/liz/2025R1/Downloads/CommitteeMeetingDocument/${id}`;
+  const logRequests = (paths: readonly string[]): string[] =>
+    paths.filter((path) => path.includes("/CommitteeMeetingDocument/"));
+
+  it("fetches a listed stale log that comes after the first limit by id, when an increment lists only it", async () => {
+    system = await startCopiedSystem({ clockAt, documents: true });
+    readAnnotationsWithAnOlderReader(system.database.path);
+    const requestsBefore = system.olis.documentRequests().length;
+
+    system.clock.set("2026-08-05T18:00:00Z");
+    system.olis.amendRows("CommitteeMeetingDocuments", (row) => row["CommitteeMeetingDocumentId"] === 317265, {
+      ModifiedDate: "2026-08-05T10:30:00",
+    });
+    await system.incrementAgain();
+
+    expect(logRequests(system.olis.documentRequests().slice(requestsBefore))).toEqual([logPath(317265)]);
+  });
+
+  it("fetches a log with no index for it and the limit of the others, so a log fetched for its index takes no slot", async () => {
+    system = await startCopiedSystem({ clockAt, documents: true });
+    readAnnotationsWithAnOlderReader(system.database.path);
+    forgetIndexOfTheFirstLogs(system.database.path, 5);
+    const requestsBefore = system.olis.documentRequests().length;
+
+    await system.pullAgain();
+
+    expect(logRequests(system.olis.documentRequests().slice(requestsBefore))).toHaveLength(
+      5 + RECORDING_LOG_REREAD_LIMIT,
+    );
   });
 });
 

@@ -267,3 +267,19 @@ export function readIndexWithAnOlderReader(databasePath: string): void {
     database.close();
   }
 }
+
+/**
+ * Makes a database look as one in which the first `count` Recording Logs by id have no speaker-turn index (as a log whose index
+ * never came), and keep their text and annotations. It only arranges, like `forgetListing`.
+ */
+export function forgetIndexOfTheFirstLogs(databasePath: string, count: number): void {
+  const database = new DatabaseSync(databasePath, { timeout: 5000 });
+  try {
+    const first = `(SELECT document_id FROM speaker_turn_index ORDER BY document_id LIMIT ${Math.trunc(count)})`;
+    database.exec(
+      `DELETE FROM speaker_turn WHERE document_id IN ${first}; DELETE FROM speaker_turn_index WHERE document_id IN ${first}`,
+    );
+  } finally {
+    database.close();
+  }
+}
