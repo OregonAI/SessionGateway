@@ -13,6 +13,18 @@ import {
 } from "./lib/attach.ts";
 import { knownFormatVersions, orderProblems, transcriptFileSchema, transcriptFormatVersion } from "./lib/format.ts";
 
+/**
+ * The version of the reading of a transcript file into words, quality values and drift (ADR-0066). The worker records it with
+ * each transcript it reads from a file (`storeTranscript`) and reads the file again, when it is still in the folder, if the
+ * recorded version is not this one, whatever the file's sha256. BUMP IT BY HAND in any change that would change what the worker
+ * stores for the same file and turns: a change to this package (`lib/format.ts`, `lib/attach.ts`'s words, quality and drift
+ * rules), to `ingest/lib/transcripts.ts`'s `storedPassagesOf`, `cutToSize` and `qualityOf`, and to `storeTranscript`'s
+ * storage in `database/lib/transcripts.ts`. It is apart from `ATTACHMENT_VERSION` (`ingest/lib/transcripts.ts`), which covers only how
+ * stored words are attached to the turns again and reads no file. A transcript whose file has left the folder keeps its words
+ * and its old version until the file returns. A reading made before schema step 10 counts as version 0, so this starts at 1.
+ */
+export const TRANSCRIPT_READER_VERSION = 1;
+
 export { transcriptFileSchema, transcriptFormatVersion };
 export { driftThresholdSeconds } from "./lib/attach.ts";
 export type { Drift, EntryAt, Passage, SegmentQuality, TranscriptWord, TurnAt };

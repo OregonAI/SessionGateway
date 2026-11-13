@@ -66,6 +66,8 @@ export type TranscriptRecord = {
   fileSha256: string;
   /** A hash of the turns and entries the passages were attached to: the passages are attached again when it changes. */
   attachedTo: string;
+  /** The version of the reader that read the file (`TRANSCRIPT_READER_VERSION`, ADR-0066): the file is read again when it is not the current one. */
+  readerVersion: number;
   audioSha256: string;
   durationSeconds: number;
   modelId: string;
@@ -99,6 +101,8 @@ export type StoredTranscriptKey = {
   file: string;
   fileSha256: string;
   attachedTo: string;
+  /** The version of the reader that read the file; 0 for a reading from before schema step 10 (ADR-0066). */
+  readerVersion: number;
 };
 
 /** One stored passage as the worker needs it to attach a transcript to new turns when the file is gone: its words and seconds. */

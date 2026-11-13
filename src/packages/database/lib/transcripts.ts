@@ -41,9 +41,9 @@ export function storeTranscript(database: DatabaseSync, record: TranscriptRecord
     }
     database
       .prepare(
-        `INSERT INTO transcript (meeting_id, event_id, file, file_sha256, attached_to, audio_sha256, duration_seconds,
-           model_id, made_at, drift_median_seconds, drift_max_seconds, drift_flagged_turns, meeting_flagged)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO transcript (meeting_id, event_id, file, file_sha256, attached_to, reader_version, audio_sha256,
+           duration_seconds, model_id, made_at, drift_median_seconds, drift_max_seconds, drift_flagged_turns, meeting_flagged)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         record.meetingId,
@@ -51,6 +51,7 @@ export function storeTranscript(database: DatabaseSync, record: TranscriptRecord
         record.file,
         record.fileSha256,
         record.attachedTo,
+        record.readerVersion,
         record.audioSha256,
         record.durationSeconds,
         record.modelId,
@@ -200,13 +201,14 @@ const keyRow = z.object({
   file: z.string(),
   file_sha256: z.string(),
   attached_to: z.string(),
+  reader_version: z.number(),
 });
 
 /** The transcripts the Session's Meetings have, with the hashes that say whether a file has been read. */
 export function readStoredTranscripts(database: DatabaseSync, session: SessionKey): StoredTranscriptKey[] {
   return database
     .prepare(
-      `SELECT t.meeting_id, t.event_id, t.file, t.file_sha256, t.attached_to
+      `SELECT t.meeting_id, t.event_id, t.file, t.file_sha256, t.attached_to, t.reader_version
        FROM transcript t JOIN meeting m ON m.id = t.meeting_id
        WHERE m.session_key = ? ORDER BY t.meeting_id, t.event_id`,
     )
@@ -219,6 +221,7 @@ export function readStoredTranscripts(database: DatabaseSync, session: SessionKe
         file: key.file,
         fileSha256: key.file_sha256,
         attachedTo: key.attached_to,
+        readerVersion: key.reader_version,
       };
     });
 }

@@ -30,6 +30,7 @@ import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import {
   attachStoredPassages,
   readTranscript,
+  TRANSCRIPT_READER_VERSION,
   type Passage as AttachedPassage,
   type SegmentQuality,
   type TranscriptWord,
@@ -251,7 +252,15 @@ export async function ingestTranscripts(step: TranscriptsStep): Promise<Transcri
     }
     const bytes = readFileSync(join(step.folder ?? "", file));
     const fileSha256 = sha256(bytes);
-    if (known?.fileSha256 === fileSha256 && known.attachedTo === attachedTo) continue;
+    // A file read by a reader of another version than the current one is read again, though its sha256 and its turns are the
+    // same (ADR-0066). A stored transcript whose file has gone from the folder cannot be, and is attached again from its words.
+    if (
+      known?.fileSha256 === fileSha256 &&
+      known.attachedTo === attachedTo &&
+      known.readerVersion === TRANSCRIPT_READER_VERSION
+    ) {
+      continue;
+    }
     if (firstTurn === undefined) {
       // No turn, so no player link of the log's own to build from: nothing is guessed.
       run.refused.push({
@@ -284,6 +293,7 @@ export async function ingestTranscripts(step: TranscriptsStep): Promise<Transcri
       file,
       fileSha256,
       attachedTo,
+      readerVersion: TRANSCRIPT_READER_VERSION,
       audioSha256: read.audio.sha256,
       durationSeconds: read.audio.durationSeconds,
       modelId: read.model.id,

@@ -62,11 +62,11 @@ export function leaveAsBeforeVersions(path: string): void {
      ALTER TABLE passage DROP COLUMN turn_position;
      ALTER TABLE speaker_turn_index DROP COLUMN turns_without_passage;
      ALTER TABLE speaker_turn_index DROP COLUMN item_measures_read;
-     ${dropTranscriptTables}
+     ${dropTranscriptReaderVersionColumn} ${dropTranscriptTables}
      ${dropCreatedTimeColumns}
      ${dropLinkAnnotationTable}
      ${dropLastFetchFailureTable}
-     ${dropParserVersionColumn} ${dropTableParserVersionColumn} ${dropStepTenColumns}
+     ${dropParserVersionColumn} ${dropTableParserVersionColumn} ${dropStepTenColumnsOfOlderTables}
      PRAGMA user_version = 0`,
   );
 }
@@ -76,10 +76,15 @@ export function leaveAsBeforeVersions(path: string): void {
  * change reaches: the Agency Links', a column of `agency_read`, and the turn Passages' and the Agenda items' Measures', two columns of
  * `speaker_turn_index`, and the annotations', a table of its own (`recording_log_annotation_read`).
  */
-const dropStepTenColumns = `DROP TABLE IF EXISTS recording_log_annotation_read;
+const dropStepTenColumnsOfOlderTables = `DROP TABLE IF EXISTS recording_log_annotation_read;
    ALTER TABLE agency_read DROP COLUMN reader_version;
    ALTER TABLE speaker_turn_index DROP COLUMN turn_passages_reader_version;
    ALTER TABLE speaker_turn_index DROP COLUMN item_measures_reader_version;`;
+
+/** The transcripts' reader version, a column of `transcript`, which a file below version 4 does not have. */
+const dropTranscriptReaderVersionColumn = `ALTER TABLE transcript DROP COLUMN reader_version;`;
+
+const dropStepTenColumns = `${dropTranscriptReaderVersionColumn} ${dropStepTenColumnsOfOlderTables}`;
 
 /** What step 9 (ticket #184) adds: the version of the table parser that read the held table, a column of `statutes_affected_read`. */
 const dropTableParserVersionColumn = `ALTER TABLE statutes_affected_read DROP COLUMN parser_version;`;
@@ -108,7 +113,7 @@ const dropTranscriptTables = `DROP TABLE transcript_passage_fts; DROP TABLE tran
 export function leaveAsVersionThree(path: string): void {
   withSql(
     path,
-    `${dropTranscriptTables} ${dropCreatedTimeColumns} ${dropLinkAnnotationTable} ${dropLastFetchFailureTable} ${dropParserVersionColumn} ${dropTableParserVersionColumn} ${dropStepTenColumns} PRAGMA user_version = 3`,
+    `${dropTranscriptReaderVersionColumn} ${dropTranscriptTables} ${dropCreatedTimeColumns} ${dropLinkAnnotationTable} ${dropLastFetchFailureTable} ${dropParserVersionColumn} ${dropTableParserVersionColumn} ${dropStepTenColumnsOfOlderTables} PRAGMA user_version = 3`,
   );
 }
 

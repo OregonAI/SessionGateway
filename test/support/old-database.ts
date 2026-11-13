@@ -130,6 +130,7 @@ export function leaveTurnsUnlinkedFromPassages(databasePath: string): void {
     for (const table of tablesGivenCreatedAtByStepFive) database.exec(`ALTER TABLE ${table} DROP COLUMN created_at`);
     database.exec("ALTER TABLE statute_read DROP COLUMN parser_version");
     database.exec("ALTER TABLE statutes_affected_read DROP COLUMN parser_version");
+    database.exec("ALTER TABLE transcript DROP COLUMN reader_version");
     database.exec("DROP TABLE IF EXISTS recording_log_annotation_read");
     database.exec("ALTER TABLE agency_read DROP COLUMN reader_version");
     database.exec("ALTER TABLE speaker_turn_index DROP COLUMN turn_passages_reader_version");
@@ -231,6 +232,20 @@ export function readAnnotationsWithAnOlderReader(databasePath: string): void {
   const database = new DatabaseSync(databasePath, { timeout: 5000 });
   try {
     database.exec("UPDATE recording_log_annotation_read SET reader_version = 0");
+  } finally {
+    database.close();
+  }
+}
+
+/**
+ * Makes a database look as one that an older transcript reader left (ticket #187, ADR-0066): each stored transcript is stamped
+ * with reader version 0, and its file hash, its attachment hash and its passages are as they were. It only arranges, like
+ * `forgetListing`.
+ */
+export function readTranscriptsWithAnOlderReader(databasePath: string): void {
+  const database = new DatabaseSync(databasePath, { timeout: 5000 });
+  try {
+    database.exec("UPDATE transcript SET reader_version = 0");
   } finally {
     database.close();
   }

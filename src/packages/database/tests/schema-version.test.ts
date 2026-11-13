@@ -456,6 +456,43 @@ describe("the writer", () => {
     expect(reader.linkAnnotationsOf(log.id)).toEqual([annotation]);
   });
 
+  test("upgrades a file at version 9 with step 10: a stored transcript counts as read by reader version 0, so its file is read again, and its row stays", () => {
+    const file = newFile();
+    const meeting = meetingOn(10);
+    const first = writerOn(file.path);
+    first.recordFullPull(
+      madeUpSession,
+      asOf(1),
+      pullOf({ Committees: [committee], CommitteeMeetings: [meeting], Measures: [measure] }),
+    );
+    first.storeTranscript({
+      meetingId: meeting.id,
+      eventId: "2099010001",
+      file: "2099010001.transcript.json",
+      fileSha256: "1".repeat(64),
+      attachedTo: "2".repeat(64),
+      readerVersion: currentParser,
+      audioSha256: "3".repeat(64),
+      durationSeconds: 10,
+      modelId: "MADE UP model",
+      madeAt: "2099-01-11T00:00:00-08:00",
+      drift: { medianSeconds: null, maxSeconds: null, flaggedTurns: 0, meetingFlagged: false },
+      passages: [],
+      vectors: { modelId: "MADE UP model", rows: [] },
+    });
+    expect(first.storedTranscripts(madeUpSession)[0]?.readerVersion, "read with the current reader").toBe(
+      currentParser,
+    );
+    closed(first);
+    leaveAsVersionNine(file.path);
+
+    const upgraded = writerOn(file.path);
+
+    expect(upgraded.storedTranscripts(madeUpSession)).toMatchObject([
+      { eventId: "2099010001", fileSha256: "1".repeat(64), readerVersion: 0 },
+    ]);
+  });
+
   test("refuses a file at a newer version than it knows, naming both, and leaves it at that version", () => {
     const file = createdFile();
     stampSchemaVersion(file.path, 11);
