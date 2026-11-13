@@ -76,7 +76,7 @@ export function readTableWithAnOlderParser(databasePath: string): void {
 export function forgetLinkAnnotations(databasePath: string): void {
   const database = new DatabaseSync(databasePath, { timeout: 5000 });
   try {
-    database.exec("DELETE FROM recording_log_link_annotation");
+    database.exec("DELETE FROM recording_log_link_annotation; DELETE FROM recording_log_annotation_read");
   } finally {
     database.close();
   }
@@ -100,7 +100,8 @@ export function forgetSpeakerTurns(databasePath: string): void {
  * index is stored, no Recording Log's passages are linked to its turns and no Agenda item's Measures are read. Each stored Recording Log keeps its text and its
  * index and has one passage that holds the whole text (the cut the worker made is not what the arrangement needs: no passage
  * is a turn's, and the text is all there). It only arranges, like `forgetListing`: the next worker to open the file runs
- * step 3 and links the turns.
+ * step 3 and links the turns. Not a real version 2 file: it keeps the annotations' read table (a real one has none, and upgrading it
+ * would fetch every log for its missing annotations, uncapped), so that the step finds only the index's version to read again.
  */
 export function leaveTurnsUnlinkedFromPassages(databasePath: string): void {
   const database = new DatabaseSync(databasePath, { timeout: 5000 });
@@ -130,6 +131,12 @@ export function leaveTurnsUnlinkedFromPassages(databasePath: string): void {
     for (const table of tablesGivenCreatedAtByStepFive) database.exec(`ALTER TABLE ${table} DROP COLUMN created_at`);
     database.exec("ALTER TABLE statute_read DROP COLUMN parser_version");
     database.exec("ALTER TABLE statutes_affected_read DROP COLUMN parser_version");
+    database.exec("ALTER TABLE transcript DROP COLUMN reader_version");
+    database.exec("ALTER TABLE speaker_turn_index DROP COLUMN index_reader_version");
+    // The annotations' read table stays: the logs' annotations are read by the current reader, so the step finds nothing to fetch.
+    database.exec("ALTER TABLE agency_read DROP COLUMN reader_version");
+    database.exec("ALTER TABLE speaker_turn_index DROP COLUMN turn_passages_reader_version");
+    database.exec("ALTER TABLE speaker_turn_index DROP COLUMN item_measures_reader_version");
     for (const log of logs) {
       const hash = createHash("sha256").update(log.text, "utf8").digest("hex");
       const id = run(
@@ -173,6 +180,11 @@ export function leaveAsVersionFour(databasePath: string): void {
     for (const table of tablesGivenCreatedAtByStepFive) database.exec(`ALTER TABLE ${table} DROP COLUMN created_at`);
     database.exec("ALTER TABLE statute_read DROP COLUMN parser_version");
     database.exec("ALTER TABLE statutes_affected_read DROP COLUMN parser_version");
+    database.exec("ALTER TABLE transcript DROP COLUMN reader_version");
+    database.exec("ALTER TABLE agency_read DROP COLUMN reader_version");
+    database.exec("ALTER TABLE speaker_turn_index DROP COLUMN index_reader_version");
+    database.exec("ALTER TABLE speaker_turn_index DROP COLUMN turn_passages_reader_version");
+    database.exec("ALTER TABLE speaker_turn_index DROP COLUMN item_measures_reader_version");
     database.exec("PRAGMA user_version = 4");
   } finally {
     database.close();
@@ -210,6 +222,64 @@ export function attachTranscriptsToAnOlderIndex(databasePath: string): void {
   const database = new DatabaseSync(databasePath, { timeout: 5000 });
   try {
     database.exec("UPDATE transcript_passage SET turn_position = turn_position + 1 WHERE speaker_kind = 'turn'");
+  } finally {
+    database.close();
+  }
+}
+
+/**
+ * Makes a database look as one that an older link-annotation reader left (ticket #187, ADR-0066): each Recording Log's
+ * annotations are stamped with reader version 0, and the annotations and index are as they were. It only arranges, like
+ * `forgetListing`.
+ */
+export function readAnnotationsWithAnOlderReader(databasePath: string): void {
+  const database = new DatabaseSync(databasePath, { timeout: 5000 });
+  try {
+    database.exec("UPDATE recording_log_annotation_read SET reader_version = 0");
+  } finally {
+    database.close();
+  }
+}
+
+/**
+ * Makes a database look as one that an older transcript reader left (ticket #187, ADR-0066): each stored transcript is stamped
+ * with reader version 0, and its file hash, its attachment hash and its passages are as they were. It only arranges, like
+ * `forgetListing`.
+ */
+export function readTranscriptsWithAnOlderReader(databasePath: string): void {
+  const database = new DatabaseSync(databasePath, { timeout: 5000 });
+  try {
+    database.exec("UPDATE transcript SET reader_version = 0");
+  } finally {
+    database.close();
+  }
+}
+
+/**
+ * Makes a database look as one that an older speaker-turn index reader left (ticket #187, ADR-0066): each Recording Log's index
+ * is stamped with reader version 0, and its turns are as they were (a log set aside as another Meeting's keeps the current
+ * version, as the worker stamps it). It only arranges, like `forgetListing`.
+ */
+export function readIndexWithAnOlderReader(databasePath: string): void {
+  const database = new DatabaseSync(databasePath, { timeout: 5000 });
+  try {
+    database.exec("UPDATE speaker_turn_index SET index_reader_version = 0 WHERE outcome <> 'log_of_another_meeting'");
+  } finally {
+    database.close();
+  }
+}
+
+/**
+ * Makes a database look as one in which the first `count` Recording Logs by id have no speaker-turn index (as a log whose index
+ * never came), and keep their text and annotations. It only arranges, like `forgetListing`.
+ */
+export function forgetIndexOfTheFirstLogs(databasePath: string, count: number): void {
+  const database = new DatabaseSync(databasePath, { timeout: 5000 });
+  try {
+    const first = `(SELECT document_id FROM speaker_turn_index ORDER BY document_id LIMIT ${Math.trunc(count)})`;
+    database.exec(
+      `DELETE FROM speaker_turn WHERE document_id IN ${first}; DELETE FROM speaker_turn_index WHERE document_id IN ${first}`,
+    );
   } finally {
     database.close();
   }

@@ -18,7 +18,7 @@ import type { DocumentId, DocumentLink, StoredLinkAnnotation } from "#/packages/
 import { parseSessionKey } from "#/packages/domain/index.ts";
 import { createLegislatorResolver } from "#/packages/legislators/resolver.ts";
 import { extractPdfText } from "#/packages/pdf-text/index.ts";
-import { readSpeakerTurnIndex } from "../index.ts";
+import { readSpeakerTurnIndex, rereadLinkAnnotations } from "../index.ts";
 import { madeUpPdf } from "./made-up-pdf.ts";
 
 const session = parseSessionKey("2025R1") ?? fail("2025R1 is a Session key");
@@ -68,7 +68,7 @@ function logLink(id: string): DocumentLink {
   };
 }
 
-async function readLog(id: string, bytes: Uint8Array) {
+async function readLog(id: string, bytes: Uint8Array, reading?: { annotations: boolean }) {
   const extraction = await extractPdfText(bytes);
   if (extraction.kind !== "read") throw new Error(`${id} could not be read: ${extraction.reason}`);
   const resolver = createLegislatorResolver({ session, rows: [], aliases: [] });
@@ -77,8 +77,9 @@ async function readLog(id: string, bytes: Uint8Array) {
     logLink(id),
     bytes,
     extraction.pdf.text,
+    reading,
   );
-  rig.writer.storeSpeakerTurnIndex({ documentId: id as DocumentId, outcome });
+  rig.writer.storeSpeakerTurnIndex({ readerVersion: 1, documentId: id as DocumentId, outcome });
   return outcome;
 }
 
@@ -161,5 +162,43 @@ describe("readSpeakerTurnIndex stores the annotations whatever the index outcome
     expect(await readLog(id, indexed)).toMatchObject({ kind: "indexed", eventId: "2099000003" });
     expect(rig.reader.linkAnnotationsOf(id as DocumentId)).toEqual([player("2099000003", 5)]);
     expect(rig.reader.speakerTurnIndexOf(id as DocumentId)).toMatchObject({ kind: "indexed" });
+  });
+});
+
+describe("rereadLinkAnnotations (ticket #187, ADR-0066)", () => {
+  test("replaces a log's annotations with the file's as the current reader reads them and leaves the log's index alone", async () => {
+    rig = openRig();
+    const id = "recording-log-2025r1-999004";
+    const lines = ["MADE UP RECORDING LOG", "00:00:05 Meeting Called to Order"];
+    const file = madeUpPdf(lines, [{ url: `${PLAYER}&eventID=2099000004&startStreamAt=5`, rect: [40, 750, 100, 762] }]);
+    await readLog(id, file);
+    const indexBefore = rig.reader.speakerTurnIndexOf(id as DocumentId);
+    rig.writer.storeLinkAnnotations(id as DocumentId, [{ page: 1, url: "https://made-up.example/older" }], 0);
+
+    await rereadLinkAnnotations({ writer: rig.writer }, logLink(id), file);
+
+    expect(rig.reader.linkAnnotationsOf(id as DocumentId)).toEqual([player("2099000004", 5)]);
+    expect(rig.reader.speakerTurnIndexOf(id as DocumentId)).toEqual(indexBefore);
+  });
+});
+
+describe("readSpeakerTurnIndex for an index an older reader made (ticket #187, ADR-0066)", () => {
+  test("leaves the annotations as they were when it is asked to store none, and stores them when it is not", async () => {
+    rig = openRig();
+    const id = "recording-log-2025r1-999005";
+    const lines = ["MADE UP RECORDING LOG", "00:00:05 Meeting Called to Order"];
+    const file = madeUpPdf(lines, [{ url: `${PLAYER}&eventID=2099000005&startStreamAt=5`, rect: [40, 750, 100, 762] }]);
+    rig.writer.storeLinkAnnotations(id as DocumentId, [{ page: 1, url: "https://made-up.example/current" }], 1);
+
+    await readLog(id, file, { annotations: false });
+
+    expect(rig.reader.linkAnnotationsOf(id as DocumentId)).toEqual([
+      { page: 1, url: "https://made-up.example/current" },
+    ]);
+    expect(rig.reader.speakerTurnIndexOf(id as DocumentId)).toMatchObject({ kind: "indexed" });
+
+    await readLog(id, file);
+
+    expect(rig.reader.linkAnnotationsOf(id as DocumentId)).toEqual([player("2099000005", 5)]);
   });
 });

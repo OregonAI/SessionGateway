@@ -89,6 +89,7 @@ function recordOf(passages: TranscriptPassage[], parts: Partial<TranscriptRecord
     file: "2099010001.transcript.json",
     fileSha256: hash("file one"),
     attachedTo: hash("turns one"),
+    readerVersion: 1,
     audioSha256: hash("audio"),
     durationSeconds: 3600,
     modelId: "MADE UP model",
@@ -119,6 +120,7 @@ function storeLogWithIndex(): void {
     vectors: { modelId, rows: [] },
   });
   index.writer.storeSpeakerTurnIndex({
+    readerVersion: 1,
     documentId: logId,
     outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns },
   });
@@ -244,8 +246,31 @@ describe("a Meeting's transcript passages", () => {
         file: "2099010001.transcript.json",
         fileSha256: hash("file two"),
         attachedTo: hash("turns one"),
+        readerVersion: 1,
       },
     ]);
+  });
+
+  // Ticket #187 (ADR-0066): the version of the reader that read the file is stored with the transcript, and kept when the words
+  // are attached to new turns from the store (the file was not read again).
+  test("records the version of the reader that read the file, and keeps it when the stored words are attached again", () => {
+    index.writer.storeTranscript(
+      recordOf([passageOf(5, "welcome all", { kind: "turn", position: 0 })], { readerVersion: 3 }),
+    );
+    expect(index.writer.storedTranscripts(session)[0]?.readerVersion).toBe(3);
+
+    index.writer.reattachTranscript({
+      meetingId: meeting.id,
+      eventId: "2099010001",
+      attachedTo: hash("turns two"),
+      passages: [passageOf(5, "welcome all", { kind: "turn", position: 1 })],
+      vectors: { modelId, rows: [] },
+    });
+
+    expect(index.writer.storedTranscripts(session)[0]).toMatchObject({
+      attachedTo: hash("turns two"),
+      readerVersion: 3,
+    });
   });
 
   test("a passage's vector is read with the passage, and only under the model it was made with", () => {
@@ -346,6 +371,7 @@ describe("a log whose index is stored again", () => {
   const turnsAgain = [turn(2, "00:00:02", "Clerk Added"), ...turns];
   const reindexed = (): void => {
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: logId,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: turnsAgain },
     });
@@ -415,11 +441,11 @@ describe("where a turn's lines start in the log's text", () => {
     expect(lineOne.length).toBe(22);
     index.writer.storeTranscript(recordOf([passageOf(5, "welcome all", { kind: "turn", position: 0 })]));
 
-    index.writer.replacePassages(logId, [slice(0, 18), slice(18, 40, 0), slice(40, 40 + lineTwo.length, 1)], 0);
+    index.writer.replacePassages(logId, [slice(0, 18), slice(18, 40, 0), slice(40, 40 + lineTwo.length, 1)], 0, 1);
     expect(index.reader.transcriptOfLog(logId)?.turnTextOffsets).toEqual([18, 40]);
 
     // A turn with no passage of its own (the text could not place it) has no offset.
-    index.writer.replacePassages(logId, [slice(0, 18), slice(18, 40, 0), slice(40, 40 + lineTwo.length)], 1);
+    index.writer.replacePassages(logId, [slice(0, 18), slice(18, 40, 0), slice(40, 40 + lineTwo.length)], 1, 1);
     expect(index.reader.transcriptOfLog(logId)?.turnTextOffsets).toEqual([18, null]);
   });
 });

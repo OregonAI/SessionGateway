@@ -31,7 +31,11 @@ import {
   type MadeUpSegment,
 } from "../support/made-up-transcript.ts";
 import { callTool, connectClient, type ConnectedClient } from "../support/mcp-clients.ts";
-import { attachTranscriptsToAnOlderIndex, forgetSpeakerTurns } from "../support/old-database.ts";
+import {
+  attachTranscriptsToAnOlderIndex,
+  forgetSpeakerTurns,
+  readTranscriptsWithAnOlderReader,
+} from "../support/old-database.ts";
 import { recordEmbeddings } from "../support/recording-embedder.ts";
 import { startCopiedSystem, startSystem, systemTemplate, type System } from "../support/system.ts";
 
@@ -162,6 +166,37 @@ describe("the worker ingests transcript files", () => {
     });
     expect((await hitsFor(system, "walrus laboratory"))[0]?.transcript?.speaker).toMatch(/^Kurt Williams/);
     expect((await hitsFor(system, "quokka")).some((hit) => hit.transcript !== undefined)).toBe(false);
+  });
+
+  // Ticket #187 (ADR-0066): the words a file was read into carry the version of the reader that made them, apart from the
+  // attachment hash. A file read by an older reader is read again from the file though its sha256 and its turns are the same.
+  it("reads a stored file again when an older reader made its words, though the file and the turns are the same, and then not again", async () => {
+    const system = await started();
+    put(system, FILE, standard);
+    await system.pullAgain();
+    readTranscriptsWithAnOlderReader(system.database.path);
+
+    await system.pullAgain();
+
+    expect(transcriptsReport(system)).toMatchObject({
+      stored: 1,
+      ingested: [{ meeting_id: MEETING, event_id: halnrwEventId, file: FILE, passages: 8 }],
+    });
+    await system.pullAgain();
+    expect(transcriptsReport(system)).toMatchObject({ stored: 1, ingested: [] });
+  });
+
+  it("keeps the words of a stored transcript whose file is gone, though an older reader made them", async () => {
+    const system = await started();
+    put(system, FILE, standard);
+    await system.pullAgain();
+    readTranscriptsWithAnOlderReader(system.database.path);
+    rmSync(join(system.transcriptFolder, FILE));
+
+    await system.pullAgain();
+
+    expect(transcriptsReport(system)).toMatchObject({ stored: 1, ingested: [] });
+    expect((await hitsFor(system, "quokka laboratory"))[0]?.transcript?.speaker).toMatch(/^Kurt Williams/);
   });
 
   it("refuses a file of an unknown version, of another event than its name and Meeting, or not valid, and names each in the build report", async () => {

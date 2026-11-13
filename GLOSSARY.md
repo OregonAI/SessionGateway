@@ -359,6 +359,10 @@ _Avoid_: non-agency unit, other unit
 The slice of OregonAI's data copied at build time, from a checkout of its executive-regulatory-frameworks repository: the agency registry, the list of ORS section ids and the Chapter table. It is named by the commit it was read from and the commit's date, which `session_overview` reports. Nothing looks it up again while serving (ADR-0004, ADR-0012).
 _Avoid_: cache, mirror
 
+**Reader version**:
+A number kept beside the code that makes a stored reading (Statute Links, the Statutes Affected Table, Agency Links, the speaker-turn index, its turn Passages and Agenda items' Measures, link annotations, transcript words), recorded with each reading the worker makes and compared at the next pull. A reading made by another version than the current one is made again; a version is bumped by hand when a change would change what the code stores (ADR-0064, ADR-0065, ADR-0066).
+_Avoid_: parser version (the name of the first two, before the others)
+
 **Chapter table**:
 The Snapshot's table from an ORS chapter to the Agencies whose rules implement its sections, found from the rules' links to ORS sections and each rule's OAR chapter. It is how a Statute Link to a chapter reaches an Agency. It lists a sub-unit, not its parent.
 _Avoid_: statute-to-agency map

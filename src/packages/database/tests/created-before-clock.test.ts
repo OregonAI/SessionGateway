@@ -253,10 +253,11 @@ describe("a Recording Log created after the clock", () => {
     const logText = "MADE UP COMMITTEE\n00:17:25 Pat Poe\n";
     index.writer.storeDocument(session, storedOf(log, logText), searchRecordOf(log, logText, true));
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: log.id,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: [turn] },
     });
-    index.writer.storeItemMeasures(log.id, [{ agendaItem: "SB 9001 - Public Hearing", measures: [sb9001] }]);
+    index.writer.storeItemMeasures(log.id, [{ agendaItem: "SB 9001 - Public Hearing", measures: [sb9001] }], 1);
 
     expect(index.reader.speakerTurnIndexOf(log.id)).toBeUndefined();
     expect(index.reader.turnHearingsOf(sb9001)).toEqual([]);
@@ -285,7 +286,7 @@ describe("the link annotations of a Recording Log created after the clock", () =
     const annotations = [
       { page: 1, url: "https://made-up.example/mediaplayer?clientID=1&eventID=2099010001&startStreamAt=5" },
     ];
-    index.writer.storeLinkAnnotations(log.id, annotations);
+    index.writer.storeLinkAnnotations(log.id, annotations, 1);
 
     expect(index.reader.linkAnnotationsOf(log.id)).toEqual([]);
 

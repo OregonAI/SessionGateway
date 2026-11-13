@@ -24,6 +24,8 @@ import {
 } from "./made-up-index.ts";
 
 let index: MadeUpIndex;
+/** Any version above 0 will do: a reading is made again whenever the recorded version is not the one asked for (ADR-0066). */
+const currentReader = 1;
 const log = recordingLogLink();
 const logId = log.id;
 const meeting = meetingOn(10);
@@ -93,6 +95,7 @@ function storeLogWithIndex(): void {
     vectors: { modelId: "made-up-model", rows: [] },
   });
   index.writer.storeSpeakerTurnIndex({
+    readerVersion: 1,
     documentId: logId,
     outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns },
   });
@@ -116,7 +119,7 @@ describe("the Passages of a log's turns", () => {
   test("the writer lists a log that has an index and no turn Passages, with its text and its turns' timecodes and speakers", () => {
     storeLogWithIndex();
 
-    expect(index.writer.recordingLogsWithoutTurnPassages(session)).toEqual([
+    expect(index.writer.recordingLogsWithoutTurnPassages(session, currentReader)).toEqual([
       {
         id: logId,
         text,
@@ -131,9 +134,9 @@ describe("the Passages of a log's turns", () => {
   test("a log whose turns are given Passages is not listed again, and its text is kept whole as the Passages cover it", () => {
     storeLogWithIndex();
 
-    index.writer.replacePassages(logId, cut(), 0);
+    index.writer.replacePassages(logId, cut(), 0, currentReader);
 
-    expect(index.writer.recordingLogsWithoutTurnPassages(session)).toEqual([]);
+    expect(index.writer.recordingLogsWithoutTurnPassages(session, currentReader)).toEqual([]);
     expect(
       index.writer
         .passagesOf(logId)
@@ -144,7 +147,7 @@ describe("the Passages of a log's turns", () => {
 
   test("search finds a turn by its words, and says which turn: its position, speaker, Legislator, Meeting, Agenda item and Measure", () => {
     storeLogWithIndex();
-    index.writer.replacePassages(logId, cut(), 0);
+    index.writer.replacePassages(logId, cut(), 0, currentReader);
 
     const [found, ...rest] = index.search.keyword("Poe", { session, withTestimony: false }, 10);
 
@@ -158,7 +161,7 @@ describe("the Passages of a log's turns", () => {
 
   test("a word of a line that is not a turn is found with no turn", () => {
     storeLogWithIndex();
-    index.writer.replacePassages(logId, cut(), 0);
+    index.writer.replacePassages(logId, cut(), 0, currentReader);
 
     const [found] = index.search.keyword("MADE UP COMMITTEE", { session, withTestimony: false }, 10);
 
@@ -168,7 +171,7 @@ describe("the Passages of a log's turns", () => {
 
   test("a turn's Legislator is read from the Legislators the store holds, as get_document reads it", () => {
     storeLogWithIndex();
-    index.writer.replacePassages(logId, cut(), 0);
+    index.writer.replacePassages(logId, cut(), 0, currentReader);
 
     const [found] = index.search.keyword("Upp", { session, withTestimony: false }, 10);
 
@@ -180,14 +183,17 @@ describe("the Passages of a log's turns", () => {
 
   test("storing the log's index again leaves its Passages cut as plain text and lists it, so they are cut again around the new turns", () => {
     storeLogWithIndex();
-    index.writer.replacePassages(logId, cut(), 0);
+    index.writer.replacePassages(logId, cut(), 0, currentReader);
 
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: logId,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: [turns[1] as SpeakerTurn] },
     });
 
-    expect(index.writer.recordingLogsWithoutTurnPassages(session).map((listed) => listed.id)).toEqual([logId]);
+    expect(index.writer.recordingLogsWithoutTurnPassages(session, currentReader).map((listed) => listed.id)).toEqual([
+      logId,
+    ]);
     const [found] = index.search.keyword("Poe", { session, withTestimony: false }, 10);
     expect(found).toMatchObject({ turnPosition: null });
   });
@@ -195,21 +201,22 @@ describe("the Passages of a log's turns", () => {
   test("a log with no turns, or no index, is not listed", () => {
     storeLogWithIndex();
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: logId,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: [] },
     });
-    expect(index.writer.recordingLogsWithoutTurnPassages(session)).toEqual([]);
+    expect(index.writer.recordingLogsWithoutTurnPassages(session, currentReader)).toEqual([]);
 
-    index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" } });
-    expect(index.writer.recordingLogsWithoutTurnPassages(session)).toEqual([]);
+    index.writer.storeSpeakerTurnIndex({ readerVersion: 1, documentId: logId, outcome: { kind: "no_event_id" } });
+    expect(index.writer.recordingLogsWithoutTurnPassages(session, currentReader)).toEqual([]);
   });
 
   test("a log none of whose turns the text places is cut once: it is not listed again, and the build report counts its turns", () => {
     storeLogWithIndex();
     // Both turns are left in the text between the turns (a turn the text does not hold, or longer than a Passage may be).
-    index.writer.replacePassages(logId, [passageOf(0, text.length)], 2);
+    index.writer.replacePassages(logId, [passageOf(0, text.length)], 2, currentReader);
 
-    expect(index.writer.recordingLogsWithoutTurnPassages(session)).toEqual([]);
+    expect(index.writer.recordingLogsWithoutTurnPassages(session, currentReader)).toEqual([]);
     expect(index.writer.recordingLogReadingNotes(session).turnsWithoutPassage).toEqual([
       { id: logId, sourceUrl: log.sourceUrl, turns: 2 },
     ]);
@@ -217,18 +224,65 @@ describe("the Passages of a log's turns", () => {
 
   test("a log whose turns all have Passages is not in the build report's count, and storing its index again takes it out of the count", () => {
     storeLogWithIndex();
-    index.writer.replacePassages(logId, [passageOf(0, text.length)], 2);
+    index.writer.replacePassages(logId, [passageOf(0, text.length)], 2, currentReader);
 
     index.writer.storeSpeakerTurnIndex({
+      readerVersion: 1,
       documentId: logId,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns },
     });
 
     expect(index.writer.recordingLogReadingNotes(session).turnsWithoutPassage).toEqual([]);
-    expect(index.writer.recordingLogsWithoutTurnPassages(session).map((listed) => listed.id)).toEqual([logId]);
+    expect(index.writer.recordingLogsWithoutTurnPassages(session, currentReader).map((listed) => listed.id)).toEqual([
+      logId,
+    ]);
 
-    index.writer.replacePassages(logId, cut(), 0);
+    index.writer.replacePassages(logId, cut(), 0, currentReader);
 
     expect(index.writer.recordingLogReadingNotes(session).turnsWithoutPassage).toEqual([]);
+  });
+});
+
+describe("the turn Passages' reader version (ticket #187, ADR-0066)", () => {
+  test("a log cut by an older reader is listed again though its index is the same, and cutting it again records the current version", () => {
+    storeLogWithIndex();
+    index.writer.replacePassages(logId, cut(), 0, currentReader - 1);
+
+    expect(index.writer.recordingLogsWithoutTurnPassages(session, currentReader).map((listed) => listed.id)).toEqual([
+      logId,
+    ]);
+
+    index.writer.replacePassages(logId, cut(), 0, currentReader);
+
+    expect(index.writer.recordingLogsWithoutTurnPassages(session, currentReader)).toEqual([]);
+    expect(
+      index.writer.recordingLogsWithoutTurnPassages(session, currentReader + 1).map((listed) => listed.id),
+      "the version written is the current one: the next version finds it unread",
+    ).toEqual([logId]);
+  });
+
+  test("a log cut by the current reader is not listed", () => {
+    storeLogWithIndex();
+    index.writer.replacePassages(logId, cut(), 0, currentReader);
+
+    expect(index.writer.recordingLogsWithoutTurnPassages(session, currentReader)).toEqual([]);
+  });
+
+  test("a log none of whose turns the text places, cut by an older reader, is listed again", () => {
+    storeLogWithIndex();
+    index.writer.replacePassages(logId, [passageOf(0, text.length)], 2, currentReader - 1);
+
+    expect(index.writer.recordingLogsWithoutTurnPassages(session, currentReader).map((listed) => listed.id)).toEqual([
+      logId,
+    ]);
+  });
+
+  test("a bump of the turn Passages' version lists no log for its Agenda items' Measures", () => {
+    storeLogWithIndex();
+    index.writer.storeItemMeasures(logId, [], currentReader);
+    index.writer.replacePassages(logId, cut(), 0, currentReader - 1);
+
+    expect(index.writer.recordingLogsWithoutTurnPassages(session, currentReader)).toHaveLength(1);
+    expect(index.writer.recordingLogsWithoutItemMeasures(session, currentReader)).toEqual([]);
   });
 });

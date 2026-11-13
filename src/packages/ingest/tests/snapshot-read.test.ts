@@ -17,6 +17,7 @@ import type { IndexReader } from "#/packages/database/reader.ts";
 import type { FullPullRecord, IndexWriter } from "#/packages/database/writer.ts";
 import type { DocumentId, DocumentLink, StoredDocument } from "#/packages/domain/documents.ts";
 import { parseAgencyId, parseOrsChapterId, parseOrsSectionId } from "#/packages/domain/oregonai.ts";
+import { AGENCY_LINK_READER_VERSION } from "#/packages/agency-links/index.ts";
 import type { Snapshot } from "#/packages/oregonai-snapshot/index.ts";
 import { STATUTE_LINK_PARSER_VERSION, STATUTES_AFFECTED_TABLE_PARSER_VERSION } from "#/packages/statute-links/index.ts";
 import {
@@ -32,6 +33,7 @@ import {
   boli,
   committedSnapshot,
   dhs,
+  fiscalImpactStatement,
   fullPullAt,
   giveBureauTheWageOfficeAlias,
   hb3027,
@@ -343,6 +345,103 @@ describe("the Statutes Affected Table's parser version", () => {
 
     expect(log).toContain("table entries");
     expect(log.filter((entry) => entry.startsWith("statute-links"))).toEqual([]);
+  });
+});
+
+// Ticket #187 (ADR-0066): the Agency Links have a reader version of their own, beside the snapshot commit and apart from the
+// Statute Link parser's version, and a Fiscal Impact Statement (which has no Statute Links) is read again by it as any other.
+describe("the Agency Links' reader version", () => {
+  /** The reading an older reader left of a document: the same Snapshot, no links, and its reader's version. */
+  function readByOlderReader(rig: IndexRig, document: DocumentId): void {
+    rig.writer.storeAgencyRead(
+      { documentId: document, links: [], unresolvedUnits: [], readerVersion: AGENCY_LINK_READER_VERSION - 1 },
+      committedSnapshot().version,
+    );
+  }
+
+  test("a document read with an older reader is read again though the Snapshot has not changed, and its links come back", async () => {
+    const rig = await indexAfterFullPull(committedSnapshot(), introducedVersion());
+    const version = introducedVersion().id;
+    expect(linksInChapterOfHeccLink(rig.reader, version)).toBe(22);
+    readByOlderReader(rig, version);
+    expect(linksInChapterOfHeccLink(rig.reader, version)).toBeUndefined();
+    const log: string[] = [];
+
+    await runPull({
+      rig,
+      snapshot: committedSnapshot(),
+      pull: "full_pull",
+      fetched: [],
+      through: loggedWriter(rig.writer, log),
+    });
+
+    expect(log).toEqual([`agency-links of ${version}`, `snapshot ${committedCommit}`]);
+    expect(linksInChapterOfHeccLink(rig.reader, version)).toBe(22);
+    // The reading is stamped with the current reader: asked for the current version the document is read, asked for the next it is not.
+    expect(rig.writer.unreadAgencyDocuments(session, committedSnapshot().version, AGENCY_LINK_READER_VERSION)).toEqual(
+      [],
+    );
+    expect(
+      rig.writer.unreadAgencyDocuments(session, committedSnapshot().version, AGENCY_LINK_READER_VERSION + 1),
+    ).toHaveLength(1);
+  });
+
+  test("a Fiscal Impact Statement read with an older reader is read again, with no Statute Link read", async () => {
+    const statement = fiscalImpactStatement();
+    const rig = await indexAfterFullPull(committedSnapshot(), introducedVersion(), statement);
+    expect(rig.reader.findAgencyLinks(session, { agency: heccId }).map((link) => link.document.id)).toContain(
+      statement.id,
+    );
+    readByOlderReader(rig, statement.id);
+    const log: string[] = [];
+
+    await runPull({
+      rig,
+      snapshot: committedSnapshot(),
+      pull: "full_pull",
+      fetched: [],
+      through: loggedWriter(rig.writer, log),
+    });
+
+    expect(log).toEqual([`agency-links of ${statement.id}`, `snapshot ${committedCommit}`]);
+  });
+
+  test("a document read with the current reader is not read again", async () => {
+    const rig = await indexAfterFullPull(
+      committedSnapshot(),
+      introducedVersion(),
+      postedAmendment(),
+      fiscalImpactStatement(),
+    );
+    const log: string[] = [];
+
+    await runPull({
+      rig,
+      snapshot: committedSnapshot(),
+      pull: "full_pull",
+      fetched: [],
+      through: loggedWriter(rig.writer, log),
+    });
+
+    expect(log).toEqual([`snapshot ${committedCommit}`]);
+  });
+
+  test("one document read with an older reader is read again and the other documents are left alone", async () => {
+    const rig = await indexAfterFullPull(committedSnapshot(), introducedVersion(), postedAmendment());
+    readByOlderReader(rig, introducedVersion().id);
+    const log: string[] = [];
+
+    await runPull({
+      rig,
+      snapshot: committedSnapshot(),
+      pull: "increment",
+      fetched: [],
+      through: loggedWriter(rig.writer, log),
+    });
+
+    expect(log.filter((entry) => entry.startsWith("agency-links"))).toEqual([
+      `agency-links of ${introducedVersion().id}`,
+    ]);
   });
 });
 

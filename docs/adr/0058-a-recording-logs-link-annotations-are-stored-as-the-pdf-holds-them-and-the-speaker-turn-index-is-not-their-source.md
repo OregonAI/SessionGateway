@@ -1,5 +1,5 @@
 ---
-status: accepted (owner-approved 2026-11-06); extends ADR-0052 (the worker reads a log's links when it fetches the file) and ADR-0048 (the sixth numbered step)
+status: accepted (owner-approved 2026-11-06); extends ADR-0052 (the worker reads a log's links when it fetches the file) and ADR-0048 (the sixth numbered step); amended by ADR-0066 (proposed, ticket #187: resolves Consequence 3 and its deferred marker option, a log with no link is marked read in `recording_log_annotation_read`; a log whose annotation reader's version is not the current one is fetched again, at most 25 a pull)
 ---
 
 # A Recording Log's link annotations are stored as the PDF holds them, and the speaker-turn index is not their source

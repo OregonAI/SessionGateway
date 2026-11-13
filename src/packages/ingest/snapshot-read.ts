@@ -18,7 +18,7 @@
 // Fetching the Statutes Affected Table from its address stays with the Pull, which hands this module what it got.
 // The reading is the parsers' (`statute-links`, `agency-links`, `pdf-text`), the storage is the writer's. `database`
 // imports no parser.
-import { testimonyAgencyLinks } from "#/packages/agency-links/index.ts";
+import { AGENCY_LINK_READER_VERSION, testimonyAgencyLinks } from "#/packages/agency-links/index.ts";
 import type { IndexWriter, TestimonyAgency, TestimonyRecord } from "#/packages/database/writer.ts";
 import type { DocumentLink, TestimonyDetails } from "#/packages/domain/documents.ts";
 import type { SessionKey } from "#/packages/domain/index.ts";
@@ -164,8 +164,9 @@ async function readIndexWithSnapshot(
     );
   }
   // The Agency Links of every stored Fiscal Impact Statement, Version and posting not yet read with this Snapshot
-  // (ADR-0027), from the text the store holds and the Statute Links just read.
-  for (const document of writer.unreadAgencyDocuments(session, snapshot.version)) {
+  // (ADR-0027), from the text the store holds and the Statute Links just read. A document read by a reader of another version
+  // than the current one is unread too (ADR-0066), a Fiscal Impact Statement among them: it has no Statute Links to clear it.
+  for (const document of writer.unreadAgencyDocuments(session, snapshot.version, AGENCY_LINK_READER_VERSION)) {
     writer.storeAgencyRead(
       agencyReadOf(
         document,

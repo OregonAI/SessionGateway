@@ -38,6 +38,8 @@ import {
   markTurnPassagesCut,
   readLogsWithoutItemMeasures,
   readLogsWithoutTurnPassages,
+  readLogsWithStaleAnnotations,
+  readLogsWithStaleIndex,
   storeItemMeasuresOf,
   storeLinkAnnotations,
   storeSpeakerTurnIndex,
@@ -153,6 +155,8 @@ export type AgencyReadRecord = {
   links: readonly AgencyLink[];
   /** The units a Fiscal Impact Statement lists that are not Agencies, as it writes them. */
   unresolvedUnits: readonly string[];
+  /** The version of the Agency Link reading that made this (`AGENCY_LINK_READER_VERSION`, ADR-0066), stored beside the snapshot commit. */
+  readerVersion: number;
 };
 
 /** The columns of the sponsor table that only some kinds of row fill; the others stay NULL. */
@@ -202,7 +206,12 @@ function testimonyAgencyValues(
 }
 
 /** What the store keeps of a Recording Log's speaker turns: the log, and what reading it came to. */
-export type SpeakerTurnIndexRecord = { documentId: DocumentId; outcome: SpeakerTurnIndexOutcome };
+export type SpeakerTurnIndexRecord = {
+  documentId: DocumentId;
+  outcome: SpeakerTurnIndexOutcome;
+  /** The version of the reader that made the outcome (`SPEAKER_TURN_INDEX_READER_VERSION`, ADR-0066). */
+  readerVersion: number;
+};
 
 /** What the build report says of how the Recording Logs were read. */
 export type RecordingLogReadingNotes = {
@@ -423,9 +432,22 @@ export type IndexWriter = {
   storeSpeakerTurnIndex(record: SpeakerTurnIndexRecord): void;
   /**
    * Keeps a Recording Log's link annotations as the worker read them from the PDF (ticket #160, ADR-0058), the page and address of
-   * each in the file's order, replacing whatever the log had. They are source data and independent of the speaker-turn index.
+   * each in the file's order, replacing whatever the log had, and records the version of the reader that read them (ADR-0066), whether
+   * or not the file held a link. They are source data and independent of the speaker-turn index.
    */
-  storeLinkAnnotations(document: DocumentId, annotations: readonly StoredLinkAnnotation[]): void;
+  storeLinkAnnotations(document: DocumentId, annotations: readonly StoredLinkAnnotation[], readerVersion: number): void;
+  /**
+   * The stored Recording Logs of the Session whose speaker-turn index was read by a reader of another version than
+   * `readerVersion` (ticket #187, ADR-0066), in the order of their ids: the logs the worker fetches again for it, a few a pull.
+   * A log with no index is not here; it is in `recordingLogsWithoutIndex`. Nor is a log set aside as another Meeting's.
+   */
+  recordingLogsWithStaleIndex(session: SessionKey, readerVersion: number): DocumentId[];
+  /**
+   * The stored Recording Logs of the Session whose link annotations were read by a reader of another version than
+   * `readerVersion` (ticket #187, ADR-0066), in the order of their ids: the logs the worker fetches again for them, a few a pull.
+   * A log never read is not here; it is in `recordingLogsWithoutIndex`.
+   */
+  recordingLogsWithStaleAnnotations(session: SessionKey, readerVersion: number): DocumentId[];
   /**
    * Keeps what the worker saw at an attempt to fetch a document the index holds no file of (ticket #168, ADR-0063), replacing
    * whatever an earlier attempt left. Storing the document's file (`storeDocument`, `replaceDocument`) clears it.
@@ -433,38 +455,52 @@ export type IndexWriter = {
   recordFetchFailure(document: DocumentId, failure: LastFetchFailure): void;
   /**
    * The stored Recording Logs of the Session to fetch again to read their links (ADR-0052, ADR-0058): those with no speaker-turn
-   * index yet (a gap counts as one) and those with no stored link annotation. A log whose read finds no link has no annotation
-   * and so is listed on every pull.
+   * index yet (a gap counts as one) and those whose link annotations were never read. A log whose file holds no link is marked read,
+   * so it is listed until it is read once (ADR-0066), and no longer.
    */
   recordingLogsWithoutIndex(session: SessionKey): Set<DocumentId>;
   /**
    * The stored Recording Logs of the Session that have an index with turns and have not been cut around them (ticket #127,
    * ADR-0053): a log stored before schema step 3, one whose links were just read, one whose index was stored again. Each comes
    * with its text and its turns' timecodes and speakers in the order of the log: what the worker cuts the text around, with no
-   * fetch. A log that has been cut is not listed again, even when no turn of it was placed.
+   * fetch. A log that has been cut is not listed again, even when no turn of it was placed, unless its cut was made by a reader of
+   * another version than `readerVersion` (ticket #187, ADR-0066).
    */
   recordingLogsWithoutTurnPassages(
     session: SessionKey,
+    readerVersion: number,
   ): { id: DocumentId; text: string; turns: { timecode: string; speaker: string }[] }[];
   /**
    * Replaces a stored document's passages with these, in one transaction (the text stays): a passage with a `turn` is the
    * turn's lines, linked to it by its position. `turnsWithoutPassage` is how many of the log's turns the text could not
-   * place or that were too long for a Passage, which the log keeps for the build report; the log is marked as cut. Only a
+   * place or that were too long for a Passage, which the log keeps for the build report; the log is marked as cut by the reader of
+   * `readerVersion` (ADR-0066). Only a
    * Keyword-only document has its passages replaced this way, so no vector moves.
    */
-  replacePassages(document: DocumentId, passages: readonly Passage[], turnsWithoutPassage: number): void;
+  replacePassages(
+    document: DocumentId,
+    passages: readonly Passage[],
+    turnsWithoutPassage: number,
+    readerVersion: number,
+  ): void;
   /**
    * The stored Recording Logs of the Session with an index whose Agenda items' Measures have not been read (ticket #127,
    * ADR-0053), each with its Agenda items' texts in the order of the log: what the worker reads the Measures from, with no fetch.
+   * A log whose items were read by a reader of another version than `readerVersion` is listed too (ADR-0066).
    */
-  recordingLogsWithoutItemMeasures(session: SessionKey): { id: DocumentId; agendaItems: string[] }[];
+  recordingLogsWithoutItemMeasures(
+    session: SessionKey,
+    readerVersion: number,
+  ): { id: DocumentId; agendaItems: string[] }[];
   /**
    * Keeps the Measures each Agenda item of a stored Recording Log names, in the order the line names them, whether or not the
-   * index holds them (the reader leaves out the ones it does not), and marks the log's items as read.
+   * index holds them (the reader leaves out the ones it does not), and marks the log's items as read by the reader of
+   * `readerVersion` (ADR-0066).
    */
   storeItemMeasures(
     document: DocumentId,
     items: readonly { agendaItem: string; measures: readonly MeasureId[] }[],
+    readerVersion: number,
   ): void;
   /**
    * What the stored readings of the Session's Recording Logs say for the build report: the logs left with no index (no event
@@ -558,10 +594,11 @@ export type IndexWriter = {
   /**
    * The Session's stored Fiscal Impact Statements, Versions and postings of Proposed Amendments that have not been
    * read for Agency Links with this snapshot, each once: a document never read, and every document read with another
-   * commit of the snapshot, so that the index holds no link made with a snapshot it does not report (spec #1 story 56).
+   * commit of the snapshot, so that the index holds no link made with a snapshot it does not report (spec #1 story 56), and
+   * every document read by a reader of another version than `readerVersion` (ADR-0066).
    * A Version and a posting are read after their Statute Links are (ADR-0027).
    */
-  unreadAgencyDocuments(session: SessionKey, snapshot: SnapshotVersion): UnreadAgencyDocument[];
+  unreadAgencyDocuments(session: SessionKey, snapshot: SnapshotVersion, readerVersion: number): UnreadAgencyDocument[];
   /** The Statute Links read from the file a stored Version or posting has, in the order they were read. */
   statuteLinksOf(document: DocumentId): StatuteLink[];
   /**
@@ -1247,14 +1284,20 @@ export function openIndexWriter(path: string): IndexWriter {
         return { committeeCode: stored.committee_code, legislatorCode: stored.legislator_code };
       });
     },
-    storeLinkAnnotations(document, annotations) {
-      storeLinkAnnotations(database, document, annotations);
+    storeLinkAnnotations(document, annotations, readerVersion) {
+      storeLinkAnnotations(database, document, annotations, readerVersion);
+    },
+    recordingLogsWithStaleIndex(session, readerVersion) {
+      return readLogsWithStaleIndex(database, session, readerVersion);
+    },
+    recordingLogsWithStaleAnnotations(session, readerVersion) {
+      return readLogsWithStaleAnnotations(database, session, readerVersion);
     },
     recordFetchFailure(document, failure) {
       recordFetchFailure(database, document, failure);
     },
     storeSpeakerTurnIndex(record) {
-      storeSpeakerTurnIndex(database, record.documentId, record.outcome);
+      storeSpeakerTurnIndex(database, record.documentId, record.outcome, record.readerVersion);
     },
     transcriptTargets(session) {
       return readTranscriptTargets(database, session);
@@ -1274,26 +1317,26 @@ export function openIndexWriter(path: string): IndexWriter {
     transcriptNotes(session) {
       return readTranscriptNotes(database, session);
     },
-    recordingLogsWithoutTurnPassages(session) {
-      return readLogsWithoutTurnPassages(database, session);
+    recordingLogsWithoutTurnPassages(session, readerVersion) {
+      return readLogsWithoutTurnPassages(database, session, readerVersion);
     },
-    replacePassages(document, passages, turnsWithoutPassage) {
+    replacePassages(document, passages, turnsWithoutPassage, readerVersion) {
       database.exec("BEGIN IMMEDIATE");
       try {
         deletePassagesOf(document);
         insertPassagesOf(document, passages);
-        markTurnPassagesCut(database, document, turnsWithoutPassage);
+        markTurnPassagesCut(database, document, turnsWithoutPassage, readerVersion);
         database.exec("COMMIT");
       } catch (error) {
         if (database.isTransaction) database.exec("ROLLBACK");
         throw error;
       }
     },
-    recordingLogsWithoutItemMeasures(session) {
-      return readLogsWithoutItemMeasures(database, session);
+    recordingLogsWithoutItemMeasures(session, readerVersion) {
+      return readLogsWithoutItemMeasures(database, session, readerVersion);
     },
-    storeItemMeasures(document, items) {
-      storeItemMeasuresOf(database, document, items);
+    storeItemMeasures(document, items, readerVersion) {
+      storeItemMeasuresOf(database, document, items, readerVersion);
     },
     recordingLogsWithoutIndex(session) {
       const rows = database
@@ -1301,7 +1344,7 @@ export function openIndexWriter(path: string): IndexWriter {
           `SELECT d.id FROM document d
            WHERE d.session_key = ? AND d.kind = 'recording_log'
              AND (NOT EXISTS (SELECT 1 FROM speaker_turn_index i WHERE i.document_id = d.id)
-               OR NOT EXISTS (SELECT 1 FROM recording_log_link_annotation a WHERE a.document_id = d.id))`,
+               OR NOT EXISTS (SELECT 1 FROM recording_log_annotation_read a WHERE a.document_id = d.id))`,
         )
         .all(session);
       return new Set(rows.map((row) => idRow.parse(row).id as DocumentId));
@@ -1650,16 +1693,17 @@ export function openIndexWriter(path: string): IndexWriter {
         replaceTableEntries(session, reading);
       });
     },
-    unreadAgencyDocuments(session, snapshot) {
+    unreadAgencyDocuments(session, snapshot, readerVersion) {
       const rows = database
         .prepare(
           `SELECT d.id, d.kind FROM document d
            WHERE d.session_key = ?
              AND (d.kind IN ('version', 'proposed_amendment') OR (d.kind = 'analysis' AND d.label = 'Fiscal Impact Statement'))
-             AND NOT EXISTS (SELECT 1 FROM agency_read r WHERE r.document_id = d.id AND r.snapshot_commit = ?)
+             AND NOT EXISTS (SELECT 1 FROM agency_read r WHERE r.document_id = d.id AND r.snapshot_commit = ?
+                               AND r.reader_version = ?)
            ORDER BY d.id`,
         )
-        .all(session, snapshot.commit);
+        .all(session, snapshot.commit, readerVersion);
       return rows.map((row): UnreadAgencyDocument => {
         const unread = unreadAgencyRow.parse(row);
         return {
@@ -1680,8 +1724,9 @@ export function openIndexWriter(path: string): IndexWriter {
     },
     storeAgencyRead(record, snapshot) {
       const insertRead = database.prepare(
-        `INSERT INTO agency_read (document_id, snapshot_commit) VALUES (?, ?)
-         ON CONFLICT (document_id) DO UPDATE SET snapshot_commit = excluded.snapshot_commit`,
+        `INSERT INTO agency_read (document_id, snapshot_commit, reader_version) VALUES (?, ?, ?)
+         ON CONFLICT (document_id) DO UPDATE SET snapshot_commit = excluded.snapshot_commit,
+                                                 reader_version = excluded.reader_version`,
       );
       const deleteLinks = database.prepare("DELETE FROM agency_link WHERE document_id = ?");
       const deleteUnits = database.prepare("DELETE FROM unresolved_unit WHERE document_id = ?");
@@ -1693,7 +1738,7 @@ export function openIndexWriter(path: string): IndexWriter {
       try {
         deleteLinks.run(record.documentId);
         deleteUnits.run(record.documentId);
-        insertRead.run(record.documentId, snapshot.commit);
+        insertRead.run(record.documentId, snapshot.commit, record.readerVersion);
         record.links.forEach((link, ordinal) => {
           insertLink.run(record.documentId, ordinal, link.agency, link.evidence.kind, evidenceToJson(link.evidence));
         });

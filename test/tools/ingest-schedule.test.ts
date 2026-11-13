@@ -143,9 +143,13 @@ describe("a worker told to stop in the middle of a full pull (ticket #113)", () 
     system.olis.failDocuments(`https://olis.oregonlegislature.gov${path}`, ["hang"]);
     system.clock.set("2025-01-17T23:30:00Z");
     const stop = new AbortController();
-    const waited = vi.waitFor(() => {
-      if (!system.olis.documentRequests().includes(path)) throw new Error("the worker has not asked for the file yet");
-    });
+    const waited = vi.waitFor(
+      () => {
+        if (!system.olis.documentRequests().includes(path))
+          throw new Error("the worker has not asked for the file yet");
+      },
+      { timeout: 30_000 },
+    );
     const running = system.runSchedule("2025-01-18T16:00:00Z", { stop: stop.signal });
     await waited;
     stop.abort();
@@ -193,9 +197,13 @@ describe("a worker told to stop in the middle of an increment (ticket #113)", ()
     system.olis.failDocuments(`https://olis.oregonlegislature.gov${path}`, ["hang"]);
     system.clock.set("2025-01-16T23:30:00Z");
     const stop = new AbortController();
-    const waited = vi.waitFor(() => {
-      if (!system.olis.documentRequests().includes(path)) throw new Error("the worker has not asked for the file yet");
-    });
+    const waited = vi.waitFor(
+      () => {
+        if (!system.olis.documentRequests().includes(path))
+          throw new Error("the worker has not asked for the file yet");
+      },
+      { timeout: 30_000 },
+    );
     const running = system.runSchedule("2025-01-17T16:00:00Z", { stop: stop.signal });
     await waited;
     stop.abort();

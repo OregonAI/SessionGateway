@@ -155,6 +155,7 @@ describe("an Agency Link the reader hands out", () => {
           documentId: link.id,
           links: [{ agency, evidence: { kind: "named-in-text", terms: ["Bureau of Made-up Things"] } }],
           unresolvedUnits: [],
+          readerVersion: 1,
         },
         snapshot,
       );

@@ -128,6 +128,31 @@ export function measureOfAgendaItem(text: string | null): { prefix: string; numb
   return measureOf(text);
 }
 
+/**
+ * The version of the speaker-turn index reading (ADR-0066). The worker records it with each Recording Log it indexes
+ * (`storeSpeakerTurnIndex`) and fetches the log again, at most `RECORDING_LOG_REREAD_LIMIT` a pull, when the recorded version is not
+ * this one, because the links the index is read from are in the file and not in the stored text. BUMP IT BY HAND in any change that
+ * would change the outcome or the turns the worker stores for the same file, text, Meeting rows and Legislators: a change to this
+ * package (`parseRecordingLog`, `legislatorOfSpeaker`, `measureOfAgendaItem`, `playerLinkOf` and what they call), to `pdf-text`'s
+ * `extractPdfLinks`, to `legislators/resolver.ts`'s matching rules, and to `ingest/lib/speaker-turns.ts` (`readSpeakerTurnIndex`).
+ * A change to the data the reading consults (the Meeting's Agenda items, committee members, Legislators, held Measures) is not a
+ * bump. A new index makes its derived readings again: the turn Passages, the Agenda items' Measures and the Meeting's transcripts
+ * are attached again (ADR-0053, ADR-0055). Without the bump a stored database keeps the old index. A change that leaves every
+ * stored result as it was needs none. A reading made before schema step 10 counts as version 0, so this starts at 1.
+ */
+export const SPEAKER_TURN_INDEX_READER_VERSION = 1;
+
+/**
+ * The version of the reading of the Measures an Agenda item line names (ADR-0066). The worker records it with each log whose
+ * items it reads (`storeItemMeasures`) and reads them again, from the stored item texts with no fetch, when the recorded version
+ * is not this one. BUMP IT BY HAND in any change that would change what `measuresOfAgendaItem` gives for the same text, or what
+ * the worker's loop in `ingest/index.ts` stores from it: a change to this function and what it calls in this package, and to
+ * `measureIdOf` (`domain/index.ts`), which makes the stored id. Without the bump a stored database keeps the old Measures. A
+ * change that leaves every stored result as it was needs none. A reading made before schema step 10 counts as version 0, so this
+ * starts at 1.
+ */
+export const ITEM_MEASURES_READER_VERSION = 1;
+
 /** The Measures an Agenda item line of the log begins with ("SB 1542 and SB 1543 - Public Hearing"), in order. Pure. */
 export function measuresOfAgendaItem(text: string | null): { prefix: string; number: number }[] {
   return measuresOf(text);
