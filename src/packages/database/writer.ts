@@ -38,6 +38,7 @@ import {
   markTurnPassagesCut,
   readLogsWithoutItemMeasures,
   readLogsWithoutTurnPassages,
+  readLogsWithStaleAnnotations,
   storeItemMeasuresOf,
   storeLinkAnnotations,
   storeSpeakerTurnIndex,
@@ -425,9 +426,16 @@ export type IndexWriter = {
   storeSpeakerTurnIndex(record: SpeakerTurnIndexRecord): void;
   /**
    * Keeps a Recording Log's link annotations as the worker read them from the PDF (ticket #160, ADR-0058), the page and address of
-   * each in the file's order, replacing whatever the log had. They are source data and independent of the speaker-turn index.
+   * each in the file's order, replacing whatever the log had, and records the version of the reader that read them (ADR-0066), whether
+   * or not the file held a link. They are source data and independent of the speaker-turn index.
    */
-  storeLinkAnnotations(document: DocumentId, annotations: readonly StoredLinkAnnotation[]): void;
+  storeLinkAnnotations(document: DocumentId, annotations: readonly StoredLinkAnnotation[], readerVersion: number): void;
+  /**
+   * The stored Recording Logs of the Session whose link annotations were read by a reader of another version than
+   * `readerVersion` (ticket #187, ADR-0066), in the order of their ids: the logs the worker fetches again for them, a few a pull.
+   * A log never read is not here; it is in `recordingLogsWithoutIndex`.
+   */
+  recordingLogsWithStaleAnnotations(session: SessionKey, readerVersion: number): DocumentId[];
   /**
    * Keeps what the worker saw at an attempt to fetch a document the index holds no file of (ticket #168, ADR-0063), replacing
    * whatever an earlier attempt left. Storing the document's file (`storeDocument`, `replaceDocument`) clears it.
@@ -435,8 +443,8 @@ export type IndexWriter = {
   recordFetchFailure(document: DocumentId, failure: LastFetchFailure): void;
   /**
    * The stored Recording Logs of the Session to fetch again to read their links (ADR-0052, ADR-0058): those with no speaker-turn
-   * index yet (a gap counts as one) and those with no stored link annotation. A log whose read finds no link has no annotation
-   * and so is listed on every pull.
+   * index yet (a gap counts as one) and those whose link annotations were never read. A log whose file holds no link is marked read,
+   * so it is listed until it is read once (ADR-0066), and no longer.
    */
   recordingLogsWithoutIndex(session: SessionKey): Set<DocumentId>;
   /**
@@ -1264,8 +1272,11 @@ export function openIndexWriter(path: string): IndexWriter {
         return { committeeCode: stored.committee_code, legislatorCode: stored.legislator_code };
       });
     },
-    storeLinkAnnotations(document, annotations) {
-      storeLinkAnnotations(database, document, annotations);
+    storeLinkAnnotations(document, annotations, readerVersion) {
+      storeLinkAnnotations(database, document, annotations, readerVersion);
+    },
+    recordingLogsWithStaleAnnotations(session, readerVersion) {
+      return readLogsWithStaleAnnotations(database, session, readerVersion);
     },
     recordFetchFailure(document, failure) {
       recordFetchFailure(database, document, failure);
@@ -1318,7 +1329,7 @@ export function openIndexWriter(path: string): IndexWriter {
           `SELECT d.id FROM document d
            WHERE d.session_key = ? AND d.kind = 'recording_log'
              AND (NOT EXISTS (SELECT 1 FROM speaker_turn_index i WHERE i.document_id = d.id)
-               OR NOT EXISTS (SELECT 1 FROM recording_log_link_annotation a WHERE a.document_id = d.id))`,
+               OR NOT EXISTS (SELECT 1 FROM recording_log_annotation_read a WHERE a.document_id = d.id))`,
         )
         .all(session);
       return new Set(rows.map((row) => idRow.parse(row).id as DocumentId));

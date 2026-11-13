@@ -7,7 +7,7 @@ import { committeeIdOf, type DocumentId, type DocumentLink, type MeetingId } fro
 import { measureIdOf, type SessionKey } from "#/packages/domain/index.ts";
 import type { SpeakerTurn, SpeakerTurnIndexOutcome } from "#/packages/domain/speaker-turns.ts";
 import type { LegislatorResolver } from "#/packages/legislators/resolver.ts";
-import { extractPdfLinks, linkAnnotationsOf } from "#/packages/pdf-text/index.ts";
+import { extractPdfLinks, LINK_ANNOTATIONS_READER_VERSION, linkAnnotationsOf } from "#/packages/pdf-text/index.ts";
 import {
   headerNamesMeeting,
   legislatorOfSpeaker,
@@ -46,7 +46,7 @@ export async function readSpeakerTurnIndex(
   const { links } = extraction;
   // The annotations are stored as the file's read gave them, before the parser derives anything from them (ticket #160,
   // ADR-0058): they are a source the index is not, so a question's expected value can name them and not the index under test.
-  context.writer.storeLinkAnnotations(link.id, linkAnnotationsOf(links));
+  context.writer.storeLinkAnnotations(link.id, linkAnnotationsOf(links), LINK_ANNOTATIONS_READER_VERSION);
   const meeting = link.relations.find((relation) => relation.relation === "meeting")?.to;
   const committee = link.relations.find((relation) => relation.relation === "committee")?.to;
   const agendaItems = meeting === undefined ? [] : context.writer.agendaItemsOfMeeting(meeting as MeetingId);
@@ -96,6 +96,26 @@ export async function readSpeakerTurnIndex(
     default:
       return parsed satisfies never;
   }
+}
+
+/**
+ * Reads a fetched Recording Log's link annotations again and stores them with the current reader's version, and stores nothing
+ * else (ticket #187, ADR-0066): the log's index, its Passages cut around the turns, its items' Measures and its Meeting's
+ * transcripts are as they were, because they are made by readers of their own and a bump of this one makes none of them again.
+ */
+export async function rereadLinkAnnotations(
+  context: Pick<SpeakerTurnContext, "writer">,
+  link: DocumentLink,
+  bytes: Uint8Array,
+): Promise<void> {
+  const extraction = await extractPdfLinks(bytes);
+  if (extraction.kind === "unreadable") {
+    // The text came from the same bytes, so this is a bug and not a file.
+    throw new Error(`The links of ${link.id} (${link.sourceUrl}) could not be read: ${extraction.reason}`, {
+      cause: extraction,
+    });
+  }
+  context.writer.storeLinkAnnotations(link.id, linkAnnotationsOf(extraction.links), LINK_ANNOTATIONS_READER_VERSION);
 }
 
 /**

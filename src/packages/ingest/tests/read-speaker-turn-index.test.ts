@@ -17,8 +17,8 @@ import { openIndexWriter, type IndexWriter } from "#/packages/database/writer.ts
 import type { DocumentId, DocumentLink, StoredLinkAnnotation } from "#/packages/domain/documents.ts";
 import { parseSessionKey } from "#/packages/domain/index.ts";
 import { createLegislatorResolver } from "#/packages/legislators/resolver.ts";
-import { extractPdfText } from "#/packages/pdf-text/index.ts";
-import { readSpeakerTurnIndex } from "../index.ts";
+import { LINK_ANNOTATIONS_READER_VERSION, extractPdfText } from "#/packages/pdf-text/index.ts";
+import { readSpeakerTurnIndex, rereadLinkAnnotations } from "../index.ts";
 import { madeUpPdf } from "./made-up-pdf.ts";
 
 const session = parseSessionKey("2025R1") ?? fail("2025R1 is a Session key");
@@ -161,5 +161,22 @@ describe("readSpeakerTurnIndex stores the annotations whatever the index outcome
     expect(await readLog(id, indexed)).toMatchObject({ kind: "indexed", eventId: "2099000003" });
     expect(rig.reader.linkAnnotationsOf(id as DocumentId)).toEqual([player("2099000003", 5)]);
     expect(rig.reader.speakerTurnIndexOf(id as DocumentId)).toMatchObject({ kind: "indexed" });
+  });
+});
+
+describe("rereadLinkAnnotations (ticket #187, ADR-0066)", () => {
+  test("replaces a log's annotations with the file's as the current reader reads them and leaves the log's index alone", async () => {
+    rig = openRig();
+    const id = "recording-log-2025r1-999004";
+    const lines = ["MADE UP RECORDING LOG", "00:00:05 Meeting Called to Order"];
+    const file = madeUpPdf(lines, [{ url: `${PLAYER}&eventID=2099000004&startStreamAt=5`, rect: [40, 750, 100, 762] }]);
+    await readLog(id, file);
+    const indexBefore = rig.reader.speakerTurnIndexOf(id as DocumentId);
+    rig.writer.storeLinkAnnotations(id as DocumentId, [{ page: 1, url: "https://made-up.example/older" }], 0);
+
+    await rereadLinkAnnotations({ writer: rig.writer }, logLink(id), file);
+
+    expect(rig.reader.linkAnnotationsOf(id as DocumentId)).toEqual([player("2099000004", 5)]);
+    expect(rig.reader.speakerTurnIndexOf(id as DocumentId)).toEqual(indexBefore);
   });
 });

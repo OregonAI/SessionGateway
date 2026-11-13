@@ -144,9 +144,11 @@ describe("the speaker-turn index of a stored Recording Log", () => {
     expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set([logId]));
 
     index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" } });
-    index.writer.storeLinkAnnotations(logId, [
-      { page: 1, url: "https://made-up.example/mediaplayer?clientID=1&eventID=2099010001&startStreamAt=5" },
-    ]);
+    index.writer.storeLinkAnnotations(
+      logId,
+      [{ page: 1, url: "https://made-up.example/mediaplayer?clientID=1&eventID=2099010001&startStreamAt=5" }],
+      1,
+    );
 
     expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set());
   });
@@ -157,16 +159,18 @@ describe("the speaker-turn index of a stored Recording Log", () => {
 
     expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set([logId]));
 
-    index.writer.storeLinkAnnotations(logId, [
-      { page: 1, url: "https://made-up.example/mediaplayer?clientID=1&eventID=2099010001&startStreamAt=5" },
-    ]);
+    index.writer.storeLinkAnnotations(
+      logId,
+      [{ page: 1, url: "https://made-up.example/mediaplayer?clientID=1&eventID=2099010001&startStreamAt=5" }],
+      1,
+    );
 
     expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set());
   });
 
   test("a log with annotations and no index is listed too: either one missing is a reason to fetch it", () => {
     pulledWithLog();
-    index.writer.storeLinkAnnotations(logId, [{ page: 1, url: "https://made-up.example/x" }]);
+    index.writer.storeLinkAnnotations(logId, [{ page: 1, url: "https://made-up.example/x" }], 1);
 
     expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set([logId]));
   });

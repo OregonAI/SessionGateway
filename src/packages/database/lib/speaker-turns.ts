@@ -471,6 +471,7 @@ export function storeLinkAnnotations(
   database: DatabaseSync,
   documentId: DocumentId,
   annotations: readonly StoredLinkAnnotation[],
+  readerVersion: number,
 ): void {
   database.exec("BEGIN IMMEDIATE");
   try {
@@ -481,11 +482,36 @@ export function storeLinkAnnotations(
     annotations.forEach((annotation, position) => {
       insert.run(documentId, position, annotation.page, annotation.url);
     });
+    // The log is marked read by this version even when its file held no link (ADR-0066).
+    database
+      .prepare(
+        `INSERT INTO recording_log_annotation_read (document_id, reader_version) VALUES (?, ?)
+         ON CONFLICT (document_id) DO UPDATE SET reader_version = excluded.reader_version`,
+      )
+      .run(documentId, readerVersion);
     database.exec("COMMIT");
   } catch (error) {
     if (database.isTransaction) database.exec("ROLLBACK");
     throw error;
   }
+}
+
+/**
+ * The stored Recording Logs of the Session whose annotations were read by a reader of another version than `readerVersion`
+ * (ticket #187, ADR-0066), in the order of their ids. A log never read has no row and is not here: it is a log without annotations.
+ */
+export function readLogsWithStaleAnnotations(
+  database: DatabaseSync,
+  session: SessionKey,
+  readerVersion: number,
+): DocumentId[] {
+  return database
+    .prepare(
+      `SELECT d.id FROM document d JOIN recording_log_annotation_read a ON a.document_id = d.id
+       WHERE d.session_key = ? AND d.kind = 'recording_log' AND a.reader_version <> ? ORDER BY d.id`,
+    )
+    .all(session, readerVersion)
+    .map((row) => z.object({ id: z.string() }).parse(row).id as DocumentId);
 }
 
 const annotationRow = z.object({ page: z.number(), url: z.string() });

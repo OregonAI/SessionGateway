@@ -61,7 +61,7 @@ import {
   type SetCount,
 } from "#/packages/olis-client/index.ts";
 import { loadSnapshot } from "#/packages/oregonai-snapshot/index.ts";
-import { extractPdfText, type ExtractedPdf } from "#/packages/pdf-text/index.ts";
+import { extractPdfText, LINK_ANNOTATIONS_READER_VERSION, type ExtractedPdf } from "#/packages/pdf-text/index.ts";
 import { searchEntryOf } from "#/packages/search/documents.ts";
 import {
   ITEM_MEASURES_READER_VERSION,
@@ -72,7 +72,12 @@ import { splitAroundTurns, splitPassages, TURN_PASSAGES_READER_VERSION } from "#
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, pacificTimestampOf, type Timestamp } from "#/packages/time/pacific.ts";
-import { copyGapsOf, readSpeakerTurnIndex, setAsideCopiesOfOtherMeetings } from "./lib/speaker-turns.ts";
+import {
+  copyGapsOf,
+  readSpeakerTurnIndex,
+  rereadLinkAnnotations,
+  setAsideCopiesOfOtherMeetings,
+} from "./lib/speaker-turns.ts";
 import { ingestTranscripts, transcriptsReportOf, type TranscriptsRun } from "./lib/transcripts.ts";
 import {
   buildReportPath,
@@ -411,6 +416,16 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
   // annotation (ticket #160, ADR-0058), is fetched once more to read its links, which the store keeps only as the index and the
   // annotations (ticket #126, ADR-0052). Its stored text and search entry stay as they are.
   const unindexed = writer.recordingLogsWithoutIndex(config.session);
+  // A log whose annotations a reader of another version read is fetched again too, for them alone (ticket #187, ADR-0066): at
+  // most RECORDING_LOG_REREAD_LIMIT logs a pull, the first by id among those the feed still lists, and the rest on the pulls
+  // after. A log in `unindexed` is fetched for everything anyway and is not counted.
+  const listed = new Set(links.map((link) => link.id));
+  const staleAnnotations = new Set(
+    writer
+      .recordingLogsWithStaleAnnotations(config.session, LINK_ANNOTATIONS_READER_VERSION)
+      .filter((id) => listed.has(id) && !unindexed.has(id) && !revised.has(id))
+      .slice(0, RECORDING_LOG_REREAD_LIMIT),
+  );
   const speakerTurns = { session: config.session, writer, resolver };
   for (const link of links) {
     if (stored.has(link.id) && unindexed.has(link.id) && link.kind === "recording_log" && !revised.has(link.id)) {
@@ -438,6 +453,27 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
         documentId: link.id,
         outcome: await readSpeakerTurnIndex(speakerTurns, link, again.bytes, again.pdf.text),
       });
+      continue;
+    }
+    if (stored.has(link.id) && staleAnnotations.has(link.id) && link.kind === "recording_log") {
+      refetches.attempted += 1;
+      const again = await fetchAndRead(olis, link, deps.signal);
+      if (again.kind === "left_out") {
+        refetches.failed.push(notFetchedEntryOf(link, again));
+        continue;
+      }
+      const fetchedHash = createHash("sha256").update(again.bytes).digest("hex");
+      const storedHash = writer.storedContentHash(link.id);
+      if (fetchedHash !== storedHash) {
+        refetches.bytes_changed.push({
+          id: link.id,
+          source_url: link.sourceUrl,
+          stored_content_hash: storedHash ?? "",
+          fetched_content_hash: fetchedHash,
+        });
+        continue;
+      }
+      await rereadLinkAnnotations(speakerTurns, link, again.bytes);
       continue;
     }
     if (stored.has(link.id) && !revised.has(link.id)) continue;
@@ -668,7 +704,7 @@ export { isFullPullStopped, type FullPullStopped } from "./lib/stop.ts";
  * annotations through `context.writer` and returns the outcome of the speaker-turn index, which the caller stores. Exported so
  * that the step is called at seam 4 with a real writer and reader and no pull.
  */
-export { readSpeakerTurnIndex, type SpeakerTurnContext } from "./lib/speaker-turns.ts";
+export { readSpeakerTurnIndex, rereadLinkAnnotations, type SpeakerTurnContext } from "./lib/speaker-turns.ts";
 
 /** How many documents the Index holds for the Session, or `undefined` when it cannot be counted: a count must not turn a stop into a crash. */
 function countStoredDocuments(config: IngestConfig): number | undefined {
@@ -824,6 +860,13 @@ export type IncrementResult = {
 
 /** How far before the last run an increment starts reading (ADR-0005, ADR-0039): rows OLIS wrote while that run read. */
 const INCREMENT_OVERLAP_HOURS = 2;
+
+/**
+ * The most Recording Logs a pull fetches again because a reader's version moved (ticket #187, ADR-0066): the first by id among
+ * those the feed still lists, and the rest on the next pulls. A fetch that fails or comes back changed counts. A log with no index
+ * or no read annotations is fetched whatever this is (ADR-0052), and is not counted.
+ */
+export const RECORDING_LOG_REREAD_LIMIT = 25;
 
 /**
  * An increment (ADR-0005, ADR-0039): reads the rows OLIS created or modified since the last run, less a two-hour

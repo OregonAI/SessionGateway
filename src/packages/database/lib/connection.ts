@@ -615,6 +615,19 @@ const linkAnnotationSchema = `
 `;
 
 /**
+ * Step 10's text for the link annotations (ticket #187, ADR-0066). The version of the reader that read each Recording Log's
+ * annotations, a row for each log read, whether or not the file held a link: a log with no link has no annotation row, so
+ * without this row it could not be told from a log never read, and is fetched on every pull. It adds no column to a table that
+ * exists, so a file with the table already there upgrades as a new one does.
+ */
+const annotationReadSchema = `
+  CREATE TABLE IF NOT EXISTS recording_log_annotation_read (
+    document_id TEXT NOT NULL PRIMARY KEY,
+    reader_version INTEGER NOT NULL
+  ) STRICT;
+`;
+
+/**
  * Step 7's text (ticket #168, ADR-0063). What the worker saw at its latest attempt to fetch a document the index holds no file
  * of: the cause (the build report's), its reason, and the bytes the ending attempt received when a request that began to answer
  * stopped (ADR-0062; null otherwise). A table of its own, keyed by the document, because `document` holds only stored files and
@@ -700,6 +713,11 @@ const upgradeSteps: readonly ((database: DatabaseSync) => void)[] = [
     database.exec("ALTER TABLE agency_read ADD COLUMN reader_version INTEGER NOT NULL DEFAULT 0");
     database.exec("ALTER TABLE speaker_turn_index ADD COLUMN turn_passages_reader_version INTEGER NOT NULL DEFAULT 0");
     database.exec("ALTER TABLE speaker_turn_index ADD COLUMN item_measures_reader_version INTEGER NOT NULL DEFAULT 0");
+    database.exec(annotationReadSchema);
+    // A log with stored annotations was read by a reader before versions: version 0, so it is fetched again, within the cap.
+    database.exec(
+      "INSERT OR IGNORE INTO recording_log_annotation_read (document_id, reader_version) SELECT DISTINCT document_id, 0 FROM recording_log_link_annotation",
+    );
   },
 ];
 

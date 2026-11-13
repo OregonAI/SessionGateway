@@ -8,7 +8,12 @@
 // test/support/old-database.ts). The fixture holds 34 stored Recording Logs (get-document-speaker-turns-pull.test.ts counts
 // the same 34), and each has links.
 import { afterEach, describe, expect, it } from "vitest";
-import { forgetLinkAnnotations, forgetSpeakerTurns } from "../support/old-database.ts";
+import { RECORDING_LOG_REREAD_LIMIT } from "#/packages/ingest/index.ts";
+import {
+  forgetLinkAnnotations,
+  forgetSpeakerTurns,
+  readAnnotationsWithAnOlderReader,
+} from "../support/old-database.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";
 
 const clockAt = "2026-08-05T17:00:00Z";
@@ -46,6 +51,29 @@ describe("which Recording Logs a pull fetches again for their annotations", () =
 
     await system.pullAgain();
     expect(system.buildReport()["recording_log_refetches"]).toEqual({ ...none, attempted: 34 });
+
+    await system.pullAgain();
+    expect(system.buildReport()["recording_log_refetches"]).toEqual(none);
+  });
+});
+
+// Ticket #187 (ADR-0066): a log whose annotations an older reader made is fetched again, at most RECORDING_LOG_REREAD_LIMIT logs
+// in one pull (the fetch needs the file, which only OLIS holds), and the rest on the pulls after. The version is recorded when a
+// log is read, so a log read by the current reader is not fetched again.
+describe("which Recording Logs a pull fetches again for an older annotation reader", () => {
+  it("fetches at most the limit in one pull and the rest on the next, then none", async () => {
+    system = await startCopiedSystem({ clockAt, documents: true });
+    readAnnotationsWithAnOlderReader(system.database.path);
+    expect(RECORDING_LOG_REREAD_LIMIT).toBeLessThan(34);
+
+    await system.pullAgain();
+    expect(system.buildReport()["recording_log_refetches"]).toEqual({ ...none, attempted: RECORDING_LOG_REREAD_LIMIT });
+
+    await system.pullAgain();
+    expect(system.buildReport()["recording_log_refetches"]).toEqual({
+      ...none,
+      attempted: 34 - RECORDING_LOG_REREAD_LIMIT,
+    });
 
     await system.pullAgain();
     expect(system.buildReport()["recording_log_refetches"]).toEqual(none);

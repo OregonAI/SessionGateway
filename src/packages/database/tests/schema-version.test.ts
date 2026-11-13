@@ -227,7 +227,7 @@ describe("the writer", () => {
     connections.push(reader);
     expect(reader.linkAnnotationsOf(logId), "the table is made, empty").toEqual([]);
 
-    upgraded.storeLinkAnnotations(logId, [annotation]);
+    upgraded.storeLinkAnnotations(logId, [annotation], currentParser);
 
     expect(reader.linkAnnotationsOf(logId)).toEqual([annotation]);
     expect(reader.findSponsors(measureKey)).toHaveLength(1);
@@ -426,6 +426,34 @@ describe("the writer", () => {
     ).toEqual([log.id]);
     expect(upgraded.recordingLogsWithoutTurnPassages(madeUpSession, 0), "they count as version 0").toEqual([]);
     expect(upgraded.recordingLogsWithoutItemMeasures(madeUpSession, 0)).toEqual([]);
+  });
+
+  test("upgrades a file at version 9 with step 10: the annotations a log holds count as read by reader version 0, so the log is fetched again, and the annotations stay", () => {
+    const file = newFile();
+    const log = recordingLogLink();
+    const logText = "MADE UP COMMITTEE\n";
+    const annotation = { page: 1, url: "https://made-up.example/materials" };
+    const first = writerOn(file.path);
+    first.recordFullPull(
+      madeUpSession,
+      asOf(1),
+      pullOf({ Committees: [committee], CommitteeMeetings: [meetingOn(10)], CommitteeMeetingDocuments: [log] }),
+    );
+    first.storeDocument(madeUpSession, storedOf(log, logText), searchRecordOf(log, logText, true));
+    first.storeLinkAnnotations(log.id, [annotation], currentParser);
+    expect(first.recordingLogsWithStaleAnnotations(madeUpSession, currentParser), "read by the current reader").toEqual(
+      [],
+    );
+    closed(first);
+    leaveAsVersionNine(file.path);
+
+    const upgraded = writerOn(file.path);
+
+    expect(upgraded.recordingLogsWithStaleAnnotations(madeUpSession, currentParser)).toEqual([log.id]);
+    expect(upgraded.recordingLogsWithStaleAnnotations(madeUpSession, 0), "they count as version 0").toEqual([]);
+    const reader = openIndexReader(file.path, afterEverythingMadeUp);
+    connections.push(reader);
+    expect(reader.linkAnnotationsOf(log.id)).toEqual([annotation]);
   });
 
   test("refuses a file at a newer version than it knows, naming both, and leaves it at that version", () => {

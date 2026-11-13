@@ -285,7 +285,7 @@ describe("the link annotations of a Recording Log created after the clock", () =
     const annotations = [
       { page: 1, url: "https://made-up.example/mediaplayer?clientID=1&eventID=2099010001&startStreamAt=5" },
     ];
-    index.writer.storeLinkAnnotations(log.id, annotations);
+    index.writer.storeLinkAnnotations(log.id, annotations, 1);
 
     expect(index.reader.linkAnnotationsOf(log.id)).toEqual([]);
 

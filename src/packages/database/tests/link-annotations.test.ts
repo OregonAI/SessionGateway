@@ -54,14 +54,14 @@ describe("the link annotations of a stored Recording Log", () => {
   test("are read back as stored: the page and address of each, in the order given, a repeated address kept", () => {
     pulledWithLog();
     const annotations = [made(1, 5), made(1, 5), made(2, 9), made(1, 7)];
-    index.writer.storeLinkAnnotations(logId, annotations);
+    index.writer.storeLinkAnnotations(logId, annotations, 1);
 
     expect(index.reader.linkAnnotationsOf(logId)).toEqual(annotations);
   });
 
   test("a log nothing was stored for has none, and one log's are not another's", () => {
     pulledWithLog();
-    index.writer.storeLinkAnnotations(logId, [made(1, 5)]);
+    index.writer.storeLinkAnnotations(logId, [made(1, 5)], 1);
 
     expect(index.reader.linkAnnotationsOf(exhibit.id)).toEqual([]);
     expect(index.reader.linkAnnotationsOf("recording-log-2099r1-1" as DocumentId)).toEqual([]);
@@ -69,15 +69,15 @@ describe("the link annotations of a stored Recording Log", () => {
 
   test("storing them again replaces them, as a log read again is the file as it now is", () => {
     pulledWithLog();
-    index.writer.storeLinkAnnotations(logId, [made(1, 5), made(1, 6), made(2, 7)]);
-    index.writer.storeLinkAnnotations(logId, [made(1, 8)]);
+    index.writer.storeLinkAnnotations(logId, [made(1, 5), made(1, 6), made(2, 7)], 1);
+    index.writer.storeLinkAnnotations(logId, [made(1, 8)], 1);
 
     expect(index.reader.linkAnnotationsOf(logId)).toEqual([made(1, 8)]);
   });
 
   test("are stored with no speaker-turn index: the log has annotations and the index has none of it", () => {
     pulledWithLog();
-    index.writer.storeLinkAnnotations(logId, [made(1, 5)]);
+    index.writer.storeLinkAnnotations(logId, [made(1, 5)], 1);
 
     expect(index.reader.speakerTurnIndexOf(logId)).toBeUndefined();
     expect(index.reader.linkAnnotationsOf(logId)).toEqual([made(1, 5)]);
@@ -86,7 +86,7 @@ describe("the link annotations of a stored Recording Log", () => {
   test("do not follow the index: storing it, replacing it with a gap, and storing it again leave them as they were", () => {
     pulledWithLog();
     const annotations = [made(1, 5), made(1, 31), made(2, 40)];
-    index.writer.storeLinkAnnotations(logId, annotations);
+    index.writer.storeLinkAnnotations(logId, annotations, 1);
 
     for (const outcome of [
       {
@@ -113,5 +113,57 @@ describe("the link annotations of a stored Recording Log", () => {
       index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome });
       expect(index.reader.linkAnnotationsOf(logId)).toEqual(annotations);
     }
+  });
+});
+
+// Ticket #187 (ADR-0066): the annotations have a reader version, recorded with a log's reading in a table of its own, so that a
+// log whose file holds no link (and so has no annotation row) is read once and not on every pull, and a log read by an older
+// reader is told from one never read.
+describe("the reader version of a log's link annotations", () => {
+  afterEach(() => {
+    index.close();
+  });
+
+  test("a log stored with the current version is not listed as stale, and one stored with an older version is, in the order of the ids", () => {
+    pulledWithLog();
+    index.writer.storeLinkAnnotations(logId, [made(1, 5)], 1);
+    expect(index.writer.recordingLogsWithStaleAnnotations(session, 1)).toEqual([]);
+
+    index.writer.storeLinkAnnotations(logId, [made(1, 5)], 0);
+
+    expect(index.writer.recordingLogsWithStaleAnnotations(session, 1)).toEqual([logId]);
+  });
+
+  test("the version written is the one given: the next version finds the log stale", () => {
+    pulledWithLog();
+    index.writer.storeLinkAnnotations(logId, [made(1, 5)], 1);
+
+    expect(index.writer.recordingLogsWithStaleAnnotations(session, 2)).toEqual([logId]);
+  });
+
+  test("a log never read is not stale: it is a log without annotations, which the pull fetches for the first time", () => {
+    pulledWithLog();
+
+    expect(index.writer.recordingLogsWithStaleAnnotations(session, 1)).toEqual([]);
+  });
+
+  test("a log whose file holds no link is marked read, and is no longer listed as without annotations", () => {
+    pulledWithLog();
+    index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" } });
+    expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set([logId]));
+
+    index.writer.storeLinkAnnotations(logId, [], 1);
+
+    expect(index.writer.recordingLogsWithoutIndex(session)).toEqual(new Set());
+    expect(index.reader.linkAnnotationsOf(logId)).toEqual([]);
+  });
+
+  test("storing a log's index again leaves its annotations' version as it was", () => {
+    pulledWithLog();
+    index.writer.storeLinkAnnotations(logId, [made(1, 5)], 1);
+
+    index.writer.storeSpeakerTurnIndex({ documentId: logId, outcome: { kind: "no_event_id" } });
+
+    expect(index.writer.recordingLogsWithStaleAnnotations(session, 1)).toEqual([]);
   });
 });
