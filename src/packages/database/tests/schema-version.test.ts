@@ -24,7 +24,10 @@ import {
 } from "./arranged-files.ts";
 import {
   asOf,
+  committee,
   measure,
+  meetingOn,
+  recordingLogLink,
   measureKey,
   pullOf,
   session as madeUpSession,
@@ -361,6 +364,68 @@ describe("the writer", () => {
     const reader = openIndexReader(file.path, afterEverythingMadeUp);
     connections.push(reader);
     expect(reader.findSponsors(measureKey)).toHaveLength(1);
+  });
+
+  test("upgrades a file at version 9 with step 10: a log's turn Passages and Agenda items' Measures count as read by reader version 0, so both are read again, and the log keeps its text", () => {
+    const file = newFile();
+    const log = recordingLogLink();
+    const logText = "MADE UP COMMITTEE\n00:00:04 Co-Chair Upp\n";
+    const first = writerOn(file.path);
+    first.recordFullPull(
+      madeUpSession,
+      asOf(1),
+      pullOf({
+        Committees: [committee],
+        CommitteeMeetings: [meetingOn(10)],
+        CommitteeMeetingDocuments: [log],
+        Measures: [measure],
+      }),
+    );
+    first.storeDocument(madeUpSession, storedOf(log, logText), searchRecordOf(log, logText, true));
+    first.storeSpeakerTurnIndex({
+      documentId: log.id,
+      outcome: {
+        kind: "indexed",
+        eventId: "2099010001",
+        pagesReadByTimecode: [],
+        turns: [
+          {
+            timecode: "00:00:04",
+            offsetSeconds: 4,
+            offsetSource: "link",
+            speaker: "Co-Chair Upp",
+            legislatorCode: null,
+            legislator: null,
+            agendaItem: null,
+            measureId: null,
+            playerLink: "https://made-up.example/mediaplayer?clientID=1&eventID=2099010001&startStreamAt=4",
+          },
+        ],
+      },
+    });
+    first.replacePassages(log.id, [], 0, currentParser);
+    first.storeItemMeasures(log.id, [], currentParser);
+    expect(first.recordingLogsWithoutTurnPassages(madeUpSession, currentParser), "cut by the current reader").toEqual(
+      [],
+    );
+    expect(first.recordingLogsWithoutItemMeasures(madeUpSession, currentParser), "read by the current reader").toEqual(
+      [],
+    );
+    closed(first);
+    leaveAsVersionNine(file.path);
+
+    const upgraded = writerOn(file.path);
+
+    expect(
+      upgraded.recordingLogsWithoutTurnPassages(madeUpSession, currentParser).map((unread) => unread.id),
+      "the cut from before the step is made again",
+    ).toEqual([log.id]);
+    expect(
+      upgraded.recordingLogsWithoutItemMeasures(madeUpSession, currentParser).map((unread) => unread.id),
+      "the items read before the step are read again",
+    ).toEqual([log.id]);
+    expect(upgraded.recordingLogsWithoutTurnPassages(madeUpSession, 0), "they count as version 0").toEqual([]);
+    expect(upgraded.recordingLogsWithoutItemMeasures(madeUpSession, 0)).toEqual([]);
   });
 
   test("refuses a file at a newer version than it knows, naming both, and leaves it at that version", () => {

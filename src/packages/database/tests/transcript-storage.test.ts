@@ -415,11 +415,11 @@ describe("where a turn's lines start in the log's text", () => {
     expect(lineOne.length).toBe(22);
     index.writer.storeTranscript(recordOf([passageOf(5, "welcome all", { kind: "turn", position: 0 })]));
 
-    index.writer.replacePassages(logId, [slice(0, 18), slice(18, 40, 0), slice(40, 40 + lineTwo.length, 1)], 0);
+    index.writer.replacePassages(logId, [slice(0, 18), slice(18, 40, 0), slice(40, 40 + lineTwo.length, 1)], 0, 1);
     expect(index.reader.transcriptOfLog(logId)?.turnTextOffsets).toEqual([18, 40]);
 
     // A turn with no passage of its own (the text could not place it) has no offset.
-    index.writer.replacePassages(logId, [slice(0, 18), slice(18, 40, 0), slice(40, 40 + lineTwo.length)], 1);
+    index.writer.replacePassages(logId, [slice(0, 18), slice(18, 40, 0), slice(40, 40 + lineTwo.length)], 1, 1);
     expect(index.reader.transcriptOfLog(logId)?.turnTextOffsets).toEqual([18, null]);
   });
 });

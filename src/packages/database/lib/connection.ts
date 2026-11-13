@@ -695,9 +695,11 @@ const upgradeSteps: readonly ((database: DatabaseSync) => void)[] = [
   },
   // Step 10 (ticket #187, ADR-0066): the version of the reader that made each stored reading no snapshot change reaches. A
   // reading stored before it has no version, which the default makes 0, older than any reader the code carries (the first is
-  // 1), so each is made again once at the next pull (a Recording Log's fetch is capped per pull). Agency Links first.
+  // 1), so each is made again once at the next pull (a Recording Log's fetch is capped per pull).
   (database) => {
     database.exec("ALTER TABLE agency_read ADD COLUMN reader_version INTEGER NOT NULL DEFAULT 0");
+    database.exec("ALTER TABLE speaker_turn_index ADD COLUMN turn_passages_reader_version INTEGER NOT NULL DEFAULT 0");
+    database.exec("ALTER TABLE speaker_turn_index ADD COLUMN item_measures_reader_version INTEGER NOT NULL DEFAULT 0");
   },
 ];
 

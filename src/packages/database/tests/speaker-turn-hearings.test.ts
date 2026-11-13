@@ -25,6 +25,8 @@ import {
 } from "./made-up-index.ts";
 
 let index: MadeUpIndex;
+/** Any version above 0 will do: a reading is made again whenever the recorded version is not the one asked for (ADR-0066). */
+const currentReader = 1;
 const log = recordingLogLink();
 const logId = log.id;
 const meeting = meetingOn(10);
@@ -80,12 +82,16 @@ function storeLog(): void {
 
 /** What the worker derives from the item texts: the Measures each names, in the item's order (SB 9003 is not held). */
 function storeItemMeasures(): void {
-  index.writer.storeItemMeasures(logId, [
-    { agendaItem: both, measures: [sb9002Id, sb9001Id, sb9003Id] },
-    { agendaItem: "SB 9002 - Public Hearing", measures: [sb9002Id] },
-    { agendaItem: "SB 9001 - Public Hearing", measures: [sb9001Id] },
-    { agendaItem: "SB 9001 - Work Session", measures: [sb9001Id] },
-  ]);
+  index.writer.storeItemMeasures(
+    logId,
+    [
+      { agendaItem: both, measures: [sb9002Id, sb9001Id, sb9003Id] },
+      { agendaItem: "SB 9002 - Public Hearing", measures: [sb9002Id] },
+      { agendaItem: "SB 9001 - Public Hearing", measures: [sb9001Id] },
+      { agendaItem: "SB 9001 - Work Session", measures: [sb9001Id] },
+    ],
+    currentReader,
+  );
 }
 
 beforeEach(() => {
@@ -108,10 +114,14 @@ describe("the hearings of a Measure", () => {
         turns: [turn(100, "SB 9001 - Work Session", sb9001Id), turn(200, "SB 9001 - Public Hearing", sb9001Id)],
       },
     });
-    index.writer.storeItemMeasures(logId, [
-      { agendaItem: "SB 9001 - Work Session", measures: [sb9001Id] },
-      { agendaItem: "SB 9001 - Public Hearing", measures: [sb9001Id] },
-    ]);
+    index.writer.storeItemMeasures(
+      logId,
+      [
+        { agendaItem: "SB 9001 - Work Session", measures: [sb9001Id] },
+        { agendaItem: "SB 9001 - Public Hearing", measures: [sb9001Id] },
+      ],
+      currentReader,
+    );
 
     expect(
       index.reader.turnHearingsOf(sb9001Id).map((hearing) => [hearing.agendaItem, hearing.firstTurn.offsetSeconds]),
@@ -158,7 +168,7 @@ describe("the hearings of a Measure", () => {
     storeLog();
 
     expect(index.reader.turnHearingsOf(sb9001Id)).toEqual([]);
-    expect(index.writer.recordingLogsWithoutItemMeasures(session)).toEqual([
+    expect(index.writer.recordingLogsWithoutItemMeasures(session, currentReader)).toEqual([
       {
         id: logId,
         agendaItems: [both, "SB 9002 - Public Hearing", "SB 9001 - Public Hearing", "SB 9001 - Work Session"],
@@ -167,7 +177,7 @@ describe("the hearings of a Measure", () => {
 
     storeItemMeasures();
 
-    expect(index.writer.recordingLogsWithoutItemMeasures(session)).toEqual([]);
+    expect(index.writer.recordingLogsWithoutItemMeasures(session, currentReader)).toEqual([]);
   });
 
   test("storing the log's index again forgets the Measures read from the old one, and lists the log again", () => {
@@ -180,6 +190,43 @@ describe("the hearings of a Measure", () => {
     });
 
     expect(index.reader.turnHearingsOf(sb9001Id)).toEqual([]);
-    expect(index.writer.recordingLogsWithoutItemMeasures(session).map((listed) => listed.id)).toEqual([logId]);
+    expect(index.writer.recordingLogsWithoutItemMeasures(session, currentReader).map((listed) => listed.id)).toEqual([
+      logId,
+    ]);
+  });
+});
+
+describe("the Agenda items' Measures' reader version (ticket #187, ADR-0066)", () => {
+  test("a log whose items were read by an older reader is listed again though its index is the same, and reading them again records the current version", () => {
+    storeLog();
+    index.writer.storeItemMeasures(logId, [{ agendaItem: both, measures: [sb9001Id] }], currentReader - 1);
+
+    expect(index.writer.recordingLogsWithoutItemMeasures(session, currentReader).map((listed) => listed.id)).toEqual([
+      logId,
+    ]);
+
+    storeItemMeasures();
+
+    expect(index.writer.recordingLogsWithoutItemMeasures(session, currentReader)).toEqual([]);
+    expect(
+      index.writer.recordingLogsWithoutItemMeasures(session, currentReader + 1).map((listed) => listed.id),
+      "the version written is the current one: the next version finds it unread",
+    ).toEqual([logId]);
+  });
+
+  test("a log whose items were read by the current reader is not listed", () => {
+    storeLog();
+    storeItemMeasures();
+
+    expect(index.writer.recordingLogsWithoutItemMeasures(session, currentReader)).toEqual([]);
+  });
+
+  test("a bump of the items' version lists no log for its turn Passages", () => {
+    storeLog();
+    index.writer.replacePassages(logId, [], 0, currentReader);
+    index.writer.storeItemMeasures(logId, [], currentReader - 1);
+
+    expect(index.writer.recordingLogsWithoutItemMeasures(session, currentReader)).toHaveLength(1);
+    expect(index.writer.recordingLogsWithoutTurnPassages(session, currentReader)).toEqual([]);
   });
 });

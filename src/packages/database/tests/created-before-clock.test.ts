@@ -256,7 +256,7 @@ describe("a Recording Log created after the clock", () => {
       documentId: log.id,
       outcome: { kind: "indexed", eventId: "2099010001", pagesReadByTimecode: [], turns: [turn] },
     });
-    index.writer.storeItemMeasures(log.id, [{ agendaItem: "SB 9001 - Public Hearing", measures: [sb9001] }]);
+    index.writer.storeItemMeasures(log.id, [{ agendaItem: "SB 9001 - Public Hearing", measures: [sb9001] }], 1);
 
     expect(index.reader.speakerTurnIndexOf(log.id)).toBeUndefined();
     expect(index.reader.turnHearingsOf(sb9001)).toEqual([]);

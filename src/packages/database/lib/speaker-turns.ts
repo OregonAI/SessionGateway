@@ -99,7 +99,8 @@ export function storeSpeakerTurnIndex(
          VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (document_id) DO UPDATE SET outcome = excluded.outcome, event_id = excluded.event_id,
            event_ids = excluded.event_ids, pages_read_by_timecode = excluded.pages_read_by_timecode,
-           turn_count = excluded.turn_count, turns_without_passage = NULL, item_measures_read = 0`,
+           turn_count = excluded.turn_count, turns_without_passage = NULL, item_measures_read = 0,
+           turn_passages_reader_version = 0, item_measures_reader_version = 0`,
       )
       .run(
         documentId,
@@ -277,6 +278,7 @@ const storedTurnText = z.object({ timecode: z.string(), speaker: z.string() });
 export function readLogsWithoutTurnPassages(
   database: DatabaseSync,
   session: SessionKey,
+  readerVersion: number,
 ): { id: DocumentId; text: string; turns: { timecode: string; speaker: string }[] }[] {
   const turnsOf = database.prepare(
     "SELECT timecode, speaker FROM speaker_turn WHERE document_id = ? ORDER BY position",
@@ -287,10 +289,10 @@ export function readLogsWithoutTurnPassages(
        FROM document d
          JOIN speaker_turn_index i ON i.document_id = d.id
        WHERE d.session_key = ? AND d.kind = 'recording_log' AND i.outcome = 'indexed' AND i.turn_count > 0
-         AND i.turns_without_passage IS NULL
+         AND (i.turns_without_passage IS NULL OR i.turn_passages_reader_version <> ?)
        ORDER BY d.id`,
     )
-    .all(session)
+    .all(session, readerVersion)
     .map((row) => {
       const log = unlinkedLogRow.parse(row);
       return {
@@ -301,11 +303,21 @@ export function readLogsWithoutTurnPassages(
     });
 }
 
-/** Marks a log as cut around its turns, `turnsWithoutPassage` of which have no Passage of their own. */
-export function markTurnPassagesCut(database: DatabaseSync, documentId: DocumentId, turnsWithoutPassage: number): void {
+/**
+ * Marks a log as cut around its turns, `turnsWithoutPassage` of which have no Passage of their own, by the reader of this
+ * version (ticket #187, ADR-0066).
+ */
+export function markTurnPassagesCut(
+  database: DatabaseSync,
+  documentId: DocumentId,
+  turnsWithoutPassage: number,
+  readerVersion: number,
+): void {
   database
-    .prepare("UPDATE speaker_turn_index SET turns_without_passage = ? WHERE document_id = ?")
-    .run(turnsWithoutPassage, documentId);
+    .prepare(
+      "UPDATE speaker_turn_index SET turns_without_passage = ?, turn_passages_reader_version = ? WHERE document_id = ?",
+    )
+    .run(turnsWithoutPassage, readerVersion, documentId);
 }
 
 const itemsOfLogRow = z.object({ agenda_item: z.string() });
@@ -317,6 +329,7 @@ const itemsOfLogRow = z.object({ agenda_item: z.string() });
 export function readLogsWithoutItemMeasures(
   database: DatabaseSync,
   session: SessionKey,
+  readerVersion: number,
 ): { id: DocumentId; agendaItems: string[] }[] {
   const itemsOf = database.prepare(
     `SELECT agenda_item FROM speaker_turn WHERE document_id = ? AND agenda_item IS NOT NULL
@@ -327,21 +340,23 @@ export function readLogsWithoutItemMeasures(
       `SELECT d.id
        FROM document d
          JOIN speaker_turn_index i ON i.document_id = d.id
-       WHERE d.session_key = ? AND d.kind = 'recording_log' AND i.outcome = 'indexed' AND i.item_measures_read = 0
+       WHERE d.session_key = ? AND d.kind = 'recording_log' AND i.outcome = 'indexed'
+         AND (i.item_measures_read = 0 OR i.item_measures_reader_version <> ?)
        ORDER BY d.id`,
     )
-    .all(session)
+    .all(session, readerVersion)
     .map((row) => {
       const id = z.object({ id: z.string() }).parse(row).id as DocumentId;
       return { id, agendaItems: itemsOf.all(id).map((item) => itemsOfLogRow.parse(item).agenda_item) };
     });
 }
 
-/** Keeps the Measures each Agenda item of a log names, in one transaction, and marks the log's items as read. */
+/** Keeps the Measures each Agenda item of a log names, in one transaction, and marks the log's items as read by the reader of this version (ADR-0066). */
 export function storeItemMeasuresOf(
   database: DatabaseSync,
   documentId: DocumentId,
   items: readonly { agendaItem: string; measures: readonly MeasureId[] }[],
+  readerVersion: number,
 ): void {
   database.exec("BEGIN IMMEDIATE");
   try {
@@ -354,7 +369,11 @@ export function storeItemMeasuresOf(
         insert.run(documentId, item.agendaItem, ordinal, measure);
       });
     }
-    database.prepare("UPDATE speaker_turn_index SET item_measures_read = 1 WHERE document_id = ?").run(documentId);
+    database
+      .prepare(
+        "UPDATE speaker_turn_index SET item_measures_read = 1, item_measures_reader_version = ? WHERE document_id = ?",
+      )
+      .run(readerVersion, documentId);
     database.exec("COMMIT");
   } catch (error) {
     if (database.isTransaction) database.exec("ROLLBACK");

@@ -63,8 +63,12 @@ import {
 import { loadSnapshot } from "#/packages/oregonai-snapshot/index.ts";
 import { extractPdfText, type ExtractedPdf } from "#/packages/pdf-text/index.ts";
 import { searchEntryOf } from "#/packages/search/documents.ts";
-import { measuresOfAgendaItem, speakerTurnSpans } from "#/packages/recording-log/index.ts";
-import { splitAroundTurns, splitPassages } from "#/packages/search/passages.ts";
+import {
+  ITEM_MEASURES_READER_VERSION,
+  measuresOfAgendaItem,
+  speakerTurnSpans,
+} from "#/packages/recording-log/index.ts";
+import { splitAroundTurns, splitPassages, TURN_PASSAGES_READER_VERSION } from "#/packages/search/passages.ts";
 import { quantizeUnitVector } from "#/packages/search/vectors.ts";
 import type { Clock } from "#/packages/time/clock.ts";
 import { formatPacific, pacificTimestampOf, type Timestamp } from "#/packages/time/pacific.ts";
@@ -477,22 +481,23 @@ async function storeLinkedDocuments(step: DocumentsStep): Promise<number> {
   setAsideCopiesOfOtherMeetings(writer, config.session);
   // A Recording Log whose turns are stored and that has not been cut around them is cut from the text and the turns the store
   // holds (ticket #127, ADR-0053): a log just read, one stored before the passages were linked, one whose index was stored
-  // again. Nothing is fetched, and every line of the text stays in one passage. A turn the text cannot place, or that is longer
+  // again, or cut by a reader of another version (ADR-0066). Nothing is fetched, and every line of the text stays in one passage. A turn the text cannot place, or that is longer
   // than a Passage may be, is counted and the log is marked, so it is not cut again on every pull.
-  for (const log of writer.recordingLogsWithoutTurnPassages(config.session)) {
+  for (const log of writer.recordingLogsWithoutTurnPassages(config.session, TURN_PASSAGES_READER_VERSION)) {
     const passages = splitAroundTurns(log.text, speakerTurnSpans(log.text, log.turns), deps.embedder);
     const placed = passages.filter((passage) => passage.turn !== undefined).length;
-    writer.replacePassages(log.id, passages, log.turns.length - placed);
+    writer.replacePassages(log.id, passages, log.turns.length - placed, TURN_PASSAGES_READER_VERSION);
   }
   // The Measures each Agenda item of a stored log names are read from the item's text, for a log just read and for one stored
-  // before step 3, in the same way (ADR-0053). The index may not hold a Measure yet: the reader leaves out the ones it lacks.
-  for (const log of writer.recordingLogsWithoutItemMeasures(config.session)) {
+  // before step 3, in the same way (ADR-0053), and again for a log whose items a reader of another version read (ADR-0066). The index may not hold a Measure yet: the reader leaves out the ones it lacks.
+  for (const log of writer.recordingLogsWithoutItemMeasures(config.session, ITEM_MEASURES_READER_VERSION)) {
     writer.storeItemMeasures(
       log.id,
       log.agendaItems.map((agendaItem) => ({
         agendaItem,
         measures: measuresOfAgendaItem(agendaItem).map((named) => measureIdOf({ session: config.session, ...named })),
       })),
+      ITEM_MEASURES_READER_VERSION,
     );
   }
   return documentsFetched;

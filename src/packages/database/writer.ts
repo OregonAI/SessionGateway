@@ -443,30 +443,44 @@ export type IndexWriter = {
    * The stored Recording Logs of the Session that have an index with turns and have not been cut around them (ticket #127,
    * ADR-0053): a log stored before schema step 3, one whose links were just read, one whose index was stored again. Each comes
    * with its text and its turns' timecodes and speakers in the order of the log: what the worker cuts the text around, with no
-   * fetch. A log that has been cut is not listed again, even when no turn of it was placed.
+   * fetch. A log that has been cut is not listed again, even when no turn of it was placed, unless its cut was made by a reader of
+   * another version than `readerVersion` (ticket #187, ADR-0066).
    */
   recordingLogsWithoutTurnPassages(
     session: SessionKey,
+    readerVersion: number,
   ): { id: DocumentId; text: string; turns: { timecode: string; speaker: string }[] }[];
   /**
    * Replaces a stored document's passages with these, in one transaction (the text stays): a passage with a `turn` is the
    * turn's lines, linked to it by its position. `turnsWithoutPassage` is how many of the log's turns the text could not
-   * place or that were too long for a Passage, which the log keeps for the build report; the log is marked as cut. Only a
+   * place or that were too long for a Passage, which the log keeps for the build report; the log is marked as cut by the reader of
+   * `readerVersion` (ADR-0066). Only a
    * Keyword-only document has its passages replaced this way, so no vector moves.
    */
-  replacePassages(document: DocumentId, passages: readonly Passage[], turnsWithoutPassage: number): void;
+  replacePassages(
+    document: DocumentId,
+    passages: readonly Passage[],
+    turnsWithoutPassage: number,
+    readerVersion: number,
+  ): void;
   /**
    * The stored Recording Logs of the Session with an index whose Agenda items' Measures have not been read (ticket #127,
    * ADR-0053), each with its Agenda items' texts in the order of the log: what the worker reads the Measures from, with no fetch.
+   * A log whose items were read by a reader of another version than `readerVersion` is listed too (ADR-0066).
    */
-  recordingLogsWithoutItemMeasures(session: SessionKey): { id: DocumentId; agendaItems: string[] }[];
+  recordingLogsWithoutItemMeasures(
+    session: SessionKey,
+    readerVersion: number,
+  ): { id: DocumentId; agendaItems: string[] }[];
   /**
    * Keeps the Measures each Agenda item of a stored Recording Log names, in the order the line names them, whether or not the
-   * index holds them (the reader leaves out the ones it does not), and marks the log's items as read.
+   * index holds them (the reader leaves out the ones it does not), and marks the log's items as read by the reader of
+   * `readerVersion` (ADR-0066).
    */
   storeItemMeasures(
     document: DocumentId,
     items: readonly { agendaItem: string; measures: readonly MeasureId[] }[],
+    readerVersion: number,
   ): void;
   /**
    * What the stored readings of the Session's Recording Logs say for the build report: the logs left with no index (no event
@@ -1277,26 +1291,26 @@ export function openIndexWriter(path: string): IndexWriter {
     transcriptNotes(session) {
       return readTranscriptNotes(database, session);
     },
-    recordingLogsWithoutTurnPassages(session) {
-      return readLogsWithoutTurnPassages(database, session);
+    recordingLogsWithoutTurnPassages(session, readerVersion) {
+      return readLogsWithoutTurnPassages(database, session, readerVersion);
     },
-    replacePassages(document, passages, turnsWithoutPassage) {
+    replacePassages(document, passages, turnsWithoutPassage, readerVersion) {
       database.exec("BEGIN IMMEDIATE");
       try {
         deletePassagesOf(document);
         insertPassagesOf(document, passages);
-        markTurnPassagesCut(database, document, turnsWithoutPassage);
+        markTurnPassagesCut(database, document, turnsWithoutPassage, readerVersion);
         database.exec("COMMIT");
       } catch (error) {
         if (database.isTransaction) database.exec("ROLLBACK");
         throw error;
       }
     },
-    recordingLogsWithoutItemMeasures(session) {
-      return readLogsWithoutItemMeasures(database, session);
+    recordingLogsWithoutItemMeasures(session, readerVersion) {
+      return readLogsWithoutItemMeasures(database, session, readerVersion);
     },
-    storeItemMeasures(document, items) {
-      storeItemMeasuresOf(database, document, items);
+    storeItemMeasures(document, items, readerVersion) {
+      storeItemMeasuresOf(database, document, items, readerVersion);
     },
     recordingLogsWithoutIndex(session) {
       const rows = database

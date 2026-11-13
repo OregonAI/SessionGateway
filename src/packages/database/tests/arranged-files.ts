@@ -73,9 +73,12 @@ export function leaveAsBeforeVersions(path: string): void {
 
 /**
  * What step 10 (ticket #187) adds, one reading at a time: the version of the reader that made each stored reading no snapshot
- * change reaches. The Agency Links', a column of `agency_read`.
+ * change reaches: the Agency Links', a column of `agency_read`, and the turn Passages' and the Agenda items' Measures', two columns of
+ * `speaker_turn_index`.
  */
-const dropStepTenColumns = `ALTER TABLE agency_read DROP COLUMN reader_version;`;
+const dropStepTenColumns = `ALTER TABLE agency_read DROP COLUMN reader_version;
+   ALTER TABLE speaker_turn_index DROP COLUMN turn_passages_reader_version;
+   ALTER TABLE speaker_turn_index DROP COLUMN item_measures_reader_version;`;
 
 /** What step 9 (ticket #184) adds: the version of the table parser that read the held table, a column of `statutes_affected_read`. */
 const dropTableParserVersionColumn = `ALTER TABLE statutes_affected_read DROP COLUMN parser_version;`;

@@ -131,6 +131,8 @@ export function leaveTurnsUnlinkedFromPassages(databasePath: string): void {
     database.exec("ALTER TABLE statute_read DROP COLUMN parser_version");
     database.exec("ALTER TABLE statutes_affected_read DROP COLUMN parser_version");
     database.exec("ALTER TABLE agency_read DROP COLUMN reader_version");
+    database.exec("ALTER TABLE speaker_turn_index DROP COLUMN turn_passages_reader_version");
+    database.exec("ALTER TABLE speaker_turn_index DROP COLUMN item_measures_reader_version");
     for (const log of logs) {
       const hash = createHash("sha256").update(log.text, "utf8").digest("hex");
       const id = run(
@@ -175,6 +177,8 @@ export function leaveAsVersionFour(databasePath: string): void {
     database.exec("ALTER TABLE statute_read DROP COLUMN parser_version");
     database.exec("ALTER TABLE statutes_affected_read DROP COLUMN parser_version");
     database.exec("ALTER TABLE agency_read DROP COLUMN reader_version");
+    database.exec("ALTER TABLE speaker_turn_index DROP COLUMN turn_passages_reader_version");
+    database.exec("ALTER TABLE speaker_turn_index DROP COLUMN item_measures_reader_version");
     database.exec("PRAGMA user_version = 4");
   } finally {
     database.close();
