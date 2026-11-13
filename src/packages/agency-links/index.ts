@@ -20,6 +20,20 @@ export type {
   UnboundedUnitLine,
 } from "./lib/types.ts";
 
+/**
+ * The version of the Agency Link reading (ADR-0066). The worker records it with each document it reads for Agency Links and
+ * reads the document again when the recorded version is not this one, whether or not the snapshot has changed. BUMP IT BY HAND
+ * in any change that would change what the worker's `agencyReadOf` (`ingest/lib/agency-links.ts`) stores for the same stored
+ * text, Statute Links and snapshot: a change to this package, to what it calls in `domain/agency-links.ts`,
+ * `domain/oregonai.ts` and `domain/statute-links.ts`, to `ingest/lib/agency-links.ts` (which kind of document is read how),
+ * to `database/lib/agency-evidence.ts` (how evidence is stored), and to the registry, Chapter table and parents that
+ * `oregonai-snapshot` hands the reading. A change to the Statute Link parser needs no bump here: its own bump reads the file
+ * again and clears the Agency Links made from it (ADR-0064). Without the bump a stored database keeps the old links. A change
+ * that leaves every stored result as it was needs none. A reading made before schema step 10 counts as version 0, so this
+ * starts at 1.
+ */
+export const AGENCY_LINK_READER_VERSION = 1;
+
 /** Reads a Fiscal Impact Statement's "Government Unit(s) Affected:" list against the registry. */
 export function fiscalImpactAgencyLinks(text: string, registry: readonly RegistryAgency[]): FiscalImpactResult {
   return readFiscalImpactUnits(text, registry);

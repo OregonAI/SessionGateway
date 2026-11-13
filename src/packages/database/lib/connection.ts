@@ -693,6 +693,12 @@ const upgradeSteps: readonly ((database: DatabaseSync) => void)[] = [
   (database) => {
     database.exec("ALTER TABLE statutes_affected_read ADD COLUMN parser_version INTEGER NOT NULL DEFAULT 0");
   },
+  // Step 10 (ticket #187, ADR-0066): the version of the reader that made each stored reading no snapshot change reaches. A
+  // reading stored before it has no version, which the default makes 0, older than any reader the code carries (the first is
+  // 1), so each is made again once at the next pull (a Recording Log's fetch is capped per pull). Agency Links first.
+  (database) => {
+    database.exec("ALTER TABLE agency_read ADD COLUMN reader_version INTEGER NOT NULL DEFAULT 0");
+  },
 ];
 
 /** The version the newest step leaves a file at. The server opens a file at this version only. */

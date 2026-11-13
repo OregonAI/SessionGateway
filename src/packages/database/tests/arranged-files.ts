@@ -66,10 +66,16 @@ export function leaveAsBeforeVersions(path: string): void {
      ${dropCreatedTimeColumns}
      ${dropLinkAnnotationTable}
      ${dropLastFetchFailureTable}
-     ${dropParserVersionColumn} ${dropTableParserVersionColumn}
+     ${dropParserVersionColumn} ${dropTableParserVersionColumn} ${dropStepTenColumns}
      PRAGMA user_version = 0`,
   );
 }
+
+/**
+ * What step 10 (ticket #187) adds, one reading at a time: the version of the reader that made each stored reading no snapshot
+ * change reaches. The Agency Links', a column of `agency_read`.
+ */
+const dropStepTenColumns = `ALTER TABLE agency_read DROP COLUMN reader_version;`;
 
 /** What step 9 (ticket #184) adds: the version of the table parser that read the held table, a column of `statutes_affected_read`. */
 const dropTableParserVersionColumn = `ALTER TABLE statutes_affected_read DROP COLUMN parser_version;`;
@@ -98,7 +104,7 @@ const dropTranscriptTables = `DROP TABLE transcript_passage_fts; DROP TABLE tran
 export function leaveAsVersionThree(path: string): void {
   withSql(
     path,
-    `${dropTranscriptTables} ${dropCreatedTimeColumns} ${dropLinkAnnotationTable} ${dropLastFetchFailureTable} ${dropParserVersionColumn} ${dropTableParserVersionColumn} PRAGMA user_version = 3`,
+    `${dropTranscriptTables} ${dropCreatedTimeColumns} ${dropLinkAnnotationTable} ${dropLastFetchFailureTable} ${dropParserVersionColumn} ${dropTableParserVersionColumn} ${dropStepTenColumns} PRAGMA user_version = 3`,
   );
 }
 
@@ -109,7 +115,7 @@ export function leaveAsVersionThree(path: string): void {
 export function leaveAsVersionFour(path: string): void {
   withSql(
     path,
-    `${dropCreatedTimeColumns} ${dropLinkAnnotationTable} ${dropLastFetchFailureTable} ${dropParserVersionColumn} ${dropTableParserVersionColumn} PRAGMA user_version = 4`,
+    `${dropCreatedTimeColumns} ${dropLinkAnnotationTable} ${dropLastFetchFailureTable} ${dropParserVersionColumn} ${dropTableParserVersionColumn} ${dropStepTenColumns} PRAGMA user_version = 4`,
   );
 }
 
@@ -120,7 +126,7 @@ export function leaveAsVersionFour(path: string): void {
 export function leaveAsVersionFive(path: string): void {
   withSql(
     path,
-    `${dropLinkAnnotationTable} ${dropLastFetchFailureTable} ${dropParserVersionColumn} ${dropTableParserVersionColumn} PRAGMA user_version = 5`,
+    `${dropLinkAnnotationTable} ${dropLastFetchFailureTable} ${dropParserVersionColumn} ${dropTableParserVersionColumn} ${dropStepTenColumns} PRAGMA user_version = 5`,
   );
 }
 
@@ -131,7 +137,7 @@ export function leaveAsVersionFive(path: string): void {
 export function leaveAsVersionSix(path: string): void {
   withSql(
     path,
-    `${dropLastFetchFailureTable} ${dropParserVersionColumn} ${dropTableParserVersionColumn} PRAGMA user_version = 6`,
+    `${dropLastFetchFailureTable} ${dropParserVersionColumn} ${dropTableParserVersionColumn} ${dropStepTenColumns} PRAGMA user_version = 6`,
   );
 }
 
@@ -141,7 +147,10 @@ export function leaveAsVersionSix(path: string): void {
  * Close the writer first.
  */
 export function leaveAsVersionSeven(path: string): void {
-  withSql(path, `${dropParserVersionColumn} ${dropTableParserVersionColumn} PRAGMA user_version = 7`);
+  withSql(
+    path,
+    `${dropParserVersionColumn} ${dropTableParserVersionColumn} ${dropStepTenColumns} PRAGMA user_version = 7`,
+  );
 }
 
 /**
@@ -150,7 +159,15 @@ export function leaveAsVersionSeven(path: string): void {
  * row it holds. Close the writer first.
  */
 export function leaveAsVersionEight(path: string): void {
-  withSql(path, `${dropTableParserVersionColumn} PRAGMA user_version = 8`);
+  withSql(path, `${dropTableParserVersionColumn} ${dropStepTenColumns} PRAGMA user_version = 8`);
+}
+
+/**
+ * Makes a file look as a release left it after step 9 and before step 10 (ticket #187): the readers' version columns are
+ * gone and the file is stamped 9. The next worker to open it runs step 10, which adds them, 0 on every row. Close the writer first.
+ */
+export function leaveAsVersionNine(path: string): void {
+  withSql(path, `${dropStepTenColumns} PRAGMA user_version = 9`);
 }
 
 /** Arranges a stored speaker-turn index whose `turn_count` is not the number of its turn rows, so a test can tell which one is read. */

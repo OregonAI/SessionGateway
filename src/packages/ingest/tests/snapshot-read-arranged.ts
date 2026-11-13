@@ -202,6 +202,30 @@ export function introducedVersion(): StoredDocument {
 }
 
 /**
+ * HB 3027's Fiscal Impact Statement (ticket #187): an analysis document, which has no Statute Links and so no `statute_read`
+ * row. The text is MADE UP in the form the Fiscal Impact reader takes: the "Government Unit(s) Affected:" line.
+ */
+export function fiscalImpactStatement(): StoredDocument {
+  const id = "analysis-2025r1-hb3027-fiscal-impact-statement" as StoredDocument["id"];
+  return stored(
+    {
+      id,
+      nodeId: versionIdOf(hb3027, "Introduced"),
+      kind: "analysis",
+      label: "Fiscal Impact Statement",
+      sourceUrl: "https://olis.oregonlegislature.gov/liz/2025R1/Downloads/MeasureAnalysisDocument/MADE-UP-FIS",
+      relations: relationsOf({ measure: hb3027, provenance: "MADE UP: MeasureAnalysisDocuments HB 3027 Fiscal" }),
+    },
+    [
+      "Fiscal Impact of Proposed Legislation",
+      "Government Unit(s) Affected: Higher Education Coordinating Commission",
+      "Summary of Fiscal Impact",
+      "MADE UP: the rest of the statement",
+    ].join("\n"),
+  );
+}
+
+/**
  * The meeting the posting was posted to: CommitteeProposedAmendments 28997 says the Senate Committee On Human Services
  * (SHS) met at 8:00 on 2025-05-15 (feed/CommitteeProposedAmendments.json). Its status is MADE UP.
  */

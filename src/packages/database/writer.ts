@@ -153,6 +153,8 @@ export type AgencyReadRecord = {
   links: readonly AgencyLink[];
   /** The units a Fiscal Impact Statement lists that are not Agencies, as it writes them. */
   unresolvedUnits: readonly string[];
+  /** The version of the Agency Link reading that made this (`AGENCY_LINK_READER_VERSION`, ADR-0066), stored beside the snapshot commit. */
+  readerVersion: number;
 };
 
 /** The columns of the sponsor table that only some kinds of row fill; the others stay NULL. */
@@ -558,10 +560,11 @@ export type IndexWriter = {
   /**
    * The Session's stored Fiscal Impact Statements, Versions and postings of Proposed Amendments that have not been
    * read for Agency Links with this snapshot, each once: a document never read, and every document read with another
-   * commit of the snapshot, so that the index holds no link made with a snapshot it does not report (spec #1 story 56).
+   * commit of the snapshot, so that the index holds no link made with a snapshot it does not report (spec #1 story 56), and
+   * every document read by a reader of another version than `readerVersion` (ADR-0066).
    * A Version and a posting are read after their Statute Links are (ADR-0027).
    */
-  unreadAgencyDocuments(session: SessionKey, snapshot: SnapshotVersion): UnreadAgencyDocument[];
+  unreadAgencyDocuments(session: SessionKey, snapshot: SnapshotVersion, readerVersion: number): UnreadAgencyDocument[];
   /** The Statute Links read from the file a stored Version or posting has, in the order they were read. */
   statuteLinksOf(document: DocumentId): StatuteLink[];
   /**
@@ -1650,16 +1653,17 @@ export function openIndexWriter(path: string): IndexWriter {
         replaceTableEntries(session, reading);
       });
     },
-    unreadAgencyDocuments(session, snapshot) {
+    unreadAgencyDocuments(session, snapshot, readerVersion) {
       const rows = database
         .prepare(
           `SELECT d.id, d.kind FROM document d
            WHERE d.session_key = ?
              AND (d.kind IN ('version', 'proposed_amendment') OR (d.kind = 'analysis' AND d.label = 'Fiscal Impact Statement'))
-             AND NOT EXISTS (SELECT 1 FROM agency_read r WHERE r.document_id = d.id AND r.snapshot_commit = ?)
+             AND NOT EXISTS (SELECT 1 FROM agency_read r WHERE r.document_id = d.id AND r.snapshot_commit = ?
+                               AND r.reader_version = ?)
            ORDER BY d.id`,
         )
-        .all(session, snapshot.commit);
+        .all(session, snapshot.commit, readerVersion);
       return rows.map((row): UnreadAgencyDocument => {
         const unread = unreadAgencyRow.parse(row);
         return {
@@ -1680,8 +1684,9 @@ export function openIndexWriter(path: string): IndexWriter {
     },
     storeAgencyRead(record, snapshot) {
       const insertRead = database.prepare(
-        `INSERT INTO agency_read (document_id, snapshot_commit) VALUES (?, ?)
-         ON CONFLICT (document_id) DO UPDATE SET snapshot_commit = excluded.snapshot_commit`,
+        `INSERT INTO agency_read (document_id, snapshot_commit, reader_version) VALUES (?, ?, ?)
+         ON CONFLICT (document_id) DO UPDATE SET snapshot_commit = excluded.snapshot_commit,
+                                                 reader_version = excluded.reader_version`,
       );
       const deleteLinks = database.prepare("DELETE FROM agency_link WHERE document_id = ?");
       const deleteUnits = database.prepare("DELETE FROM unresolved_unit WHERE document_id = ?");
@@ -1693,7 +1698,7 @@ export function openIndexWriter(path: string): IndexWriter {
       try {
         deleteLinks.run(record.documentId);
         deleteUnits.run(record.documentId);
-        insertRead.run(record.documentId, snapshot.commit);
+        insertRead.run(record.documentId, snapshot.commit, record.readerVersion);
         record.links.forEach((link, ordinal) => {
           insertLink.run(record.documentId, ordinal, link.agency, link.evidence.kind, evidenceToJson(link.evidence));
         });

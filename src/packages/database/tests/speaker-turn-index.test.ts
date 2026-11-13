@@ -331,6 +331,6 @@ describe("the second schema step", () => {
     files.push(file);
     buildFrozenVersionOne(file.path);
 
-    expect(() => openIndexReader(file.path, afterEverythingMadeUp)).toThrow(/version 1\b.*version 9\b/);
+    expect(() => openIndexReader(file.path, afterEverythingMadeUp)).toThrow(/version 1\b.*version 10\b/);
   });
 });
