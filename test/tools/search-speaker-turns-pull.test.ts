@@ -6,8 +6,14 @@
 // that only arranges: the index is stored, and each Recording Log has one passage holding its whole text) and pulls again:
 // that pull is the subject, and every assertion goes through the tools and the fake OLIS's request log.
 //
+// Since ticket #187 (ADR-0066) a version 2 file is upgraded to a step that gives every Recording Log's index the reader version 0, so
+// the pulls also fetch the logs again for that: at most RECORDING_LOG_REREAD_LIMIT of the fixture's 34 in a pull, the rest in the
+// next. The cases below are about the Passages, which need no fetch of their own: every Recording Log fetched is one of those
+// version re-reads, which the count says, and a pull that has none left fetches none.
+//
 // The expected values are those of search-speaker-turns.test.ts (Kurt Williams's turn at 00:02:49 of 288741, event 2025011038).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { RECORDING_LOG_REREAD_LIMIT } from "#/packages/ingest/index.ts";
 import { callTool, connectClient, type ConnectedClient } from "../support/mcp-clients.ts";
 import { leaveTurnsUnlinkedFromPassages } from "../support/old-database.ts";
 import { startCopiedSystem, type System } from "../support/system.ts";
@@ -52,20 +58,28 @@ describe("a database with a speaker-turn index and no turn Passages", () => {
     });
   });
 
-  it("fetches no Recording Log to do it", () => {
+  it("fetches no Recording Log to do it: the only ones fetched are the index's version re-reads, at most the limit", () => {
     const fetchedByThePull = system.olis.documentRequests().slice(requestsBefore.length);
 
-    expect(fetchedByThePull.filter((path) => path.includes("/CommitteeMeetingDocument/"))).toEqual([]);
+    expect(fetchedByThePull.filter((path) => path.includes("/CommitteeMeetingDocument/"))).toHaveLength(
+      RECORDING_LOG_REREAD_LIMIT,
+    );
   });
 
-  it("holds the turn once: another pull changes nothing, and fetches nothing", async () => {
+  it("holds the turn once: another pull changes nothing, and fetches only the logs the limit left, then none", async () => {
     const before = await turnHitsFor("Kurt Williams");
     const requests = system.olis.documentRequests().length;
 
     await system.pullAgain();
 
     expect(await turnHitsFor("Kurt Williams")).toEqual(before);
-    expect(system.olis.documentRequests()).toHaveLength(requests);
+    expect(system.olis.documentRequests()).toHaveLength(requests + 34 - RECORDING_LOG_REREAD_LIMIT);
+    const settled = system.olis.documentRequests().length;
+
+    await system.pullAgain();
+
+    expect(await turnHitsFor("Kurt Williams")).toEqual(before);
+    expect(system.olis.documentRequests()).toHaveLength(settled);
   });
 
   it("lists HB 3131's three hearings after the next pull, from the Agenda items the turns hold, and fetches no log to do it", async () => {

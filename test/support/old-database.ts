@@ -132,7 +132,7 @@ export function leaveTurnsUnlinkedFromPassages(databasePath: string): void {
     database.exec("ALTER TABLE statutes_affected_read DROP COLUMN parser_version");
     database.exec("ALTER TABLE transcript DROP COLUMN reader_version");
     database.exec("ALTER TABLE speaker_turn_index DROP COLUMN index_reader_version");
-    database.exec("DROP TABLE IF EXISTS recording_log_annotation_read");
+    // The annotations' read table stays: the logs' annotations are read by the current reader, so the step finds nothing to fetch.
     database.exec("ALTER TABLE agency_read DROP COLUMN reader_version");
     database.exec("ALTER TABLE speaker_turn_index DROP COLUMN turn_passages_reader_version");
     database.exec("ALTER TABLE speaker_turn_index DROP COLUMN item_measures_reader_version");
@@ -179,7 +179,9 @@ export function leaveAsVersionFour(databasePath: string): void {
     for (const table of tablesGivenCreatedAtByStepFive) database.exec(`ALTER TABLE ${table} DROP COLUMN created_at`);
     database.exec("ALTER TABLE statute_read DROP COLUMN parser_version");
     database.exec("ALTER TABLE statutes_affected_read DROP COLUMN parser_version");
+    database.exec("ALTER TABLE transcript DROP COLUMN reader_version");
     database.exec("ALTER TABLE agency_read DROP COLUMN reader_version");
+    database.exec("ALTER TABLE speaker_turn_index DROP COLUMN index_reader_version");
     database.exec("ALTER TABLE speaker_turn_index DROP COLUMN turn_passages_reader_version");
     database.exec("ALTER TABLE speaker_turn_index DROP COLUMN item_measures_reader_version");
     database.exec("PRAGMA user_version = 4");
