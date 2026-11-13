@@ -58,12 +58,17 @@ describe("a database with a speaker-turn index and no turn Passages", () => {
     });
   });
 
-  it("fetches no Recording Log to do it: the only ones fetched are the index's version re-reads, at most the limit", () => {
+  it("fetches no Recording Log to do it: the only ones fetched are the index's version re-reads, the first limit by id", () => {
     const fetchedByThePull = system.olis.documentRequests().slice(requestsBefore.length);
 
-    expect(fetchedByThePull.filter((path) => path.includes("/CommitteeMeetingDocument/"))).toHaveLength(
-      RECORDING_LOG_REREAD_LIMIT,
+    // The ids are the fixture's first 25 Recording Logs by id (CommitteeMeetingDocuments.json): a fetch of any other log shows.
+    expect(fetchedByThePull.filter((path) => path.includes("/CommitteeMeetingDocument/")).toSorted()).toEqual(
+      [
+        288741, 288906, 289010, 289259, 290006, 292588, 292593, 293235, 295094, 297661, 301370, 301678, 302332, 303298,
+        304494, 304573, 304574, 305183, 305535, 305938, 306568, 307515, 307521, 307637, 307638,
+      ].map((id) => `/liz/2025R1/Downloads/CommitteeMeetingDocument/${id}`),
     );
+    expect(RECORDING_LOG_REREAD_LIMIT).toBe(25);
   });
 
   it("holds the turn once: another pull changes nothing, and fetches only the logs the limit left, then none", async () => {

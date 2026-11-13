@@ -100,7 +100,8 @@ export function forgetSpeakerTurns(databasePath: string): void {
  * index is stored, no Recording Log's passages are linked to its turns and no Agenda item's Measures are read. Each stored Recording Log keeps its text and its
  * index and has one passage that holds the whole text (the cut the worker made is not what the arrangement needs: no passage
  * is a turn's, and the text is all there). It only arranges, like `forgetListing`: the next worker to open the file runs
- * step 3 and links the turns.
+ * step 3 and links the turns. Not a real version 2 file: it keeps the annotations' read table (a real one has none, and upgrading it
+ * would fetch every log for its missing annotations, uncapped), so that the step finds only the index's version to read again.
  */
 export function leaveTurnsUnlinkedFromPassages(databasePath: string): void {
   const database = new DatabaseSync(databasePath, { timeout: 5000 });
