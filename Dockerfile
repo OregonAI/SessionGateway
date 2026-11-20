@@ -16,7 +16,7 @@
 # `npm ci --omit=dev`: the entry scripts need no dev dependency (no compiler, no test runner). .npmrc is
 # copied so the repository's own policy applies: strict-allow-scripts with onnxruntime-node denied
 # (ADR-0026: its install script only downloads CUDA libraries from NuGet, and the CPU runtime is in the package).
-FROM node:26.13.0-bookworm-slim@sha256:bc0a2afd3b74ce12222fc8bab99271e66257f021078f5f4a5d687a77d280c1d9 AS dependencies
+FROM node:26.13.0-bookworm-slim@sha256:add5c17c14752c54d2f3d519ec46a3815684d41c33f198bcb09fb998f7dcbf68 AS dependencies
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
 RUN npm ci --omit=dev --no-audit --no-fund \
@@ -30,7 +30,7 @@ RUN npm ci --omit=dev --no-audit --no-fund \
 # download the model again. The scripts import nothing from package.json (no `imports`, no dependency); they need
 # only ESM, so the stage writes a minimal package.json of its own instead of copying the real one.
 # fetch.ts checks each file against the lock's size and sha256 and fails naming the file; verify.ts then checks again, offline. The server and the worker check the same lock at every start-up.
-FROM node:26.13.0-bookworm-slim@sha256:bc0a2afd3b74ce12222fc8bab99271e66257f021078f5f4a5d687a77d280c1d9 AS model
+FROM node:26.13.0-bookworm-slim@sha256:add5c17c14752c54d2f3d519ec46a3815684d41c33f198bcb09fb998f7dcbf68 AS model
 WORKDIR /app
 ENV MODEL_PATH=/app/model
 RUN echo '{"type":"module"}' > package.json
@@ -41,7 +41,7 @@ RUN node scripts/model/fetch.ts \
  && node scripts/model/verify.ts
 
 # --- Stage 3: the image. ----------------------------------------------------------------------------------
-FROM node:26.13.0-bookworm-slim@sha256:bc0a2afd3b74ce12222fc8bab99271e66257f021078f5f4a5d687a77d280c1d9
+FROM node:26.13.0-bookworm-slim@sha256:add5c17c14752c54d2f3d519ec46a3815684d41c33f198bcb09fb998f7dcbf68
 WORKDIR /app
 ENV NODE_ENV=production \
     MODEL_PATH=/app/model
